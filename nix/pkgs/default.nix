@@ -15,8 +15,6 @@ let
 
   hlint = plutus.plutus.hlint;
 
-  happy = plutus.plutus.happy;
-
   cabal-install = plutus.plutus.cabal-install;
 
   stylish-haskell = plutus.plutus.stylish-haskell;
