@@ -21,6 +21,11 @@ jobs:
       - name: Install jq.
         run: |
           sudo apt-get install jq
+      - name: Install happy.
+        run: |
+          cd ..
+          cabal update
+          cabal install happy
       - name: chmod the test script.
         run: |
           chmod u+x tests/integration/run-tests.sh
