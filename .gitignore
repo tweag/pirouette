@@ -3,3 +3,5 @@
 dist*
 .direnv/
 .envrc
+temporary.cfg
+states/
