@@ -1,1 +1,4 @@
+# Mark PIR files as linguist-generated, which will remove the misidentified
+# 'Parrot Intermediate Repr' from the languages pane, remove the artificial
+# LOC inflation and hide the diffs over pir files.
 *.pir linguist-generated
