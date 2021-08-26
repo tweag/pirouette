@@ -18,10 +18,6 @@ jobs:
         with:
           packages: |
             tlacli
-      - name: Install happy.
-        run: |
-          cabal update
-          cabal install happy
       - name: Install jq.
         run: |
           sudo apt-get install jq
