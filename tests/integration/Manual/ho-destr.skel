@@ -1,0 +1,23 @@
+---- MODULE HODestr ----
+EXTENDS Naturals
+VARIABLE st
+CONSTANT MAXDEPTH
+
+vars == << st >>
+
+----
+----
+
+Init == st = Inc(Zero)
+
+Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
+
+RECURSIVE reduce(_)
+reduce(x) ==
+  State_match(x, Zero,
+    LAMBDA s : State_match(reduce(s), Inc(Zero), LAMBDA sr : Inc(Inc(sr)), LAMBDA sr : sr),
+    LAMBDA s : State_match(reduce(s), Dec(Zero), LAMBDA sr : sr, LAMBDA sr : Dec(Dec(sr)))
+  )
+
+Inv == []( ~ ( reduce(st) = Dec(Zero) ))
+====

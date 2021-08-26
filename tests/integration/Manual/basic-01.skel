@@ -1,0 +1,16 @@
+---- MODULE BasicOne ----
+EXTENDS Naturals
+VARIABLE b
+CONSTANT MAXDEPTH
+
+vars == << b >>
+
+----
+----
+
+Init == b \in SetOfBool
+
+Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
+
+Inv == []( ~ ( b = True ))
+====

@@ -1,0 +1,5 @@
+.stack-work/
+*~
+dist*
+.direnv/
+.envrc

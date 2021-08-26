@@ -1,0 +1,48 @@
+verbatim:
+  cabal-version: 2.4
+
+name: pirouette
+version: 0.0.0
+extra-source-files:
+  - LICENSE
+  - README.md
+
+dependencies:
+  - base >= 4.9 && < 5
+  - mtl >= 2.2.2
+  - bytestring
+  - containers
+  - freer-extras
+  - lens
+  - plutus-core
+  - text
+  - prettyprinter
+  - gitrev
+  - optparse-applicative
+  - parsec
+  - megaparsec
+  - flat >= 0.4.5
+  - uniplate
+  - hspec
+  - tlaplus
+  - QuickCheck
+  - bound
+  - interpolate
+  - deriving-compat
+
+library:
+  source-dirs: src
+
+executable:
+  main: Main.hs
+  source-dirs: executable
+  dependencies:
+    - pirouette
+
+tests:
+  spec:
+    main: Spec.hs
+    source-dirs:
+      - tests/unit
+    dependencies:
+      - pirouette

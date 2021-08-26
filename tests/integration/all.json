@@ -1,0 +1,84 @@
+[ { "name"       : "Manual Basic 1"
+  , "cd"         : "Manual"
+  , "pir"        : "basic-01.pir"
+  , "output"     : "BasicOne.tla"
+  , "options"    : "-s basic-01.skel --prefix transition -a UserInp,b --action-wrapper \"b' = ___\""
+  , "tla"        : "tlacli check --constant MAXDEPTH 10 -- BasicOne.tla"
+  }
+
+, { "name"       : "Manual Basic 1 - Counter Example"
+  , "cd"         : "Manual"
+  , "pir"        : "basic-01.pir"
+  , "output"     : "BasicOne.tla"
+  , "options"    : "-s basic-01.skel --prefix transition -a UserInp,b --action-wrapper \"b' = ___\""
+  , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- BasicOne.tla"
+  , "expected"   : "Counter Example"
+  }
+
+, { "name"       : "Manual Basic 2 - Temporal Property"
+  , "cd"         : "Manual"
+  , "pir"        : "basic-02.pir"
+  , "output"     : "BasicTwo.tla"
+  , "options"    : "-s basic-02.skel --prefix transition -p 1 -a UserInp,st"
+  , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- BasicTwo.tla"
+  , "expected"   : "Temporal property violated"
+  }
+
+, { "name"       : "Manual Advanced"
+  , "cd"         : "Manual"
+  , "pir"        : "advanced.pir"
+  , "output"     : "Advanced.tla"
+  , "options"    : "-s advanced.skel --prefix transition -a UserInp,st -p 1"
+  , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- Advanced.tla"
+  }
+
+, { "name"       : "Manual HO Destructor 1"
+  , "cd"         : "Manual"
+  , "pir"        : "ho-destr.pir"
+  , "output"     : "HODestr.tla"
+  , "options"    : "-s ho-destr.skel --prefix transition -a UserInp,st"
+  , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- HODestr.tla"
+  , "expected"   : "Counter-example"
+  }
+
+, { "name"       : "Manual HO Constructor 1"
+  , "cd"         : "Manual"
+  , "pir"        : "ho-constr-simple-transi.pir"
+  , "output"     : "HOConstr.tla"
+  , "options"    : "-s ho-constr.skel --prefix transition -a st,UserInp"
+  , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- HOConstr.tla"
+  , "expected"   : "Counter-example"
+  }
+
+, { "name"       : "Manual HO Constructor 2"
+  , "cd"         : "Manual"
+  , "pir"        : "ho-constr-ho-transi.pir"
+  , "output"     : "HOConstr.tla"
+  , "options"    : "-s ho-constr.skel --prefix transition -a UserInp"
+  , "tla"        : "tlacli check --constant MAXDEPTH 4 --property Inv -- HOConstr.tla"
+  , "expected"   : "Counter-example"
+  , "pending"    : "Waiting until general defunctionalization work"
+  }
+
+, { "name"       : "GameStateMachine"
+  , "cd"         : "GameStateMachine"
+  , "pir"        : "GameStateMachine.flat"
+  , "output"     : "Game.tla"
+  , "options"    : "-s Skeleton.tla --prefix transi -p 2 -a st,UserInp --action-wrapper \"LET res == ___ IN st' = res.arg1 /\\ txConstr' = res.arg0\""
+  , "tla"        : "tlacli check --constant MAXDEPTH 2 --model-values mPol tok pk1 pk2 pk3 pk4 pk5 --property Inv -- Game.tla"
+  , "expected"   : "Temporal property violated"
+  , "slow"       : true
+  }
+
+, { "name"       : "MultiSigStateMachine Silly Invariant"
+  , "cd"         : "MultiSigStateMachine"
+  , "pir"        : "MultiSigStateMachine.flat"
+  , "options"    : "-aparam,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res.arg1 /\\ txConstr' = res.arg0\" --prefix transition -p 2"
+  , "output"     : "Contract.tla"
+  , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
+  , "tla"        : "tlc Contract_MC"
+  , "expected"   : "Counter Example"
+  , "slow"       : true
+  , "pending"    : "We need to bring plain tlc to CI"
+  }
+]
