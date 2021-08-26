@@ -28,7 +28,7 @@ deriving instance Data P.DefaultFun
 
 -- TODO: actually check that the given name is a constructor of
 -- a declared 'Bool' datatype.
-termIsBoolVal :: (MonadPirouette m) => Bool -> PirouetteTerm -> m Bool
+termIsBoolVal :: (MonadPirouette m) => Bool -> PrtTerm -> m Bool
 termIsBoolVal b (R.Free (FreeName n)) = consIsBoolVal b n
 termIsBoolVal _ _                     = return False
 
@@ -42,14 +42,14 @@ consIsMaybeVal n
   | otherwise                 = fail "Not a constructor from Maybe"
 
 -- TODO: Similarly to 'termIsBoolVal', check this is really a unit type
-typeIsUnit :: (MonadPirouette m) => PirouetteType -> m Bool
+typeIsUnit :: (MonadPirouette m) => PrtType -> m Bool
 typeIsUnit (R.TyApp (R.F (TyFree n)) []) = return $ nameString n == "Unit"
 typeIsUnit _                             = return False
 
 tynameIsBool :: (MonadPirouette m) => Name -> m Bool
 tynameIsBool n = return $ nameString n == "Bool"
 
-typeIsBool :: (MonadPirouette m) => PirouetteType -> m Bool
+typeIsBool :: (MonadPirouette m) => PrtType -> m Bool
 typeIsBool (R.TyApp (R.F (TyFree n)) []) = tynameIsBool n
 typeIsBool _ = return False
 
@@ -68,8 +68,8 @@ nameIsITE _ = False
 -- > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK])
 --
 unDest :: (MonadPirouette m)
-       => PirouetteTerm
-       -> MaybeT m (Name, TyName, [PirouetteType], PirouetteTerm, PirouetteType, [PirouetteTerm])
+       => PrtTerm
+       -> MaybeT m (Name, TyName, [PrtType], PrtTerm, PrtType, [PrtTerm])
 unDest (R.App (R.F (FreeName n)) args) = do
   tyN <- isDest n
   let (tyArgs, args1) = span R.isTyArg args
@@ -83,8 +83,8 @@ unDest _ = fail "unDest: not an R.App"
 
 -- |Analogous to 'unDest', but works fro constructors.
 unCons :: (MonadPirouette m)
-       => PirouetteTerm
-       -> MaybeT m (TyName, [PirouetteType], Int, [PirouetteTerm])
+       => PrtTerm
+       -> MaybeT m (TyName, [PrtType], Int, [PrtTerm])
 unCons (R.App (R.F (FreeName n)) args) = do
   (idx, tyN) <- isConst n
   let (tyArgs, args1) = span R.isTyArg args

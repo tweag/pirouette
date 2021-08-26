@@ -114,8 +114,8 @@ optsToTlaOpts co = do
 -----------------------
 
 main :: IO ()
-main = Opt.execParser pirtlaOpts >>= \(cliOpts, file, opts) ->
-  pirtla file opts $ do
+main = Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
+  pirouette file opts $ do
     flushLogs $ logInfo ("Running with opts: " ++ show opts)
     mainOpts cliOpts
 
@@ -142,7 +142,7 @@ ecTooManyDefs = ExitFailure 16
 -- |Converts a PIR file to a term, displaying the results to the user.
 -- The 'CliOpts' argument controls which transformations should be applied,
 -- which definitions the user is interested into, etc...
-mainOpts :: forall m . (MonadIO m) => CliOpts -> PirouetteT m ()
+mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtT m ()
 mainOpts opts = do
   sortedNames <- processDecls opts
   allDecls <- gets decls
@@ -169,7 +169,7 @@ mainOpts opts = do
       putStrLn' ""
     printCTree name _ = throwError' $ PEOther (show name ++ " is not a function")
 
-    toTla :: [[Name]] -> Name -> PirouetteTerm -> PirouetteT m ()
+    toTla :: [[Name]] -> Name -> PrtTerm -> PrtT m ()
     toTla sortedNames n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' sortedNames n t
@@ -180,7 +180,7 @@ mainOpts opts = do
 -- Meaning that if `n0` and `n1` are in the same list, they are mutually dependent,
 -- and if `n0` is in a list which is before the one which contains `n1`,
 -- then `n0` does not depend of `n1` (`n1` might depend of `n0` or not).
-processDecls :: (MonadIO m) => CliOpts -> PirouetteT m [[Name]]
+processDecls :: (MonadIO m) => CliOpts -> PrtT m [[Name]]
 processDecls opts = do
   ds  <- gets decls
   let allNames = M.keys ds
@@ -191,7 +191,7 @@ processDecls opts = do
   return $ reverse remainingNames
   where
     -- `transfo` contains the transformations applied to every term.
-    transfo :: MonadPirouette m => PirouetteTerm -> m PirouetteTerm
+    transfo :: MonadPirouette m => PrtTerm -> m PrtTerm
     transfo =  constrDestrId
            >=> removeExcessiveDestArgs
            >=> cfoldmapSpecialize
@@ -218,8 +218,8 @@ processDecls opts = do
       fmap (++) (sortDeps before) <*> (((d : equiv) :) <$> sortDeps after)
 
     go :: (MonadIO m)
-       => ([[Name]], Decls Name P.DefaultFun, [(Name, PirouetteTerm)]) -> [Name]
-       -> PirouetteT m ([[Name]], Decls Name P.DefaultFun, [(Name, PirouetteTerm)])
+       => ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)]) -> [Name]
+       -> PrtT m ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)])
     -- An empty dependency class should not exist.
     go (names, decls, transfo) []  = undefined
     go (names, decls, transfo) [k] =
@@ -253,8 +253,8 @@ processDecls opts = do
       return (remNames : names, finalDecls, newTransfo ++ transfo)
 
     expanseClass :: (MonadIO m)
-                 => Decls Name P.DefaultFun -> [(Name, PirouetteTerm)] -> [Name] -> [Name]
-                 -> PirouetteT m ([Name], Decls Name P.DefaultFun, [(Name, PirouetteTerm)])
+                 => Decls Name P.DefaultFun -> [(Name, PrtTerm)] -> [Name] -> [Name]
+                 -> PrtT m ([Name], Decls Name P.DefaultFun, [(Name, PrtTerm)])
     -- When all the name have been treated, the function terminates.
     expanseClass decls transfo acc []       = return (acc, decls, transfo)
     expanseClass decls transfo acc (k : ks) =
@@ -283,7 +283,7 @@ processDecls opts = do
     -- `transfoPrefix` contains the transformations applied only to the function we are focused on.
     transfoPrefix :: (MonadIO m)
                   => Decls Name P.DefaultFun -> Name
-                  -> PirouetteT m (Decls Name P.DefaultFun)
+                  -> PrtT m (Decls Name P.DefaultFun)
     transfoPrefix decls k =
       flushLogs $ do
         logDebug ("Processing " ++ show k)
@@ -297,20 +297,20 @@ processDecls opts = do
               undefined
         return $ M.insert k d' decls
 
-    relevantTransfo :: MonadPirouette m => PirouetteTerm -> m PirouetteTerm
+    relevantTransfo :: MonadPirouette m => PrtTerm -> m PrtTerm
     relevantTransfo =   destrNF
        >=> removeExcessiveDestArgs
        >=> maybe return pullNthDestr (pullDestr opts)
 
 -- ** Auxiliar Defs
 
-pirtla :: (MonadIO m) => FilePath -> PirouetteOpts -> PirouetteT m a -> m a
-pirtla pir opts f =
+pirouette :: (MonadIO m) => FilePath -> PrtOpts -> PrtT m a -> m a
+pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
-    let st = PirouetteState decls M.empty toplvl
-    (eres, msgs) <- runPirouetteT opts st f
+    let st = PrtState decls M.empty toplvl
+    (eres, msgs) <- runPrtT opts st f
     mapM_ printLogMessage msgs
     case eres of
       Left  err -> liftIO $ print err >> exitWith ecInternalError
@@ -318,7 +318,7 @@ pirtla pir opts f =
 
 withDecls :: (MonadIO m, Show l)
           => Program P.TyName P.Name P.DefaultUni P.DefaultFun l
-          -> (PirouetteTerm -> Decls Name P.DefaultFun -> m a)
+          -> (PrtTerm -> Decls Name P.DefaultFun -> m a)
           -> m a
 withDecls pir cont =
   case runExcept $ trProgram pir of
@@ -374,19 +374,19 @@ contains str n = T.pack str `T.isPrefixOf` nameString n
 -- * CLI Parsers  * --
 ----------------------
 
-pirtlaOpts :: Opt.ParserInfo (CliOpts, FilePath, PirouetteOpts)
-pirtlaOpts = Opt.info ((,,) <$> parseCliOpts
+pirouetteOpts :: Opt.ParserInfo (CliOpts, FilePath, PrtOpts)
+pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
                             <*> parseArgument
                             <*> parseOptions
                             <**> Opt.helper
                             <**> versionOpts)
            $ Opt.fullDesc
             <> Opt.header vERSIONSTR
-            <> Opt.footer "Run pirtla COMMAND --help for more help on specific commands"
+            <> Opt.footer "Run pirouette COMMAND --help for more help on specific commands"
             <> Opt.progDesc pd
   where
     pd = unwords
-           [ "Runs pirtla with the specified command."
+           [ "Runs pirouette with the specified command."
            , "The program exists with 0 for success and non-zero for failure."
            ]
 
@@ -469,8 +469,8 @@ parseExpansionExcl = Opt.option (Just <$> Opt.maybeReader (Just . r))
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")
 
-parseOptions :: Opt.Parser PirouetteOpts
-parseOptions = PirouetteOpts <$> parseLogLevel
+parseOptions :: Opt.Parser PrtOpts
+parseOptions = PrtOpts <$> parseLogLevel
                           <*> parseLogFocus
 
 parseLogFocus :: Opt.Parser [String]
@@ -500,7 +500,7 @@ parseLogLevel = asum
   ]
 
 vERSIONSTR :: String
-vERSIONSTR = "pirtla [" ++ $(gitBranch) ++ "@" ++ $(gitHash) ++ "]"
+vERSIONSTR = "pirouette [" ++ $(gitBranch) ++ "@" ++ $(gitHash) ++ "]"
 
 versionOpts :: Opt.Parser (a -> a)
 versionOpts = Opt.infoOption vERSIONSTR (Opt.long "version")

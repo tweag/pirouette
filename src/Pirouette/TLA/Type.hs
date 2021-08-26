@@ -16,32 +16,32 @@ import           Data.String
 -- a given TLA type.
 data TlaType
   -- |Represents polymorphism and is mostly ignored, its there just to make sure
-  -- we can reuse bound variables from PirouetteType
+  -- we can reuse bound variables from PrtType
   = TlaAll (R.Ann Name) R.Kind TlaType
   -- |A term with type 'TlaOp' will be translated to a TLA operator that
-  -- receives a number of arguments and returns a /value/ of the given 'PirouetteType'
-  | TlaOp   [TlaType] PirouetteType
+  -- receives a number of arguments and returns a /value/ of the given 'PrtType'
+  | TlaOp   [TlaType] PrtType
   -- |A term with type 'TlaTyOp' will be translated to a TLA operator that
-  -- receives a number of arguments and returns a /set/ of values of the given 'PirouetteType'
-  | TlaTyOp [TlaType] PirouetteType
+  -- receives a number of arguments and returns a /set/ of values of the given 'PrtType'
+  | TlaTyOp [TlaType] PrtType
     -- |Represents a TLA value of the given type
-  | TlaVal PirouetteType
+  | TlaVal PrtType
   -- |Represents a TLA set of the given type
-  | TlaSet PirouetteType
+  | TlaSet PrtType
   deriving (Eq, Show)
 
-tlaTySubst :: Sub PirouetteType -> TlaType -> TlaType
+tlaTySubst :: Sub PrtType -> TlaType -> TlaType
 tlaTySubst s (TlaAll t k body) = TlaAll t k (tlaTySubst (liftSub s) body)
 tlaTySubst s (TlaOp ts res)    = TlaOp   (map (tlaTySubst s) ts) (subst s res)
 tlaTySubst s (TlaTyOp ts res)  = TlaTyOp (map (tlaTySubst s) ts) (subst s res)
 tlaTySubst s (TlaVal v)        = TlaVal (subst s v)
 tlaTySubst s (TlaSet v)        = TlaSet (subst s v)
 
-tlaTyApp :: TlaType -> PirouetteType -> TlaType
+tlaTyApp :: TlaType -> PrtType -> TlaType
 tlaTyApp (TlaAll _ _ t) m = tlaTySubst (singleSub m) t
 tlaTyApp _ _              = error "tlaTyApp: Can't apply to monomorphic types"
 
-tlaTyAppN :: TlaType -> [PirouetteType] -> TlaType
+tlaTyAppN :: TlaType -> [PrtType] -> TlaType
 tlaTyAppN = foldl' tlaTyApp
 
 tlaTyRet :: TlaType -> TlaType
@@ -58,7 +58,7 @@ tlaTyDropAll (TlaAll _ _ t) = tlaTyDropAll t
 tlaTyDropAll t = t
 
 -- |Applies a free name to a number of ordered bound variables.
-tyApp :: Name -> [(Name, R.Kind)] -> PirouetteType
+tyApp :: Name -> [(Name, R.Kind)] -> PrtType
 tyApp n vs = R.TyApp (R.F $ TyFree n)
            $ zipWith (\i (n, _) -> R.tyPure (R.B (R.Ann n) $ fromIntegral i)) (reverse [0 .. length vs - 1]) vs
 
@@ -72,19 +72,19 @@ tlaTyBool = TlaVal pirTyBool
 tlaTyBS :: TlaType
 tlaTyBS = TlaVal pirTyBS
 
-pirTyNat :: PirouetteType
+pirTyNat :: PrtType
 pirTyNat = R.tyPure $ R.F $ TyBuiltin PIRTypeInteger
 
-pirTyBool :: PirouetteType
+pirTyBool :: PrtType
 pirTyBool = R.tyPure $ R.F $ TyBuiltin PIRTypeBool
 
-pirTyBS :: PirouetteType
+pirTyBS :: PrtType
 pirTyBS = R.tyPure $ R.F $ TyBuiltin PIRTypeByteString
 
 tlaAll :: [(Name, R.Kind)] -> TlaType -> TlaType
 tlaAll = flip (foldr (\(n, k) t -> TlaAll (R.Ann n) k t))
 
-returnType :: TlaType -> PirouetteType
+returnType :: TlaType -> PrtType
 returnType (TlaAll _ _ t) = returnType t
 returnType (TlaOp _ t) = t
 returnType (TlaVal t) = t
@@ -94,15 +94,15 @@ arity :: TlaType -> Int
 arity (TlaOp  xs _) = length xs
 arity _             = 0
 
-tlaOp :: [TlaType] -> PirouetteType -> TlaType
+tlaOp :: [TlaType] -> PrtType -> TlaType
 tlaOp [] = TlaVal
 tlaOp xs = TlaOp xs
 
-toTlaOpType :: PirouetteType -> TlaType
+toTlaOpType :: PrtType -> TlaType
 toTlaOpType (R.TyAll v k t) = TlaAll v k (toTlaOpType t)
 toTlaOpType t               = uncurry tlaOp . first (map toTlaOpType) . R.tyFunArgs $ t
 
-toTlaHdOpType :: PirouetteType -> TlaType
+toTlaHdOpType :: PrtType -> TlaType
 toTlaHdOpType (R.TyAll v k t) = TlaAll v k (toTlaHdOpType t)
 toTlaHdOpType t               = uncurry tlaOp . first (map TlaVal) . R.tyFunArgs $ t
 

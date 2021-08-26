@@ -24,20 +24,20 @@ import           Data.Generics.Uniplate.Operations
 
 -- * The Pirouette Monad
 --
--- $pirtlamonad
+-- $pirouettemonad
 --
--- The pirtla monad provides us with all the relevant type-checking functionality
+-- The pirouette monad provides us with all the relevant type-checking functionality
 -- for our translation into TLA.
 
 -- |The compiler state consists in:
-data PirouetteState = PirouetteState
+data PrtState = PrtState
   { decls :: Decls Name DefaultFun
   , deps  :: M.Map Name (S.Set (R.Arg Name Name))
-  , prog  :: PirouetteTerm
+  , prog  :: PrtTerm
   }
 
 -- |Read-only options
-data PirouetteOpts = PirouetteOpts
+data PrtOpts = PrtOpts
   { logLevel :: LogLevel
   , logFocus :: [String]
   } deriving (Show)
@@ -46,34 +46,34 @@ data PirouetteOpts = PirouetteOpts
 --
 -- TODO: make a more complex error structure and borrow the context from
 --       the logger monad!
-data PirouetteError
+data PrtError
   = PENotAType Name
   | PENotATerm Name
   | PEUndefined Name
   | PEOther String
   deriving (Eq, Show)
 
-data PirouetteErrorCtx = PirouetteErrorCtx
+data PrtErrorCtx = PrtErrorCtx
   { logCtx  :: [String]
-  , message :: PirouetteError
+  , message :: PrtError
   } deriving (Eq, Show)
 
 -- |Pirouette functionality
-class ( MonadLogger m, MonadState PirouetteState m, MonadError PirouetteErrorCtx m
-      , MonadReader PirouetteOpts m, MonadFail m)
+class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
+      , MonadReader PrtOpts m, MonadFail m)
  => MonadPirouette m where
   -- |Returns the definition associated with a given name. Raises a 'PEUndefined'
   -- if the name doesn't exist.
-  defOf     :: Name -> m PirouetteDef
+  defOf     :: Name -> m PrtDef
 
   -- |Returns the type and term-level dependencies associated with a name,
   -- memoizes the result for future queries.
   depsOf    :: Name -> m (S.Set (R.Arg Name Name))
 
-  typeDefOf :: Name -> m PirouetteTypeDef
+  typeDefOf :: Name -> m PrtTypeDef
   typeDefOf n = defOf n >>= maybe (throwError' $ PENotAType n) return . fromTypeDef
 
-  termDefOf :: Name -> m PirouetteTerm
+  termDefOf :: Name -> m PrtTerm
   termDefOf n = defOf n >>= maybe (throwError' $ PENotATerm n) return . fromTermDef
 
   isDest :: Name -> MaybeT m TyName
@@ -109,7 +109,7 @@ consIsRecursive ty con = do
   return $ any (\a -> R.TyArg ty `S.member` typeNames a) conArgs
 
 -- |Returns the type of an identifier
-typeOfIdent :: (MonadPirouette m) => Name -> m PirouetteType
+typeOfIdent :: (MonadPirouette m) => Name -> m PrtType
 typeOfIdent n = do
   dn <- defOf n
   case dn of
@@ -131,24 +131,24 @@ depsOnAny f n ms = or <$> mapM (depsOnLT n . f) ms
 
 -- TODO: maybe pull the except monad to the top; we'd want to get the resulting
 -- state even in case of an error.
-newtype PirouetteT m a = PirouetteT
-  { unPirouette :: StateT PirouetteState (ReaderT PirouetteOpts (ExceptT PirouetteErrorCtx (LoggerT m))) a }
+newtype PrtT m a = PrtT
+  { unPirouette :: StateT PrtState (ReaderT PrtOpts (ExceptT PrtErrorCtx (LoggerT m))) a }
   deriving newtype ( Functor, Applicative, Monad
-                   , MonadError PirouetteErrorCtx, MonadState PirouetteState, MonadReader PirouetteOpts
+                   , MonadError PrtErrorCtx, MonadState PrtState, MonadReader PrtOpts
                    , MonadIO
                    )
 
-throwError' :: (MonadError PirouetteErrorCtx m, MonadLogger m) => PirouetteError -> m a
+throwError' :: (MonadError PrtErrorCtx m, MonadLogger m) => PrtError -> m a
 throwError' msg = do
-  err <- flip PirouetteErrorCtx msg <$> context
+  err <- flip PrtErrorCtx msg <$> context
   throwError err
 
-instance (Monad m) => MonadPirouette (PirouetteT m) where
+instance (Monad m) => MonadPirouette (PrtT m) where
   defOf  n = gets (M.lookup n . decls) >>= maybe (throwError' $ PEUndefined n) return
 
   depsOf = pushCtx "depsOf" . go S.empty
     where
-      go :: (Monad m) => S.Set Name -> Name -> PirouetteT m (S.Set (R.Arg Name Name))
+      go :: (Monad m) => S.Set Name -> Name -> PrtT m (S.Set (R.Arg Name Name))
       go stack n = do
         mr <- gets (M.lookup n . deps)
         case mr of
@@ -172,8 +172,8 @@ instance (Monad m) => MonadPirouette (PirouetteT m) where
           let stack' = S.insert n stack
           S.unions . (deps0 :) <$> mapM (R.argElim (go stack') (go stack')) (S.toList deps0)
 
-instance (Monad m) => MonadLogger (PirouetteT m) where
-  logMsg lvl msg = PirouetteT $ do
+instance (Monad m) => MonadLogger (PrtT m) where
+  logMsg lvl msg = PrtT $ do
     l     <- asks logLevel
     focus <- asks logFocus
     ctx   <- lift $ lift $ lift context
@@ -183,16 +183,16 @@ instance (Monad m) => MonadLogger (PirouetteT m) where
       isFocused ctx []    = True
       isFocused ctx focus = any (`elem` focus) ctx
 
-  context     = PirouetteT $ lift $ lift $ lift context
-  pushCtx ctx = PirouetteT . mapStateT (mapReaderT . mapExceptT $ pushCtx ctx) . unPirouette
+  context     = PrtT $ lift $ lift $ lift context
+  pushCtx ctx = PrtT . mapStateT (mapReaderT . mapExceptT $ pushCtx ctx) . unPirouette
 
-instance (Monad m) => MonadFail (PirouetteT m) where
+instance (Monad m) => MonadFail (PrtT m) where
   fail msg = throwError' (PEOther msg)
 
-runPirouetteT :: (Monad m)
-           => PirouetteOpts -> PirouetteState -> PirouetteT m a
-           -> m (Either PirouetteErrorCtx a, [LogMessage])
-runPirouetteT opts st = runLoggerT . runExceptT . flip runReaderT opts . flip evalStateT st . unPirouette
+runPrtT :: (Monad m)
+           => PrtOpts -> PrtState -> PrtT m a
+           -> m (Either PrtErrorCtx a, [LogMessage])
+runPrtT opts st = runLoggerT . runExceptT . flip runReaderT opts . flip evalStateT st . unPirouette
 
-flushLogs :: (MonadIO m) => PirouetteT m a -> PirouetteT m a
-flushLogs = PirouetteT . mapStateT (mapReaderT . mapExceptT $ flushLogger) . unPirouette
+flushLogs :: (MonadIO m) => PrtT m a -> PrtT m a
+flushLogs = PrtT . mapStateT (mapReaderT . mapExceptT $ flushLogger) . unPirouette

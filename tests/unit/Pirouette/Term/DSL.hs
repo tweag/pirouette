@@ -30,7 +30,7 @@ mkNewName c = do
       | n `elem` env = Nothing
       | otherwise    = Just n
 
-stub :: PirouetteType
+stub :: PrtType
 stub = R.tyPure (R.F $ S.TyFree $ Name "stub" Nothing)
 
 type TestTerm = R.AnnTerm (R.AnnType Name (R.Var Name (TypeBase Name)))
@@ -38,7 +38,7 @@ type TestTerm = R.AnnTerm (R.AnnType Name (R.Var Name (TypeBase Name)))
                                 (R.Var Name (PIRBase P.DefaultFun Name))
 type TermM = TermGenM TestTerm
 
-term :: TermM -> PirouetteTerm
+term :: TermM -> PrtTerm
 term gent = runReader gent []
 
 class Abs t where

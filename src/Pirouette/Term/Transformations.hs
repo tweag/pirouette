@@ -48,7 +48,7 @@ import qualified Data.Map as M
 -- can break things. In the example above, @b/greaterThanEqualsInteger@ returns a plutus builtin boolean,
 -- whereas the @ifThenElse@ is returning an element of a @(datatypedecl ... Bool)@.
 --
-etaIfThenElse :: (MonadPirouette m) => PirouetteTerm -> m PirouetteTerm
+etaIfThenElse :: (MonadPirouette m) => PrtTerm -> m PrtTerm
 etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
   where
     go r@(R.App (R.F n) [R.TyArg _, R.Arg x, R.Arg t, R.Arg f]) = do
@@ -62,17 +62,17 @@ etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
 -- * Polymorphic Transformations
 
 -- |Specialize @cfoldableNil_cfoldMap@ applied to the disjunctive bool and endofunction monoids
-cfoldmapSpecialize :: forall m . (MonadPirouette m) => PirouetteTerm -> m PirouetteTerm
+cfoldmapSpecialize :: forall m . (MonadPirouette m) => PrtTerm -> m PrtTerm
 cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
   where
-    isCfoldmap :: (Monad t) => PirouetteTerm -> MaybeT t (PirouetteType, PirouetteType, [PirouetteTerm])
+    isCfoldmap :: (Monad t) => PrtTerm -> MaybeT t (PrtType, PrtType, [PrtTerm])
     isCfoldmap (R.App (R.F (FreeName n)) (R.TyArg m : R.TyArg a : args)) = do
       guard ("fFoldableNil_cfoldMap" `T.isPrefixOf` nameString n)
       args' <- mapM (wrapMaybe . R.fromArg) args
       return (m , a , args')
     isCfoldmap _ = fail "not cfoldmap"
 
-    go :: PirouetteTerm -> MaybeT m PirouetteTerm
+    go :: PrtTerm -> MaybeT m PrtTerm
     go t = do
       (m, a, args) <- isCfoldmap t
       tyIsBool <- lift $ typeIsBool m
@@ -91,7 +91,7 @@ cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
 
     -- fFoldableNil_cfoldMap_200 (all m_201 (type) (all a_202 (type) (fun [Monoid_130 m_201] (fun (fun a_202 m_201) (fun [List_29 a_202] m_201)))))
 
-    goBool :: PirouetteType -> PirouetteType -> [PirouetteTerm] -> MaybeT m PirouetteTerm
+    goBool :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
     goBool m a [mon,f,xs] = do
       foldrName <- lift $ nameForPrefix "foldr"
       boolMatch <- lift $ nameForPrefix "Bool_match"
@@ -110,7 +110,7 @@ cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
           zero = R.App (R.F $ FreeName false) []
        in return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg zero, R.Arg xs]
 
-    goEndo :: PirouetteType -> PirouetteType -> [PirouetteTerm] -> MaybeT m PirouetteTerm
+    goEndo :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
     goEndo m a [mon,f,xs,k] = do
       foldrName <- lift $ nameForPrefix "foldr"
       let annA = R.Ann "a"
@@ -162,10 +162,10 @@ cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
 -- > v = [d/Bool x T[thunk := Unit] F[thunk := Unit]]
 -- Generally v = [d/Bool T F] since `thunk` has no reason to appear in `T` and `F`.
 --
-removeExcessiveDestArgs :: (MonadPirouette m) => PirouetteTerm -> m PirouetteTerm
+removeExcessiveDestArgs :: (MonadPirouette m) => PrtTerm -> m PrtTerm
 removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PirouetteTerm -> MaybeT m PirouetteTerm
+    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
       (n, tyN, tyArgs, x, tyReturn@(R.TyFun tyA tyB), cases) <- unDest t
       Datatype _ _ _ cons <- lift $ typeDefOf tyN
@@ -181,7 +181,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
               ++ [R.Arg x, R.TyArg $ tyDrop (length excess) tyReturn]
               ++ zipWith (\(_,cty) t -> R.Arg $ appExcessive excess cty t) cons cases'
 
-    appExcessive :: [PirouetteTerm] -> Type Name -> PirouetteTerm -> PirouetteTerm
+    appExcessive :: [PrtTerm] -> Type Name -> PrtTerm -> PrtTerm
     appExcessive l (R.TyFun a b) (R.Lam n ty t) =
       R.Lam n ty (appExcessive (map (shift 1) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
     appExcessive l (R.TyFun a b) _              =
@@ -189,16 +189,16 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
     appExcessive l _             t              =
        R.appN t $ map R.Arg l
 
-    tyDrop :: Int -> PirouetteType -> PirouetteType
+    tyDrop :: Int -> PrtType -> PrtType
     tyDrop 0 t             = t
     tyDrop n (R.TyFun a b) = tyDrop (n-1) b
     tyDrop n t             = undefined -- If `n` is not 0, then the type must be an arrow.
 
 -- |Simpler version of 'removeExcessiveArgs' that removes arguments of type Unit only.
-removeThunks :: (MonadPirouette m) => PirouetteTerm -> m PirouetteTerm
+removeThunks :: (MonadPirouette m) => PrtTerm -> m PrtTerm
 removeThunks = pushCtx "removeThunks" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PirouetteTerm -> MaybeT m PirouetteTerm
+    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
       (n, tyN, tyArgs, x, R.TyFun tyA tyB, cases) <- unDest t
       isUnit <- lift $ typeIsUnit tyA
@@ -220,7 +220,7 @@ removeThunks = pushCtx "removeThunks" . rewriteM (runMaybeT . go)
 -- |`expandDefsIn transfo decls k` modifies the definition of `k` in `decls`
 -- by expanding all names in `transfo` with their definition.
 expandDefsIn :: (MonadPirouette m)
-             => [(Name, PirouetteTerm)] -> Decls Name P.DefaultFun -> Name
+             => [(Name, PrtTerm)] -> Decls Name P.DefaultFun -> Name
              -> m (Decls Name P.DefaultFun)
 expandDefsIn transfo decls k =
   pushCtx ("expanding Def of " ++ show (pretty k)) $ do
@@ -236,8 +236,8 @@ expandDefsIn transfo decls k =
     -- The first argument is only used to separate variables when
     -- the inlining is performed.
     rewriteDef :: (MonadPirouette m)
-               => PirouetteTerm -> [(Name, PirouetteTerm)] -> PirouetteTerm
-               -> MaybeT m PirouetteTerm
+               => PrtTerm -> [(Name, PrtTerm)] -> PrtTerm
+               -> MaybeT m PrtTerm
     rewriteDef t l (R.App (R.F (FreeName n)) args) =
       case lookup n l of
         Just u -> do
@@ -252,10 +252,10 @@ expandDefsIn transfo decls k =
 
 
 -- |Expand non-recursive definitions
-expandDefs :: (MonadPirouette m) => (Name -> Bool) -> PirouetteTerm -> m PirouetteTerm
+expandDefs :: (MonadPirouette m) => (Name -> Bool) -> PrtTerm -> m PrtTerm
 expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PirouetteTerm -> MaybeT m PirouetteTerm
+    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go (R.App (R.F (FreeName n)) args) = do
       isRec <- lift $ termIsRecursive n
       if dontExpand n || isRec
@@ -272,10 +272,10 @@ expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
 --
 -- > [d/Maybe [c/Just X] N (\ J)] == [J X]
 --
-constrDestrId :: (MonadPirouette m) => PirouetteTerm -> m PirouetteTerm
+constrDestrId :: (MonadPirouette m) => PrtTerm -> m PrtTerm
 constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PirouetteTerm -> MaybeT m PirouetteTerm
+    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
       (_, tyN, tyArgs, x, ret, cases) <- unDest t
       (tyN', xTyArgs, xIdx, xArgs) <- unCons x
@@ -298,27 +298,27 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
 -- >  [d/Maybe x $(destrNF [f N a0 a1]) (\ $(destrNF [f J a0 a1]))]
 --
 -- that is, we push the application of f down to the branches of the "case" statement.
-destrNF :: forall m . (MonadPirouette m) => PirouetteTerm -> m PirouetteTerm
+destrNF :: forall m . (MonadPirouette m) => PrtTerm -> m PrtTerm
 destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
   where
     onApp :: (R.Var Name (PIRBase P.DefaultFun Name)
-               -> [R.Arg PirouetteType PirouetteTerm] -> MaybeT m PirouetteTerm)
-          -> PirouetteTerm -> m PirouetteTerm
+               -> [R.Arg PrtType PrtTerm] -> MaybeT m PrtTerm)
+          -> PrtTerm -> m PrtTerm
     onApp f t@(R.App n args) = fromMaybe t <$> runMaybeT (f n args)
     onApp _ t                = return t
 
     -- Returns a term that is a destructor from a list of terms respecting
     -- the invariant that if @splitDest t == Just (xs , d , ys)@, then @t == xs ++ [d] ++ ys@
-    splitDest :: [R.Arg PirouetteType PirouetteTerm]
-              -> MaybeT m ( PirouetteTerm
-                          , ListZipper (R.Arg PirouetteType PirouetteTerm))
+    splitDest :: [R.Arg PrtType PrtTerm]
+              -> MaybeT m ( PrtTerm
+                          , ListZipper (R.Arg PrtType PrtTerm))
     splitDest [] = fail "splitDest: can't split empty list"
     splitDest (a@(R.Arg a2@(R.App (R.F (FreeName n)) args)) : ds) =
           (isDest n >> return (a2, ListZipper ([], ds)))
       <|> (splitDest ds <&> second (zipperCons a))
     splitDest (a : ds) = splitDest ds <&> second (zipperCons a)
 
-    go :: PirouetteTerm -> MaybeT m PirouetteTerm
+    go :: PrtTerm -> MaybeT m PrtTerm
     go (R.App (R.B _ _)           fargs) = fail "destrNF.go: bound name"
     go (R.App (R.F (FreeName fn)) fargs) = do
       -- check this is an application that is /not/ a destructor then
@@ -342,7 +342,7 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
     go _ = fail "destrNF.go: not an app"
 
 -- |Assuming a DNF term, swap the nth and the (n+1)th destructor counting from the root being 0.
-swapNthDestr :: (MonadPirouette m) => Int -> PirouetteTerm -> MaybeT m PirouetteTerm
+swapNthDestr :: (MonadPirouette m) => Int -> PrtTerm -> MaybeT m PrtTerm
 swapNthDestr 0 t                  = swapDestr t
 swapNthDestr n (R.Abs v ki t)     = R.Abs v ki <$> swapNthDestr n t
 swapNthDestr n (R.Lam v ty t)     = R.Lam v ty <$> swapNthDestr n t
@@ -354,7 +354,7 @@ swapNthDestr n t = do
 
 -- |Assuming a DNF term, pulls the n-th destructor to the top-level by swapping it
 -- with the (n-1)-th, then (n-2)-th, etc. until we swap with the topmost destructor.
-pullNthDestr :: (MonadPirouette m) => Int -> PirouetteTerm -> m PirouetteTerm
+pullNthDestr :: (MonadPirouette m) => Int -> PrtTerm -> m PrtTerm
 pullNthDestr n t = do
   mres <- runMaybeT $ foldl' (\m i -> m >>= swapNthDestr i) (return t) [n-1,n-2 .. 0]
   case mres of
@@ -408,7 +408,7 @@ pullNthDestr n t = do
 -- have map that to @2 + f (6 - 2)@, which is #3, and will refer to the correct variable.
 -- That adjustment is the responsibility of the 'permute' function, however.
 --
-swapDestr :: (MonadPirouette m) => PirouetteTerm -> MaybeT m PirouetteTerm
+swapDestr :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
 swapDestr (R.Abs x ty body)     = R.Abs x ty <$> swapDestr body
 swapDestr (R.Lam x ty body)     = R.Lam x ty <$> swapDestr body
 swapDestr t = pushCtx "swapDestr" $ do
@@ -471,12 +471,12 @@ swapDestr t = pushCtx "swapDestr" $ do
     processMatrix :: [[(n, (i, a))]] -> [(i, [(n, a)])]
     processMatrix = map (first head . unzip) . transpose . map (map (\(i, (n, a)) -> (n, (i, a))))
 
-    rename :: ([(Name,a)],[(n,PirouetteTerm)]) -> ([(Name,a)],[(n,PirouetteTerm)])
+    rename :: ([(Name,a)],[(n,PrtTerm)]) -> ([(Name,a)],[(n,PrtTerm)])
     rename (x,l) =
       (x, map (second (R.renameFirstBounds (reverse (map fst x)))) l)
 
-    adapt :: [(Name, PirouetteType)] -> [(Name, PirouetteType)]
-          -> PirouetteTerm -> PirouetteTerm
+    adapt :: [(Name, PrtType)] -> [(Name, PrtType)]
+          -> PrtTerm -> PrtTerm
     adapt outer [] t = t
     adapt outer i  t =
       let louter = toInteger $ length outer
@@ -504,11 +504,11 @@ swapDestr t = pushCtx "swapDestr" $ do
 -- names as much as possible.
 data ScopedDestApp = ScopedDestApp
   { destName   :: Name
-  , cutoff'    :: [(Name, PirouetteType)]
-  , destOf     :: (Name, [PirouetteType])
-  , destVal    :: PirouetteTerm
-  , destRetTy  :: PirouetteType
-  , branches   :: [([(Name, PirouetteType)], PirouetteTerm)]
+  , cutoff'    :: [(Name, PrtType)]
+  , destOf     :: (Name, [PrtType])
+  , destVal    :: PrtTerm
+  , destRetTy  :: PrtType
+  , branches   :: [([(Name, PrtType)], PrtTerm)]
   } deriving (Show)
 
 cutoff :: ScopedDestApp -> Integer
@@ -523,7 +523,7 @@ sameDestVal sda1 sda2 = destOf sda1 == destOf sda2
 
 -- |Checks whether a term is a sequence of lambdas followed by a destructor application,
 -- if so, keep all the relevant information in a record to help us stay organized.
-toScopedDestApp :: (MonadPirouette m) => PirouetteTerm -> MaybeT m ScopedDestApp
+toScopedDestApp :: (MonadPirouette m) => PrtTerm -> MaybeT m ScopedDestApp
 toScopedDestApp = go []
   where
     go c (R.Abs _         ty body) = fail "toScopedDestApp: type abstraction inside destructor"

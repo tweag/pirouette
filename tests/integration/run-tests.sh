@@ -182,7 +182,7 @@ run-single-test() {
 
   set +e
   mecho blue "    - Running pirouette"
-  eval "cabal exec pirtla -- $pir $options > $output"
+  eval "cabal exec pirouette -- $pir $options > $output"
   res=$?
   set -e
 
@@ -229,7 +229,7 @@ run-single-test() {
 
 mecho blue "Building pirouette"
 cabal build
-if [[ "$(basename $(pwd))" == "pirtla" ]]; then
+if [[ "$(basename $(pwd))" == "pirouette" ]]; then
   cd tests/integration
 fi
 

@@ -144,7 +144,7 @@ mkTLASpecWrapper exp =
 -- >                              , AS_InfixOP  AS_EQ (AS_PostfixOP  AS_Prime (AS_Ident  [] "s")) (AS_Num  3)])
 -- >                ]}
 
--- * Translating PirouetteTerm to TLA
+-- * Translating PrtTerm to TLA
 
 -- ** TLA Translation Monad
 
@@ -213,7 +213,7 @@ tlaWithTyVars tyvs f = do
 -- |Translates a term to a TLA specification by first symbolically executing the term
 -- then translating the necessary parts.
 termToSpec :: (MonadPirouette m)
-           => TlaOpts -> [[Name]] -> Name -> PirouetteTerm
+           => TlaOpts -> [[Name]] -> Name -> PrtTerm
            -> m TLA.AS_Spec
 termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"
@@ -317,7 +317,7 @@ trTermNameRec n = do
       (:[]) <$> trTermDecl n t tlaTy
     _ -> return []
 
-trTermDecl :: (MonadPirouette m) => Name -> PirouetteTerm -> TlaType -> TlaT m (TLA.AS_UnitDef, TLA.AS_UnitDef)
+trTermDecl :: (MonadPirouette m) => Name -> PrtTerm -> TlaType -> TlaT m (TLA.AS_UnitDef, TLA.AS_UnitDef)
 trTermDecl n term tlaTy = do
   let (tyargs, term') = R.getHeadAbs term
   let (args,   body)  = R.getHeadLams term'
@@ -329,13 +329,13 @@ trTermDecl n term tlaTy = do
        $ TLA.AS_OperatorDef diu False hd <$> trTerm body (TlaVal $ returnType tlaTy)
   return (dec, def)
   where
-    funToUnderscores :: PirouetteType -> [TLA.AS_Expression]
+    funToUnderscores :: PrtType -> [TLA.AS_Expression]
     funToUnderscores t = map (const $ tlaIdent "_") . fst $ R.tyFunArgs t
 
-    declArgs :: Name -> PirouetteType -> (TLA.AS_Expression, TlaType)
+    declArgs :: Name -> PrtType -> (TLA.AS_Expression, TlaType)
     declArgs n ty = (tlaIdent n, toTlaOpType ty)
 
-    extractVars :: Name -> PirouetteType -> TLA.AS_Expression
+    extractVars :: Name -> PrtType -> TLA.AS_Expression
     extractVars n ty =
       let i = R.tyMonoArity ty in
       if i == 0
@@ -385,7 +385,7 @@ matchToAction t            = tlaPure (logDebug ("tree: " ++ show (pretty t)))
 -- *** Translating Types
 
 trTypeDecl :: (MonadPirouette m)
-            => Name -> PirouetteTypeDef -> TlaT m [TLA.AS_UnitDef]
+            => Name -> PrtTypeDef -> TlaT m [TLA.AS_UnitDef]
 trTypeDecl tyName (Datatype _ tyVars destr constr) = do
   constr' <- mapM (uncurry (trConstrDecl tyVars)) constr
   destr'  <- trDestrDecl tyVars destr constr tyName
@@ -402,7 +402,7 @@ trTypeDecl tyName (Datatype _ tyVars destr constr) = do
 -- >
 -- > SetOfXXX(a,b) == UNION { BoundedSetOfXXX(n,a,b) : n \in 0 .. MAXDEPTH }
 --
-trBoundedSetDef :: (MonadPirouette m) => Name -> [(Name, R.Kind)] -> [(Name, PirouetteType)] -> TlaT m [TLA.AS_UnitDef]
+trBoundedSetDef :: (MonadPirouette m) => Name -> [(Name, R.Kind)] -> [(Name, PrtType)] -> TlaT m [TLA.AS_UnitDef]
 trBoundedSetDef tyName tyVars cons = do
   let tyArgs    = zipWith (\i (n, _) -> R.tyPure $ R.B (R.Ann n) $ fromIntegral i) (reverse [0 .. length tyVars - 1]) tyVars
   let tlaTyRes  = R.TyApp (R.F $ TyFree tyName) tyArgs
@@ -441,14 +441,14 @@ trBoundedSetDef tyName tyVars cons = do
     bsetOfBody b [] = tlaUnions $ map bsetOfCase b
     bsetOfBody b r  = tlaIf (tlaEq n (tlaNum 0)) (tlaUnions $ map bsetOfCase b) (tlaUnions $ map bsetOfCase r)
 
-    bsetOfCase :: (TyName, PirouetteType) -> TLA.AS_Expression
+    bsetOfCase :: (TyName, PrtType) -> TLA.AS_Expression
     bsetOfCase (conName, conTy) =
       let args = fst $ R.tyFunArgs conTy
        in tlaRecordType $ ("cons", tlaSingleton (tlaString conName))
                         -- : ("type", tlaSingleton (tlaString v))
                         : L.zipWith (\ty i -> (argField i, trSimpleType (reverse $ map fst tyVars) ty)) args [0..]
 
-    trSimpleType :: [Name] -> PirouetteType -> TLA.AS_Expression
+    trSimpleType :: [Name] -> PrtType -> TLA.AS_Expression
     trSimpleType env (R.TyFun t u) = TLA.AS_FunctionType di (trSimpleType env t) (trSimpleType env u)
     trSimpleType env (R.TyApp (R.F (TyFree tn)) args)
       | tn == tyName = tlaOpApp (tlaIdentPrefixed "BoundedSetOf" tn) . (nMinus1:) $ map (trSimpleType env) args
@@ -456,7 +456,7 @@ trBoundedSetDef tyName tyVars cons = do
     trSimpleType env (R.TyApp (R.F (TyBuiltin n)) args) = tlaOpApp (trBuiltinType n) (map (trSimpleType env) args)
     trSimpleType env (R.TyApp (R.B _ i) args) = tlaOpApp (tlaIdent $ env L.!! fromInteger i) $ map (trSimpleType env) args
 
-trType :: (MonadPirouette m) => PirouetteType -> TlaT m TLA.AS_Expression
+trType :: (MonadPirouette m) => PrtType -> TlaT m TLA.AS_Expression
 trType (R.TyApp n args)  = tlaOpApp <$> trTypeVar n <*> mapM trType args
 trType (R.TyFun t u)     = TLA.AS_FunctionType di <$> trType t <*> trType u
 trType (R.TyAll _ _ _)   = throwError' $ PEOther "NotYetImplemented TyAll"
@@ -481,7 +481,7 @@ trTypeVar (R.F (TyBuiltin ty)) = return $ trBuiltinType ty
 --
 -- > Left(x) == [cons |-> "Left", arg0 |-> x]
 --
-trConstrDecl :: (MonadPirouette m) => [(Name, R.Kind)] -> Name -> PirouetteType -> TlaT m TLA.AS_UnitDef
+trConstrDecl :: (MonadPirouette m) => [(Name, R.Kind)] -> Name -> PrtType -> TlaT m TLA.AS_UnitDef
 trConstrDecl tyVars conName conType = do
   let conArity = R.tyArity conType
   let opArgs   = take conArity $ map (TLA.AS_Ident di [] . ('x':) . show) [0..]
@@ -504,7 +504,7 @@ trConstrDecl tyVars conName conType = do
 -- >    $ TlaOp [TlaVal (Either 1 0), TlaOp [1] 2 , TlaOp [0] 2] 2
 --
 -- The definition for Either_match is a case statement on the cons field on the first argument.
-trDestrDecl :: (MonadPirouette m) => [(Name, R.Kind)] -> Name -> [(Name, PirouetteType)] -> Name -> TlaT m TLA.AS_UnitDef
+trDestrDecl :: (MonadPirouette m) => [(Name, R.Kind)] -> Name -> [(Name, PrtType)] -> Name -> TlaT m TLA.AS_UnitDef
 trDestrDecl tyVars destrName tyCons tyName = do
   -- Start by constructing the TlaType of the destructor:
   let tyRes  = R.tyPure (R.B (fromString "res") (fromIntegral $ length tyVars))
@@ -556,7 +556,7 @@ trBuiltinType (PIRTypePair t u) =
 -- > \E x \in $(trType tyX) : SomeAct(x)
 --      ^^^^^^^^^^^^^^^^^^^
 --
-trQBoundN :: (MonadPirouette m) => Name -> PirouetteType -> TlaT m TLA.AS_QBoundN
+trQBoundN :: (MonadPirouette m) => Name -> PrtType -> TlaT m TLA.AS_QBoundN
 trQBoundN n ty = TLA.AS_QBoundN [tlaIdent n] <$> trType ty
 
 -- *** Translating Terms
@@ -576,7 +576,7 @@ trQBoundN n ty = TLA.AS_QBoundN [tlaIdent n] <$> trType ty
 -- >                                 IN globalState' = res.arg0
 -- >                                 /\ TxConstraints' = res.arg1
 --
-trTree :: (MonadPirouette m) => CTree Name -> PirouetteType -> TlaT m TLA.AS_Expression
+trTree :: (MonadPirouette m) => CTree Name -> PrtType -> TlaT m TLA.AS_Expression
 trTree (Choose cases) ty = tlaOr <$> mapM (flip trTree ty) cases
 trTree (cstr :&: tr)  ty = trConstrainedExp cstr (trTree tr ty)
 trTree (Result t)     ty = wrapExp <$> asks toActionWrapper <*> trTerm t (TlaVal ty)
@@ -605,7 +605,7 @@ trConstrainedExp (Fact b t) mexp = do
   exp <- mexp
   return $ tlaAnd [ (if b then tlaNeg else id) t', exp]
 
--- |When translating the body of a PirouetteTerm, we also receive the 'TlaType' that we expect
+-- |When translating the body of a PrtTerm, we also receive the 'TlaType' that we expect
 -- from the translation. For example, the Just constructor is declared with
 -- the following TLA type:
 --
@@ -636,7 +636,7 @@ trConstrainedExp (Fact b t) mexp = do
 -- Hence, when translating the @(\x -> x + 1)@ in this context, we know re're translating
 -- it as a 'TlaOp'
 --
-trTerm :: forall m . (MonadPirouette m) => PirouetteTerm -> TlaType -> TlaT m TLA.AS_Expression
+trTerm :: forall m . (MonadPirouette m) => PrtTerm -> TlaType -> TlaT m TLA.AS_Expression
 trTerm = go
   where
     lamOrFun (TlaVal _)   x ty body = tlaFun x ty body

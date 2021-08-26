@@ -108,7 +108,7 @@ instance (Pretty name) => Pretty (CTree name) where
 -- the term in question is of the form @\ a b ... zz -> case i of ... @,
 -- or, in words, its a closed WHNF abstraction whose body starts by pattern
 -- matching on whatever value is supposed to be the user's input.
-execute :: forall m . (MonadPirouette m) => PirouetteTerm -> m (CTree Name)
+execute :: forall m . (MonadPirouette m) => PrtTerm -> m (CTree Name)
 execute (R.App (R.F (nameIsITE -> True)) [R.Arg x, R.Arg t, R.Arg f])
   = Choose <$> sequence [ (Fact False x :&:) <$> execute t
                         , (Fact True  x :&:) <$> execute f
@@ -123,7 +123,7 @@ execute t = do
       let ty = R.TyApp (R.F $ TyFree tyName) tyArgs
       Choose <$> zipWithM (constructMatching x ty) cases cons
      where
-      constructMatching :: PirouetteTerm -> PirouetteType -> PirouetteTerm -> (Name, PirouetteType)
+      constructMatching :: PrtTerm -> PrtType -> PrtTerm -> (Name, PrtType)
                         -> m (CTree Name)
       constructMatching v ty t (conName, conTy) =
         -- do
@@ -153,7 +153,7 @@ pruneMaybe (Choose ts) = lift (mapMaybeM pruneMaybe ts) >>= choose
   where choose [] = fail "empty tree"
         choose ts = return (Choose ts)
 
-termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PirouetteTerm -> m (CTree Name)
+termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtTerm -> m (CTree Name)
 termToCTree opts name t = do
   let (args, body) = R.getHeadLams (R.appN t $ map (R.Arg . flip R.App [] . flip R.B 0 . R.Ann . fromString) (coWithArguments opts))
   unless (null args) $

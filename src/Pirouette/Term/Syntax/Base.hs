@@ -141,7 +141,7 @@ data PIRBase fun n
   | FreeName n
   deriving (Eq, Show, Functor, Data, Typeable)
 
--- |A 'Term' represents pirtla terms with disambiguated free names
+-- |A 'Term' represents pirouette terms with disambiguated free names
 type Term name fun = Raw.Term (Type name) (Raw.Var name (PIRBase fun name))
 
 -- |Returns all the names used by a term

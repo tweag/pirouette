@@ -27,9 +27,9 @@ import qualified Data.Set  as Set
 import qualified Data.Map  as M
 import qualified Data.Text as T
 
--- * Mocking a number of definitions for the PirouetteT monad
+-- * Mocking a number of definitions for the PrtT monad
 
-testingDefs :: [(S.Name, S.PirouetteDef)]
+testingDefs :: [(S.Name, S.PrtDef)]
 testingDefs =
   [("destMaybe", S.DDestructor "Maybe")
   ,("destEither", S.DDestructor "Either")
@@ -44,50 +44,50 @@ testingDefs =
  where
    stubsFor n = (n , S.DConstructor 0 n)
 
-testState = PirouetteState (M.fromList testingDefs) M.empty undefined
+testState = PrtState (M.fromList testingDefs) M.empty undefined
 
-testOpts = PirouetteOpts DEBUG []
+testOpts = PrtOpts DEBUG []
 
-runPirouetteTest :: PirouetteT Identity a -> a
-runPirouetteTest = either (error . show) id . fst . runIdentity . runPirouetteT testOpts testState
+runPrtTest :: PrtT Identity a -> a
+runPrtTest = either (error . show) id . fst . runIdentity . runPrtT testOpts testState
 
 -- * Actual Tests
 
 swapDestrIdemp :: String -> TestTerm -> Spec
 swapDestrIdemp n t = do
   it ("is idempotent for " ++ show n) $
-    runPirouetteTest (runMaybeT $ swapDestr t >>= swapDestr) `shouldBe` Just t
+    runPrtTest (runMaybeT $ swapDestr t >>= swapDestr) `shouldBe` Just t
 
 swapDestrFails :: String -> TestTerm -> Spec
 swapDestrFails n t = do
   it ("fails for " ++ show n) $
-    runPirouetteTest (runMaybeT $ swapDestr t) `shouldBe` Nothing
+    runPrtTest (runMaybeT $ swapDestr t) `shouldBe` Nothing
 
 dnfId :: String -> TestTerm -> Spec
 dnfId n t = do
   it ("is the identity for " ++ show n) $
-    runPirouetteTest (destrNF t) `shouldBe` t
+    runPrtTest (destrNF t) `shouldBe` t
 
 dnfExpected :: (String, TestTerm, TestTerm) -> Spec
 dnfExpected (n, t, res) = do
   it ("destrNF " ++ show n ++ " matches expectation") $
-    runPirouetteTest (destrNF t) `shouldBe` res
+    runPrtTest (destrNF t) `shouldBe` res
 
 spec = do
   describe "swap-destructors" $ do
     -- We don't need to check that swapDestr tSwap2 == Just tSwap1 because
     -- it is implied by 'swapDestr tSwap1 == Just tSwap2' and 'swapDestrIdemp tSwap1'
     it "works for Maybe and Either" $
-       runPirouetteTest (runMaybeT $ swapDestr tSwap1) `shouldBe` Just tSwap2
+       runPrtTest (runMaybeT $ swapDestr tSwap1) `shouldBe` Just tSwap2
 
     it "works for Maybe and Expr" $
-       runPirouetteTest (runMaybeT $ swapDestr tSwap4) `shouldBe` Just tSwap5
+       runPrtTest (runMaybeT $ swapDestr tSwap4) `shouldBe` Just tSwap5
 
     it "works for Maybe and Simpl" $
-       runPirouetteTest (runMaybeT $ swapDestr tSwap6) `shouldBe` Just tSwap7
+       runPrtTest (runMaybeT $ swapDestr tSwap6) `shouldBe` Just tSwap7
 
     it "works for Maybe and Maybe" $
-       runPirouetteTest (runMaybeT $ swapDestr tSwap9) `shouldBe` Just tSwap10
+       runPrtTest (runMaybeT $ swapDestr tSwap9) `shouldBe` Just tSwap10
 
     mapM_ (uncurry swapDestrIdemp) tSwaps
 
@@ -95,7 +95,7 @@ spec = do
 
   describe "pullNthDestr" $ do
     it "works for tSwap8" $
-      runPirouetteTest (pullNthDestr 2 tSwap8) `shouldBe` tSwap8_2
+      runPrtTest (pullNthDestr 2 tSwap8) `shouldBe` tSwap8_2
 
   describe "dnf" $ do
     mapM_ (uncurry dnfId) tSwaps

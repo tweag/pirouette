@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Pirouette.Term.Syntax
   ( module EXPORT
-  , PirouetteTerm, PirouetteType, PirouetteDef, PirouetteTypeDef
+  , PrtTerm, PrtType, PrtDef, PrtTypeDef
   , Name(..), ToName(..), TyName
   , separateBoundFrom
   , declsUniqueNames
@@ -31,10 +31,10 @@ import           Data.String
 -- Pirouette terms and types are simply 'Term' and 'Type' with their type variables
 -- instantiated.
 
-type PirouetteTerm    = Term Name P.DefaultFun
-type PirouetteType    = Type Name
-type PirouetteDef     = Definition Name P.DefaultFun
-type PirouetteTypeDef = TypeDef Name
+type PrtTerm    = Term Name P.DefaultFun
+type PrtType    = Type Name
+type PrtDef     = Definition Name P.DefaultFun
+type PrtTypeDef = TypeDef Name
 
 -- * Names
 
@@ -179,7 +179,7 @@ termUNCollect = R.termTrimapM typeUNCollect return collectVar
         _                -> return ()
       return v
 
-typeUNCollect :: PirouetteType -> UNCollectM PirouetteType
+typeUNCollect :: PrtType -> UNCollectM PrtType
 typeUNCollect = mapM collectVar
   where
     collectVar :: R.Var Name (TypeBase Name) -> UNCollectM (R.Var Name (TypeBase Name))
@@ -217,7 +217,7 @@ termUNSubst = R.termTrimapM typeUNSubst return subst
     subst (R.F (FreeName n)) = R.F . FreeName <$> unNameSubst n
     subst x                  = return x
 
-typeUNSubst :: PirouetteType -> UNSubstM PirouetteType
+typeUNSubst :: PrtType -> UNSubstM PrtType
 typeUNSubst = R.tyBimapM return subst
   where
     subst (R.F (TyFree n))  = R.F . TyFree <$> unNameSubst n
