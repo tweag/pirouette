@@ -18,18 +18,14 @@ jobs:
         with:
           packages: |
             tlacli
-      - name: Install jq.
-        run: |
-          sudo apt-get install jq
-      - name: Install happy.
-        run: |
-          cd ..
-          cabal update
-          cabal install happy
-      - name: chmod the test script.
+      - name: Chmod test script, install jq and happy
         run: |
           chmod u+x tests/integration/run-tests.sh
-      - name: Building and testing of pirtla.
+          sudo apt-get install jq
+          cd .. # It's important to cd out of the root, otherwise cabal will try to build deps in the cabal.project file
+          cabal update
+          cabal install happy
+      - name: Building and testing Pirouette.
         run: |
           nix-shell --run "./tests/integration/run-tests.sh --ci" --allowed-uris 'https://github.com/NixOS/nixpkgs https://github.com/input-output-hk https://github.com/NixOS/nixpkgs-channels' --option trusted-public-keys "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" --option substituters "https://hydra.iohk.io https://iohk.cachix.org https://cache.nixos.org/"
 

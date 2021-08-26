@@ -402,7 +402,7 @@ parseCliOpts = CliOpts <$> parseStage
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
                      (  Opt.long "with-args"
-                     <> Opt.short 'A'
+                     <> Opt.short 'a'
                      <> Opt.value []
                      <> Opt.metavar "STR[,STR]*"
                      <> Opt.help "Renames the transition function arguments to the specified list")
