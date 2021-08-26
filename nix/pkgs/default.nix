@@ -15,6 +15,8 @@ let
 
   hlint = plutus.plutus.hlint;
 
+  happy = plutus.plutus.happy;
+
   cabal-install = plutus.plutus.cabal-install;
 
   stylish-haskell = plutus.plutus.stylish-haskell;
@@ -24,5 +26,5 @@ let
   cardano-repo-tool = plutus.plutus.cardano-repo-tool;
 in
 {
-  inherit haskell hlint cabal-install stylish-haskell haskell-language-server cardano-repo-tool;
+  inherit haskell hlint cabal-install stylish-haskell haskell-language-server cardano-repo-tool happy;
 }
