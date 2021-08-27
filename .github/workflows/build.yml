@@ -18,6 +18,12 @@ jobs:
         with:
           packages: |
             tlacli
+      - name: Install tlc.
+        run: |
+          mkdir ~/tlaplus/
+          cd ~/tlaplus
+          wget https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
+          alias tlc="java -cp ~/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC"
       - name: Chmod test script, install jq and happy
         run: |
           chmod u+x tests/integration/run-tests.sh

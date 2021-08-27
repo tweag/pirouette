@@ -73,12 +73,11 @@
 , { "name"       : "MultiSigStateMachine Silly Invariant"
   , "cd"         : "MultiSigStateMachine"
   , "pir"        : "MultiSigStateMachine.flat"
-  , "options"    : "-aparam,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res.arg1 /\\ txConstr' = res.arg0\" --prefix transition -p 2"
+  , "options"    : "-a param,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res.arg1 /\\ txConstr' = res.arg0\" --prefix transition -p 2"
   , "output"     : "Contract.tla"
   , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
   , "tla"        : "tlc Contract_MC"
   , "expected"   : "Counter Example"
   , "slow"       : true
-  , "pending"    : "We need to bring plain tlc to CI"
   }
 ]
