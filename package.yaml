@@ -29,6 +29,7 @@ dependencies:
   - bound
   - interpolate
   - deriving-compat
+  - aeson
 
 library:
   source-dirs: src

@@ -1,0 +1,9 @@
+{
+  "spzSet" : "___(a) == LET BoundSetOfList(x,n) == [1 .. x -> a] IN UNION { BoundSetOfList(a,n) : n \\in 0 .. MAXDEPTH }",
+  "spzConstructors" : [
+    {"cons" : "___ == << >>"},
+    {"cons" : "___(hd,tl) == << hd >> \\o tl"}
+  ],
+  "spzDestructor" :
+    "___(l, cNil, cCons(_,_)) == IF l = << >> THEN cNil ELSE LET hd == Head(l) tl == Tail(l) IN cCons(hd,tl)"
+}

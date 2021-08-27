@@ -21,6 +21,7 @@ import           Pirouette.Term.Transformations
 import           Pirouette.PlutusIR.Utils
 import           Pirouette.TLA.Syntax
 import           Pirouette.TLA.Type
+import           Pirouette.TLA.Specializer
 
 import qualified PlutusCore as P
 
@@ -35,7 +36,7 @@ import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
 
 import           Data.Functor ( ($>) )
-import           Data.Maybe ( mapMaybe, isJust )
+import Data.Maybe ( mapMaybe, isJust, catMaybes )
 import           Data.Generics.Uniplate.Operations
 import           Data.String
 import           Data.Bifunctor (bimap)
@@ -43,7 +44,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.List as L
-import Data.Maybe (catMaybes)
+import qualified Data.Aeson as Aeson
 
 import qualified Language.TLAPlus.Pretty as TLA
 
@@ -57,7 +58,8 @@ newtype TLAExprWrapper = TLAExprWrapper { wrapExp :: TLA.AS_Expression -> TLA.AS
 mkTLAExprWrapper :: (MonadPirouette m) => String -> m TLAExprWrapper
 mkTLAExprWrapper exp =
   case P.runParser TLA.expression TLA.mkState "mkTLAExprWrapper" exp of
-    Left err   -> pushCtx "mkTLAExprWrapper" $ fail $ show err
+    Left err   -> pushCtx "mkTLAExprWrapper" $
+      fail $ "Error with " ++ exp ++ "\n " ++ show err
     Right expr -> return $ TLAExprWrapper $ \e -> rewrite (go e) expr
   where
     go e (TLA.AS_Ident _ [] "___") = Just e
@@ -79,6 +81,36 @@ mkTLASpecWrapper exp =
     expand [] _ = []
     expand (TLA.AS_Separator d : us) e = TLA.AS_Separator d : e ++ us
     expand (u                  : us) e = u : expand us e
+
+newtype TLAUnitWrapper = TLAUnitWrapper { wrapUnit :: TLA.AS_Expression -> TLA.AS_UnitDef }
+
+type TLASpecializer = DatatypeEncoding TLAUnitWrapper
+
+-- |Given a string which parses as a TLA declaration of operator @D@, produces a wrapper that
+-- given another expression @x@, substitutes the name of the operator @tlaIdent "___"@ for @x@ in @D@.
+mkTLAUnitWrapper :: (MonadPirouette m, MonadIO m) => String -> m TLAUnitWrapper
+mkTLAUnitWrapper exp =
+  case P.runParser TLA.unit1 TLA.mkState "mkTLAUnitWrapper" exp of
+    Left err -> pushCtx "mkTLAUnitWrapper" $ fail $ show err
+    Right ud -> return $ TLAUnitWrapper $ \e -> go e ud
+  where
+    go e (TLA.AS_OperatorDef iU b (TLA.AS_OpHead (TLA.AS_Ident _ [] "___") args) body) = TLA.AS_OperatorDef iU b (TLA.AS_OpHead e args) body
+
+mkTLATySpecializer :: (MonadPirouette m, MonadIO m)
+                   => [(String, FilePath)]
+                   -> m [(String,TLASpecializer)]
+mkTLATySpecializer = mapM (secondM represent)
+  where
+    secondM :: (Monad m) => (b -> m c) -> (a, b) -> m (a, c)
+    secondM f (a, b) = do
+      c <- f b
+      return (a, c)
+    represent :: (MonadPirouette m, MonadIO m) => FilePath -> m TLASpecializer
+    represent path = do
+      tyEnc <- liftIO $ Aeson.eitherDecodeFileStrict path
+      case tyEnc of
+        Left err -> throwError' $ PEOther err
+        Right tyEnc -> traverse mkTLAUnitWrapper tyEnc
 
 -- * TLA AST Example
 --
@@ -160,6 +192,7 @@ data TlaOpts = TlaOpts
   { toSymbExecOpts  :: CTreeOpts
   , toActionWrapper :: TLAExprWrapper
   , toSkeleton      :: TLASpecWrapper
+  , toSpecialize    :: [(String, TLASpecializer)]
   }
 
 data TlaState = TlaState
@@ -241,14 +274,14 @@ termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runRead
     -- If the symbol is not mutually recursive
     -- (or was, but the mutuality has been eliminated),
     -- then one uses the tr***Name to translate it.
-    trOneClass [d] = R.argElim trTypeName trTermName d
+    trOneClass [d] = R.argElim (trTypeName opts) trTermName d
     -- If some symbols remain mutually recursive,
     -- their treatment is different.
     trOneClass mut = do
       tlaPure $ logDebug "Declaring Mutually Recursive Definitions"
       mapM_ (R.argElim (const $ return ()) declareTermNameMutRec) mut
       (mrtys, mrterms) <-
-        unzipCop <$> mapM (R.argElim (fmap Left . trTypeName) (fmap Right . trTermNameRec)) mut
+        unzipCop <$> mapM (R.argElim (fmap Left . trTypeName opts) (fmap Right . trTermNameRec)) mut
       let mrtys' = concat mrtys
       let (mrtermDecls, mrtermDefs) = unzip $ concat mrterms
       unless (null mrtys') (tlaPure $ logWarn "I have mutually recursive datatypes and I don't know what to do with them.")
@@ -295,8 +328,17 @@ termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runRead
           throwError' $ PEOther "The main function is mutually recursive, this case is not handled yet!"
       else return False
 
-trTypeName :: (MonadPirouette m) => Name -> TlaT m [TLA.AS_UnitDef]
-trTypeName n = tlaPure (typeDefOf n) >>= trTypeDecl n
+trTypeName :: (MonadPirouette m) => TlaOpts -> Name -> TlaT m [TLA.AS_UnitDef]
+trTypeName opts n = do
+  tyDef <- tlaPure (typeDefOf n)
+  decl <- trTypeDecl n tyDef
+  case lookup (T.unpack $ nameString n) (toSpecialize opts) of
+    Nothing -> return decl
+    Just (DatatypeEncoding set c dest) ->
+      return $
+        go set ("SetOf",n) : go dest (destructor tyDef) : zipWith (go . cons) c (map fst (constructors tyDef))
+  where
+    go x = wrapUnit x . tlaIdent
 
 trTermName :: (MonadPirouette m) => Name -> TlaT m [TLA.AS_UnitDef]
 trTermName n = tlaPushCtx (show n) $ tlaPushCtx "trTermName" $ do
@@ -886,7 +928,7 @@ trBuiltin P.TakeByteString args       = tlaPartialApp2 (tlaApp2 ("Plutus", "Take
 trBuiltin P.DropByteString args       = tlaPartialApp2 (tlaApp2 ("Plutus", "DropByteString")) args
 trBuiltin P.EqByteString  args        = tlaPartialApp2 tlaEq args
 trBuiltin P.IfThenElse  [x,y,z]       = return $ TLA.AS_IF di x y z
-trBuiltin P.SHA2 args                 = return $ tlaOpApp (tlaIdent "SHA2") args
+trBuiltin P.SHA2 args                 = tlaPartialApp  (tlaApp1 "SHA2") args
 trBuiltin bin args = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
 
 tlaPartialApp
@@ -912,6 +954,9 @@ tlaPartialApp2 f [x] = do
   return $ TLA.AS_Lambda di [y] (f x y)
 tlaPartialApp2 f [x,y] = return $ f x y
 tlaPartialApp2 _ _     = throwError' $ PEOther "tlaPartialApp2: Overapplied f"
+
+tlaApp1 :: (TLAIdent n) => n -> TLA.AS_Expression -> TLA.AS_Expression
+tlaApp1 f x = tlaOpApp (tlaIdent f) [x]
 
 tlaApp2 :: (TLAIdent n) => n -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression
 tlaApp2 f x y = tlaOpApp (tlaIdent f) [x, y]

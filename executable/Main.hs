@@ -22,7 +22,7 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
 import Pirouette.Term.Transformations
-import Pirouette.Term.ConstraintTree
+import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 
@@ -79,6 +79,8 @@ data CliOpts = CliOpts
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
+  , pruneMaybe    :: Bool
+  , tySpecializer :: [(String, FilePath)]
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -86,7 +88,7 @@ data Stage = ToTerm | ToTLA | ToCTree
 
 optsToCTreeOpts :: CliOpts -> CTreeOpts
 optsToCTreeOpts co = CTreeOpts
-  { coPruneMaybe = True
+  { coPruneMaybe = not (pruneMaybe co)
   , coWithArguments = withArguments co
   }
 
@@ -95,10 +97,12 @@ optsToTlaOpts co = do
   skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
   skel  <- mkTLASpecWrapper skel0
   wr    <- mkTLAExprWrapper (exprWrapper co)
+  spz   <- mkTLATySpecializer (tySpecializer co)
   return $ TlaOpts
     { toSymbExecOpts = optsToCTreeOpts co
     , toActionWrapper = wr
     , toSkeleton = skel
+    , toSpecialize = spz
     }
   where
     defaultSkel = unlines
@@ -114,7 +118,7 @@ optsToTlaOpts co = do
 -----------------------
 
 main :: IO ()
-main = Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
+main = Opt.execParser prtOpts >>= \(cliOpts, file, opts) ->
   pirouette file opts $ do
     flushLogs $ logInfo ("Running with opts: " ++ show opts)
     mainOpts cliOpts
@@ -374,19 +378,19 @@ contains str n = T.pack str `T.isPrefixOf` nameString n
 -- * CLI Parsers  * --
 ----------------------
 
-pirouetteOpts :: Opt.ParserInfo (CliOpts, FilePath, PrtOpts)
-pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
+prtOpts :: Opt.ParserInfo (CliOpts, FilePath, PrtOpts)
+prtOpts = Opt.info ((,,) <$> parseCliOpts
                             <*> parseArgument
                             <*> parseOptions
                             <**> Opt.helper
                             <**> versionOpts)
            $ Opt.fullDesc
             <> Opt.header vERSIONSTR
-            <> Opt.footer "Run pirouette COMMAND --help for more help on specific commands"
+            <> Opt.footer "Run pirtla COMMAND --help for more help on specific commands"
             <> Opt.progDesc pd
   where
     pd = unwords
-           [ "Runs pirouette with the specified command."
+           [ "Runs pirtla with the specified command."
            , "The program exists with 0 for success and non-zero for failure."
            ]
 
@@ -398,6 +402,8 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
+                       <*> parsePruneMaybe
+                       <*> parseTySpecializer
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -423,7 +429,7 @@ parseExprWrapper = Opt.option Opt.str
                  (  Opt.long "action-wrapper"
                  <> Opt.short 'w'
                  <> Opt.value "st' = ___"
-                 <> Opt.metavar "TLA Expression"
+                 <> Opt.metavar "TLAExpression"
                  <> Opt.help "How to wrap the produced actions into action-formulas")
 
 parseStage :: Opt.Parser Stage
@@ -466,6 +472,23 @@ parseExpansionExcl = Opt.option (Just <$> Opt.maybeReader (Just . r))
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
 
+parsePruneMaybe :: Opt.Parser Bool
+parsePruneMaybe = Opt.switch
+                  (  Opt.long "dont-prune-maybe"
+                  <> Opt.help "Do not suppress the maybe type in the output of the transition function."
+                  )
+
+parseTySpecializer :: Opt.Parser [(String, FilePath)]
+parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
+                     ( Opt.long "ty-spz"
+                     <> Opt.value []
+                     <> Opt.help "Declare the types to be specialized and their specilization file")
+  where
+    r :: String -> [(String, FilePath)]
+    r = incouple . filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y])
+    incouple [] =[]
+    incouple (a:b:tl) = (a,b) : incouple tl
+
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")
 
@@ -500,7 +523,7 @@ parseLogLevel = asum
   ]
 
 vERSIONSTR :: String
-vERSIONSTR = "pirouette [" ++ $(gitBranch) ++ "@" ++ $(gitHash) ++ "]"
+vERSIONSTR = "pirtla [" ++ $(gitBranch) ++ "@" ++ $(gitHash) ++ "]"
 
 versionOpts :: Opt.Parser (a -> a)
 versionOpts = Opt.infoOption vERSIONSTR (Opt.long "version")
