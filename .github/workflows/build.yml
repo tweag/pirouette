@@ -13,6 +13,9 @@ jobs:
         uses: cachix/install-nix-action@v13
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+          substituters = https://hydra.iohk.io https://cache.nixos.org/
       - name: Install tlacli.
         uses: BSFishy/pip-action@v1
         with:
@@ -23,6 +26,7 @@ jobs:
           mkdir ~/tlaplus/
           cd ~/tlaplus
           wget https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
+          shopt -s expand_aliases
           alias tlc="java -cp ~/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC"
       - name: Chmod test script, install jq and happy
         run: |

@@ -1,8 +1,6 @@
 #! /bin/bash
 set -euo pipefail
 
-shopt expand_aliases
-
 ########################
 # Command Line Options #
 ########################
