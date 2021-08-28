@@ -18,10 +18,6 @@ jobs:
         with:
           packages: |
             tlacli
-      - name: Install tlc.
-        run: |
-          mkdir $HOME/tlaplus/
-          cd $HOME/tlaplus
       - name: Chmod test script, install jq and happy
         run: |
           chmod u+x tests/integration/run-tests.sh
@@ -29,10 +25,14 @@ jobs:
           cd .. # It's important to cd out of the root, otherwise cabal will try to build deps in the cabal.project file
           cabal update
           cabal install happy
-      - name: Install TLC, then build and test Pirouette.
+      - name: Add pwd to PATH
+        run: |
+          echo "$(pwd)" >> $GITHUB_PATH
+      - name: Install TLC then build and test Pirouette.
         run: |
           wget https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
-          shopt -s expand_aliases
-          alias tlc="java -cp $(pwd)/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC"
-          nix-shell --run "./tests/integration/run-tests.sh --ci" --allowed-uris 'https://github.com/NixOS/nixpkgs https://github.com/input-output-hk https://github.com/NixOS/nixpkgs-channels' --option trusted-public-keys "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" --option substituters "https://hydra.iohk.io https://iohk.cachix.org https://cache.nixos.org/"
+          echo "java -XX:+UseParallelGC -jar $(pwd)/tla2tools.jar \"$@\"" > tlc
+          chmod +x tlc
+          which tlc
+          # nix-shell --run "./tests/integration/run-tests.sh --ci" --allowed-uris 'https://github.com/NixOS/nixpkgs https://github.com/input-output-hk https://github.com/NixOS/nixpkgs-channels' --option trusted-public-keys "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" --option substituters "https://hydra.iohk.io https://iohk.cachix.org https://cache.nixos.org/"
 
