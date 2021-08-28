@@ -13,9 +13,6 @@ jobs:
         uses: cachix/install-nix-action@v13
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            substituters = https://hydra.iohk.io https://cache.nixos.org/
       - name: Install tlacli.
         uses: BSFishy/pip-action@v1
         with:
@@ -25,10 +22,6 @@ jobs:
         run: |
           mkdir $HOME/tlaplus/
           cd $HOME/tlaplus
-          wget https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
-          echo "java -cp $HOME/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC \"$@\"" > tlc
-          chmod u+x tlc
-          export PATH=$(pwd):$PATH
       - name: Chmod test script, install jq and happy
         run: |
           chmod u+x tests/integration/run-tests.sh
@@ -36,7 +29,10 @@ jobs:
           cd .. # It's important to cd out of the root, otherwise cabal will try to build deps in the cabal.project file
           cabal update
           cabal install happy
-      - name: Building and testing Pirouette.
+      - name: Install TLC, then build and test Pirouette.
         run: |
+          wget https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
+          shopt -s expand_aliases
+          alias tlc="java -cp $(pwd)/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC"
           nix-shell --run "./tests/integration/run-tests.sh --ci" --allowed-uris 'https://github.com/NixOS/nixpkgs https://github.com/input-output-hk https://github.com/NixOS/nixpkgs-channels' --option trusted-public-keys "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" --option substituters "https://hydra.iohk.io https://iohk.cachix.org https://cache.nixos.org/"
 
