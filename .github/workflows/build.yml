@@ -23,11 +23,12 @@ jobs:
             tlacli
       - name: Install tlc.
         run: |
-          mkdir ~/tlaplus/
-          cd ~/tlaplus
+          mkdir $HOME/tlaplus/
+          cd $HOME/tlaplus
           wget https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
-          shopt -s expand_aliases
-          alias tlc="java -cp ~/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC"
+          echo "java -cp $HOME/tlaplus/tla2tools.jar -XX:+UseParallelGC tlc2.TLC \"$@\"" > tlc
+          chmod u+x tlc
+          export PATH=$(pwd):$PATH
       - name: Chmod test script, install jq and happy
         run: |
           chmod u+x tests/integration/run-tests.sh
