@@ -14,11 +14,15 @@ fast=false
 # Speficies a regexp to match which tests we want to run
 matching=""
 
+# Only generate the TLA+ files but don't run TLA+
+gen_only=false
+
 while [[ $# -ge 1 ]]; do
   case $1 in
     --ci)   onci=true;;
     --fast) fast=true;;
     --matching) shift; matching=$1;;
+    --gen-only|-g) gen_only=true;;
     *)  echo "Unknown option: $1"; exit 1;;
   esac
   shift
@@ -47,12 +51,7 @@ mechoPref() {
     BLUE)   code="\e[46m" ;;
   esac
 
-  if $onci; then
-    echo "$1$3"
-  else
-    echo -e "$1${code}${3}\e[0m"
-  fi
-
+  echo -e "$1${code}${3}\e[0m"
 }
 
 mecho() {
@@ -196,29 +195,33 @@ run-single-test() {
     eval "$pp"
   fi
 
-  if [[ "$tlacmd" != "null" ]]; then
-    mecho blue "    - Running TLA+"
-    set +e
-    eval "$tlacmd > tla.out"
-    res=$?
-    set -e
-  fi
-
-  set +e
-  check-result "$expected" "$res"
-  fres=$?
-  set -e
-
-  if [[ "$fres" == "0" ]]; then
-    mechoPref "  " GREEN "+ OK"
+  if $gen_only; then
+    mecho blue "    - Not Running TLA+"
   else
-    mechoPref "  " RED "+ Fail"
-    mechoPref "    " red "- got: $res"
-    did_fail=true
-    cat tla.out
-  fi
+    if [[ "$tlacmd" != "null" ]]; then
+      mecho blue "    - Running TLA+"
+      set +e
+      eval "$tlacmd > tla.out"
+      res=$?
+      set -e
+    fi
 
-  rm tla.out "$output"
+    set +e
+    check-result "$expected" "$res"
+    fres=$?
+    set -e
+
+    if [[ "$fres" == "0" ]]; then
+      mechoPref "  " GREEN "+ OK"
+    else
+      mechoPref "  " RED "+ Fail"
+      mechoPref "    " red "- got: $res"
+      did_fail=true
+      cat tla.out
+    fi
+
+    rm tla.out "$output"
+  fi
 
   cd - > /dev/null
 }
