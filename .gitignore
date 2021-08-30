@@ -5,3 +5,4 @@ dist*
 .envrc
 temporary.cfg
 states/
+*.vscode
