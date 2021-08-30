@@ -187,6 +187,8 @@ run-single-test() {
 
   if [[ "$res" -ne "0" ]]; then
     mecho red "    ! pirouette failed"
+    mecho red "    !    ran with: $pir $options"  
+    mecho red "    !    redirected to: $output"
     return 1
   fi
 
