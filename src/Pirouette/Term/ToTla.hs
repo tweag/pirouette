@@ -21,7 +21,7 @@ import           Pirouette.Term.Transformations
 import           Pirouette.PlutusIR.Utils
 import           Pirouette.TLA.Syntax
 import           Pirouette.TLA.Type
-import           Pirouette.TLA.Specializer
+import           Pirouette.Specializer
 
 import qualified PlutusCore as P
 
@@ -82,35 +82,9 @@ mkTLASpecWrapper exp =
     expand (TLA.AS_Separator d : us) e = TLA.AS_Separator d : e ++ us
     expand (u                  : us) e = u : expand us e
 
-newtype TLAUnitWrapper = TLAUnitWrapper { wrapUnit :: TLA.AS_Expression -> TLA.AS_UnitDef }
-
-type TLASpecializer = DatatypeEncoding TLAUnitWrapper
-
--- |Given a string which parses as a TLA declaration of operator @D@, produces a wrapper that
--- given another expression @x@, substitutes the name of the operator @tlaIdent "___"@ for @x@ in @D@.
-mkTLAUnitWrapper :: (MonadPirouette m, MonadIO m) => String -> m TLAUnitWrapper
-mkTLAUnitWrapper exp =
-  case P.runParser TLA.unit1 TLA.mkState "mkTLAUnitWrapper" exp of
-    Left err -> pushCtx "mkTLAUnitWrapper" $ fail $ show err
-    Right ud -> return $ TLAUnitWrapper $ \e -> go e ud
-  where
-    go e (TLA.AS_OperatorDef iU b (TLA.AS_OpHead (TLA.AS_Ident _ [] "___") args) body) = TLA.AS_OperatorDef iU b (TLA.AS_OpHead e args) body
-
-mkTLATySpecializer :: (MonadPirouette m, MonadIO m)
-                   => [(String, FilePath)]
-                   -> m [(String,TLASpecializer)]
-mkTLATySpecializer = mapM (secondM represent)
-  where
-    secondM :: (Monad m) => (b -> m c) -> (a, b) -> m (a, c)
-    secondM f (a, b) = do
-      c <- f b
-      return (a, c)
-    represent :: (MonadPirouette m, MonadIO m) => FilePath -> m TLASpecializer
-    represent path = do
-      tyEnc <- liftIO $ Aeson.eitherDecodeFileStrict path
-      case tyEnc of
-        Left err -> throwError' $ PEOther err
-        Right tyEnc -> traverse mkTLAUnitWrapper tyEnc
+mkTLATySpecializer :: [String] -> String -> Maybe TypeSpecializer
+mkTLATySpecializer l s =
+  if elem s l then Just (allSpz s) else Nothing
 
 -- * TLA AST Example
 --
@@ -192,7 +166,7 @@ data TlaOpts = TlaOpts
   { toSymbExecOpts  :: CTreeOpts
   , toActionWrapper :: TLAExprWrapper
   , toSkeleton      :: TLASpecWrapper
-  , toSpecialize    :: [(String, TLASpecializer)]
+  , toSpecialize    :: String -> Maybe TypeSpecializer
   }
 
 data TlaState = TlaState
@@ -332,13 +306,11 @@ trTypeName :: (MonadPirouette m) => TlaOpts -> Name -> TlaT m [TLA.AS_UnitDef]
 trTypeName opts n = do
   tyDef <- tlaPure (typeDefOf n)
   decl <- trTypeDecl n tyDef
-  case lookup (T.unpack $ nameString n) (toSpecialize opts) of
+  case toSpecialize opts (T.unpack $ nameString n) of
     Nothing -> return decl
-    Just (DatatypeEncoding set c dest) ->
-      return $
-        go set ("SetOf",n) : go dest (destructor tyDef) : zipWith (go . cons) c (map fst (constructors tyDef))
-  where
-    go x = wrapUnit x . tlaIdent
+    Just (TypeSpecializer set c dest _) ->
+      return $ set : dest : c
+
 
 trTermName :: (MonadPirouette m) => Name -> TlaT m [TLA.AS_UnitDef]
 trTermName n = tlaPushCtx (show n) $ tlaPushCtx "trTermName" $ do
@@ -621,27 +593,43 @@ trQBoundN n ty = TLA.AS_QBoundN [tlaIdent n] <$> trType ty
 trTree :: (MonadPirouette m) => CTree Name -> PrtType -> TlaT m TLA.AS_Expression
 trTree (Choose cases) ty = tlaOr <$> mapM (flip trTree ty) cases
 trTree (cstr :&: tr)  ty = trConstrainedExp cstr (trTree tr ty)
-trTree (Result t)     ty = wrapExp <$> asks toActionWrapper <*> trTerm t (TlaVal ty)
+trTree (Result t)     ty = asks (wrapExp . toActionWrapper) <*> trTerm t (TlaVal ty)
 
 -- |Constructs a tla expression constrained by a 'Constraint'. This will take care of our "pattern-matching",
 -- translating equivalences and registering facts alongside the main execution path.
 trConstrainedExp :: (MonadPirouette m) => Constraint Name -> TlaT m TLA.AS_Expression -> TlaT m TLA.AS_Expression
 trConstrainedExp (Match x ty c args) mexp = do
-  (nx, ctx) <- case x of
-                 R.App (R.B (R.Ann n) _) [] -> return (tlaIdent n, id)
-                 _ -> do
-                   nx <- tlaFreshName
-                   tx <- trTerm x (TlaVal ty)
-                   return (nx, tlaLet [tlaAssign nx tx])
-  exp <- tlaWithDeclTypeOf ((nx, TlaVal ty) : map (tlaIdent *** TlaVal) args) mexp
-  return $ ctx $ tlaAnd
-    [ tlaEq (tlaProj nx onCons) (tlaString c)
-    -- , tlaEq (tlaProj nx typeField) (tlaIdent ty) -- this is harder because ty is not a name, but a Type!
-    , (\l -> if null l then exp else tlaLet l exp) $
-        L.zipWith
-          (\(n, ty) i -> tlaAssign (tlaIdent n) (tlaProj nx (onArg i)))
-          args [0..]
-    ]
+  spz <- asks ((=<<) . toSpecialize) <*> return (nameOf ty)
+  case spz of
+    Just tySpz -> do
+      x' <- trTerm x (TlaVal ty)
+      fresh <- tlaFreshName
+      let ctx = spzMatch tySpz x' c (map fst args) fresh
+      ctx <$> mexp
+    Nothing -> do
+      (nx, ctx) <- case x of
+                    R.App (R.B (R.Ann n) _) [] -> return (tlaIdent n, id)
+                    _ -> do
+                      nx <- tlaFreshName
+                      tx <- trTerm x (TlaVal ty)
+                      return (nx, tlaLet [tlaAssign nx tx])
+      exp <- tlaWithDeclTypeOf ((nx, TlaVal ty) : map (tlaIdent *** TlaVal) args) mexp
+      return $ ctx $ tlaAnd
+        [ tlaEq (tlaProj nx onCons) (tlaString c)
+        -- , tlaEq (tlaProj nx typeField) (tlaIdent ty) -- this is harder because ty is not a name, but a Type!
+        , (\l -> if null l then exp else tlaLet l exp) $
+            L.zipWith
+              (\(n, ty) i -> tlaAssign (tlaIdent n) (tlaProj nx (onArg i)))
+              args [0..]
+        ]
+  where
+    nameOf :: PrtType -> Maybe String
+    nameOf (R.TyApp (R.B (R.Ann x) _) []) =
+      Just $ T.unpack (nameString x)
+    nameOf (R.TyApp (R.F (TyFree x)) []) =
+      Just $ T.unpack (nameString x)
+    nameOf _ = Nothing
+
 trConstrainedExp (Fact b t) mexp = do
   t'  <- trTerm t tlaTyBool
   exp <- mexp

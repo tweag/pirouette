@@ -99,6 +99,9 @@ tlaPrefix = TLA.AS_PrefixOP di
 tlaEq :: TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression
 tlaEq = tlaInfix TLA.AS_EQ
 
+tlaGreater :: TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression
+tlaGreater = tlaInfix TLA.AS_GT
+
 tlaNeg :: TLA.AS_Expression -> TLA.AS_Expression
 tlaNeg = tlaPrefix TLA.AS_Neg
 

@@ -9,6 +9,7 @@ import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
+import           Pirouette.Specializer.TypeDecl (TypeSpecializer)
 
 import           PlutusCore (DefaultFun)
 import           Control.Monad

@@ -25,6 +25,7 @@ dependencies:
   - uniplate
   - hspec
   - tlaplus
+  - tlaplus-qq
   - QuickCheck
   - bound
   - interpolate

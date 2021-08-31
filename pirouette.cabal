@@ -20,6 +20,9 @@ library
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
       Pirouette.PlutusIR.Utils
+      Pirouette.Specializer
+      Pirouette.Specializer.Basics
+      Pirouette.Specializer.TypeDecl
       Pirouette.Term.ConstraintTree
       Pirouette.Term.FromPlutusIR
       Pirouette.Term.Syntax
@@ -29,7 +32,6 @@ library
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.ToTla
       Pirouette.Term.Transformations
-      Pirouette.TLA.Specializer
       Pirouette.TLA.Syntax
       Pirouette.TLA.Type
   other-modules:
@@ -58,6 +60,7 @@ library
     , prettyprinter
     , text
     , tlaplus
+    , tlaplus-qq
     , uniplate
   default-language: Haskell2010
 
@@ -90,6 +93,7 @@ executable pirouette
     , prettyprinter
     , text
     , tlaplus
+    , tlaplus-qq
     , uniplate
   default-language: Haskell2010
 
@@ -126,5 +130,6 @@ test-suite spec
     , prettyprinter
     , text
     , tlaplus
+    , tlaplus-qq
     , uniplate
   default-language: Haskell2010

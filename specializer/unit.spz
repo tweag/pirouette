@@ -1,7 +1,0 @@
-{
-  "spzSet" : "___ == {{}}",
-  "spzConstructors" : [
-    {"cons" : "___ == {}"}
-  ],
-  "spzDestructor" : "___(u,cU) == cU"
-}

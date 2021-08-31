@@ -1,8 +1,0 @@
-{
-  "spzSet" : "___ == BOOLEAN",
-  "spzConstructors" : [
-    {"cons" : "___ == TRUE"},
-    {"cons" : "___ == FALSE"}
-  ],
-  "spzDestructor" : "___(b,cT,cF) == IF b THEN cT ELSE cF"
-}

@@ -80,7 +80,7 @@ data CliOpts = CliOpts
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
   , pruneMaybe    :: Bool
-  , tySpecializer :: [(String, FilePath)]
+  , tySpecializer :: [String]
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -94,10 +94,10 @@ optsToCTreeOpts co = CTreeOpts
 
 optsToTlaOpts :: (MonadIO m , MonadPirouette m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
-  skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
-  skel  <- mkTLASpecWrapper skel0
-  wr    <- mkTLAExprWrapper (exprWrapper co)
-  spz   <- mkTLATySpecializer (tySpecializer co)
+  skel0  <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
+  skel   <- mkTLASpecWrapper skel0
+  wr     <- mkTLAExprWrapper (exprWrapper co)
+  let spz = mkTLATySpecializer (tySpecializer co)
   return $ TlaOpts
     { toSymbExecOpts = optsToCTreeOpts co
     , toActionWrapper = wr
@@ -478,16 +478,14 @@ parsePruneMaybe = Opt.switch
                   <> Opt.help "Do not suppress the maybe type in the output of the transition function."
                   )
 
-parseTySpecializer :: Opt.Parser [(String, FilePath)]
+parseTySpecializer :: Opt.Parser [String]
 parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
                      ( Opt.long "ty-spz"
                      <> Opt.value []
                      <> Opt.help "Declare the types to be specialized and their specilization file")
   where
-    r :: String -> [(String, FilePath)]
-    r = incouple . filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y])
-    incouple [] =[]
-    incouple (a:b:tl) = (a,b) : incouple tl
+    r :: String -> [String]
+    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y])
 
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")
