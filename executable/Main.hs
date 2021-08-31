@@ -261,13 +261,15 @@ processDecls opts = do
                  -> PrtT m ([Name], Decls Name P.DefaultFun, [(Name, PrtTerm)])
     -- When all the name have been treated, the function terminates.
     expanseClass decls transfo acc []       = return (acc, decls, transfo)
-    expanseClass decls transfo acc (k : ks) =
+    expanseClass decls transfo acc (k : ks)
       -- The treatment of the function we are focused on is the same as in `go`.
-      if contains prefix k
-      then do
+      | contains prefix k = do
         declRelevant <- transfoPrefix decls k
         expanseClass declRelevant transfo (k : acc) ks
-      else
+      -- If the user requires not to expand a function, we don't.
+      | maybe False (elem $ T.unpack (nameString k)) (expandExcl opts) =
+        expanseClass decls transfo (k : acc) ks
+      | otherwise =
         case M.lookup k decls of
           Nothing -> undefined
           Just (DFunction _ t _) ->
