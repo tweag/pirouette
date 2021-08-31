@@ -222,15 +222,19 @@ processDecls opts = do
        -> PrtT m ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)])
     -- An empty dependency class should not exist.
     go (names, decls, transfo) []  = undefined
-    go (names, decls, transfo) [k] =
-      if contains prefix k
-      then do
-          -- If the declaration is the one we are focused on,
-          -- we do not want to suppress it, and apply some additional transformations.
-          declRelevant <- transfoPrefix decls k
-          decls' <- expandDefsIn transfo declRelevant k
-          return ([k] : names, decls', transfo)
-      else do
+    go (names, decls, transfo) [k]
+      | contains prefix k = do
+        -- If the declaration is the one we are focused on,
+        -- we do not want to suppress it, and apply some additional transformations.
+        declRelevant <- transfoPrefix decls k
+        decls' <- expandDefsIn transfo declRelevant k
+        return ([k] : names, decls', transfo)
+      | maybe False (elem $ T.unpack (nameString k)) (expandExcl opts) = do
+        -- If the user explicitely stated not to expand this declaration,
+        -- there is no reason to stay deaf to this demand.
+        decls' <- expandDefsIn transfo decls k
+        return ([k] : names, decls', transfo)
+      | otherwise = do
         decls' <- expandDefsIn transfo decls k
         case M.lookup k decls' of
           -- Any name should be declared.
