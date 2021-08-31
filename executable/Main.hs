@@ -22,7 +22,7 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
 import Pirouette.Term.Transformations
-import Pirouette.Term.ConstraintTree
+import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 
@@ -79,6 +79,8 @@ data CliOpts = CliOpts
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
+  , pruneMaybe    :: Bool
+  , tySpecializer :: [String]
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -86,19 +88,21 @@ data Stage = ToTerm | ToTLA | ToCTree
 
 optsToCTreeOpts :: CliOpts -> CTreeOpts
 optsToCTreeOpts co = CTreeOpts
-  { coPruneMaybe = True
+  { coPruneMaybe = not (pruneMaybe co)
   , coWithArguments = withArguments co
   }
 
 optsToTlaOpts :: (MonadIO m , MonadPirouette m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
-  skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
-  skel  <- mkTLASpecWrapper skel0
-  wr    <- mkTLAExprWrapper (exprWrapper co)
+  skel0  <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
+  skel   <- mkTLASpecWrapper skel0
+  wr     <- mkTLAExprWrapper (exprWrapper co)
+  let spz = mkTLATySpecializer (tySpecializer co)
   return $ TlaOpts
     { toSymbExecOpts = optsToCTreeOpts co
     , toActionWrapper = wr
     , toSkeleton = skel
+    , toSpecialize = spz
     }
   where
     defaultSkel = unlines
@@ -404,6 +408,8 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
+                       <*> parsePruneMaybe
+                       <*> parseTySpecializer
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -429,7 +435,7 @@ parseExprWrapper = Opt.option Opt.str
                  (  Opt.long "action-wrapper"
                  <> Opt.short 'w'
                  <> Opt.value "st' = ___"
-                 <> Opt.metavar "TLA Expression"
+                 <> Opt.metavar "TLAExpression"
                  <> Opt.help "How to wrap the produced actions into action-formulas")
 
 parseStage :: Opt.Parser Stage
@@ -471,6 +477,21 @@ parseExpansionExcl = Opt.option (Just <$> Opt.maybeReader (Just . r))
   where
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
+
+parsePruneMaybe :: Opt.Parser Bool
+parsePruneMaybe = Opt.switch
+                  (  Opt.long "dont-prune-maybe"
+                  <> Opt.help "Do not suppress the maybe type in the output of the transition function."
+                  )
+
+parseTySpecializer :: Opt.Parser [String]
+parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
+                     ( Opt.long "ty-spz"
+                     <> Opt.value []
+                     <> Opt.help "Declare the types to be specialized and their specilization file")
+  where
+    r :: String -> [String]
+    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y])
 
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")
