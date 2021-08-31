@@ -57,18 +57,19 @@ import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 --
 -- The constraint tree we would obtain from symbolically executing it should be something like:
 --
--- > Choose
--- >   [ (Match i#0 with Dec m)
--- >     :&: Choose [ Match [d/State st#2 (λds λds. ds#1)] with Counter n
--- >              :&: Choose [ Fact "b/greaterThanEqualsInteger m n"   :&: Result "M1"
--- >                         , Fact "! b/greaterThanEqualsInteber m n" :&: Result "M2"
--- >                         ]
--- >                ]
--- >  , (Match i#0 with Inc m)
--- >     :&: Choose [ Match [d/State st#2 (λds λds. ds#1)] wih Counter n
--- >              :&: Result "Just M3"
--- >                ]
--- >  ]
+-- > Choose i#0 of type Input
+-- >   [ Match with Dec m ->
+-- >     Choose [d/State st#2 (λds λds. ds#1)] of type Counter
+-- >       [ Match with Counter n ->
+-- >         Choose "b/greaterThanEqualsInteger m n" of type Bool
+-- >           [ Match with True -> Result "M1"
+-- >           , Match with False -> Result "M2"
+-- >           ]
+-- >       ]
+-- >   , Match with Inc m ->
+-- >     Choose [d/State st#2 (λds λds. ds#1)] of type Counter
+-- >       [ Match with Counter n -> Result "Just M3" ]
+-- >   ]
 
 data CTreeOpts = CTreeOpts
   { coPruneMaybe    :: Bool
