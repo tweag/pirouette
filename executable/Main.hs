@@ -118,7 +118,7 @@ optsToTlaOpts co = do
 -----------------------
 
 main :: IO ()
-main = Opt.execParser prtOpts >>= \(cliOpts, file, opts) ->
+main = Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
   pirouette file opts $ do
     flushLogs $ logInfo ("Running with opts: " ++ show opts)
     mainOpts cliOpts
@@ -378,19 +378,19 @@ contains str n = T.pack str `T.isPrefixOf` nameString n
 -- * CLI Parsers  * --
 ----------------------
 
-prtOpts :: Opt.ParserInfo (CliOpts, FilePath, PrtOpts)
-prtOpts = Opt.info ((,,) <$> parseCliOpts
+pirouetteOpts :: Opt.ParserInfo (CliOpts, FilePath, PrtOpts)
+pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
                             <*> parseArgument
                             <*> parseOptions
                             <**> Opt.helper
                             <**> versionOpts)
            $ Opt.fullDesc
             <> Opt.header vERSIONSTR
-            <> Opt.footer "Run pirtla COMMAND --help for more help on specific commands"
+            <> Opt.footer "Run pirouette COMMAND --help for more help on specific commands"
             <> Opt.progDesc pd
   where
     pd = unwords
-           [ "Runs pirtla with the specified command."
+           [ "Runs pirouette with the specified command."
            , "The program exists with 0 for success and non-zero for failure."
            ]
 
@@ -521,7 +521,7 @@ parseLogLevel = asum
   ]
 
 vERSIONSTR :: String
-vERSIONSTR = "pirtla [" ++ $(gitBranch) ++ "@" ++ $(gitHash) ++ "]"
+vERSIONSTR = "pirouette [" ++ $(gitBranch) ++ "@" ++ $(gitHash) ++ "]"
 
 versionOpts :: Opt.Parser (a -> a)
 versionOpts = Opt.infoOption vERSIONSTR (Opt.long "version")

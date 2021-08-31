@@ -40,7 +40,6 @@ library
       src
   build-depends:
       QuickCheck
-    , aeson
     , base >=4.9 && <5
     , bound
     , bytestring
@@ -72,7 +71,6 @@ executable pirouette
       executable
   build-depends:
       QuickCheck
-    , aeson
     , base >=4.9 && <5
     , bound
     , bytestring
@@ -109,7 +107,6 @@ test-suite spec
       tests/unit
   build-depends:
       QuickCheck
-    , aeson
     , base >=4.9 && <5
     , bound
     , bytestring

@@ -36,7 +36,7 @@ import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
 
 import           Data.Functor ( ($>) )
-import Data.Maybe ( mapMaybe, isJust, catMaybes )
+import           Data.Maybe ( mapMaybe, isJust, catMaybes )
 import           Data.Generics.Uniplate.Operations
 import           Data.String
 import           Data.Bifunctor (bimap)
@@ -44,7 +44,6 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.List as L
-import qualified Data.Aeson as Aeson
 
 import qualified Language.TLAPlus.Pretty as TLA
 
