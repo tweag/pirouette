@@ -80,4 +80,13 @@
   , "expected"   : "Counter Example"
   , "slow"       : true
   }
+
+, { "name"       : "IncDecStateMachine"
+  , "cd"         : "IncDecStateMachine"
+  , "pir"        : "IncDecStateMachine.flat"
+  , "output"     : "IncDec.tla"
+  , "options"    : "--prefix transition -p 1 -s Skeleton.tla -a st,i -w \"LET res == ___ IN st' = res.arg1\""
+  , "postprocess": "sed -i '/^Inv ==/i DecOk == [](st.arg0.arg0 > 0 => (\\\\A n \\\\in 1 .. st.arg0.arg0: ENABLED ActionDec(n)))' IncDec.tla"
+  , "tla"        : "tlc IncDec"
+  }
 ]
