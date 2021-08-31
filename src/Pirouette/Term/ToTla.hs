@@ -443,7 +443,7 @@ trBoundedSetDef tyName tyVars cons = do
     setOfDecl = TLA.AS_OperatorDef diu False (TLA.AS_OpHead (tlaIdentPrefixed "SetOf" tyName) tyVars')
     setOfBody = tlaUnion $ TLA.AS_SetGeneration di
                   (tlaOpApp (tlaIdentPrefixed "BoundedSetOf" tyName) (n : tyVars'))
-                  (TLA.AS_QBoundN [tlaIdent "n"] $ tlaInfix TLA.AS_DOTDOT (tlaNum 0) (tlaIdent "MAXDEPTH"))
+                  (TLA.AS_QBoundN [tlaIdent "n"] $ tlaInfix TLA.AS_DOTDOT (tlaNum 1) (tlaIdent "MAXDEPTH"))
 
     -- RECURSIVE
     bsetOfRecDecl = TLA.AS_RecursiveDecl diu [TLA.AS_OpHead (tlaIdentPrefixed "BoundedSetOf" tyName)
@@ -452,7 +452,7 @@ trBoundedSetDef tyName tyVars cons = do
     -- BoundedSetOfXXX(n,b,a) == IF n = 0 THEN baseCases ELSE recursiveCases
     bsetOfDecl b r  = TLA.AS_OperatorDef diu False (TLA.AS_OpHead (tlaIdentPrefixed "BoundedSetOf" tyName) (n : tyVars')) (bsetOfBody b r)
     bsetOfBody b [] = tlaUnions $ map bsetOfCase b
-    bsetOfBody b r  = tlaIf (tlaEq n (tlaNum 0)) (tlaUnions $ map bsetOfCase b) (tlaUnions $ map bsetOfCase r)
+    bsetOfBody b r  = tlaIf (tlaEq n (tlaNum 1)) (tlaUnions $ map bsetOfCase b) (tlaUnions $ map bsetOfCase r)
 
     bsetOfCase :: (TyName, PrtType) -> TLA.AS_Expression
     bsetOfCase (conName, conTy) =

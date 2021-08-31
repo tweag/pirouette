@@ -106,7 +106,7 @@ termIsRecursive n = S.member (R.Arg n) <$> depsOf n
 -- whereas @Nil@ would not.
 consIsRecursive :: (MonadPirouette m) => TyName -> Name -> m Bool
 consIsRecursive ty con = do
-  conArgs <- R.tyFunArgs <$> typeOfIdent con
+  conArgs <- fst . R.tyFunArgs <$> typeOfIdent con
   return $ any (\a -> R.TyArg ty `S.member` typeNames a) conArgs
 
 -- |Returns the type of an identifier
