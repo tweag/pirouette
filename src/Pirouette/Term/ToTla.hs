@@ -632,7 +632,7 @@ trConstrainedExp (Match x ty c args) mexp = do
 trConstrainedExp (Fact b t) mexp = do
   t'  <- trTerm t tlaTyBool
   exp <- mexp
-  return $ tlaAnd [ (if b then tlaNeg else id) t', exp]
+  return $ tlaAnd [ (if b then tlaNot else id) t', exp]
 
 -- |When translating the body of a PrtTerm, we also receive the 'TlaType' that we expect
 -- from the translation. For example, the Just constructor is declared with
