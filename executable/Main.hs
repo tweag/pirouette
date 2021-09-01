@@ -488,10 +488,10 @@ parseTySpecializer :: Opt.Parser [String]
 parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
                      ( Opt.long "ty-spz"
                      <> Opt.value []
-                     <> Opt.help "Declare the types to be specialized and their specilization file")
+                     <> Opt.help "Declare the types to be specialized, ALL to specialize all types.")
   where
     r :: String -> [String]
-    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y])
+    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
 
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")
