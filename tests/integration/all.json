@@ -88,7 +88,7 @@
   , "output"     : "Contract.tla"
   , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
   , "tla"        : "tlc Contract_MC"
-  , "expected"   : "Counter Example"
+  , "expected"   : "Temporal property violated"
   , "slow"       : true
   }
 
