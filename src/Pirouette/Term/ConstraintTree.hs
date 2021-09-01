@@ -1,9 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module Pirouette.Term.ConstraintTree where
 
@@ -18,7 +18,7 @@ import           Pirouette.PlutusIR.Utils
 
 import qualified PlutusCore as P (DefaultFun)
 
-import           Control.Applicative
+import           Control.Arrow ( second )
 import           Control.Monad
 import           Control.Monad.Except
 import qualified Data.Map as M
@@ -57,18 +57,19 @@ import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 --
 -- The constraint tree we would obtain from symbolically executing it should be something like:
 --
--- > Choose
--- >   [ (Match i#0 with Dec m)
--- >     :&: Choose [ Match [d/State st#2 (λds λds. ds#1)] with Counter n
--- >              :&: Choose [ Fact "b/greaterThanEqualsInteger m n"   :&: Result "M1"
--- >                         , Fact "! b/greaterThanEqualsInteber m n" :&: Result "M2"
--- >                         ]
--- >                ]
--- >  , (Match i#0 with Inc m)
--- >     :&: Choose [ Match [d/State st#2 (λds λds. ds#1)] wih Counter n
--- >              :&: Result "Just M3"
--- >                ]
--- >  ]
+-- > Choose i#0 of type Input
+-- >   [ Match with Dec m ->
+-- >     Choose [d/State st#2 (λds λds. ds#1)] of type Counter
+-- >       [ Match with Counter n ->
+-- >         Choose "b/greaterThanEqualsInteger m n" of type Bool
+-- >           [ Match with True -> Result "M1"
+-- >           , Match with False -> Result "M2"
+-- >           ]
+-- >       ]
+-- >   , Match with Inc m ->
+-- >     Choose [d/State st#2 (λds λds. ds#1)] of type Counter
+-- >       [ Match with Counter n -> Result "Just M3" ]
+-- >   ]
 
 data CTreeOpts = CTreeOpts
   { coPruneMaybe    :: Bool
@@ -78,68 +79,63 @@ data CTreeOpts = CTreeOpts
 type CTreeTerm name = Term name P.DefaultFun
 
 data CTree name
-  = Choose [CTree name]
-  | (Constraint name) :&: (CTree name)
+  = Choose (CTreeTerm name) (Type name) [(Constraint name, CTree name)]
   | Result (CTreeTerm name)
   deriving (Eq, Show)
 
 data Constraint name
-  = Match (CTreeTerm name) (Type name) name [(name, Type name)]
-  | Fact  Bool (CTreeTerm name)
+  = Match name [(name, Type name)]
   deriving (Eq, Show)
 
 ctreeFirstMatches :: CTree name -> [name]
-ctreeFirstMatches (Choose t) = concatMap ctreeFirstMatches t
-ctreeFirstMatches (Match _ _ x _ :&: _) = [x]
+ctreeFirstMatches (Choose _ _ t) =
+  map (constraintFirstMatches . fst) t
 ctreeFirstMatches _ = []
 
+constraintFirstMatches :: Constraint name -> name
+constraintFirstMatches (Match x _) = x
+
 instance (Pretty name) => Pretty (Constraint name) where
-  pretty (Match t ty c vs) = "Match" <+> pretty t <+> "with"
-                               <+> pretty ty <> dot <> pretty c
-                               <> parens (hsep . punctuate "," $ map pretty vs)
-  pretty (Fact neg t)      = "Fact" <+> (if neg then ("~" <+>) . parens else id) (pretty t)
+  pretty (Match c vs) =
+    "Match with" <+> pretty c
+      <> parens (hsep . punctuate "," $ map pretty vs)
 
 instance (Pretty name) => Pretty (CTree name) where
-  pretty (Choose l)   = vsep ("Choose":map (indent 2 . pretty) l)
-  pretty (cst :&: tr) = vsep [pretty cst <+> ":&:", indent 2 (pretty tr)]
-  pretty (Result tr)  = "Result" <+> pretty tr
+  pretty (Choose t ty l) =
+    vsep
+      ( "Choose" <+> pretty t <+> "of type" <+> pretty ty
+      : map (\(cst,tr) -> indent 2 $ vsep [pretty cst <+> "->", indent 2 (pretty tr)]) l
+      )
+  pretty (Result tr)     = "Result" <+> pretty tr
 
 -- |Symbolicaly execute's a term into a /constraint tree/. Assumes that
 -- the term in question is of the form @\ a b ... zz -> case i of ... @,
 -- or, in words, its a closed WHNF abstraction whose body starts by pattern
 -- matching on whatever value is supposed to be the user's input.
 execute :: forall m . (MonadPirouette m) => PrtTerm -> m (CTree Name)
-execute (R.App (R.F (nameIsITE -> True)) [R.Arg x, R.Arg t, R.Arg f])
-  = Choose <$> sequence [ (Fact False x :&:) <$> execute t
-                        , (Fact True  x :&:) <$> execute f
-                        ]
 execute t = do
   mdest <- runMaybeT $ unDest t
   case mdest of
     Nothing -> return (Result t)
     Just (dName, tyName, tyArgs, x, tyRet, cases) -> do
       cons <- constructors <$> typeDefOf tyName
+      -- Since excessive arguments to a destructor are suppressed by the transformation
+      -- `removeExcessiveDest`, this error should never be triggered.
       when (length cons /= length cases) $ throwError' (PEOther $ "Different number of cases for " ++ show dName)
       let ty = R.TyApp (R.F $ TyFree tyName) tyArgs
-      Choose <$> zipWithM (constructMatching x ty) cases cons
+      Choose x ty <$> zipWithM constructMatching cases cons
      where
-      constructMatching :: PrtTerm -> PrtType -> PrtTerm -> (Name, PrtType)
-                        -> m (CTree Name)
-      constructMatching v ty t (conName, conTy) =
-        -- do
-        -- isBool <- typeIsBool ty
-        -- if isBool
-        -- then (\ isFalse -> (Fact isFalse v :&:)) <$> consIsBoolVal False conName <*> execute t
-        -- else
+      constructMatching :: PrtTerm -> (Name, PrtType)
+                        -> m (Constraint Name,CTree Name)
+      constructMatching t (conName, conTy) =
         let arity      = R.tyArity conTy
             (args, tl) = R.getNHeadLams arity t
-        in (Match v ty conName args :&:) <$> execute tl
+        in (Match conName args, ) <$> execute tl
 
 -- |Prune all the paths leading to @Result t@ such that @f t == Nothing@
 pruneMaybe :: forall m . (MonadPirouette m)
            => CTree Name
            -> MaybeT m (CTree Name)
-pruneMaybe (c :&: t)   = (c :&:) <$> pruneMaybe t
 pruneMaybe (Result t)  = Result <$> MaybeT (go t)
   where go :: CTreeTerm Name -> m (Maybe (CTreeTerm Name))
         go t@(R.App (R.F (FreeName n)) args) = do
@@ -149,9 +145,10 @@ pruneMaybe (Result t)  = Result <$> MaybeT (go t)
             Just (Just _)  -> Just $ head (mapMaybe R.fromArg args)
             Just Nothing   -> Nothing
         go t = return (Just t)
-pruneMaybe (Choose ts) = lift (mapMaybeM pruneMaybe ts) >>= choose
+pruneMaybe (Choose x ty ts) =
+  lift (mapMaybeM ((\(a,b) -> (a,) <$> b) . second pruneMaybe) ts) >>= choose
   where choose [] = fail "empty tree"
-        choose ts = return (Choose ts)
+        choose ts = return (Choose x ty ts)
 
 termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtTerm -> m (CTree Name)
 termToCTree opts name t = do
