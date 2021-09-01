@@ -34,6 +34,7 @@ import           Control.Monad.Reader
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
+import           Control.Exception ( catch )
 
 import           Data.Functor ( ($>) )
 import           Data.Maybe ( mapMaybe, isJust, catMaybes )
@@ -82,8 +83,9 @@ mkTLASpecWrapper exp =
     expand (u                  : us) e = u : expand us e
 
 mkTLATySpecializer :: [String] -> String -> Maybe TypeSpecializer
-mkTLATySpecializer l s =
-  if elem s l then Just (allSpz s) else Nothing
+mkTLATySpecializer ["ALL"] s = allSpz s
+mkTLATySpecializer l       s =
+  if elem s l then allSpz s else Nothing
 
 -- * TLA AST Example
 --

@@ -64,7 +64,7 @@
   , "cd"         : "GameStateMachine"
   , "pir"        : "GameStateMachine.flat"
   , "output"     : "Game.tla"
-  , "options"    : "-s Skeleton.tla --prefix transi -p 2 -a st,UserInp --action-wrapper \"LET res == ___ IN st' = res.arg1 /\\ txConstr' = res.arg0\""
+  , "options"    : "-s Skeleton.tla --prefix transi -p 2 -a st,UserInp --action-wrapper \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --ty-spz ALL"
   , "tla"        : "tlacli check --constant MAXDEPTH 2 --model-values mPol tok pk1 pk2 pk3 pk4 pk5 --property Inv -- Game.tla"
   , "expected"   : "Temporal property violated"
   , "slow"       : true
@@ -73,7 +73,7 @@
 , { "name"       : "MultiSigStateMachine Silly Invariant"
   , "cd"         : "MultiSigStateMachine"
   , "pir"        : "MultiSigStateMachine.flat"
-  , "options"    : "-a param,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res.arg1 /\\ txConstr' = res.arg0\" --prefix transition -p 2"
+  , "options"    : "-a param,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition -p 2 --ty-spz ALL"
   , "output"     : "Contract.tla"
   , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
   , "tla"        : "tlc Contract_MC"
@@ -85,7 +85,7 @@
   , "cd"         : "IncDecStateMachine"
   , "pir"        : "IncDecStateMachine.flat"
   , "output"     : "IncDec.tla"
-  , "options"    : "--prefix transition -p 1 -s Skeleton.tla -a st,i -w \"LET res == ___ IN st' = res.arg1\""
+  , "options"    : "--prefix transition -p 1 -s Skeleton.tla -a st,i -w \"LET res == ___ IN st' = res[2]\" --ty-spz ALL"
   , "postprocess": "sed -i '/^Inv ==/i DecOk == [](st.arg0.arg0 > 0 => (\\\\A n \\\\in 1 .. st.arg0.arg0: ENABLED ActionDec(n)))' IncDec.tla"
   , "tla"        : "tlc IncDec"
   }
