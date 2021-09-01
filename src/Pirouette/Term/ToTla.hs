@@ -616,6 +616,7 @@ trTree (Choose x pirTy cases) tyRes = do
       Just $ T.unpack (nameString x)
     nameOf _ = Nothing
 
+
 trSpecializedConstrainedExp :: (MonadPirouette m)
                             => TypeSpecializer -> PrtTerm -> PrtType -> PrtType
                             -> Constraint Name -> CTree Name
