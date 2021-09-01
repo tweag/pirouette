@@ -50,10 +50,7 @@ data PrtOpts = PrtOpts
   , logFocus :: [String]
   } deriving (Show)
 
--- |Errors
---
--- TODO: make a more complex error structure and borrow the context from
---       the logger monad!
+-- |The error codes that pirouete can raise
 data PrtError
   = PENotAType Name
   | PENotATerm Name
@@ -61,6 +58,9 @@ data PrtError
   | PEOther String
   deriving (Eq, Show)
 
+-- |And the actual error raised by the error monad. Make sure to raise these
+-- with 'throwError'', so you can get the logger context in your error messages
+-- for free.
 data PrtErrorCtx = PrtErrorCtx
   { logCtx  :: [String]
   , message :: PrtError
@@ -72,7 +72,7 @@ class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
  => MonadPirouette m where
   -- |Returns the definition associated with a given name. Raises a 'PEUndefined'
   -- if the name doesn't exist.
-  defOf     :: Name -> m PrtDef
+  defOf :: Name -> m PrtDef
 
   -- |Returns the type and term-level transitive dependencies associated with a name,
   -- memoizes the result for future queries.
@@ -95,8 +95,8 @@ class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
   isConst n = MaybeT $ fromConstDef <$> defOf n
 
 -- |Returns all the dependencies of a name ignoring whether they are types or terms.
-depsOf' :: (MonadPirouette m) => Name -> m (S.Set Name)
-depsOf' = fmap (S.map (R.argElim id id)) . depsOf
+transitiveDepsOf' :: (MonadPirouette m) => Name -> m (S.Set Name)
+transitiveDepsOf' = fmap (S.map (R.argElim id id)) . transitiveDepsOf
 
 -- |Given a prefix, if there is a single declared name with the given
 -- prefix, returns it. Throws an error otherwise.
@@ -111,10 +111,6 @@ nameForPrefix pref = pushCtx "nameForPrefix" $ do
       logWarn $ "Too many declarations with prefix: " ++ T.unpack pref ++ ": " ++ show (map fst d)
       logWarn   "  will return the first one"
       return $ fst $ head d
-
--- |Returns whether a term depends on itself
-termIsRecursive :: (MonadPirouette m) => Name -> m Bool
-termIsRecursive n = S.member (R.Arg n) <$> depsOf n
 
 -- |Returns whether a constructor is recursive. For the
 -- type of lists, for example, @Cons@ would be recursive
@@ -134,14 +130,39 @@ typeOfIdent n = do
     (DDestructor t)    -> destructorTypeFor <$> typeDefOf t
     (DTypeDef _)       -> throwError' $ PEOther $ show n ++ " is a type"
 
--- |Definition Dependency Partial order
-depsOnLT :: (MonadPirouette m) => Name -> Name -> m Bool
-depsOnLT n m =
-  let f x ds = R.Arg x `S.member` ds || R.TyArg x `S.member` ds
-   in f n <$> depsOf m
+-- |Returns the direct dependencies of a term. This is never cached and
+-- is computed freshly everytime its called. Say we call @directDepsOf "f"@,
+-- for:
+--
+-- > f x = g x + h
+-- > g x = f (x - 1)
+--
+-- We'll get @S.fromList [R.Arg "g", R.Arg "h"]@. If you'd expect to see
+-- @R.Arg "f"@ in the result aswell, use 'transitiveDepsOf' instead.
+directDepsOf :: (MonadPirouette m) => Name -> m (S.Set (R.Arg Name Name))
+directDepsOf n = do
+  ndef <- defOf n
+  return $ case ndef of
+    DFunction _ t ty -> typeNames ty <> termNames t
+    DTypeDef d       -> S.unions (flip map (constructors d) $ \(n, c)
+                                   -> S.unions $ map typeNames (fst $ R.tyFunArgs c))
+    DConstructor  _ tyN -> S.singleton $ R.TyArg tyN
+    DDestructor   tyN   -> S.singleton $ R.TyArg tyN
 
-depsOnAny :: (MonadPirouette m) => (a -> Name) -> Name -> [a] -> m Bool
-depsOnAny f n ms = or <$> mapM (depsOnLT n . f) ms
+-- |Just like 'directDepsOf', but forgets the information of whether certain dependency
+-- was on a type or a term.
+directDepsOf' :: (MonadPirouette m) => Name -> m (S.Set Name)
+directDepsOf' = fmap (S.map (R.argElim id id)) . directDepsOf
+
+-- |Returns whether a term definition uses itself directly, that is, for
+--
+-- > f x = g x + h
+-- > g x = f (x - 1)
+--
+-- calling @termIsRecursive "f"@ would return @False@. See 'transitiveDepsOf' if
+-- you want to know whether a term is depends on itself transitively.
+termIsRecursive :: (MonadPirouette m) => Name -> m Bool
+termIsRecursive n = S.member (R.Arg n) <$> directDepsOf n
 
 -- ** A MonadPirouette Implementation:
 
@@ -162,7 +183,7 @@ throwError' msg = do
 instance (Monad m) => MonadPirouette (PrtT m) where
   defOf  n = gets (M.lookup n . decls) >>= maybe (throwError' $ PEUndefined n) return
 
-  transitiveDepsOf = pushCtx "depsOf" . go S.empty
+  transitiveDepsOf = pushCtx "transitiveDepsOf" . go S.empty
     where
       go :: (Monad m) => S.Set Name -> Name -> PrtT m (S.Set (R.Arg Name Name))
       go stack n = do
@@ -178,15 +199,10 @@ instance (Monad m) => MonadPirouette (PrtT m) where
       computeDeps stack n
         | n `S.member` stack = return S.empty
         | otherwise = do
-          ndef  <- defOf n
-          let deps0 = case ndef of
-                DFunction _ t ty -> typeNames ty <> termNames t
-                DTypeDef d       -> S.unions (flip map (constructors d) $ \(n, c)
-                                               -> S.unions $ map typeNames (fst $ R.tyFunArgs c))
-                DConstructor  _ tyN -> S.singleton $ R.TyArg tyN
-                DDestructor   tyN   -> S.singleton $ R.TyArg tyN
+          deps0 <- directDepsOf n
           let stack' = S.insert n stack
-          S.unions . (deps0 :) <$> mapM (R.argElim (go stack') (go stack')) (S.toList deps0)
+          let deps1  = S.map (R.argElim id id) deps0
+          S.unions . (deps0 :) <$> mapM (go stack') (S.toList deps1)
 
 instance (Monad m) => MonadLogger (PrtT m) where
   logMsg lvl msg = PrtT $ do
@@ -210,5 +226,12 @@ runPrtT :: (Monad m)
            -> m (Either PrtErrorCtx a, [LogMessage])
 runPrtT opts st = runLoggerT . runExceptT . flip runReaderT opts . flip evalStateT st . unPirouette
 
+-- |If we have a 'MonadIO' in our stack, we can ask for all the logs produced so far.
+-- This is useful for the main function, to output the logs of different stages as these stages
+-- complte.
+--
+-- If you have to add a @(MonadIO m) => ...@ constraint in order to use 'flushLogs' please
+-- think three times. Often you can get by with using @Debug.Trace@ and not polluting the
+-- code with unecesary IO.
 flushLogs :: (MonadIO m) => PrtT m a -> PrtT m a
 flushLogs = PrtT . mapStateT (mapReaderT . mapExceptT $ flushLogger) . unPirouette
