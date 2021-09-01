@@ -41,7 +41,7 @@ import           Control.Monad.Identity
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer.Strict
-import           Control.Arrow (second, (***))
+import           Control.Arrow (first, second, (***))
 import           Data.Data
 import           Data.Functor
 import           Data.Foldable (asum)
@@ -179,6 +179,33 @@ mainOpts opts = do
       spec <- termToSpec opts' sortedNames n t
       putStrLn' (TLA.prettyPrintAS spec)
 
+partitionM :: (Monad m) => (a -> m Bool) -> [a] -> m ([a], [a])
+partitionM f []     = return ([], [])
+partitionM f (x:xs) = f x >>= (<$> partitionM f xs) . ite (first (x:)) (second (x:))
+  where ite t e True  = t
+        ite t e False = e
+
+-- |Given a preorder relation @depM@, 'equivClassesM' computes
+-- the equivalence classes of @depM@, on @xs@ such that if
+--
+-- > equivClassesM depOn xs == [r0, ..., rN]
+--
+-- Then each @m, n@ in @ri@ for some @i@ is mutually dependent @depOn m n && depOn n m@
+-- and if there exists @m@ in @ri@ and @n@ in @rj@, then @i >= j@ iff @depOn m n@.
+equivClassesM :: (Monad m) => (a -> a -> m Bool) -> [a] -> m [[a]]
+equivClassesM depM []     = return []
+equivClassesM depM (d:ds) = do
+  -- we start by splitting the dependencies of d from the rest,
+  (depsOfD, aft)  <- partitionM (depM d) ds
+  -- Now, out the dependencies of d, we split off those that depend on d itself.
+  (eq, bef)       <- partitionM (`depM` d) depsOfD
+  bef'            <- equivClassesM depM bef
+  aft'            <- equivClassesM depM aft
+  return $ bef' ++ ( [d:eq] ++ aft' )
+
+equivClasses :: (a -> a -> Bool) -> [a] -> [[a]]
+equivClasses leq = runIdentity . equivClassesM (\a -> return . leq a)
+
 -- |Processes all declarations according to some transformations.
 -- It outputs the list of names in an order compatible with dependencies.
 -- Meaning that if `n0` and `n1` are in the same list, they are mutually dependent,
@@ -211,15 +238,7 @@ processDecls opts = do
     -- then `A` is guaranted to appear before `B`.
     -- The order of independent classes is unspecified.
     sortDeps :: (MonadPirouette m) => [Name] -> m [[Name]]
-    sortDeps [] = return []
-    sortDeps (d:ds) = do
-      depsD <- S.map (R.argElim id id) <$> depsOf d
-      let (couldBeBefore, after) = L.partition (`S.member` depsD) ds
-      annotatedCouldBeBefore <-
-        mapM (\x -> (x,) . S.member d . S.map (R.argElim id id) <$> depsOf x) couldBeBefore
-      let (equiv, before) =
-            bimap (map fst) (map fst) $ L.partition snd annotatedCouldBeBefore
-      fmap (++) (sortDeps before) <*> (((d : equiv) :) <$> sortDeps after)
+    sortDeps = equivClassesM (\x d -> S.member x <$> depsOf' d)
 
     go :: (MonadIO m)
        => ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)]) -> [Name]
@@ -320,7 +339,7 @@ pirouette pir opts f =
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
     let st = PrtState decls M.empty toplvl
-    (eres, msgs) <- runPrtT opts st f
+    (eres, msgs) <- runPrtT opts st (removeCycles >> f)
     mapM_ printLogMessage msgs
     case eres of
       Left  err -> liftIO $ print err >> exitWith ecInternalError

@@ -30,6 +30,13 @@ import           Data.Generics.Uniplate.Operations
 -- The pirouette monad provides us with all the relevant type-checking functionality
 -- for our translation into TLA.
 
+-- TODO: We keep the `deps` var below in order to memoize the dependencies of
+--       terms and avoid recomputing these all the time. Yet, we have transformations
+--       that change the definition of terms in decls. We should stop and think about
+--       adding a function to invalidate the `deps` cache and think carefully about where
+--       to use it. One option would be to keep a flag and set it to true whenever we
+--       modify decls.
+
 -- |The compiler state consists in:
 data PrtState = PrtState
   { decls :: Decls Name DefaultFun
@@ -67,9 +74,13 @@ class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
   -- if the name doesn't exist.
   defOf     :: Name -> m PrtDef
 
-  -- |Returns the type and term-level dependencies associated with a name,
+  -- |Returns the type and term-level transitive dependencies associated with a name,
   -- memoizes the result for future queries.
-  depsOf    :: Name -> m (S.Set (R.Arg Name Name))
+  --
+  -- /WARNING:/ if you change the definitions
+  -- of some terms you might see the wrong dependencies since 'depsOf' will return
+  -- whatever it had in its memoized cache before the changes to the definitions.
+  transitiveDepsOf :: Name -> m (S.Set (R.Arg Name Name))
 
   typeDefOf :: Name -> m PrtTypeDef
   typeDefOf n = defOf n >>= maybe (throwError' $ PENotAType n) return . fromTypeDef
@@ -82,6 +93,10 @@ class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
 
   isConst :: Name -> MaybeT m (Int , TyName)
   isConst n = MaybeT $ fromConstDef <$> defOf n
+
+-- |Returns all the dependencies of a name ignoring whether they are types or terms.
+depsOf' :: (MonadPirouette m) => Name -> m (S.Set Name)
+depsOf' = fmap (S.map (R.argElim id id)) . depsOf
 
 -- |Given a prefix, if there is a single declared name with the given
 -- prefix, returns it. Throws an error otherwise.
@@ -147,7 +162,7 @@ throwError' msg = do
 instance (Monad m) => MonadPirouette (PrtT m) where
   defOf  n = gets (M.lookup n . decls) >>= maybe (throwError' $ PEUndefined n) return
 
-  depsOf = pushCtx "depsOf" . go S.empty
+  transitiveDepsOf = pushCtx "depsOf" . go S.empty
     where
       go :: (Monad m) => S.Set Name -> Name -> PrtT m (S.Set (R.Arg Name Name))
       go stack n = do
