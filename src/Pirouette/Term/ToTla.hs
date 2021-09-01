@@ -34,7 +34,6 @@ import           Control.Monad.Reader
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
-import           Control.Exception ( catch )
 
 import           Data.Functor ( ($>) )
 import           Data.Maybe ( mapMaybe, isJust, catMaybes )
