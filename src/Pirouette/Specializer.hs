@@ -6,9 +6,10 @@ module Pirouette.Specializer
 import Pirouette.Specializer.TypeDecl
 import Pirouette.Specializer.Basics
 
-allSpz :: String -> TypeSpecializer
-allSpz "Bool"   = boolSpz
-allSpz "List"   = listSpz
-allSpz "Unit"   = unitSpz
-allSpz "Tuple2" = tuple2Spz
-allSpz "Maybe"  = maybeSpz
+allSpz :: String -> Maybe TypeSpecializer
+allSpz "Bool"   = Just boolSpz
+allSpz "List"   = Just listSpz
+allSpz "Unit"   = Just unitSpz
+allSpz "Tuple2" = Just tuple2Spz
+allSpz "Maybe"  = Just maybeSpz
+allSpz _        = Nothing

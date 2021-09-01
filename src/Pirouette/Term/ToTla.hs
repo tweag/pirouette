@@ -82,8 +82,9 @@ mkTLASpecWrapper exp =
     expand (u                  : us) e = u : expand us e
 
 mkTLATySpecializer :: [String] -> String -> Maybe TypeSpecializer
-mkTLATySpecializer l s =
-  if elem s l then Just (allSpz s) else Nothing
+mkTLATySpecializer ["ALL"] s = allSpz s
+mkTLATySpecializer l       s =
+  if elem s l then allSpz s else Nothing
 
 -- * TLA AST Example
 --
@@ -232,8 +233,9 @@ termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runRead
   mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun t
   tlaPure $ logDebug $ "Translating Action Definitions for " ++ show mainFun
   defs   <- case mctree of
-    Choose branches -> concatMap p2l <$> mapM matchToAction branches
-    ctree           -> p2l           <$> matchToAction ctree
+    Choose x ty br -> concatMap p2l <$> mapM (uncurry $ matchToAction x ty) br
+    Result t       -> tlaPure (logDebug ("tree: " ++ show (pretty t)))
+                        >> throwError' (PEOther "CTreeIsNotAMatch")
   let next = tlaOpDef (tlaIdent "Next") [] $ tlaOr $ map (tlaIdentPrefixed "Wrapped") $ ctreeFirstMatches mctree
 
   tlaPure $ logDebug "Assembling the spec"
@@ -376,8 +378,9 @@ declareTermNameMutRec n = do
 -- > Dec(m)     == trTree (rest [ i := Dec m ])
 -- > WrappedDec == \E m \in TypeM : Dec(m)
 matchToAction :: (MonadPirouette m)
-              => CTree Name -> TlaT m (TLA.AS_UnitDef, TLA.AS_UnitDef)
-matchToAction (Match val ty cons args :&: rest) =
+              => PrtTerm -> PrtType -> Constraint Name -> CTree Name
+              -> TlaT m (TLA.AS_UnitDef, TLA.AS_UnitDef)
+matchToAction val ty (Match cons args) rest =
   case val of
     R.App (R.B (R.Ann valN) _) [] -> do
       let argIds = map (tlaIdent . fst) args
@@ -392,8 +395,6 @@ matchToAction (Match val ty cons args :&: rest) =
       qboundNs <- mapM (uncurry trQBoundN) args
       return (op, opWrap (opWrapBody qboundNs))
     _                     -> throwError' $ PEOther "MatchIsNotAVariable"
-matchToAction t            = tlaPure (logDebug ("tree: " ++ show (pretty t)))
-                          >> throwError' (PEOther "CTreeIsNotAMatch")
 
 -- *** Translating Types
 
@@ -590,37 +591,23 @@ trQBoundN n ty = TLA.AS_QBoundN [tlaIdent n] <$> trType ty
 -- >                                 /\ TxConstraints' = res.arg1
 --
 trTree :: (MonadPirouette m) => CTree Name -> PrtType -> TlaT m TLA.AS_Expression
-trTree (Choose cases) ty = tlaOr <$> mapM (flip trTree ty) cases
-trTree (cstr :&: tr)  ty = trConstrainedExp cstr (trTree tr ty)
-trTree (Result t)     ty = asks (wrapExp . toActionWrapper) <*> trTerm t (TlaVal ty)
-
--- |Constructs a tla expression constrained by a 'Constraint'. This will take care of our "pattern-matching",
--- translating equivalences and registering facts alongside the main execution path.
-trConstrainedExp :: (MonadPirouette m) => Constraint Name -> TlaT m TLA.AS_Expression -> TlaT m TLA.AS_Expression
-trConstrainedExp (Match x ty c args) mexp = do
-  spz <- asks ((=<<) . toSpecialize) <*> return (nameOf ty)
+trTree (Result t)             ty =
+  asks (wrapExp . toActionWrapper) <*> trTerm t (TlaVal ty)
+trTree (Choose x pirTy cases) tyRes = do
+  spz <- asks ((=<<) . toSpecialize) <*> return (nameOf pirTy)
   case spz of
-    Just tySpz -> do
-      x' <- trTerm x (TlaVal ty)
-      fresh <- tlaFreshName
-      let ctx = spzMatch tySpz x' c (map fst args) fresh
-      ctx <$> mexp
+    Just tySpz ->
+      tlaOr <$> mapM (uncurry $ trSpecializedConstrainedExp tySpz x pirTy tyRes) cases
     Nothing -> do
-      (nx, ctx) <- case x of
-                    R.App (R.B (R.Ann n) _) [] -> return (tlaIdent n, id)
-                    _ -> do
-                      nx <- tlaFreshName
-                      tx <- trTerm x (TlaVal ty)
-                      return (nx, tlaLet [tlaAssign nx tx])
-      exp <- tlaWithDeclTypeOf ((nx, TlaVal ty) : map (tlaIdent *** TlaVal) args) mexp
-      return $ ctx $ tlaAnd
-        [ tlaEq (tlaProj nx onCons) (tlaString c)
-        -- , tlaEq (tlaProj nx typeField) (tlaIdent ty) -- this is harder because ty is not a name, but a Type!
-        , (\l -> if null l then exp else tlaLet l exp) $
-            L.zipWith
-              (\(n, ty) i -> tlaAssign (tlaIdent n) (tlaProj nx (onArg i)))
-              args [0..]
-        ]
+      (nx, ctx) <-
+        case x of
+          R.App (R.B (R.Ann n) _) [] -> return (tlaIdent n, id)
+          _ -> do
+            nx <- tlaFreshName
+            tx <- trTerm x (TlaVal pirTy)
+            return (nx, tlaLet [tlaAssign nx tx])
+      ctx . tlaOr <$>
+        mapM (\(cstr,tr) -> trConstrainedExp nx pirTy cstr (trTree tr tyRes)) cases
   where
     nameOf :: PrtType -> Maybe String
     nameOf (R.TyApp (R.B (R.Ann x) _) []) =
@@ -629,10 +616,29 @@ trConstrainedExp (Match x ty c args) mexp = do
       Just $ T.unpack (nameString x)
     nameOf _ = Nothing
 
-trConstrainedExp (Fact b t) mexp = do
-  t'  <- trTerm t tlaTyBool
-  exp <- mexp
-  return $ tlaAnd [ (if b then tlaNeg else id) t', exp]
+trSpecializedConstrainedExp :: (MonadPirouette m)
+                            => TypeSpecializer -> PrtTerm -> PrtType -> PrtType
+                            -> Constraint Name -> CTree Name
+                            -> TlaT m TLA.AS_Expression
+trSpecializedConstrainedExp tySpz x pirTy tyRes (Match c args) tr = do
+  x' <- trTerm x (TlaVal pirTy)
+  fresh <- tlaFreshName
+  spzMatch tySpz x' c (map fst args) fresh <$> trTree tr tyRes
+
+-- |Constructs a tla expression constrained by a 'Constraint'. This will take care of our "pattern-matching",
+-- translating equivalences and registering facts alongside the main execution path.
+trConstrainedExp :: (MonadPirouette m)
+                 => TLA.AS_Expression -> PrtType -> Constraint Name -> TlaT m TLA.AS_Expression
+                 -> TlaT m TLA.AS_Expression
+trConstrainedExp nx ty (Match c args) mexp = do
+  exp <- tlaWithDeclTypeOf ((nx, TlaVal ty) : map (tlaIdent *** TlaVal) args) mexp
+  return $ tlaAnd
+    [ tlaEq (tlaProj nx onCons) (tlaString c)
+    , (\l -> if null l then exp else tlaLet l exp) $
+        L.zipWith
+          (\(n, ty) i -> tlaAssign (tlaIdent n) (tlaProj nx (onArg i)))
+          args [0..]
+    ]
 
 -- |When translating the body of a PrtTerm, we also receive the 'TlaType' that we expect
 -- from the translation. For example, the Just constructor is declared with

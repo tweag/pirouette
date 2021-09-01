@@ -1,5 +1,5 @@
 ---- MODULE Game ----
-EXTENDS Integers
+EXTENDS Integers, Sequences
 VARIABLE st,txConstr
 CONSTANT MAXDEPTH, mPol, tok, pk1, pk2, pk3, pk4, pk5
 vars ==
