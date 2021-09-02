@@ -11,17 +11,21 @@ onci=false
 # Tells us to run fast tests only
 fast=false
 
-# Speficies a regexp to match which tests we want to run
+# Speficies part of a string that we want the tests to be ran to contain
 matching=""
 
-# Only generate the TLA+ files but don't run TLA+
+# copy the comand line to generate the TLA+ files to the clipboard
+copy_cmd=false
+
+# Only generates the TLA+ files, don't run TLA+
 gen_only=false
 
 while [[ $# -ge 1 ]]; do
   case $1 in
     --ci)   onci=true;;
     --fast) fast=true;;
-    --matching) shift; matching=$1;;
+    --containing) shift; matching=".*$1.*";;
+    --copy-cmd|-c) copy_cmd=true;;
     --gen-only|-g) gen_only=true;;
     *)  echo "Unknown option: $1"; exit 1;;
   esac
@@ -179,11 +183,16 @@ run-single-test() {
     output="Contract.tla"
   fi
 
-  set +e
-  mecho blue "    - Running pirouette"
-  eval "cabal exec pirouette -- $pir $options > $output"
-  res=$?
-  set -e
+  if $copy_cmd; then
+    echo "cabal exec pirouette -- $testdir/$pir $options" | xclip -sel clip
+    exit 0
+  else
+    set +e
+    mecho blue "    - Running pirouette"
+    eval "cabal exec pirouette -- $pir $options > $output"
+    res=$?
+    set -e
+  fi
 
   if [[ "$res" -ne "0" ]]; then
     mecho red "    ! pirouette failed"
