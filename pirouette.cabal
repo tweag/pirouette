@@ -101,6 +101,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Pirouette.Term.DSL
+      Pirouette.Term.FromPlutusIRSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Paths_pirouette

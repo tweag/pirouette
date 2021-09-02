@@ -228,7 +228,9 @@ expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
       then fail "expandDefs: wont expand"
       else do
        def <- MaybeT (fromTermDef <$> defOf n)
+       logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args) ++ "\n" ++ show (pretty def))
        let res = R.appN def args
+       logTrace ("Result: " ++ show (pretty res))
        return res
     go _ = fail "expandDefs: not an R.App"
 
