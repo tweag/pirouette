@@ -41,9 +41,10 @@ import           Data.List.NonEmpty (NonEmpty(..))
 
 -- |The compiler state consists in:
 data PrtState = PrtState
-  { decls :: Decls Name DefaultFun
-  , deps  :: M.Map Name (S.Set (R.Arg Name Name))
-  , prog  :: PrtTerm
+  { decls :: Decls Name DefaultFun -- ^ All the declarations in scope
+  , prog  :: PrtTerm -- ^ Main program
+  , deps  :: M.Map Name (S.Set (R.Arg Name Name)) -- ^ cache for fast 'transitiveDepsOf'
+  , tord  :: Maybe [R.Arg Name Name] -- ^ Dependency order of declarations; 'elimEvenOddMutRec' sets this to @Just@ upon success.
   }
 
 -- |Read-only options
@@ -96,6 +97,17 @@ class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
 
   isConst :: Name -> MaybeT m (Int , TyName)
   isConst n = MaybeT $ fromConstDef <$> defOf n
+
+-- |Returns the order of dependencies for the current session if we have one available.
+-- Computing such order can be done with 'elimEvenOddMutRec'.
+--
+-- TODO: This is brittle and an unnecessary error. At some point I'd like to split
+-- the MonadPirouette into different stages; 'dependencyOrder' should only be available
+-- after the /sorting dependencies/ stage happens.
+dependencyOrder :: (MonadPirouette m) => m [R.Arg Name Name]
+dependencyOrder = do
+  mdeps <- gets tord
+  maybe (throwError' $ PEOther "No dependency order computed.") return mdeps
 
 -- |Modifyes or deletes an existing definition. Will also remove said name from
 -- the cache of transitive dependencies.
@@ -178,8 +190,8 @@ termIsRecursive :: (MonadPirouette m) => Name -> m Bool
 termIsRecursive n = S.member (R.Arg n) <$> directDepsOf n
 
 -- |Given a list of names, sort them according to their dependencies.
-sortDeps :: (MonadPirouette m) => [Name] -> m [NonEmpty Name]
-sortDeps = equivClassesM (\x d -> S.member x <$> transitiveDepsOf' d)
+sortDeps :: (MonadPirouette m) => [R.Arg Name Name] -> m [NonEmpty (R.Arg Name Name)]
+sortDeps = equivClassesM (\x d -> S.member x <$> transitiveDepsOf (R.argElim id id d))
 
 -- *** Utility Functions
 
@@ -211,7 +223,6 @@ equivClassesM depM (d:ds) = do
 -- equivClasses :: (a -> a -> Bool) -> [a] -> [NonEmpty a]
 -- equivClasses leq = runIdentity . equivClassesM (\a -> return . leq a)
 
-
 -- ** A MonadPirouette Implementation:
 
 -- TODO: maybe pull the except monad to the top; we'd want to get the resulting
@@ -231,7 +242,7 @@ throwError' msg = do
 instance (Monad m) => MonadPirouette (PrtT m) where
   defOf  n = gets (M.lookup n . decls) >>= maybe (throwError' $ PEUndefined n) return
 
-  transitiveDepsOf = pushCtx "transitiveDepsOf" . go S.empty
+  transitiveDepsOf n = pushCtx ("transitiveDepsOf " ++ show n) $ go S.empty n
     where
       go :: (Monad m) => S.Set Name -> Name -> PrtT m (S.Set (R.Arg Name Name))
       go stack n = do
@@ -241,7 +252,6 @@ instance (Monad m) => MonadPirouette (PrtT m) where
           Nothing -> do
             r <- computeDeps stack n
             modify (\st -> st { deps = M.insert n r (deps st) })
-            logTrace ("Dependencies For" ++ show n ++ " = " ++ show r)
             return r
 
       computeDeps stack n

@@ -202,6 +202,9 @@ fromArg = argElim (const Nothing) Just
 fromTyArg :: Arg ty v -> Maybe ty
 fromTyArg = argElim Just (const Nothing)
 
+isArg :: Arg ty v -> Bool
+isArg = argElim (const False) (const True)
+
 isTyArg :: Arg ty v -> Bool
 isTyArg = argElim (const True) (const False)
 

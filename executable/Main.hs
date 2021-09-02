@@ -150,7 +150,7 @@ ecTooManyDefs = ExitFailure 16
 -- which definitions the user is interested into, etc...
 mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtT m ()
 mainOpts opts = do
-  sortedNames <- processDecls opts
+  processDecls opts
   allDecls <- gets decls
   let relDecls =
         M.toList $ M.filterWithKey (\k _ -> contains (funNamePrefix opts) k) allDecls
@@ -161,7 +161,7 @@ mainOpts opts = do
       when (length relDecls /= 1) $
         throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
       case head relDecls of
-        (n, DFunction _ t _) -> toTla sortedNames n t
+        (n, DFunction _ t _) -> toTla n t
         (n, _)               -> throwError' (PEOther $ show n ++ " is not a function")
  where
     printDef name def = do
@@ -175,20 +175,39 @@ mainOpts opts = do
       putStrLn' ""
     printCTree name _ = throwError' $ PEOther (show name ++ " is not a function")
 
-    toTla :: [[Name]] -> Name -> PrtTerm -> PrtT m ()
-    toTla sortedNames n t = do
+    toTla :: Name -> PrtTerm -> PrtT m ()
+    toTla n t = do
       opts' <- optsToTlaOpts opts
-      spec <- termToSpec opts' sortedNames n t
+      spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
 
--- |Processes all declarations according to some transformations.
--- It outputs the list of names in an order compatible with dependencies.
--- Meaning that if `n0` and `n1` are in the same list, they are mutually dependent,
--- and if `n0` is in a list which is before the one which contains `n1`,
--- then `n0` does not depend of `n1` (`n1` might depend of `n0` or not).
-processDecls :: (MonadIO m) => CliOpts -> PrtT m [[Name]]
-processDecls opts = undefined {- do
+processDecls :: (MonadIO m) => CliOpts -> PrtT m ()
+processDecls opts = do
+  preDs  <- gets decls
+  postDs <- sequence $ M.mapWithKey processOne preDs
+  modify (\st -> st { decls = postDs })
+ where
+   focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   focusedTransformations =  constrDestrId
+                         >=> removeExcessiveDestArgs
+                         >=> cfoldmapSpecialize
+
+   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   generalTransformations =   destrNF
+                          >=> removeExcessiveDestArgs
+                          >=> maybe return pullNthDestr (pullDestr opts)
+
+   prefix = funNamePrefix opts
+
+   processOne n =
+     let fSel = if contains prefix n
+                then focusedTransformations
+                else return
+         f    = generalTransformations >=> fSel
+      in defTermMapM f
+
+{- do
   ds  <- gets decls
   let allNames = M.keys ds
   sortedNames <- sortDeps allNames
@@ -198,12 +217,6 @@ processDecls opts = undefined {- do
   return $ reverse remainingNames
   where
     -- `transfo` contains the transformations applied to every term.
-    transfo :: MonadPirouette m => PrtTerm -> m PrtTerm
-    transfo =  constrDestrId
-           >=> removeExcessiveDestArgs
-           >=> cfoldmapSpecialize
-
-    prefix = funNamePrefix opts
 
     -- This function makes sure to define the dependencies of a type/term F
     -- before defining F itself.
@@ -301,22 +314,18 @@ processDecls opts = undefined {- do
             Nothing                 ->
               undefined
         return $ M.insert k d' decls
-
-    relevantTransfo :: MonadPirouette m => PrtTerm -> m PrtTerm
-    relevantTransfo =   destrNF
-       >=> removeExcessiveDestArgs
-       >=> maybe return pullNthDestr (pullDestr opts)
 -}
 
 -- ** Auxiliar Defs
 
-pirouette :: (MonadIO m) => FilePath -> PrtOpts -> PrtT m a -> m a
+pirouette :: (MonadIO m) => FilePath -> PrtOpts
+          -> PrtT m a -> m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
-    let st = PrtState decls M.empty toplvl
-    (eres, msgs) <- runPrtT opts st (elimEvenOddMutRec >>= mapM_ (liftIO . print) >> return undefined)
+    let st = PrtState decls toplvl M.empty Nothing
+    (eres, msgs) <- runPrtT opts st (elimEvenOddMutRec >> f)
     mapM_ printLogMessage msgs
     case eres of
       Left  err -> liftIO $ print err >> exitWith ecInternalError
