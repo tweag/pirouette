@@ -20,10 +20,14 @@ import qualified Data.Map as M
 -- they should be defined so that the dependencies of a term @T@ are defined
 -- before @T@.
 elimEvenOddMutRec :: (MonadPirouette m) => m [Name]
-elimEvenOddMutRec = gets (M.keys . decls)
+elimEvenOddMutRec = gets (M.keys . M.filter isFunOrType . decls)
                 >>= sortDeps
-                >>= foldM (\res c -> (res ++) <$> elimDepCycles c) []
+                >>= foldM (\res c -> (++ res) <$> elimDepCycles c) []
  where
+  isFunOrType DFunction {} = True
+  isFunOrType DTypeDef {}  = True
+  isFunOrType _            = False
+
   -- Attempts to eliminate dependency cycles for a set of mutually recursive definitions.
   -- If successfull, returns a @ns@ containing the order in which the
   -- inputs should be declared. The declarations within the state monad will
@@ -46,9 +50,10 @@ elimEvenOddMutRec = gets (M.keys . decls)
     where
       snoc x xs = xs ++ [x]
 
-      go _ [] = return []
+      go _ []  = return []
+      go _ [x] = return [x]
       go ctr nss@(n:ns)
-        | ctr == length ns = throwError' $ PEMutRecDeps ns
+        | ctr == length nss = throwError' $ PEMutRecDeps nss
         | otherwise = do
             isRec <- termIsRecursive n
             if isRec
