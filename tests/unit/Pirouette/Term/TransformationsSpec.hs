@@ -44,7 +44,7 @@ testingDefs =
  where
    stubsFor n = (n , S.DConstructor 0 n)
 
-testState = PrtState (M.fromList testingDefs) M.empty undefined
+testState = PrtState (M.fromList testingDefs) undefined M.empty Nothing
 
 testOpts = PrtOpts DEBUG []
 
