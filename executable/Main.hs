@@ -188,13 +188,13 @@ processDecls opts = do
   postDs <- sequence $ M.mapWithKey processOne preDs
   modify (\st -> st { decls = postDs })
  where
-   focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
-   focusedTransformations =  constrDestrId
+   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   generalTransformations =  constrDestrId
                          >=> removeExcessiveDestArgs
                          >=> cfoldmapSpecialize
 
-   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
-   generalTransformations =   destrNF
+   focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   focusedTransformations =   destrNF
                           >=> removeExcessiveDestArgs
                           >=> maybe return pullNthDestr (pullDestr opts)
 
@@ -203,9 +203,8 @@ processDecls opts = do
    processOne n =
      let fSel = if contains prefix n
                 then focusedTransformations
-                else return
-         f    = generalTransformations >=> fSel
-      in defTermMapM f
+                else generalTransformations
+      in defTermMapM fSel
 
 -- ** Auxiliar Defs
 
