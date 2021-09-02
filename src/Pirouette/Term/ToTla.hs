@@ -224,7 +224,7 @@ termToSpec :: (MonadPirouette m)
            -> m TLA.AS_Spec
 termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"
-  depsMain <- tlaPure $ S.map (R.argElim id id) <$> depsOf mainFun
+  depsMain <- tlaPure $ S.map (R.argElim id id) <$> transitiveDepsOf mainFun
   depsClasses <-
     tlaPure $ mapUntilM (fmap catMaybes . mapM (argify depsMain)) sortedNames containsMain
   deps <- mapM trOneClass depsClasses

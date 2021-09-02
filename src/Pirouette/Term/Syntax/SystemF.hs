@@ -26,6 +26,8 @@ import           Data.Typeable
 import qualified Data.Text as T
 import           Data.String
 import           Data.Data
+import           Data.Generics.Uniplate.Operations
+import           Data.Generics.Uniplate.Data
 
 import Debug.Trace
 
@@ -244,6 +246,20 @@ termApp (App n args)        u  = App n (args ++ [u])
 termApp (Lam _ _ t)  (Arg   u) = subst   (singleSub u) t
 termApp (Abs _ _ t)  (TyArg u) = substTy (singleSub u) t
 termApp _            _         = error "Mismatched Term/Type application"
+
+-- |Expands a single definition within another term.
+--
+-- WARNING: When calling @expandvar (n, defn) m@, ensure that @defn@ does /not/
+-- depend on @n@, i.e., @n@ can't be recursive. 'expandVar' will /not/
+-- perform this check and will happily loop.
+expandVar :: (HasSubst ty, Eq v, IsVar v, Data ty, Data ann, Data v)
+          => (v, AnnTerm ty ann v) -> AnnTerm ty ann v -> AnnTerm ty ann v
+expandVar (n, defn) = rewrite go
+  where
+    go (App v args)
+      | n /= v    = Nothing
+      | otherwise = Just $ appN defn args
+    go _ = Nothing
 
 -- TODO: write an efficient appN that substitutes multiple variables in one go
 instance (HasSubst ty) => HasApp (AnnTerm ty ann) where

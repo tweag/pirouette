@@ -18,6 +18,7 @@ module Main where
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import Pirouette.Monad.Logger
+import Pirouette.Transformations
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
@@ -46,6 +47,7 @@ import           Data.Data
 import           Data.Functor
 import           Data.Foldable (asum)
 import qualified Data.List          as L
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
 import           Data.Maybe            (isJust)
 import qualified Data.Text          as T
@@ -179,32 +181,6 @@ mainOpts opts = do
       spec <- termToSpec opts' sortedNames n t
       putStrLn' (TLA.prettyPrintAS spec)
 
-partitionM :: (Monad m) => (a -> m Bool) -> [a] -> m ([a], [a])
-partitionM f []     = return ([], [])
-partitionM f (x:xs) = f x >>= (<$> partitionM f xs) . ite (first (x:)) (second (x:))
-  where ite t e True  = t
-        ite t e False = e
-
--- |Given a preorder relation @depM@, 'equivClassesM' computes
--- the equivalence classes of @depM@, on @xs@ such that if
---
--- > equivClassesM depOn xs == [r0, ..., rN]
---
--- Then each @m, n@ in @ri@ for some @i@ is mutually dependent @depOn m n && depOn n m@
--- and if there exists @m@ in @ri@ and @n@ in @rj@, then @i >= j@ iff @depOn m n@.
-equivClassesM :: (Monad m) => (a -> a -> m Bool) -> [a] -> m [[a]]
-equivClassesM depM []     = return []
-equivClassesM depM (d:ds) = do
-  -- we start by splitting the dependencies of d from the rest,
-  (depsOfD, aft)  <- partitionM (depM d) ds
-  -- Now, out the dependencies of d, we split off those that depend on d itself.
-  (eq, bef)       <- partitionM (`depM` d) depsOfD
-  bef'            <- equivClassesM depM bef
-  aft'            <- equivClassesM depM aft
-  return $ bef' ++ ( [d:eq] ++ aft' )
-
-equivClasses :: (a -> a -> Bool) -> [a] -> [[a]]
-equivClasses leq = runIdentity . equivClassesM (\a -> return . leq a)
 
 -- |Processes all declarations according to some transformations.
 -- It outputs the list of names in an order compatible with dependencies.
@@ -212,7 +188,7 @@ equivClasses leq = runIdentity . equivClassesM (\a -> return . leq a)
 -- and if `n0` is in a list which is before the one which contains `n1`,
 -- then `n0` does not depend of `n1` (`n1` might depend of `n0` or not).
 processDecls :: (MonadIO m) => CliOpts -> PrtT m [[Name]]
-processDecls opts = do
+processDecls opts = undefined {- do
   ds  <- gets decls
   let allNames = M.keys ds
   sortedNames <- sortDeps allNames
@@ -238,7 +214,7 @@ processDecls opts = do
     -- then `A` is guaranted to appear before `B`.
     -- The order of independent classes is unspecified.
     sortDeps :: (MonadPirouette m) => [Name] -> m [[Name]]
-    sortDeps = equivClassesM (\x d -> S.member x <$> depsOf' d)
+    sortDeps = equivClassesM (\x d -> S.member x <$> transitiveDepsOf' d)
 
     go :: (MonadIO m)
        => ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)]) -> [Name]
@@ -330,6 +306,7 @@ processDecls opts = do
     relevantTransfo =   destrNF
        >=> removeExcessiveDestArgs
        >=> maybe return pullNthDestr (pullDestr opts)
+-}
 
 -- ** Auxiliar Defs
 
@@ -339,7 +316,7 @@ pirouette pir opts f =
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
     let st = PrtState decls M.empty toplvl
-    (eres, msgs) <- runPrtT opts st (removeCycles >> f)
+    (eres, msgs) <- runPrtT opts st (elimEvenOddMutRec >>= mapM_ (liftIO . print) >> return undefined)
     mapM_ printLogMessage msgs
     case eres of
       Left  err -> liftIO $ print err >> exitWith ecInternalError

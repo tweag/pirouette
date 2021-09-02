@@ -268,6 +268,44 @@ expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
        return res
     go _ = fail "expandDefs: not an R.App"
 
+-- |Expand the occurences of @n@ in the body of @m@
+expandDefIn :: (MonadPirouette m) => Name -> Name -> m ()
+expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
+  isRec <- termIsRecursive n -- let's ensure n is not recursive
+  if isRec
+  then fail "expandDefIn: can't expand recursive term"
+  else do
+    -- fetch the current definition of n,
+    mdefn <- fromTermDef <$> defOf n
+    defn  <- maybe (fail "expandDefIn: n not a termdef") return mdefn
+    -- fetch the current definition of m and, if its a DFunction, perform the rewrite
+    mdefm <- defOf m
+    case mdefm of
+      DFunction r body ty -> do
+        let body' = R.expandVar (R.F $ FreeName n, defn) body
+        modifyDef m (const $ Just $ DFunction r body' ty)
+      _ -> fail "expandDefIn: m not a termdef"
+
+{-
+  where
+    go :: m (
+    go (R.App (R.F (FreeName n)) args) = do
+      isRec <- lift $ termIsRecursive n
+      if dontExpand n || isRec
+      then fail "expandDefs: wont expand"
+      else do
+       def <- MaybeT (fromTermDef <$> defOf n)
+       logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args) ++ "\n" ++ show (pretty def))
+       let res = R.appN def args
+       logTrace ("Result: " ++ show (pretty res))
+       return res
+    go _ = fail "expandDefs: not an R.App"
+-}
+
+
+
+
+
 -- |Simplify /destructor after constructor/ applications. For example,
 --
 -- > [d/Maybe [c/Just X] N (\ J)] == [J X]

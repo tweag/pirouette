@@ -12,6 +12,7 @@ import           Pirouette.Monad.Maybe
 import           Pirouette.Specializer.TypeDecl (TypeSpecializer)
 
 import           PlutusCore (DefaultFun)
+import           Control.Arrow (first, second)
 import           Control.Monad
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
@@ -22,6 +23,7 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Set as S
 import           Data.Generics.Uniplate.Operations
+import           Data.List.NonEmpty (NonEmpty(..))
 
 -- * The Pirouette Monad
 --
@@ -55,6 +57,7 @@ data PrtError
   = PENotAType Name
   | PENotATerm Name
   | PEUndefined Name
+  | PEMutRecDeps [Name]
   | PEOther String
   deriving (Eq, Show)
 
@@ -94,9 +97,13 @@ class ( MonadLogger m, MonadState PrtState m, MonadError PrtErrorCtx m
   isConst :: Name -> MaybeT m (Int , TyName)
   isConst n = MaybeT $ fromConstDef <$> defOf n
 
--- |Returns all the dependencies of a name ignoring whether they are types or terms.
-transitiveDepsOf' :: (MonadPirouette m) => Name -> m (S.Set Name)
-transitiveDepsOf' = fmap (S.map (R.argElim id id)) . transitiveDepsOf
+-- |Modifyes or deletes an existing definition. Will also remove said name from
+-- the cache of transitive dependencies.
+modifyDef :: (MonadPirouette m) => Name -> (PrtDef -> Maybe PrtDef) -> m ()
+modifyDef n f = modify $ \st ->
+  st { decls = M.alter (>>= f) n (decls st)
+     , deps  = M.delete n (deps st)
+     }
 
 -- |Given a prefix, if there is a single declared name with the given
 -- prefix, returns it. Throws an error otherwise.
@@ -112,14 +119,6 @@ nameForPrefix pref = pushCtx "nameForPrefix" $ do
       logWarn   "  will return the first one"
       return $ fst $ head d
 
--- |Returns whether a constructor is recursive. For the
--- type of lists, for example, @Cons@ would be recursive
--- whereas @Nil@ would not.
-consIsRecursive :: (MonadPirouette m) => TyName -> Name -> m Bool
-consIsRecursive ty con = do
-  conArgs <- fst . R.tyFunArgs <$> typeOfIdent con
-  return $ any (\a -> R.TyArg ty `S.member` typeNames a) conArgs
-
 -- |Returns the type of an identifier
 typeOfIdent :: (MonadPirouette m) => Name -> m PrtType
 typeOfIdent n = do
@@ -129,6 +128,20 @@ typeOfIdent n = do
     (DConstructor i t) -> snd . (!! i) . constructors <$> typeDefOf t
     (DDestructor t)    -> destructorTypeFor <$> typeDefOf t
     (DTypeDef _)       -> throwError' $ PEOther $ show n ++ " is a type"
+
+-- ** Dependency Management
+
+-- |Returns all the dependencies of a name ignoring whether they are types or terms.
+transitiveDepsOf' :: (MonadPirouette m) => Name -> m (S.Set Name)
+transitiveDepsOf' = fmap (S.map (R.argElim id id)) . transitiveDepsOf
+
+-- |Returns whether a constructor is recursive. For the
+-- type of lists, for example, @Cons@ would be recursive
+-- whereas @Nil@ would not.
+consIsRecursive :: (MonadPirouette m) => TyName -> Name -> m Bool
+consIsRecursive ty con = do
+  conArgs <- fst . R.tyFunArgs <$> typeOfIdent con
+  return $ any (\a -> R.TyArg ty `S.member` typeNames a) conArgs
 
 -- |Returns the direct dependencies of a term. This is never cached and
 -- is computed freshly everytime its called. Say we call @directDepsOf "f"@,
@@ -163,6 +176,41 @@ directDepsOf' = fmap (S.map (R.argElim id id)) . directDepsOf
 -- you want to know whether a term is depends on itself transitively.
 termIsRecursive :: (MonadPirouette m) => Name -> m Bool
 termIsRecursive n = S.member (R.Arg n) <$> directDepsOf n
+
+-- |Given a list of names, sort them according to their dependencies.
+sortDeps :: (MonadPirouette m) => [Name] -> m [NonEmpty Name]
+sortDeps = equivClassesM (\x d -> S.member x <$> transitiveDepsOf' d)
+
+-- *** Utility Functions
+
+partitionM :: (Monad m) => (a -> m Bool) -> [a] -> m ([a], [a])
+partitionM f []     = return ([], [])
+partitionM f (x:xs) = f x >>= (<$> partitionM f xs) . ite (first (x:)) (second (x:))
+  where ite t e True  = t
+        ite t e False = e
+
+-- |Given a preorder relation @depM@, 'equivClassesM' computes
+-- the equivalence classes of @depM@, on @xs@ such that if
+--
+-- > equivClassesM depOn xs == [r0, ..., rN]
+--
+-- Then each @m, n@ in @ri@ for some @i@ is mutually dependent @depOn m n && depOn n m@
+-- and if there exists @m@ in @ri@ and @n@ in @rj@, then @i >= j@ iff @depOn m n@.
+equivClassesM :: (Monad m) => (a -> a -> m Bool) -> [a] -> m [NonEmpty a]
+equivClassesM depM []     = return []
+equivClassesM depM (d:ds) = do
+  -- we start by splitting the dependencies of d from the rest,
+  (depsOfD, aft)  <- partitionM (depM d) ds
+  -- Now, out the dependencies of d, we split off those that depend on d itself.
+  (eq, bef)       <- partitionM (`depM` d) depsOfD
+  bef'            <- equivClassesM depM bef
+  aft'            <- equivClassesM depM aft
+  return $ bef' ++ ( [d :| eq] ++ aft' )
+
+-- Non-monadic version of 'equivClassesM'; useful for testing
+-- equivClasses :: (a -> a -> Bool) -> [a] -> [NonEmpty a]
+-- equivClasses leq = runIdentity . equivClassesM (\a -> return . leq a)
+
 
 -- ** A MonadPirouette Implementation:
 
