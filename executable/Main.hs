@@ -189,7 +189,8 @@ processDecls opts = do
   modify (\st -> st { decls = postDs })
  where
    generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
-   generalTransformations =  constrDestrId
+   generalTransformations =  expandDefs (const False)
+                         >=> constrDestrId
                          >=> removeExcessiveDestArgs
                          >=> cfoldmapSpecialize
 
@@ -203,8 +204,9 @@ processDecls opts = do
    processOne n =
      let fSel = if contains prefix n
                 then focusedTransformations
-                else generalTransformations
-      in defTermMapM fSel
+                else return
+         f = generalTransformations >=> fSel
+      in defTermMapM f
 
 -- ** Auxiliar Defs
 

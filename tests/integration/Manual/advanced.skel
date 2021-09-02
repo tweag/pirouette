@@ -12,7 +12,5 @@ Init == st = Pair(True, False)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
-and(a,b) == Bool_match(a,b,False)
-
 Inv == []( ~ ( Square_match(st,and) = True ))
 ====
