@@ -217,41 +217,7 @@ removeThunks = pushCtx "removeThunks" . rewriteM (runMaybeT . go)
     appLast (R.Lam ann ty t)          arg = R.Lam ann ty (appLast t arg)
     appLast t                         arg = R.termApp t (R.Arg arg)
 
--- |`expandDefsIn transfo decls k` modifies the definition of `k` in `decls`
--- by expanding all names in `transfo` with their definition.
-expandDefsIn :: (MonadPirouette m)
-             => [(Name, PrtTerm)] -> Decls Name P.DefaultFun -> Name
-             -> m (Decls Name P.DefaultFun)
-expandDefsIn transfo decls k =
-  pushCtx ("expanding Def of " ++ show (pretty k)) $ do
-    case M.lookup k decls of
-      -- `k` is in the decls table
-      Nothing ->  undefined
-      Just (DFunction r t ty) -> do
-        t' <- rewriteM (runMaybeT . rewriteDef t transfo) t
-        return $ M.insert k (DFunction r t' ty) decls
-      Just _ -> return decls
-
-  where
-    -- The first argument is only used to separate variables when
-    -- the inlining is performed.
-    rewriteDef :: (MonadPirouette m)
-               => PrtTerm -> [(Name, PrtTerm)] -> PrtTerm
-               -> MaybeT m PrtTerm
-    rewriteDef t l (R.App (R.F (FreeName n)) args) =
-      case lookup n l of
-        Just u -> do
-          logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args))
-          let t' = separateBoundFrom t u
-          let res = R.appN t' args
-          logTrace ("Result: " ++ show (pretty res))
-          return res
-        Nothing ->
-          fail "expandDefs: not the expected symbol"
-    rewriteDef t l _ = fail "expandDefs: not an R.App"
-
-
--- |Expand non-recursive definitions
+-- |Expand all non-recursive definitions
 expandDefs :: (MonadPirouette m) => (Name -> Bool) -> PrtTerm -> m PrtTerm
 expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
   where
@@ -285,26 +251,6 @@ expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
         let body' = R.expandVar (R.F $ FreeName n, defn) body
         modifyDef m (const $ Just $ DFunction r body' ty)
       _ -> fail "expandDefIn: m not a termdef"
-
-{-
-  where
-    go :: m (
-    go (R.App (R.F (FreeName n)) args) = do
-      isRec <- lift $ termIsRecursive n
-      if dontExpand n || isRec
-      then fail "expandDefs: wont expand"
-      else do
-       def <- MaybeT (fromTermDef <$> defOf n)
-       logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args) ++ "\n" ++ show (pretty def))
-       let res = R.appN def args
-       logTrace ("Result: " ++ show (pretty res))
-       return res
-    go _ = fail "expandDefs: not an R.App"
--}
-
-
-
-
 
 -- |Simplify /destructor after constructor/ applications. For example,
 --
