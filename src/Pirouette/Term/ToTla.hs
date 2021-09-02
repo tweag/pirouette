@@ -225,6 +225,7 @@ termToSpec :: (MonadPirouette m)
            -> m TLA.AS_Spec
 termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"
+  tlaPure $ modify (\st -> st { deps = M.empty })
   depsMain   <- tlaPure $ transitiveDepsOf mainFun
   sortedDeps <- tlaPure dependencyOrder
   let neededDeps = filter (`S.member` depsMain) sortedDeps
