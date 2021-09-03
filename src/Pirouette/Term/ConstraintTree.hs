@@ -24,7 +24,7 @@ import           Control.Monad.Except
 import qualified Data.Map as M
 import           Data.Maybe (mapMaybe)
 import           Data.String
-import           Data.List (foldl')
+import           Data.List (foldl', elemIndex)
 import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 
 -- * Constraint Trees
@@ -153,14 +153,81 @@ pruneMaybe (Choose ts) = lift (mapMaybeM pruneMaybe ts) >>= choose
   where choose [] = fail "empty tree"
         choose ts = return (Choose ts)
 
-termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtTerm -> m (CTree Name)
-termToCTree opts name t = do
-  let (args, body) = R.getHeadLams (R.appN t $ map (R.Arg . flip R.App [] . flip R.B 0 . R.Ann . fromString) (coWithArguments opts))
-  unless (null args) $
-    logWarn $ "Executing a non-saturated term. Will use the variable names: " ++ show args
-  mctree <-
-    execute body >>= runMaybeT . if coPruneMaybe opts then pruneMaybe else return
-  logDebug $ "Translating Constraint Tree for " ++ show name
-  case mctree of
-    Nothing -> throwError' $ PEOther "termToCTree: empty tree"
-    Just tr -> return tr
+termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtDef -> m (CTree Name)
+termToCTree opts name def =
+  case def of
+    DFunction _ t ty ->
+      let argLength = length (coWithArguments opts) in
+      let index = elemIndex "INPUT" (coWithArguments opts) in
+      let tyOut = snd (R.tyFunArgs ty) in
+      case elemIndex "INPUT" (coWithArguments opts) of
+        Nothing -> throwError' $ PEOther "No argument declared as input"
+        Just index ->
+          let tyInput = fst (R.tyFunArgs ty) !! index in
+          case nameOf tyInput of
+            Nothing -> throwError' $ PEOther "The input is not a pattern-matchable type"
+            Just tyName -> do
+              dest <- blindDest tyOut <$> typeDefOf tyName
+              let transiAbsInput = R.Lam (R.Ann $ fromString "DUMMY_INPUT") tyInput $
+                    R.appN t (zipWith transitionArgs (coWithArguments opts) [argLength, argLength - 1 .. 1])
+              let body = R.appN dest
+                    [ R.Arg $ R.termPure (R.B (fromString "INPUT") (toInteger   (argLength - 1 - index)))
+                    , R.Arg transiAbsInput
+                    ]
+              cleanBody <- constrDestrId body
+              mctree <-
+                execute cleanBody >>= runMaybeT . if coPruneMaybe opts then pruneMaybe else return
+              logDebug $ "Translating Constraint Tree for " ++ show name
+              case mctree of
+                Nothing -> throwError' $ PEOther "termToCTree: empty tree"
+                Just tr -> return tr
+    _ -> throwError' $ PEOther (show name ++ " is not a function")
+
+  where
+    nameOf :: PrtType -> Maybe Name
+    nameOf (R.TyApp (R.B (R.Ann x) _) []) =
+      Just x
+    nameOf (R.TyApp (R.F (TyFree x)) []) =
+      Just x
+    nameOf _ = Nothing
+
+    blindDest :: PrtType -> PrtTypeDef -> PrtTerm
+    blindDest tyOut (Datatype _ _ dest cons) =
+      R.Lam (R.Ann $ fromString "i") (error "Fictive type of i") $ -- Since the generated term will be applied to two arguments,
+        R.Lam (R.Ann $ fromString "f") (error "Fictive type of f") $ -- those 2 types should never be accessed.
+          R.App (R.F (FreeName dest)) $
+            R.Arg (R.termPure (R.B (fromString "i") 1)) :
+            R.TyArg tyOut :
+              map (R.Arg . consCase) cons
+
+    consCase :: (Name, PrtType) -> PrtTerm
+    consCase (n, ty) =
+      let (argsTy,_) = R.tyFunArgs ty in
+      createNLams "x" argsTy $
+        R.App
+          (R.B (fromString "f") (toInteger (length argsTy)))
+          [R.Arg $ R.App (R.F (FreeName n)) (geneXs (length argsTy))]
+
+    createNLams :: String -> [PrtType] -> PrtTerm -> PrtTerm
+    createNLams s tys =
+      let go [] _ = id
+          go (h:tl) i =
+            R.Lam (R.Ann $ fromString (s ++ show i)) h . go tl (i + 1)
+      in
+      go tys 0
+
+    geneXs :: Int -> [R.Arg ty PrtTerm]
+    geneXs n = go 0
+      where
+        go i =
+          if i >= n
+          then []
+          else
+            R.Arg
+              (R.termPure
+                (R.B (R.Ann $ fromString ("x" ++ show i)) (toInteger (n - 1 - i))))
+            : go (i + 1)
+
+    transitionArgs :: String -> Int -> R.Arg ty PrtTerm
+    transitionArgs "INPUT" _ = R.Arg $ R.termPure (R.B (fromString "DUMMY_INPUT") 0)
+    transitionArgs s       n = R.Arg $ R.termPure (R.B (fromString s) (toInteger n))

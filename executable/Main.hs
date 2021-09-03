@@ -74,7 +74,6 @@ import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 data CliOpts = CliOpts
   { stage         :: Stage
   , funNamePrefix :: String
-  , pullDestr     :: Maybe Int
   , expandExcl    :: Maybe [String]
   , withArguments :: [String]
   , exprWrapper   :: String
@@ -158,22 +157,19 @@ mainOpts opts = do
     ToTLA   -> do
       when (length relDecls /= 1) $
         throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-      case head relDecls of
-        (n, DFunction _ t _) -> toTla sortedNames n t
-        (n, _)               -> throwError' (PEOther $ show n ++ " is not a function")
- where
+      uncurry (toTla sortedNames) (head relDecls)
+  where
     printDef name def = do
       let pdef = pretty def
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
 
-    printCTree name (DFunction _ def _) = do
+    printCTree name def = do
       ct <- termToCTree (optsToCTreeOpts opts) name def
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
       putStrLn' ""
-    printCTree name _ = throwError' $ PEOther (show name ++ " is not a function")
 
-    toTla :: [[Name]] -> Name -> PrtTerm -> PrtT m ()
+    toTla :: [[Name]] -> Name -> PrtDef -> PrtT m ()
     toTla sortedNames n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' sortedNames n t
@@ -229,9 +225,8 @@ processDecls opts = do
     go (names, decls, transfo) [k]
       | contains prefix k = do
         -- If the declaration is the one we are focused on,
-        -- we do not want to suppress it, and apply some additional transformations.
-        declRelevant <- transfoPrefix decls k
-        decls' <- expandDefsIn transfo declRelevant k
+        -- we do not want to suppress it.
+        decls' <- expandDefsIn transfo decls k
         return ([k] : names, decls', transfo)
       | maybe False (elem $ T.unpack (nameString k)) (expandExcl opts) = do
         -- If the user explicitely stated not to expand this declaration,
@@ -267,9 +262,8 @@ processDecls opts = do
     expanseClass decls transfo acc []       = return (acc, decls, transfo)
     expanseClass decls transfo acc (k : ks)
       -- The treatment of the function we are focused on is the same as in `go`.
-      | contains prefix k = do
-        declRelevant <- transfoPrefix decls k
-        expanseClass declRelevant transfo (k : acc) ks
+      | contains prefix k =
+        expanseClass decls transfo (k : acc) ks
       -- If the user requires not to expand a function, we don't.
       | maybe False (elem $ T.unpack (nameString k)) (expandExcl opts) =
         expanseClass decls transfo (k : acc) ks
@@ -290,27 +284,6 @@ processDecls opts = do
               expanseClass unfoldedDecls ((k, t) : transfo) acc ks
           _ -> expanseClass decls transfo (k : acc) ks
 
-    -- `transfoPrefix` contains the transformations applied only to the function we are focused on.
-    transfoPrefix :: (MonadIO m)
-                  => Decls Name P.DefaultFun -> Name
-                  -> PrtT m (Decls Name P.DefaultFun)
-    transfoPrefix decls k =
-      flushLogs $ do
-        logDebug ("Processing " ++ show k)
-        d' <-
-          case M.lookup k decls of
-            Just (DFunction r t ty) ->
-              flip (DFunction r) ty <$> relevantTransfo t
-            Just def                ->
-              return def
-            Nothing                 ->
-              undefined
-        return $ M.insert k d' decls
-
-    relevantTransfo :: MonadPirouette m => PrtTerm -> m PrtTerm
-    relevantTransfo =   destrNF
-       >=> removeExcessiveDestArgs
-       >=> maybe return pullNthDestr (pullDestr opts)
 
 -- ** Auxiliar Defs
 
@@ -403,7 +376,6 @@ pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
 parseCliOpts :: Opt.Parser CliOpts
 parseCliOpts = CliOpts <$> parseStage
                        <*> parsePrefix
-                       <*> parsePullDestr
                        <*> parseExpansionExcl
                        <*> parseWithArgs
                        <*> parseExprWrapper
@@ -417,7 +389,7 @@ parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
                      <> Opt.short 'a'
                      <> Opt.value []
                      <> Opt.metavar "STR[,STR]*"
-                     <> Opt.help "Renames the transition function arguments to the specified list")
+                     <> Opt.help "Renames the transition function arguments to the specified list. The argument INPUT is considered as the user input one and is used to define actions.")
   where
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
@@ -458,15 +430,6 @@ parsePrefix = Opt.option Opt.str
              (  Opt.long "prefix"
              <> Opt.value ""
              <> Opt.help "Extract only the terms whose name contains the specified prefix")
-
-
-parsePullDestr :: Opt.Parser (Maybe Int)
-parsePullDestr = Opt.option (Just <$> Opt.auto)
-                     (  Opt.long "pull-destr"
-                     <> Opt.short 'p'
-                     <> Opt.value Nothing
-                     <> Opt.help "Bring the n-th destructor to the root if possible. Passing a zero does nothing, the constructor at the root is already at the root.")
-
 
 parseExpansionExcl :: Opt.Parser (Maybe [String])
 parseExpansionExcl = Opt.option (Just <$> Opt.maybeReader (Just . r))

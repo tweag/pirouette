@@ -219,9 +219,9 @@ tlaWithTyVars tyvs f = do
 -- |Translates a term to a TLA specification by first symbolically executing the term
 -- then translating the necessary parts.
 termToSpec :: (MonadPirouette m)
-           => TlaOpts -> [[Name]] -> Name -> PrtTerm
+           => TlaOpts -> [[Name]] -> Name -> PrtDef
            -> m TLA.AS_Spec
-termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
+termToSpec opts sortedNames mainFun d = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"
   depsMain <- tlaPure $ S.map (R.argElim id id) <$> depsOf mainFun
   depsClasses <-
@@ -229,7 +229,7 @@ termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runRead
   deps <- mapM trOneClass depsClasses
 
   tlaPure $ logDebug $ "Symbolically executing " ++ show mainFun
-  mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun t
+  mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun d
   tlaPure $ logDebug $ "Translating Action Definitions for " ++ show mainFun
   defs   <- case mctree of
     Choose branches -> concatMap p2l <$> mapM matchToAction branches
