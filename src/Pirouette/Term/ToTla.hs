@@ -8,7 +8,6 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-deferred-type-errors #-}
 module Pirouette.Term.ToTla where
 
 import           Pirouette.Monad
