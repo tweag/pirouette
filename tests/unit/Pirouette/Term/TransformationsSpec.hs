@@ -11,6 +11,7 @@ import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax as S
 import           Pirouette.Term.Transformations
 import           Pirouette.Term.DSL
+import qualified Pirouette.Term.Syntax.SystemF as R
 
 import Data.List (groupBy, transpose, lookup)
 import Control.Arrow (first)
@@ -101,6 +102,14 @@ spec = do
     mapM_ (uncurry dnfId) tSwaps
 
     mapM_ dnfExpected tDNFs
+
+  describe "cfoldmapSpecialize" $ do
+    it "works for cfoldmapSpecialize" $
+      runPrtTest
+        (mapM_ declareDummyFunc ["foldr0", "Bool_match", "True", "False"] >> cfoldmapSpecialize tcfoldBool)
+        `shouldBe` tcfoldBoolSpec
+  --  it "works for cfoldmapSpecialize" $
+  --    runPrtTest (cfoldmapSpecialize tcfoldEndo) `shouldBe` tcfoldEndoSpec
 
 -- The test terms grouped by their categories
 
@@ -398,3 +407,28 @@ tDNF2_res = term $ lam2 $ \x y ->
                                      (\jy -> def "F" .$$ [y, def "IJ" .$$ [c, t, e, jy]])
                                      (def "F" .$$ [y, def "IN" .$$ [c,t,e]]))
       ]
+
+tcfoldBool = term $ lam2 $ \x y ->
+  tyApp (tyApp (func "fFoldableNil_cfoldMap") "Bool") "String" .$$
+    [ func "CConsMonoid" .$$
+        [ lam2 $ \b1 b2 ->
+            caseof "Bool" b1
+              [ "True"  :->: func "True"
+              , "False" :->: b2
+              ]
+        , func "False"
+        ]
+    , lam1 $ \p -> func "Eq" .$$ [y, p]
+    , x
+    ]
+
+tcfoldBoolSpec = term $ lam2 $ \ x y ->
+  tyApp (tyApp (func "foldr0") "String") "Bool" .$$
+    [ lam2_ann [("a","String"),("b","Bool")] $
+      \a b -> caseofAnn "Bool_match" "Bool" "Bool" (func "Eq" .$$ [y, a])
+        [ "True"  :->: func "True"
+        , "False" :->: b
+        ]
+    , func "False"
+    , x
+    ]
