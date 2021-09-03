@@ -57,4 +57,4 @@ spec = do
   let (DFunction _ short _) = fromJust $ M.lookup shortN decls
   describe "PrtTerms Expansion" $ do
     it "Produces NF terms" $ do
-      mockPrt decls (expandDefs (const False) long) `shouldBe` Right short
+      mockPrt decls (expandDefs long) `shouldBe` Right short

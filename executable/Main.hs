@@ -77,7 +77,6 @@ data CliOpts = CliOpts
   { stage         :: Stage
   , funNamePrefix :: String
   , pullDestr     :: Maybe Int
-  , expandExcl    :: Maybe [String]
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
@@ -188,11 +187,12 @@ processDecls opts = do
   postDs <- sequence $ M.mapWithKey processOne preDs
   modify (\st -> st { decls = postDs })
  where
-   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
-   generalTransformations =  expandDefs (const False)
-                         >=> constrDestrId
-                         >=> removeExcessiveDestArgs
-                         >=> cfoldmapSpecialize
+   generalTransformations :: MonadPirouette m => Bool -> PrtTerm -> m PrtTerm
+   generalTransformations expand
+      =   (if expand then expandDefs else return)
+      >=> constrDestrId
+      >=> removeExcessiveDestArgs
+      >=> cfoldmapSpecialize
 
    focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
    focusedTransformations =   destrNF
@@ -202,10 +202,9 @@ processDecls opts = do
    prefix = funNamePrefix opts
 
    processOne n =
-     let fSel = if contains prefix n
-                then focusedTransformations
-                else return
-         f = generalTransformations >=> fSel
+     let isSel = contains prefix n
+         fSel = if isSel then focusedTransformations else return
+         f = generalTransformations (not isSel) >=> fSel
       in defTermMapM f
 
 -- ** Auxiliar Defs
@@ -301,7 +300,6 @@ parseCliOpts :: Opt.Parser CliOpts
 parseCliOpts = CliOpts <$> parseStage
                        <*> parsePrefix
                        <*> parsePullDestr
-                       <*> parseExpansionExcl
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
@@ -363,17 +361,6 @@ parsePullDestr = Opt.option (Just <$> Opt.auto)
                      <> Opt.short 'p'
                      <> Opt.value Nothing
                      <> Opt.help "Bring the n-th destructor to the root if possible. Passing a zero does nothing, the constructor at the root is already at the root.")
-
-
-parseExpansionExcl :: Opt.Parser (Maybe [String])
-parseExpansionExcl = Opt.option (Just <$> Opt.maybeReader (Just . r))
-                     (  Opt.long "expand-excl"
-                     <> Opt.short 'e'
-                     <> Opt.value Nothing
-                     <> Opt.help "Expand all terms except those whose name contains a prefix of the values given in a comma-separated list as an argument")
-  where
-    r :: String -> [String]
-    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
 
 parsePruneMaybe :: Opt.Parser Bool
 parsePruneMaybe = Opt.switch

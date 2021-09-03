@@ -255,6 +255,10 @@ termApp _            _         = error "Mismatched Term/Type application"
 -- WARNING: When calling @expandvar (n, defn) m@, ensure that @defn@ does /not/
 -- depend on @n@, i.e., @n@ can't be recursive. 'expandVar' will /not/
 -- perform this check and will happily loop.
+--
+-- WARNING: Although we're using De Bruijn indices, some code generation targets
+-- such as TLA+ are very unhappy about name shadowing, so you might want to map
+-- over the result and deshadow bound names.
 expandVar :: (HasSubst ty, Eq v, IsVar v, Data ty, Data ann, Data v)
           => (v, AnnTerm ty ann v) -> AnnTerm ty ann v -> AnnTerm ty ann v
 expandVar (n, defn) = rewrite go
