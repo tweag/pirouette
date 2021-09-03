@@ -101,14 +101,13 @@ cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
           annB = R.Ann "b"
           -- gene = \ a b -> f a || b
           gene = R.Lam annA a $ R.Lam annB m $ R.App (R.F $ FreeName boolMatch)
-                 -- We have to shift by 3 since application shifts by (-1). As a result, the final f will have been shifted by 2.
-                 [ R.Arg (R.app (shiftCutoff 1 3 f) (R.Arg $ R.App (R.B annA 1) []))
+                 [ R.Arg (R.app (shift 2 f) (R.Arg $ R.App (R.B annA 1) []))
                  , R.TyArg m
                  , R.Arg (R.App (R.F $ FreeName true) [])
                  , R.Arg (R.App (R.B annB 0) [])
                  ]
           zero = R.App (R.F $ FreeName false) []
-       in return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg zero, R.Arg xs]
+      return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg zero, R.Arg xs]
 
     goEndo :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
     goEndo m a [mon,f,xs,k] = do
@@ -116,7 +115,7 @@ cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
       let annA = R.Ann "a"
           annB = R.Ann "b"
           -- gene = \ a b -> f a b
-          gene = R.Lam annA a $ R.Lam annB m $ R.appN (shiftCutoff 2 3 f)
+          gene = R.Lam annA a $ R.Lam annB m $ R.appN (shift 2 f)
                  [ R.Arg (R.App (R.B annA 1) [])
                  , R.Arg (R.App (R.B annB 0) [])
                  ]
