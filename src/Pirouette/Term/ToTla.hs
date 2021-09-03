@@ -44,6 +44,8 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.List as L
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS
 
 import qualified Language.TLAPlus.Pretty as TLA
 
@@ -828,6 +830,7 @@ trTermConstant :: (MonadPirouette m) => PIRConstant -> TlaT m TLA.AS_Expression
 trTermConstant (PIRConstInteger i) = return $ TLA.AS_Num di i
 trTermConstant (PIRConstBool b)    = return $ TLA.AS_Bool di b
 trTermConstant (PIRConstString s)  = return $ TLA.AS_StringLiteral di s
+trTermConstant (PIRConstByteString s) = return $ TLA.AS_StringLiteral di (map BS.w2c (BS.unpack s))
 trTermConstant c = throwError' $ PEOther $ "NotYetImplemented trTermConstant " ++ show c
 
 -- |Application of a defined name as a TLA expression. This is tricky because

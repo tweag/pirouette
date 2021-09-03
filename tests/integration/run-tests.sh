@@ -98,6 +98,9 @@ string-to-errcode() {
     "Temporal property violated")
        echo 13
     ;;
+    "Deadlock")
+       echo 11
+    ;;
     *)
       echo $1
     ;;
