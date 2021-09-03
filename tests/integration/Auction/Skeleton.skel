@@ -1,0 +1,21 @@
+---- MODULE Auction ----
+
+EXTENDS Integers, Sequences
+VARIABLE st
+CONSTANT MAXDEPTH, tok, pk1, pk2, pk3, pk4, pk5
+vars ==
+  <<st>>
+PlutusInteger == 0..6
+PlutusByteString == {pk1, pk2, pk3, pk4, pk5}
+
+----
+----
+
+Init ==
+  /\ st = State1(Ongoing(HighestBid1(0,pk3)), Nil)
+Spec ==
+  Init /\ []([Next]_vars) /\ WF_vars(Next)
+
+Inv == [](st.arg0.arg0.arg0 >= 0)
+
+====

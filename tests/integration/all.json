@@ -100,4 +100,14 @@
   , "postprocess": "sed -i '/^Inv ==/i DecOk == [](st.arg0.arg0 > 0 => (\\\\A n \\\\in 1 .. st.arg0.arg0: ENABLED ActionDec(n)))' IncDec.tla"
   , "tla"        : "tlc IncDec"
   }
+
+, { "name"       : "Auction"
+  , "cd"         : "Auction"
+  , "pir"        : "Auction.flat"
+  , "output"     : "Auction.tla"
+  , "postprocess": "sed -i '/^SetOfAuctionParams0/i p == AuctionParams1(pk1,Nil,3)' Auction.tla"
+  , "options"    : "--prefix auctionTransition -s Skeleton.tla -a p,st,INPUT -w \"LET res == ___ IN st' = res[2]\" --ty-spz ALL"
+  , "tla"        : "tlacli check --constant MAXDEPTH 2 --model-values tok pk1 pk2 pk3 pk4 pk5 --property Inv -- Auction.tla"
+  , "expected"   : "Deadlock"
+  }
 ]
