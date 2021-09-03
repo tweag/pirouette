@@ -234,7 +234,7 @@ instance (HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
 
   subst s (App n xs)  = appN (applySub s n) $ map (argMap id (subst s)) xs
   subst s (Lam v k t) = Lam v k (subst (liftSub s) t)
-  subst s (Abs v k t) = Abs v k (subst (liftSub s) t)
+  subst s (Abs v k t) = Abs v k (subst s t)
 
 substTy :: (HasSubst ty)
         => Sub ty -> AnnTerm ty ann v -> AnnTerm ty ann v

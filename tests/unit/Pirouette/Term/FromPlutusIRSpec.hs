@@ -6,6 +6,7 @@ import           Pirouette.Term.FromPlutusIR
 import           Pirouette.Term.Syntax
 import           Pirouette.Term.Transformations
 import           Pirouette.Monad
+import           Pirouette.Monad.Logger
 
 import           PlutusIR.Core.Type (Program)
 import qualified PlutusIR.Parser    as PIR
@@ -18,7 +19,9 @@ import qualified Data.Text          as T
 import qualified Data.Text.IO       as T
 import           Text.Megaparsec.Error (errorBundlePretty)
 import           Control.Monad.Except
+import           Control.Monad.Identity
 import           Test.Hspec
+import           Debug.Trace
 
 openAndParsePIR :: FilePath
                 -> IO (Program P.TyName P.Name P.DefaultUni P.DefaultFun PIR.SourcePos)
@@ -27,6 +30,12 @@ openAndParsePIR fileName = do
   case PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content of
     Left err -> putStrLn (errorBundlePretty err) >> error "Couldn't parse"
     Right p  -> return p
+
+mockPrtLog :: Decls Name P.DefaultFun -> PrtT Identity a -> Either String a
+mockPrtLog ds f =
+  let (res, logs) = runIdentity $ mockPrtT ds f
+   in trace (unlines $ map msgContent logs) res
+
 
 spec = do
   mod <- runIO (openAndParsePIR "tests/unit/resources/fromPlutusIRSpec-01.pir")
