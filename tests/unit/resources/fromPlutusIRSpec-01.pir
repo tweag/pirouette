@@ -36,7 +36,7 @@
       (strict)
       (vardecl mustBeTrue (all a (type) (all b (type) (fun Bool [[TxConstraints a] b]))))
       (abs a (type) (abs b (type) (lam x Bool
-        [ {{ TxConstraint a } b } 
+        [ {{ TxConstraints a } b } 
           [ {build TxConstraint} 
             (abs k (type) (lam c (fun TxConstraint (fun k k)) (lam n k
              [[c [MustBeTrue x] ] n ]

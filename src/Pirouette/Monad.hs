@@ -18,6 +18,7 @@ import           Control.Monad.Reader
 import           Control.Monad.State.Strict
 import           Control.Monad.Except
 import           Control.Monad.Fail
+import           Control.Monad.Identity
 import           Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -279,10 +280,22 @@ instance (Monad m) => MonadLogger (PrtT m) where
 instance (Monad m) => MonadFail (PrtT m) where
   fail msg = throwError' (PEOther msg)
 
-runPrtT :: (Monad m)
-           => PrtOpts -> PrtState -> PrtT m a
-           -> m (Either PrtErrorCtx a, [LogMessage])
+-- |Runs a 'PrtT' computation, ignoring the resulting state
+runPrtT :: (Monad m) => PrtOpts -> PrtState -> PrtT m a
+                     -> m (Either PrtErrorCtx a, [LogMessage])
 runPrtT opts st = runLoggerT . runExceptT . flip runReaderT opts . flip evalStateT st . unPirouette
+
+-- |Mocks a 'PrtT' computation, running it with default options, omitting any logging
+-- and displaying errors as strings already.
+mockPrtT :: (Monad m) => Decls Name DefaultFun -> PrtT m a -> m (Either String a)
+mockPrtT ds f = either (Left . show) Right . fst <$> runPrtT opts st f
+  where
+    st   = PrtState ds (error "mockPrtT has no main program") M.empty Nothing
+    opts = PrtOpts CRIT []
+
+-- |Pure variant of 'mockPrtT', over the Identity monad
+mockPrt :: Decls Name DefaultFun -> PrtT Identity a -> Either String a
+mockPrt ds = runIdentity . mockPrtT ds
 
 -- |If we have a 'MonadIO' in our stack, we can ask for all the logs produced so far.
 -- This is useful for the main function, to output the logs of different stages as these stages

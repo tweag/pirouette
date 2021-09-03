@@ -4,12 +4,15 @@ module Pirouette.Term.FromPlutusIRSpec where
 
 import           Pirouette.Term.FromPlutusIR
 import           Pirouette.Term.Syntax
+import           Pirouette.Term.Transformations
+import           Pirouette.Monad
 
 import           PlutusIR.Core.Type (Program)
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
 
-import           Data.Either           (isRight)
+import           Data.Either           (isRight, fromRight)
+import           Data.Maybe            (fromJust)
 import qualified Data.Map           as M
 import qualified Data.Text          as T
 import qualified Data.Text.IO       as T
@@ -27,15 +30,22 @@ openAndParsePIR fileName = do
 
 spec = do
   mod <- runIO (openAndParsePIR "tests/unit/resources/fromPlutusIRSpec-01.pir")
-  let mod' = runExcept (trProgram mod)
+  let mod' = runExcept (trProgramDecls mod)
+  let Right decls = mod'
+  let longN  = head $ filter ((== "long") . nameString) $ M.keys decls
+  let shortN = head $ filter ((== "short") . nameString) $ M.keys decls
 
-  describe "trProgram" $ do
-    it "Translates the PIR program correctly" $
+  describe "From PIR to PrtTerms" $ do
+    it "Translates the PIR program without errors" $
       isRight mod' `shouldBe` True
 
-    let Right (_, decls) = mod'
-    it "Correctly puts terms in NF" $
-      case (,) <$> M.lookup (Name "long"  (Just 24)) decls
-               <*> M.lookup (Name "short" (Just 25)) decls of
-        Just (DFunction _ l _ , DFunction _ s _) -> l `shouldBe` s
-        _                                        -> expectationFailure "long/short not declared"
+    it "Constains 'long' and 'short' terms" $ do
+      case (,) <$> M.lookup longN decls <*> M.lookup shortN decls of
+        Just _  -> True `shouldBe` True
+        Nothing -> expectationFailure "long/short not declared"
+
+  let (DFunction _ long _)  = fromJust $ M.lookup longN  decls
+  let (DFunction _ short _) = fromJust $ M.lookup shortN decls
+  describe "PrtTerms Expansion" $ do
+    it "Produces NF terms" $ do
+      mockPrt decls (expandDefs (const False) long) `shouldBe` Right short
