@@ -234,8 +234,10 @@ run-single-test() {
 
 mecho blue "Building pirouette"
 cabal build
-mecho blue "Run unit tests"
-cabal run tests
+if $onci; then
+  mecho blue "Run unit tests"
+  cabal test
+fi
 
 if [[ "$(basename $(pwd))" == "pirouette" ]]; then
   cd tests/integration

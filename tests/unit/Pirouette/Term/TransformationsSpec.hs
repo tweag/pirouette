@@ -108,8 +108,6 @@ spec = do
       runPrtTest
         (mapM_ declareDummyFunc ["foldr0", "Bool_match", "True", "False"] >> cfoldmapSpecialize tcfoldBool)
         `shouldBe` tcfoldBoolSpec
-  --  it "works for cfoldmapSpecialize" $
-  --    runPrtTest (cfoldmapSpecialize tcfoldEndo) `shouldBe` tcfoldEndoSpec
 
 -- The test terms grouped by their categories
 
