@@ -170,7 +170,7 @@ mainOpts opts = do
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
       putStrLn' ""
 
-    toTla :: Name -> PrtTerm -> PrtT m ()
+    toTla :: Name -> PrtDef -> PrtT m ()
     toTla n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' n t
@@ -183,7 +183,7 @@ processDecls opts = do
                     -- should happen only after dependency cycles have been eliminated; for now,
                     -- just make sure that this is the first thing we call.
   preDs  <- gets decls
-  postDs <- sequence $ M.mapWithKey processOne preDs
+  postDs <- sequence $ M.map processOne preDs
   modify (\st -> st { decls = postDs })
  where
    generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
@@ -193,18 +193,7 @@ processDecls opts = do
       >=> removeExcessiveDestArgs
       >=> cfoldmapSpecialize
 
-   focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
-   focusedTransformations =   destrNF
-                          >=> removeExcessiveDestArgs
-                          >=> maybe return pullNthDestr (pullDestr opts)
-
-   prefix = funNamePrefix opts
-
-   processOne n =
-     let isSel = contains prefix n
-         fSel = if isSel then focusedTransformations else return
-         f = fSel >=> generalTransformations
-      in defTermMapM f
+   processOne = defTermMapM generalTransformations
 
 -- ** Auxiliar Defs
 

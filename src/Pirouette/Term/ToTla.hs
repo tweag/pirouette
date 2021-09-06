@@ -232,7 +232,7 @@ termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ d
   deps <- mapM (R.argElim (trTypeName opts) trTermName) neededDeps
 
   tlaPure $ logDebug $ "Symbolically executing " ++ show mainFun
-  mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun d
+  mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun t
   tlaPure $ logDebug $ "Translating Action Definitions for " ++ show mainFun
   defs   <- case mctree of
     Choose x ty br -> concatMap p2l <$> mapM (uncurry $ matchToAction x ty) br
