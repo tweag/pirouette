@@ -98,9 +98,6 @@ string-to-errcode() {
     "Temporal property violated")
        echo 13
     ;;
-    "Deadlock")
-       echo 11
-    ;;
     *)
       echo $1
     ;;
@@ -246,6 +243,11 @@ run-single-test() {
 
 mecho blue "Building pirouette"
 cabal build
+if $onci; then
+  mecho blue "Run unit tests"
+  cabal test
+fi
+
 if [[ "$(basename $(pwd))" == "pirouette" ]]; then
   cd tests/integration
 fi

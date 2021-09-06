@@ -27,8 +27,6 @@ import qualified Data.Text as T
 import           Data.String
 import           Data.Data
 
-import Debug.Trace
-
 -- * System F
 
 -- ** Annotated Variables
