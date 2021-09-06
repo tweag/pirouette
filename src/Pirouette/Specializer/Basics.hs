@@ -13,7 +13,7 @@ import qualified Data.Text as T
 
 boolSpzMatch t n [] _ exp
   | nameString n == T.pack "True"  = tlaAnd [t, exp]
-  | nameString n == T.pack "False" = tlaAnd [tlaNeg t, exp]
+  | nameString n == T.pack "False" = tlaAnd [tlaNot t, exp]
 
 boolSpz :: TypeSpecializer
 boolSpz = TypeSpecializer {

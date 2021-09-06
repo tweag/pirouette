@@ -29,8 +29,6 @@ import           Data.Data
 import           Data.Generics.Uniplate.Operations
 import           Data.Generics.Uniplate.Data
 
-import Debug.Trace
-
 -- * System F
 
 -- ** Annotated Variables

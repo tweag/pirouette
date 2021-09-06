@@ -11,17 +11,21 @@ onci=false
 # Tells us to run fast tests only
 fast=false
 
-# Speficies a regexp to match which tests we want to run
+# Speficies part of a string that we want the tests to be ran to contain
 matching=""
 
-# Only generate the TLA+ files but don't run TLA+
+# copy the comand line to generate the TLA+ files to the clipboard
+copy_cmd=false
+
+# Only generates the TLA+ files, don't run TLA+
 gen_only=false
 
 while [[ $# -ge 1 ]]; do
   case $1 in
     --ci)   onci=true;;
     --fast) fast=true;;
-    --matching) shift; matching=$1;;
+    --containing) shift; matching=".*$1.*";;
+    --copy-cmd|-c) copy_cmd=true;;
     --gen-only|-g) gen_only=true;;
     *)  echo "Unknown option: $1"; exit 1;;
   esac
@@ -82,10 +86,10 @@ get-json-key-into-def() {
 
 string-to-errcode() {
   case $1 in
-     "Counter Example"|"Counter-example"|"Counter-Example") 
+     "Counter Example"|"Counter-example"|"Counter-Example")
       echo 12
     ;;
-     "Parse error"|"Parse Error") 
+     "Parse error"|"Parse Error")
       echo 150
     ;;
     "Invalid function application")
@@ -94,7 +98,7 @@ string-to-errcode() {
     "Temporal property violated")
        echo 13
     ;;
-    *) 
+    *)
       echo $1
     ;;
   esac
@@ -173,21 +177,26 @@ run-single-test() {
 
   mecho blue "+ Running:   $name"
   mecho blue "  Expecting: $expected"
-  cd "$testdir" 
+  cd "$testdir"
   if [[ "$output" == "null" ]]; then
     mecho red "    ! No output specified; using Contract.tla"
     output="Contract.tla"
   fi
 
-  set +e
-  mecho blue "    - Running pirouette"
-  eval "cabal exec pirouette -- $pir $options > $output"
-  res=$?
-  set -e
+  if $copy_cmd; then
+    echo "cabal exec pirouette -- $testdir/$pir $options" | xclip -sel clip
+    exit 0
+  else
+    set +e
+    mecho blue "    - Running pirouette"
+    eval "cabal exec pirouette -- $pir $options > $output"
+    res=$?
+    set -e
+  fi
 
   if [[ "$res" -ne "0" ]]; then
     mecho red "    ! pirouette failed"
-    mecho red "    !    ran with: $pir $options"  
+    mecho red "    !    ran with: $pir $options"
     mecho red "    !    redirected to: $output"
     return 1
   fi
@@ -236,6 +245,7 @@ mecho blue "Building pirouette"
 cabal build
 
 if $onci; then
+  mecho blue "Run unit tests"
   cabal test
 fi
 
