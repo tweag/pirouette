@@ -86,10 +86,10 @@ get-json-key-into-def() {
 
 string-to-errcode() {
   case $1 in
-     "Counter Example"|"Counter-example"|"Counter-Example") 
+     "Counter Example"|"Counter-example"|"Counter-Example")
       echo 12
     ;;
-     "Parse error"|"Parse Error") 
+     "Parse error"|"Parse Error")
       echo 150
     ;;
     "Invalid function application")
@@ -98,7 +98,7 @@ string-to-errcode() {
     "Temporal property violated")
        echo 13
     ;;
-    *) 
+    *)
       echo $1
     ;;
   esac
@@ -177,7 +177,7 @@ run-single-test() {
 
   mecho blue "+ Running:   $name"
   mecho blue "  Expecting: $expected"
-  cd "$testdir" 
+  cd "$testdir"
   if [[ "$output" == "null" ]]; then
     mecho red "    ! No output specified; using Contract.tla"
     output="Contract.tla"
@@ -196,7 +196,7 @@ run-single-test() {
 
   if [[ "$res" -ne "0" ]]; then
     mecho red "    ! pirouette failed"
-    mecho red "    !    ran with: $pir $options"  
+    mecho red "    !    ran with: $pir $options"
     mecho red "    !    redirected to: $output"
     return 1
   fi
@@ -243,6 +243,11 @@ run-single-test() {
 
 mecho blue "Building pirouette"
 cabal build
+if $onci; then
+  mecho blue "Run unit tests"
+  cabal test
+fi
+
 if [[ "$(basename $(pwd))" == "pirouette" ]]; then
   cd tests/integration
 fi
