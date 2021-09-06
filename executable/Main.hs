@@ -187,9 +187,9 @@ processDecls opts = do
   postDs <- sequence $ M.mapWithKey processOne preDs
   modify (\st -> st { decls = postDs })
  where
-   generalTransformations :: MonadPirouette m => Bool -> PrtTerm -> m PrtTerm
-   generalTransformations expand
-      =   (if expand then expandDefs else return)
+   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   generalTransformations
+      =   expandDefs
       >=> constrDestrId
       >=> removeExcessiveDestArgs
       >=> cfoldmapSpecialize
@@ -204,7 +204,7 @@ processDecls opts = do
    processOne n =
      let isSel = contains prefix n
          fSel = if isSel then focusedTransformations else return
-         f = generalTransformations (not isSel) >=> fSel
+         f = fSel >=> generalTransformations
       in defTermMapM f
 
 -- ** Auxiliar Defs

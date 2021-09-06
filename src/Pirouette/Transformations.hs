@@ -11,15 +11,16 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
 import           Pirouette.Term.Transformations
 
+import qualified PlutusCore as P
+
 import           Control.Monad.State
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (mapMaybe)
 import qualified Data.Map as M
 
 -- |Removes all Even-Odd mutually recursive functions from the program.
--- When successfull, returns a list of names indicating the order in which
--- they should be defined so that the dependencies of a term @T@ are defined
--- before @T@.
+-- When successfull, sets the 'tord' state field with a list of names indicating the order in which
+-- they should be defined so that the dependencies of a term @T@ are defined before @T@.
 elimEvenOddMutRec :: (MonadPirouette m) => m ()
 elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
                 >>= sortDeps
@@ -80,3 +81,16 @@ elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
             then solveTermDeps (ctr + 1) (ns ++ [n])
             else mapM_ (expandDefIn n) ns
               >> snoc n <$> solveTermDeps 0 ns
+
+{-
+expandDefs :: (MonadPirouette m) => m ()
+expandDefs = pushCtx "expandDefs" $ do
+  mord <- gets tord
+  case mord of
+    Nothing  -> throwError' $ PEOther "No dependency order, please call elimEvenOddMutRec"
+    Just ord -> modify $ \st -> st { decls = go (decls st) [] ord }
+ where
+  go :: Decls Name P.DefaultFun -> [(Name, PrtTerm)] -> [R.Arg Name Name]
+     -> Decls Name P.DefaultFun
+  go decls toInline ns =
+-}
