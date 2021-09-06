@@ -217,49 +217,19 @@ removeThunks = pushCtx "removeThunks" . rewriteM (runMaybeT . go)
     appLast (R.Lam ann ty t)          arg = R.Lam ann ty (appLast t arg)
     appLast t                         arg = R.termApp t (R.Arg arg)
 
-{-
--- |`expandDefsIn transfo decls k` modifies the definition of `k` in `decls`
--- by expanding all names in `transfo` with their definition.
-expandDefsIn :: (MonadPirouette m)
-             => [(Name, PrtTerm)] -> Decls Name P.DefaultFun -> Name
-             -> m (Decls Name P.DefaultFun)
-expandDefsIn transfo decls k =
-  pushCtx ("expanding Def of " ++ show (pretty k)) $ do
-    case M.lookup k decls of
-      -- `k` is in the decls table
-      Nothing ->  undefined
-      Just (DFunction r defk ty) -> do
-        defk' <- rewriteM (runMaybeT . rewriteDef defk transfo) defk
-        return $ M.insert k (DFunction r defk' ty) decls
-      Just _ -> return decls
-
-  where
-    -- The first argument is only used to separate variables when
-    -- the inlining is performed.
-    rewriteDef :: (MonadPirouette m)
-               => PrtTerm -> [(Name, PrtTerm)] -> PrtTerm
-               -> MaybeT m PrtTerm
-    rewriteDef t l (R.App (R.F (FreeName n)) args) =
-      case lookup n l of
-        Just u -> do
-          logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args))
-          let t' = separateBoundFrom t u
-          let res = R.appN t' args
-          logTrace ("Result: " ++ show (pretty res))
-          return res
-        Nothing ->
-          fail "expandDefs: not the expected symbol"
-    rewriteDef t l _ = fail "expandDefs: not an R.App"
--}
-
+-- |Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
+-- after performing any sort of inlining.
 deshadowBoundNames :: PrtTerm -> PrtTerm
 deshadowBoundNames = go []
   where
+    -- @newAnnFrom ns n@ returns a fresh name similar to @n@ given a list of declared names @ns@.
+    -- it does so by incrementing the 'nameUnique' part of 'n'. Instead of incrementing one-by-one,
+    -- we increment by i to hopefully require less iterations to find a fresh name.
     newAnnFrom :: [Name] -> Name -> Name
     newAnnFrom anns a =
       case a `elemIndex` anns of
         Nothing -> a
-        Just i  -> newAnnFrom anns (a { nameUnique = Just $ maybe i (+i) (nameUnique a) })
+        Just i  -> newAnnFrom anns (a { nameUnique = Just $ maybe i ((+i) . (+1)) (nameUnique a) })
 
     go bvs (R.Lam (R.Ann ann) ty t)
       = let ann' = newAnnFrom bvs ann

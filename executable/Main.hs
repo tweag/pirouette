@@ -183,6 +183,9 @@ mainOpts opts = do
 
 processDecls :: (MonadIO m) => CliOpts -> PrtT m ()
 processDecls opts = do
+  elimEvenOddMutRec -- TODO: once we split the processing in multiple phases, processDecls
+                    -- should happen only after dependency cycles have been eliminated; for now,
+                    -- just make sure that this is the first thing we call.
   preDs  <- gets decls
   postDs <- sequence $ M.mapWithKey processOne preDs
   modify (\st -> st { decls = postDs })
@@ -216,7 +219,7 @@ pirouette pir opts f =
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
     let st = PrtState decls toplvl M.empty Nothing
-    (eres, msgs) <- runPrtT opts st (elimEvenOddMutRec >> f)
+    (eres, msgs) <- runPrtT opts st f
     mapM_ printLogMessage msgs
     case eres of
       Left  err -> liftIO $ print err >> exitWith ecInternalError
