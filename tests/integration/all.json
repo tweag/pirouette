@@ -81,6 +81,17 @@
   , "slow"       : true
   }
 
+, { "name"       : "Faulty MultiSigStateMachine"
+  , "cd"         : "MultiSigStateMachine-Faulty"
+  , "pir"        : "FaultyMultiSig.flat"
+  , "options"    : "-a param,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition -p 2 --ty-spz ALL"
+  , "output"     : "Contract.tla"
+  , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
+  , "tla"        : "tlc Contract_MC"
+  , "expected"   : "Temporal property violated"
+  , "slow"       : true
+  }
+
 , { "name"       : "IncDecStateMachine"
   , "cd"         : "IncDecStateMachine"
   , "pir"        : "IncDecStateMachine.flat"
