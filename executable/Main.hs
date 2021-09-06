@@ -18,6 +18,7 @@ module Main where
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import Pirouette.Monad.Logger
+import Pirouette.Transformations
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
@@ -41,11 +42,12 @@ import           Control.Monad.Identity
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer.Strict
-import           Control.Arrow (second, (***))
+import           Control.Arrow (first, second, (***))
 import           Data.Data
 import           Data.Functor
 import           Data.Foldable (asum)
 import qualified Data.List          as L
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
 import           Data.Maybe            (isJust)
 import qualified Data.Text          as T
@@ -75,7 +77,6 @@ data CliOpts = CliOpts
   { stage         :: Stage
   , funNamePrefix :: String
   , pullDestr     :: Maybe Int
-  , expandExcl    :: Maybe [String]
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
@@ -148,7 +149,7 @@ ecTooManyDefs = ExitFailure 16
 -- which definitions the user is interested into, etc...
 mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtT m ()
 mainOpts opts = do
-  sortedNames <- processDecls opts
+  processDecls opts
   allDecls <- gets decls
   let relDecls =
         M.toList $ M.filterWithKey (\k _ -> contains (funNamePrefix opts) k) allDecls
@@ -159,7 +160,7 @@ mainOpts opts = do
       when (length relDecls /= 1) $
         throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
       case head relDecls of
-        (n, DFunction _ t _) -> toTla sortedNames n t
+        (n, DFunction _ t _) -> toTla n t
         (n, _)               -> throwError' (PEOther $ show n ++ " is not a function")
  where
     printDef name def = do
@@ -173,153 +174,51 @@ mainOpts opts = do
       putStrLn' ""
     printCTree name _ = throwError' $ PEOther (show name ++ " is not a function")
 
-    toTla :: [[Name]] -> Name -> PrtTerm -> PrtT m ()
-    toTla sortedNames n t = do
+    toTla :: Name -> PrtTerm -> PrtT m ()
+    toTla n t = do
       opts' <- optsToTlaOpts opts
-      spec <- termToSpec opts' sortedNames n t
+      spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
--- |Processes all declarations according to some transformations.
--- It outputs the list of names in an order compatible with dependencies.
--- Meaning that if `n0` and `n1` are in the same list, they are mutually dependent,
--- and if `n0` is in a list which is before the one which contains `n1`,
--- then `n0` does not depend of `n1` (`n1` might depend of `n0` or not).
-processDecls :: (MonadIO m) => CliOpts -> PrtT m [[Name]]
+
+processDecls :: (MonadIO m) => CliOpts -> PrtT m ()
 processDecls opts = do
-  ds  <- gets decls
-  let allNames = M.keys ds
-  sortedNames <- sortDeps allNames
-  (remainingNames, dsPruned, _) <- foldM go ([], ds, []) sortedNames
-  ds' <- mapM (defTermMapM transfo) dsPruned
-  modify (\st -> st{decls = ds'})
-  return $ reverse remainingNames
-  where
-    -- `transfo` contains the transformations applied to every term.
-    transfo :: MonadPirouette m => PrtTerm -> m PrtTerm
-    transfo =  constrDestrId
-           >=> removeExcessiveDestArgs
-           >=> cfoldmapSpecialize
+  elimEvenOddMutRec -- TODO: once we split the processing in multiple phases, processDecls
+                    -- should happen only after dependency cycles have been eliminated; for now,
+                    -- just make sure that this is the first thing we call.
+  preDs  <- gets decls
+  postDs <- sequence $ M.mapWithKey processOne preDs
+  modify (\st -> st { decls = postDs })
+ where
+   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   generalTransformations
+      =   expandDefs
+      >=> constrDestrId
+      >=> removeExcessiveDestArgs
+      >=> cfoldmapSpecialize
 
-    prefix = funNamePrefix opts
+   focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   focusedTransformations =   destrNF
+                          >=> removeExcessiveDestArgs
+                          >=> maybe return pullNthDestr (pullDestr opts)
 
-    -- This function makes sure to define the dependencies of a type/term F
-    -- before defining F itself.
-    -- To do so, it computes equivalence classes for the pre-order "depends of".
-    -- The output list is a linearization of the order between classes,
-    -- so if a class `A` is smaller than `B`
-    -- (in the sense that elements of `B` depends of `A`)
-    -- then `A` is guaranted to appear before `B`.
-    -- The order of independent classes is unspecified.
-    sortDeps :: (MonadPirouette m) => [Name] -> m [[Name]]
-    sortDeps [] = return []
-    sortDeps (d:ds) = do
-      depsD <- S.map (R.argElim id id) <$> depsOf d
-      let (couldBeBefore, after) = L.partition (`S.member` depsD) ds
-      annotatedCouldBeBefore <-
-        mapM (\x -> (x,) . S.member d . S.map (R.argElim id id) <$> depsOf x) couldBeBefore
-      let (equiv, before) =
-            bimap (map fst) (map fst) $ L.partition snd annotatedCouldBeBefore
-      fmap (++) (sortDeps before) <*> (((d : equiv) :) <$> sortDeps after)
+   prefix = funNamePrefix opts
 
-    go :: (MonadIO m)
-       => ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)]) -> [Name]
-       -> PrtT m ([[Name]], Decls Name P.DefaultFun, [(Name, PrtTerm)])
-    -- An empty dependency class should not exist.
-    go (names, decls, transfo) []  = undefined
-    go (names, decls, transfo) [k]
-      | contains prefix k = do
-        -- If the declaration is the one we are focused on,
-        -- we do not want to suppress it, and apply some additional transformations.
-        declRelevant <- transfoPrefix decls k
-        decls' <- expandDefsIn transfo declRelevant k
-        return ([k] : names, decls', transfo)
-      | maybe False (elem $ T.unpack (nameString k)) (expandExcl opts) = do
-        -- If the user explicitely stated not to expand this declaration,
-        -- there is no reason to stay deaf to this demand.
-        decls' <- expandDefsIn transfo decls k
-        return ([k] : names, decls', transfo)
-      | otherwise = do
-        decls' <- expandDefsIn transfo decls k
-        case M.lookup k decls' of
-          -- Any name should be declared.
-          Nothing -> undefined
-          Just (DFunction _ t _) ->
-            if S.member (R.Arg k) (termNames t)
-            -- If the function is recursive, we keep it in the declarations
-            then return ([k] : names, decls', transfo)
-            -- Otherwise, we delete it and store its definition,
-            -- to inline it in the definitions relying on it.
-            else
-              return (names, M.delete k decls', (k, t) : transfo)
-          _ -> return ([k] : names, decls', transfo)
-    -- If the function is mutually recursive, we follow the same logic,
-    -- but now, we have to inline a function in definition we have already dealt with.
-    -- It is the purpose of the `expanseClass` function.
-    go (names, decls, transfo) l = do
-      (remNames, decls', newTransfo) <- expanseClass decls [] [] l
-      finalDecls <- foldM (expandDefsIn transfo) decls' remNames
-      return (remNames : names, finalDecls, newTransfo ++ transfo)
-
-    expanseClass :: (MonadIO m)
-                 => Decls Name P.DefaultFun -> [(Name, PrtTerm)] -> [Name] -> [Name]
-                 -> PrtT m ([Name], Decls Name P.DefaultFun, [(Name, PrtTerm)])
-    -- When all the name have been treated, the function terminates.
-    expanseClass decls transfo acc []       = return (acc, decls, transfo)
-    expanseClass decls transfo acc (k : ks)
-      -- The treatment of the function we are focused on is the same as in `go`.
-      | contains prefix k = do
-        declRelevant <- transfoPrefix decls k
-        expanseClass declRelevant transfo (k : acc) ks
-      -- If the user requires not to expand a function, we don't.
-      | maybe False (elem $ T.unpack (nameString k)) (expandExcl opts) =
-        expanseClass decls transfo (k : acc) ks
-      | otherwise =
-        case M.lookup k decls of
-          Nothing -> undefined
-          Just (DFunction _ t _) ->
-            if S.member (R.Arg k) (termNames t)
-            -- If the function is recursive, we keep it in the declarations
-            -- and put it in the accumulator, to be sure to expanse in it,
-            -- if any other member of the equivalence class can be inlined.
-            then expanseClass decls transfo (k : acc) ks
-            -- Otherwise, we delete it, inline it in all the definitions of the dependency class,
-            -- and store its definition, to expand the definitions relying on it, in the next classes.
-            else do
-              let decls' = M.delete k decls
-              unfoldedDecls <- foldM (expandDefsIn [(k,t)]) decls' (acc ++ ks)
-              expanseClass unfoldedDecls ((k, t) : transfo) acc ks
-          _ -> expanseClass decls transfo (k : acc) ks
-
-    -- `transfoPrefix` contains the transformations applied only to the function we are focused on.
-    transfoPrefix :: (MonadIO m)
-                  => Decls Name P.DefaultFun -> Name
-                  -> PrtT m (Decls Name P.DefaultFun)
-    transfoPrefix decls k =
-      flushLogs $ do
-        logDebug ("Processing " ++ show k)
-        d' <-
-          case M.lookup k decls of
-            Just (DFunction r t ty) ->
-              flip (DFunction r) ty <$> relevantTransfo t
-            Just def                ->
-              return def
-            Nothing                 ->
-              undefined
-        return $ M.insert k d' decls
-
-    relevantTransfo :: MonadPirouette m => PrtTerm -> m PrtTerm
-    relevantTransfo =   destrNF
-       >=> removeExcessiveDestArgs
-       >=> maybe return pullNthDestr (pullDestr opts)
+   processOne n =
+     let isSel = contains prefix n
+         fSel = if isSel then focusedTransformations else return
+         f = fSel >=> generalTransformations
+      in defTermMapM f
 
 -- ** Auxiliar Defs
 
-pirouette :: (MonadIO m) => FilePath -> PrtOpts -> PrtT m a -> m a
+pirouette :: (MonadIO m) => FilePath -> PrtOpts
+          -> PrtT m a -> m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
-    let st = PrtState decls M.empty toplvl
+    let st = PrtState decls toplvl M.empty Nothing
     (eres, msgs) <- runPrtT opts st f
     mapM_ printLogMessage msgs
     case eres of
@@ -404,7 +303,6 @@ parseCliOpts :: Opt.Parser CliOpts
 parseCliOpts = CliOpts <$> parseStage
                        <*> parsePrefix
                        <*> parsePullDestr
-                       <*> parseExpansionExcl
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
@@ -466,17 +364,6 @@ parsePullDestr = Opt.option (Just <$> Opt.auto)
                      <> Opt.short 'p'
                      <> Opt.value Nothing
                      <> Opt.help "Bring the n-th destructor to the root if possible. Passing a zero does nothing, the constructor at the root is already at the root.")
-
-
-parseExpansionExcl :: Opt.Parser (Maybe [String])
-parseExpansionExcl = Opt.option (Just <$> Opt.maybeReader (Just . r))
-                     (  Opt.long "expand-excl"
-                     <> Opt.short 'e'
-                     <> Opt.value Nothing
-                     <> Opt.help "Expand all terms except those whose name contains a prefix of the values given in a comma-separated list as an argument")
-  where
-    r :: String -> [String]
-    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
 
 parsePruneMaybe :: Opt.Parser Bool
 parsePruneMaybe = Opt.switch

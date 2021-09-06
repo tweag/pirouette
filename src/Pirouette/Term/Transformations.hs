@@ -28,7 +28,7 @@ import           Data.Data
 import           Data.Functor
 import           Data.Generics.Uniplate.Data
 import           Data.Generics.Uniplate.Operations
-import           Data.List (groupBy, transpose, foldl', span, lookup)
+import           Data.List (elemIndex, groupBy, transpose, foldl', span, lookup)
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Text.Prettyprint.Doc hiding (pretty)
 import qualified Data.Text as T
@@ -216,48 +216,40 @@ removeThunks = pushCtx "removeThunks" . rewriteM (runMaybeT . go)
     appLast (R.Lam ann ty t)          arg = R.Lam ann ty (appLast t arg)
     appLast t                         arg = R.termApp t (R.Arg arg)
 
--- |`expandDefsIn transfo decls k` modifies the definition of `k` in `decls`
--- by expanding all names in `transfo` with their definition.
-expandDefsIn :: (MonadPirouette m)
-             => [(Name, PrtTerm)] -> Decls Name P.DefaultFun -> Name
-             -> m (Decls Name P.DefaultFun)
-expandDefsIn transfo decls k =
-  pushCtx ("expanding Def of " ++ show (pretty k)) $ do
-    case M.lookup k decls of
-      -- `k` is in the decls table
-      Nothing ->  undefined
-      Just (DFunction r t ty) -> do
-        t' <- rewriteM (runMaybeT . rewriteDef t transfo) t
-        return $ M.insert k (DFunction r t' ty) decls
-      Just _ -> return decls
-
+-- |Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
+-- after performing any sort of inlining.
+deshadowBoundNames :: PrtTerm -> PrtTerm
+deshadowBoundNames = go []
   where
-    -- The first argument is only used to separate variables when
-    -- the inlining is performed.
-    rewriteDef :: (MonadPirouette m)
-               => PrtTerm -> [(Name, PrtTerm)] -> PrtTerm
-               -> MaybeT m PrtTerm
-    rewriteDef t l (R.App (R.F (FreeName n)) args) =
-      case lookup n l of
-        Just u -> do
-          logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args))
-          let t' = separateBoundFrom t u
-          let res = R.appN t' args
-          logTrace ("Result: " ++ show (pretty res))
-          return res
-        Nothing ->
-          fail "expandDefs: not the expected symbol"
-    rewriteDef t l _ = fail "expandDefs: not an R.App"
+    -- @newAnnFrom ns n@ returns a fresh name similar to @n@ given a list of declared names @ns@.
+    -- it does so by incrementing the 'nameUnique' part of 'n'. Instead of incrementing one-by-one,
+    -- we increment by i to hopefully require less iterations to find a fresh name.
+    newAnnFrom :: [Name] -> Name -> Name
+    newAnnFrom anns a =
+      case a `elemIndex` anns of
+        Nothing -> a
+        Just i  -> newAnnFrom anns (a { nameUnique = Just $ maybe i ((+i) . (+1)) (nameUnique a) })
 
+    go bvs (R.Lam (R.Ann ann) ty t)
+      = let ann' = newAnnFrom bvs ann
+         in R.Lam (R.Ann ann') ty (go (ann' : bvs) t)
 
--- |Expand non-recursive definitions
-expandDefs :: (MonadPirouette m) => (Name -> Bool) -> PrtTerm -> m PrtTerm
-expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
+    go bvs (R.Abs a ki t) = R.Abs a ki (go bvs t)
+    go bvs (R.App n args) =
+      let args' = map (R.argMap id (go bvs)) args
+          n' = case n of
+                 R.B _ i -> R.B (R.Ann (bvs !! fromInteger i)) i
+                 _       -> n
+       in R.App n' args'
+
+-- |Expand all non-recursive definitions
+expandDefs :: (MonadPirouette m) => PrtTerm -> m PrtTerm
+expandDefs = fmap deshadowBoundNames . pushCtx "expandDefs" . rewriteM (runMaybeT . go)
   where
     go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go (R.App (R.F (FreeName n)) args) = do
       isRec <- lift $ termIsRecursive n
-      if dontExpand n || isRec
+      if isRec
       then fail "expandDefs: wont expand"
       else do
        def <- MaybeT (fromTermDef <$> defOf n)
@@ -266,6 +258,24 @@ expandDefs dontExpand = pushCtx "expandDefs" . rewriteM (runMaybeT . go)
        logTrace ("Result: " ++ show (pretty res))
        return res
     go _ = fail "expandDefs: not an R.App"
+
+-- |Expand the occurences of @n@ in the body of @m@
+expandDefIn :: (MonadPirouette m) => Name -> Name -> m ()
+expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
+  isRec <- termIsRecursive n -- let's ensure n is not recursive
+  if isRec
+  then fail "expandDefIn: can't expand recursive term"
+  else do
+    -- fetch the current definition of n,
+    mdefn <- fromTermDef <$> defOf n
+    defn  <- maybe (fail "expandDefIn: n not a termdef") return mdefn
+    -- fetch the current definition of m and, if its a DFunction, perform the rewrite
+    mdefm <- defOf m
+    case mdefm of
+      DFunction r body ty -> do
+        let body' = deshadowBoundNames $ R.expandVar (R.F $ FreeName n, defn) body
+        modifyDef m (const $ Just $ DFunction r body' ty)
+      _ -> fail "expandDefIn: m not a termdef"
 
 -- |Simplify /destructor after constructor/ applications. For example,
 --

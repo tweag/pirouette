@@ -218,16 +218,18 @@ tlaWithTyVars tyvs f = do
 -- ** Top-Level Translation
 
 -- |Translates a term to a TLA specification by first symbolically executing the term
--- then translating the necessary parts.
+-- then translating the necessary parts. We also receive a list of names that specify the
+-- order in which they must be defined. This list can be obtained from 'elimEvenOddMutRec'
 termToSpec :: (MonadPirouette m)
-           => TlaOpts -> [[Name]] -> Name -> PrtTerm
+           => TlaOpts -> Name -> PrtTerm
            -> m TLA.AS_Spec
-termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
+termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"
-  depsMain <- tlaPure $ S.map (R.argElim id id) <$> depsOf mainFun
-  depsClasses <-
-    tlaPure $ mapUntilM (fmap catMaybes . mapM (argify depsMain)) sortedNames containsMain
-  deps <- mapM trOneClass depsClasses
+  tlaPure $ modify (\st -> st { deps = M.empty })
+  depsMain   <- tlaPure $ transitiveDepsOf mainFun
+  sortedDeps <- tlaPure dependencyOrder
+  let neededDeps = filter (`S.member` depsMain) sortedDeps
+  deps <- mapM (R.argElim (trTypeName opts) trTermName) neededDeps
 
   tlaPure $ logDebug $ "Symbolically executing " ++ show mainFun
   mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun t
@@ -243,65 +245,7 @@ termToSpec opts sortedNames mainFun t = flip evalStateT tlaState0 $ flip runRead
   return $ wrapSpec skel
          $ concat deps ++ defs ++ [next]
   where
-    trOneClass :: (MonadPirouette m) => [R.Arg Name Name] -> TlaT m [TLA.AS_UnitDef]
-    -- mapUntilM should get rid of the empty lists
-    trOneClass []  = undefined
-    -- If the symbol is not mutually recursive
-    -- (or was, but the mutuality has been eliminated),
-    -- then one uses the tr***Name to translate it.
-    trOneClass [d] = R.argElim (trTypeName opts) trTermName d
-    -- If some symbols remain mutually recursive,
-    -- their treatment is different.
-    trOneClass mut = do
-      tlaPure $ logDebug "Declaring Mutually Recursive Definitions"
-      mapM_ (R.argElim (const $ return ()) declareTermNameMutRec) mut
-      (mrtys, mrterms) <-
-        unzipCop <$> mapM (R.argElim (fmap Left . trTypeName opts) (fmap Right . trTermNameRec)) mut
-      let mrtys' = concat mrtys
-      let (mrtermDecls, mrtermDefs) = unzip $ concat mrterms
-      unless (null mrtys') (tlaPure $ logWarn "I have mutually recursive datatypes and I don't know what to do with them.")
-      return $ mrtys' ++ mrtermDecls ++ mrtermDefs
-
-    unzipCop [] = ([], [])
-    unzipCop (lrx : xs) = either (first . (:)) (second . (:)) lrx $ unzipCop xs
-
     p2l (x, y) = [x, y]
-
-    mapUntilM :: (MonadPirouette m)
-              => (a -> m [b]) -> [a] -> (a -> m Bool) -> m [[b]]
-    mapUntilM f [] _          =
-      return []
-    mapUntilM f (x : xs) stop =  do
-      b <- stop x
-      if b
-      then return []
-      else do
-        res <- f x
-        case res of
-          [] -> mapUntilM f xs stop
-          l -> (l :) <$> mapUntilM f xs stop
-
-    argify :: (MonadPirouette m) => S.Set Name -> Name -> m (Maybe (R.Arg Name Name))
-    argify s n =
-      if S.member n s
-      then do
-        d <- defOf n
-        return $
-          case d of
-            DFunction {} -> Just (R.Arg n)
-            DTypeDef {}  -> Just (R.TyArg n)
-            _            -> Nothing
-      else return Nothing
-
-    containsMain :: (MonadPirouette e) => [Name] -> e Bool
-    containsMain l =
-      if L.elem mainFun l
-      then
-        if length l == 1
-        then return True
-        else
-          throwError' $ PEOther "The main function is mutually recursive, this case is not handled yet!"
-      else return False
 
 trTypeName :: (MonadPirouette m) => TlaOpts -> Name -> TlaT m [TLA.AS_UnitDef]
 trTypeName opts n = do

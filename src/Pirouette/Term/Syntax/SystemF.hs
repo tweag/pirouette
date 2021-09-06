@@ -26,6 +26,8 @@ import           Data.Typeable
 import qualified Data.Text as T
 import           Data.String
 import           Data.Data
+import           Data.Generics.Uniplate.Operations
+import           Data.Generics.Uniplate.Data
 
 -- * System F
 
@@ -198,6 +200,9 @@ fromArg = argElim (const Nothing) Just
 fromTyArg :: Arg ty v -> Maybe ty
 fromTyArg = argElim Just (const Nothing)
 
+isArg :: Arg ty v -> Bool
+isArg = argElim (const False) (const True)
+
 isTyArg :: Arg ty v -> Bool
 isTyArg = argElim (const True) (const False)
 
@@ -227,7 +232,7 @@ instance (HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
 
   subst s (App n xs)  = appN (applySub s n) $ map (argMap id (subst s)) xs
   subst s (Lam v k t) = Lam v k (subst (liftSub s) t)
-  subst s (Abs v k t) = Abs v k (subst (liftSub s) t)
+  subst s (Abs v k t) = Abs v k (subst s t)
 
 substTy :: (HasSubst ty)
         => Sub ty -> AnnTerm ty ann v -> AnnTerm ty ann v
@@ -242,6 +247,24 @@ termApp (App n args)        u  = App n (args ++ [u])
 termApp (Lam _ _ t)  (Arg   u) = subst   (singleSub u) t
 termApp (Abs _ _ t)  (TyArg u) = substTy (singleSub u) t
 termApp _            _         = error "Mismatched Term/Type application"
+
+-- |Expands a single definition within another term.
+--
+-- WARNING: When calling @expandvar (n, defn) m@, ensure that @defn@ does /not/
+-- depend on @n@, i.e., @n@ can't be recursive. 'expandVar' will /not/
+-- perform this check and will happily loop.
+--
+-- WARNING: Although we're using De Bruijn indices, some code generation targets
+-- such as TLA+ are very unhappy about name shadowing, so you might want to map
+-- over the result and deshadow bound names.
+expandVar :: (HasSubst ty, Eq v, IsVar v, Data ty, Data ann, Data v)
+          => (v, AnnTerm ty ann v) -> AnnTerm ty ann v -> AnnTerm ty ann v
+expandVar (n, defn) = rewrite go
+  where
+    go (App v args)
+      | n /= v    = Nothing
+      | otherwise = Just $ appN defn args
+    go _ = Nothing
 
 -- TODO: write an efficient appN that substitutes multiple variables in one go
 instance (HasSubst ty) => HasApp (AnnTerm ty ann) where
