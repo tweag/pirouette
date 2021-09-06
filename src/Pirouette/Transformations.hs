@@ -81,16 +81,3 @@ elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
             then solveTermDeps (ctr + 1) (ns ++ [n])
             else mapM_ (expandDefIn n) ns
               >> snoc n <$> solveTermDeps 0 ns
-
-{-
-expandDefs :: (MonadPirouette m) => m ()
-expandDefs = pushCtx "expandDefs" $ do
-  mord <- gets tord
-  case mord of
-    Nothing  -> throwError' $ PEOther "No dependency order, please call elimEvenOddMutRec"
-    Just ord -> modify $ \st -> st { decls = go (decls st) [] ord }
- where
-  go :: Decls Name P.DefaultFun -> [(Name, PrtTerm)] -> [R.Arg Name Name]
-     -> Decls Name P.DefaultFun
-  go decls toInline ns =
--}
