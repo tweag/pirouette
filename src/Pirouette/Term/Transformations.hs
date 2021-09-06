@@ -319,10 +319,12 @@ chooseHeadCase t ty args fstArg =
           dest <- blindDest tyOut <$> typeDefOf tyName
           let transiAbsInput = R.Lam (R.Ann $ fromString "DUMMY_ARG") tyInput $
                 R.appN t (zipWith transitionArgs args [argLength, argLength - 1 .. 1])
-          let body = R.appN dest
-                [ R.Arg $ R.termPure (R.B (fromString fstArg) (toInteger   (argLength - 1 - index)))
-                , R.Arg transiAbsInput
-                ]
+          let body = subst
+                (  Just transiAbsInput
+                :< Just (R.termPure (R.B (fromString fstArg) (toInteger $ argLength - 1 - index)))
+                :< Inc 0
+                )
+                dest
           constrDestrId body
 
   where
@@ -330,19 +332,17 @@ chooseHeadCase t ty args fstArg =
     nameOf (R.TyApp (R.F (TyFree x)) _) = Just x
     nameOf _ = Nothing
 
-    -- `blindDest out ty` constructs the function
-    -- \ (i : ty) (f : ty -> out) ->
-    -- match i with
-    --   C1 x0 -> f (C1 x0)
-    --   C2 x0 x1 -> f (C2 x0 x1)
+    -- `blindDest out ty` constructs the term
+    -- match i#1 with
+    --   C1 x0 -> f#0 (C1 x0)
+    --   C2 x0 x1 -> f#0 (C2 x0 x1)
+    -- where `i` is of type `ty` and `f : ty -> out`
     blindDest :: PrtType -> PrtTypeDef -> PrtTerm
     blindDest tyOut (Datatype _ _ dest cons) =
-      R.Lam (R.Ann $ fromString "i") (error "Fictive type of i") $ -- Since the generated term will be applied to two arguments,
-        R.Lam (R.Ann $ fromString "f") (error "Fictive type of f") $ -- those 2 types should never be accessed.
-          R.App (R.F (FreeName dest)) $
-            R.Arg (R.termPure (R.B (fromString "i") 1)) :
-            R.TyArg tyOut :
-              map (R.Arg . consCase) cons
+      R.App (R.F (FreeName dest)) $
+        R.Arg (R.termPure (R.B (fromString "i") 1)) :
+        R.TyArg tyOut :
+        map (R.Arg . consCase) cons
 
     consCase :: (Name, PrtType) -> PrtTerm
     consCase (n, ty) =
@@ -365,16 +365,10 @@ chooseHeadCase t ty args fstArg =
     -- `geneXs 3` is the representation of `[x0#2, x1#1, x2#0]`,
     -- which are the arguments expected after a `\x0 x1 x2`.
     geneXs :: Int -> [R.Arg ty PrtTerm]
-    geneXs n = go 0
-      where
-        go i =
-          if i >= n
-          then []
-          else
-            R.Arg
-              (R.termPure
-                (R.B (R.Ann $ fromString ("x" ++ show i)) (toInteger (n - 1 - i))))
-            : go (i + 1)
+    geneXs n =
+      map
+        (\i -> R.Arg $ R.termPure (R.B (fromString $ "x" ++ show i) (toInteger $ n - 1 - i)))
+        [0 .. n-1]
 
     -- Replace the argument "INPUT" by a dummy version of it, which is bound at index 0.
     transitionArgs :: String -> Int -> R.Arg ty PrtTerm
