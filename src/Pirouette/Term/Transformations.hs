@@ -28,7 +28,8 @@ import           Data.Data
 import           Data.Functor
 import           Data.Generics.Uniplate.Data
 import           Data.Generics.Uniplate.Operations
-import           Data.List (groupBy, transpose, foldl', span, lookup)
+import           Data.List (groupBy, transpose, foldl', span, lookup, elemIndex)
+import           Data.String (fromString)
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Text.Prettyprint.Doc hiding (pretty)
 import qualified Data.Text as T
@@ -284,6 +285,92 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
       let xCase          = cases0 !! xIdx
       logTrace $ show tyN
       return $ R.appN (R.appN xCase (map R.Arg xArgs)) (map R.Arg rest)
+
+-- `chooseHeadCase f tyf [st,INPUT,param] INPUT` creates a term which contains the body of `f`
+-- but with a matching on the `INPUT` at the head of it.
+-- For instance, if the input type has two constructors `C1` and `C2`, the output is:
+--
+-- match INPUT#1 with
+--   C1 x -> f st#3 (C1 x#0) param#1
+--   C2 x y -> f st#4 (c2 x#1 y#0) param#2
+
+chooseHeadCase :: (MonadPirouette m)
+               => PrtTerm -> PrtType -> [String] -> String -> m PrtTerm
+chooseHeadCase t ty args fstArg =
+  let argLength = length args in
+  let tyOut = snd (R.tyFunArgs ty) in
+  case elemIndex fstArg args of
+    Nothing -> throwError' $ PEOther "No argument declared as input"
+    Just index ->
+      let tyInput = fst (R.tyFunArgs ty) !! index in
+      case nameOf tyInput of
+        Nothing -> throwError' $ PEOther "The input is not of a pattern-matchable type"
+        Just tyName -> do
+          dest <- blindDest tyOut <$> typeDefOf tyName
+          let transiAbsInput = R.Lam (R.Ann $ fromString "DUMMY_ARG") tyInput $
+                R.appN t (zipWith transitionArgs args [argLength, argLength - 1 .. 1])
+          let body = R.appN dest
+                [ R.Arg $ R.termPure (R.B (fromString fstArg) (toInteger   (argLength - 1 - index)))
+                , R.Arg transiAbsInput
+                ]
+          constrDestrId body
+
+  where
+    nameOf :: PrtType -> Maybe Name
+    nameOf (R.TyApp (R.F (TyFree x)) _) = Just x
+    nameOf _ = Nothing
+
+    -- `blindDest out ty` constructs the function
+    -- \ (i : ty) (f : ty -> out) ->
+    -- match i with
+    --   C1 x0 -> f (C1 x0)
+    --   C2 x0 x1 -> f (C2 x0 x1)
+    blindDest :: PrtType -> PrtTypeDef -> PrtTerm
+    blindDest tyOut (Datatype _ _ dest cons) =
+      R.Lam (R.Ann $ fromString "i") (error "Fictive type of i") $ -- Since the generated term will be applied to two arguments,
+        R.Lam (R.Ann $ fromString "f") (error "Fictive type of f") $ -- those 2 types should never be accessed.
+          R.App (R.F (FreeName dest)) $
+            R.Arg (R.termPure (R.B (fromString "i") 1)) :
+            R.TyArg tyOut :
+              map (R.Arg . consCase) cons
+
+    consCase :: (Name, PrtType) -> PrtTerm
+    consCase (n, ty) =
+      let (argsTy,_) = R.tyFunArgs ty in
+      createNLams "x" argsTy $
+        R.App
+          (R.B (fromString "f") (toInteger (length argsTy)))
+          [R.Arg $ R.App (R.F (FreeName n)) (geneXs (length argsTy))]
+
+    -- `createNLams "x" [a,b,c] t` constructs the term
+    -- \ (x0 : a) (x1 : b) (x2 : c) -> t
+    createNLams :: String -> [PrtType] -> PrtTerm -> PrtTerm
+    createNLams s tys =
+      let go [] _ = id
+          go (h:tl) i =
+            R.Lam (R.Ann $ fromString (s ++ show i)) h . go tl (i + 1)
+      in
+      go tys 0
+
+    -- `geneXs 3` is the representation of `[x0#2, x1#1, x2#0]`,
+    -- which are the arguments expected after a `\x0 x1 x2`.
+    geneXs :: Int -> [R.Arg ty PrtTerm]
+    geneXs n = go 0
+      where
+        go i =
+          if i >= n
+          then []
+          else
+            R.Arg
+              (R.termPure
+                (R.B (R.Ann $ fromString ("x" ++ show i)) (toInteger (n - 1 - i))))
+            : go (i + 1)
+
+    -- Replace the argument "INPUT" by a dummy version of it, which is bound at index 0.
+    transitionArgs :: String -> Int -> R.Arg ty PrtTerm
+    transitionArgs s n
+      | s == fstArg = R.Arg $ R.termPure (R.B (fromString "DUMMY_ARG") 0)
+      | otherwise   = R.Arg $ R.termPure (R.B (fromString s) (toInteger n))
 
 -- |Returns the equiavlent /destructor normal-form/ (DNF) term.
 -- We say a term is in /destructor normal-form/ when all destructors
