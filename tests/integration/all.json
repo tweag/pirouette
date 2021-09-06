@@ -106,7 +106,7 @@
   , "pir"        : "Auction.flat"
   , "output"     : "Auction.tla"
   , "postprocess": "sed -i '/^SetOfAuctionParams0/i p == AuctionParams1(pk1,Nil,3)' Auction.tla"
-  , "options"    : "--prefix auctionTransition -s Skeleton.tla -a p,st,INPUT -w \"LET res == ___ IN st' = res[2]\" --ty-spz ALL"
+  , "options"    : "--prefix auctionTransition -s Skeleton.skel -a p,st,INPUT -w \"LET res == ___ IN st' = res[2]\" --ty-spz ALL"
   , "tla"        : "tlacli check --constant MAXDEPTH 2 --model-values tok pk1 pk2 pk3 pk4 pk5 --property Inv -- Auction.tla"
   , "expected"   : "Deadlock"
   }
