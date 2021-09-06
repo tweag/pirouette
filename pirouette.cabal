@@ -34,6 +34,7 @@ library
       Pirouette.Term.Transformations
       Pirouette.TLA.Syntax
       Pirouette.TLA.Type
+      Pirouette.Transformations
   other-modules:
       Paths_pirouette
   hs-source-dirs:
@@ -100,6 +101,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Pirouette.Term.DSL
+      Pirouette.Term.FromPlutusIRSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Paths_pirouette

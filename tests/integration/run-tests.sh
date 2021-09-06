@@ -243,6 +243,7 @@ run-single-test() {
 
 mecho blue "Building pirouette"
 cabal build
+
 if $onci; then
   mecho blue "Run unit tests"
   cabal test
