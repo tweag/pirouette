@@ -221,7 +221,7 @@ tlaWithTyVars tyvs f = do
 -- then translating the necessary parts. We also receive a list of names that specify the
 -- order in which they must be defined. This list can be obtained from 'elimEvenOddMutRec'
 termToSpec :: (MonadPirouette m)
-           => TlaOpts -> Name -> PrtTerm
+           => TlaOpts -> Name -> PrtDef
            -> m TLA.AS_Spec
 termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"

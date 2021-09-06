@@ -76,7 +76,6 @@ import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 data CliOpts = CliOpts
   { stage         :: Stage
   , funNamePrefix :: String
-  , pullDestr     :: Maybe Int
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
@@ -159,22 +158,19 @@ mainOpts opts = do
     ToTLA   -> do
       when (length relDecls /= 1) $
         throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-      case head relDecls of
-        (n, DFunction _ t _) -> toTla n t
-        (n, _)               -> throwError' (PEOther $ show n ++ " is not a function")
- where
+      uncurry toTla (head relDecls)
+  where
     printDef name def = do
       let pdef = pretty def
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
 
-    printCTree name (DFunction _ def _) = do
+    printCTree name def = do
       ct <- termToCTree (optsToCTreeOpts opts) name def
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
       putStrLn' ""
-    printCTree name _ = throwError' $ PEOther (show name ++ " is not a function")
 
-    toTla :: Name -> PrtTerm -> PrtT m ()
+    toTla :: Name -> PrtDef -> PrtT m ()
     toTla n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' n t
@@ -187,7 +183,7 @@ processDecls opts = do
                     -- should happen only after dependency cycles have been eliminated; for now,
                     -- just make sure that this is the first thing we call.
   preDs  <- gets decls
-  postDs <- sequence $ M.mapWithKey processOne preDs
+  postDs <- sequence $ M.map processOne preDs
   modify (\st -> st { decls = postDs })
  where
    generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
@@ -197,18 +193,7 @@ processDecls opts = do
       >=> removeExcessiveDestArgs
       >=> cfoldmapSpecialize
 
-   focusedTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
-   focusedTransformations =   destrNF
-                          >=> removeExcessiveDestArgs
-                          >=> maybe return pullNthDestr (pullDestr opts)
-
-   prefix = funNamePrefix opts
-
-   processOne n =
-     let isSel = contains prefix n
-         fSel = if isSel then focusedTransformations else return
-         f = fSel >=> generalTransformations
-      in defTermMapM f
+   processOne = defTermMapM generalTransformations
 
 -- ** Auxiliar Defs
 
@@ -302,7 +287,6 @@ pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
 parseCliOpts :: Opt.Parser CliOpts
 parseCliOpts = CliOpts <$> parseStage
                        <*> parsePrefix
-                       <*> parsePullDestr
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
@@ -315,7 +299,7 @@ parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
                      <> Opt.short 'a'
                      <> Opt.value []
                      <> Opt.metavar "STR[,STR]*"
-                     <> Opt.help "Renames the transition function arguments to the specified list")
+                     <> Opt.help "Renames the transition function arguments to the specified list. The argument INPUT is considered as the user input one and is used to define actions.")
   where
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
@@ -356,14 +340,6 @@ parsePrefix = Opt.option Opt.str
              (  Opt.long "prefix"
              <> Opt.value ""
              <> Opt.help "Extract only the terms whose name contains the specified prefix")
-
-
-parsePullDestr :: Opt.Parser (Maybe Int)
-parsePullDestr = Opt.option (Just <$> Opt.auto)
-                     (  Opt.long "pull-destr"
-                     <> Opt.short 'p'
-                     <> Opt.value Nothing
-                     <> Opt.help "Bring the n-th destructor to the root if possible. Passing a zero does nothing, the constructor at the root is already at the root.")
 
 parsePruneMaybe :: Opt.Parser Bool
 parsePruneMaybe = Opt.switch
