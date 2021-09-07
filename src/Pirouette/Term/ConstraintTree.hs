@@ -24,7 +24,7 @@ import           Control.Monad.Except
 import qualified Data.Map as M
 import           Data.Maybe (mapMaybe)
 import           Data.String
-import           Data.List (foldl')
+import           Data.List (foldl', elemIndex)
 import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 
 -- * Constraint Trees
@@ -150,14 +150,15 @@ pruneMaybe (Choose x ty ts) =
   where choose [] = fail "empty tree"
         choose ts = return (Choose x ty ts)
 
-termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtTerm -> m (CTree Name)
-termToCTree opts name t = do
-  let (args, body) = R.getHeadLams (R.appN t $ map (R.Arg . flip R.App [] . flip R.B 0 . R.Ann . fromString) (coWithArguments opts))
-  unless (null args) $
-    logWarn $ "Executing a non-saturated term. Will use the variable names: " ++ show args
-  mctree <-
-    execute body >>= runMaybeT . if coPruneMaybe opts then pruneMaybe else return
-  logDebug $ "Translating Constraint Tree for " ++ show name
-  case mctree of
-    Nothing -> throwError' $ PEOther "termToCTree: empty tree"
-    Just tr -> return tr
+termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtDef -> m (CTree Name)
+termToCTree opts name def =
+  case def of
+    DFunction _ t ty -> do
+      body <- chooseHeadCase t ty (coWithArguments opts) "INPUT"
+      mctree <-
+        execute body >>= runMaybeT . if coPruneMaybe opts then pruneMaybe else return
+      logDebug $ "Translating Constraint Tree for " ++ show name
+      case mctree of
+        Nothing -> throwError' $ PEOther "termToCTree: empty tree"
+        Just tr -> return tr
+    _ -> throwError' $ PEOther (show name ++ " is not a function")

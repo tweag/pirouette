@@ -2,7 +2,7 @@
   , "cd"         : "Manual"
   , "pir"        : "basic-01.pir"
   , "output"     : "BasicOne.tla"
-  , "options"    : "-s basic-01.skel --prefix transition -a UserInp,b --action-wrapper \"b' = ___\""
+  , "options"    : "-s basic-01.skel --prefix transition -a INPUT,b --action-wrapper \"b' = ___\""
   , "tla"        : "tlacli check --constant MAXDEPTH 10 -- BasicOne.tla"
   }
 
@@ -10,7 +10,7 @@
   , "cd"         : "Manual"
   , "pir"        : "basic-01.pir"
   , "output"     : "BasicOne.tla"
-  , "options"    : "-s basic-01.skel --prefix transition -a UserInp,b --action-wrapper \"b' = ___\""
+  , "options"    : "-s basic-01.skel --prefix transition -a INPUT,b --action-wrapper \"b' = ___\""
   , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- BasicOne.tla"
   , "expected"   : "Counter Example"
   }
@@ -19,7 +19,7 @@
   , "cd"         : "Manual"
   , "pir"        : "basic-02.pir"
   , "output"     : "BasicTwo.tla"
-  , "options"    : "-s basic-02.skel --prefix transition -p 1 -a UserInp,st"
+  , "options"    : "-s basic-02.skel --prefix transition -a INPUT,st"
   , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- BasicTwo.tla"
   , "expected"   : "Temporal property violated"
   }
@@ -28,7 +28,7 @@
   , "cd"         : "Manual"
   , "pir"        : "advanced.pir"
   , "output"     : "Advanced.tla"
-  , "options"    : "-s advanced.skel --prefix transition -a UserInp,st -p 1"
+  , "options"    : "-s advanced.skel --prefix transition -a INPUT,st"
   , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- Advanced.tla"
   }
 
@@ -36,7 +36,7 @@
   , "cd"         : "Manual"
   , "pir"        : "ho-destr.pir"
   , "output"     : "HODestr.tla"
-  , "options"    : "-s ho-destr.skel --prefix transition -a UserInp,st"
+  , "options"    : "-s ho-destr.skel --prefix transition -a INPUT,st"
   , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- HODestr.tla"
   , "expected"   : "Counter-example"
   }
@@ -45,7 +45,7 @@
   , "cd"         : "Manual"
   , "pir"        : "ho-constr-simple-transi.pir"
   , "output"     : "HOConstr.tla"
-  , "options"    : "-s ho-constr.skel --prefix transition -a st,UserInp"
+  , "options"    : "-s ho-constr.skel --prefix transition -a st,INPUT"
   , "tla"        : "tlacli check --constant MAXDEPTH 10 --property Inv -- HOConstr.tla"
   , "expected"   : "Counter-example"
   }
@@ -54,7 +54,7 @@
   , "cd"         : "Manual"
   , "pir"        : "ho-constr-ho-transi.pir"
   , "output"     : "HOConstr.tla"
-  , "options"    : "-s ho-constr.skel --prefix transition -a UserInp"
+  , "options"    : "-s ho-constr.skel --prefix transition -a INPUT"
   , "tla"        : "tlacli check --constant MAXDEPTH 4 --property Inv -- HOConstr.tla"
   , "expected"   : "Counter-example"
   , "pending"    : "Waiting until general defunctionalization work"
@@ -64,7 +64,7 @@
   , "cd"         : "GameStateMachine"
   , "pir"        : "GameStateMachine.flat"
   , "output"     : "Game.tla"
-  , "options"    : "-s Skeleton.tla --prefix transi -p 2 -a st,UserInp --action-wrapper \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --ty-spz ALL"
+  , "options"    : "-s Skeleton.tla --prefix transi -a st,INPUT --action-wrapper \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --ty-spz ALL"
   , "tla"        : "tlacli check --constant MAXDEPTH 2 --model-values mPol tok pk1 pk2 pk3 pk4 pk5 --property Inv -- Game.tla"
   , "expected"   : "Temporal property violated"
   , "slow"       : true
@@ -73,7 +73,7 @@
 , { "name"       : "MultiSigStateMachine Silly Invariant"
   , "cd"         : "MultiSigStateMachine"
   , "pir"        : "MultiSigStateMachine.flat"
-  , "options"    : "-a param,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition -p 2 --ty-spz ALL"
+  , "options"    : "-a param,st,INPUT -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition --ty-spz ALL"
   , "output"     : "Contract.tla"
   , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
   , "tla"        : "tlc Contract_MC"
@@ -84,7 +84,7 @@
 , { "name"       : "Faulty MultiSigStateMachine"
   , "cd"         : "MultiSigStateMachine-Faulty"
   , "pir"        : "FaultyMultiSig.flat"
-  , "options"    : "-a param,st,i -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition -p 2 --ty-spz ALL"
+  , "options"    : "-a param,st,INPUT -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition --ty-spz ALL"
   , "output"     : "Contract.tla"
   , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
   , "tla"        : "tlc Contract_MC"
@@ -96,7 +96,7 @@
   , "cd"         : "IncDecStateMachine"
   , "pir"        : "IncDecStateMachine.flat"
   , "output"     : "IncDec.tla"
-  , "options"    : "--prefix transition -p 1 -s Skeleton.tla -a st,i -w \"LET res == ___ IN st' = res[2]\" --ty-spz ALL"
+  , "options"    : "--prefix transition -s Skeleton.tla -a st,INPUT -w \"LET res == ___ IN st' = res[2]\" --ty-spz ALL"
   , "postprocess": "sed -i '/^Inv ==/i DecOk == [](st.arg0.arg0 > 0 => (\\\\A n \\\\in 1 .. st.arg0.arg0: ENABLED ActionDec(n)))' IncDec.tla"
   , "tla"        : "tlc IncDec"
   }
