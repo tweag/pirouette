@@ -37,7 +37,6 @@ import           Data.Data
 data PIRType
   = PIRTypeInteger
   | PIRTypeByteString
-  | PIRTypeChar
   | PIRTypeUnit
   | PIRTypeBool
   | PIRTypeString
@@ -48,7 +47,6 @@ data PIRType
 defUniToType :: forall k (a :: k) . DefaultUni (P.Esc a) -> PIRType
 defUniToType DefaultUniInteger     = PIRTypeInteger
 defUniToType DefaultUniByteString  = PIRTypeByteString
-defUniToType DefaultUniChar        = PIRTypeChar
 defUniToType DefaultUniUnit        = PIRTypeUnit
 defUniToType DefaultUniBool        = PIRTypeBool
 defUniToType DefaultUniString      = PIRTypeString
@@ -115,10 +113,9 @@ destructorTypeFor (Datatype k vs n cs) = undefined
 data PIRConstant
   = PIRConstInteger Integer
   | PIRConstByteString BS.ByteString
-  | PIRConstChar Char
   | PIRConstUnit
   | PIRConstBool Bool
-  | PIRConstString String
+  | PIRConstString T.Text
   | PIRConstList [PIRConstant]
   | PIRConstPair PIRConstant PIRConstant
   deriving (Eq, Show, Data, Typeable)
@@ -126,7 +123,6 @@ data PIRConstant
 defUniToConstant :: DefaultUni (P.Esc a) -> a -> PIRConstant
 defUniToConstant DefaultUniInteger     x = PIRConstInteger x
 defUniToConstant DefaultUniByteString  x = PIRConstByteString x
-defUniToConstant DefaultUniChar        x = PIRConstChar x
 defUniToConstant DefaultUniUnit        x = PIRConstUnit
 defUniToConstant DefaultUniBool        x = PIRConstBool x
 defUniToConstant DefaultUniString      x = PIRConstString x

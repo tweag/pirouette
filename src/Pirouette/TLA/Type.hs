@@ -115,22 +115,17 @@ tlaTyBuiltin P.QuotientInteger       = TlaOp [tlaTyNat, tlaTyNat] pirTyNat
 tlaTyBuiltin P.RemainderInteger      = TlaOp [tlaTyNat, tlaTyNat] pirTyNat
 tlaTyBuiltin P.ModInteger            = TlaOp [tlaTyNat, tlaTyNat] pirTyNat
 tlaTyBuiltin P.LessThanInteger       = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
-tlaTyBuiltin P.LessThanEqInteger     = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
-tlaTyBuiltin P.GreaterThanInteger    = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
-tlaTyBuiltin P.GreaterThanEqInteger  = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
-tlaTyBuiltin P.EqInteger             = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
-tlaTyBuiltin P.Concatenate           = TlaOp [tlaTyBS, tlaTyBS] pirTyBS
-tlaTyBuiltin P.Append                = TlaOp [tlaTyBS, tlaTyBS] pirTyBS
-tlaTyBuiltin P.TakeByteString        = TlaOp [tlaTyNat, tlaTyBS] pirTyBS
-tlaTyBuiltin P.DropByteString        = TlaOp [tlaTyNat, tlaTyBS] pirTyBS
-tlaTyBuiltin P.EqByteString          = TlaOp [tlaTyBS, tlaTyBS] pirTyBool
+tlaTyBuiltin P.LessThanEqualsInteger = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
+tlaTyBuiltin P.EqualsInteger         = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
+tlaTyBuiltin P.AppendByteString      = TlaOp [tlaTyBS, tlaTyBS] pirTyBS
+tlaTyBuiltin P.EqualsByteString      = TlaOp [tlaTyBS, tlaTyBS] pirTyBool
 tlaTyBuiltin P.IfThenElse            =
   let a = R.Ann (fromString "a")
    in TlaAll a R.KStar $ TlaOp [ tlaTyBool
                                , TlaVal (R.tyPure $ R.B a 0)
                                , TlaVal (R.tyPure $ R.B a 0)
                                ] (R.tyPure $ R.B a 0)
-tlaTyBuiltin P.SHA2                  = TlaOp [tlaTyBS] pirTyBS
+tlaTyBuiltin P.Sha2_256             = TlaOp [tlaTyBS] pirTyBS
 tlaTyBuiltin b = error ("Unsuported builtin: " ++ show b)
 
 

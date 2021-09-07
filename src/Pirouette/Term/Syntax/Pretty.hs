@@ -141,7 +141,6 @@ instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SF.AnnTerm ann ty f) where
 instance Pretty PIRType where
   pretty PIRTypeInteger    = "Integer"
   pretty PIRTypeByteString = "ByteString"
-  pretty PIRTypeChar       = "Char"
   pretty PIRTypeUnit       = "Unit"
   pretty PIRTypeBool       = "Bool"
   pretty PIRTypeString     = "String"
@@ -161,7 +160,6 @@ instance (Pretty n) => Pretty (TypeDef n) where
 instance Pretty PIRConstant where
   pretty (PIRConstInteger x) = pretty x
   pretty (PIRConstByteString x) = "b" <> pretty x
-  pretty (PIRConstChar x) = pretty x
   pretty PIRConstUnit = "unit"
   pretty (PIRConstBool x) = pretty x
   pretty (PIRConstString x) = dquotes (pretty x)

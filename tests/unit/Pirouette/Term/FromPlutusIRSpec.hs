@@ -28,7 +28,7 @@ openAndParsePIR :: FilePath
 openAndParsePIR fileName = do
   content <- T.readFile fileName
   case PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content of
-    Left err -> putStrLn (errorBundlePretty err) >> error "Couldn't parse"
+    Left err -> putStrLn (show err) >> error "Couldn't parse"
     Right p  -> return p
 
 mockPrtLog :: Decls Name P.DefaultFun -> PrtT Identity a -> Either String a
