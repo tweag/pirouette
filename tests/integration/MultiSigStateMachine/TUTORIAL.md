@@ -123,16 +123,16 @@ Next == WrappedC1 \/ ... \/ WrappedCN
 ```
 
 To obtain correct TLA+ from the `transition` function
-above we must instruct `pirouette` to perform certain transformations to it.
+above we must inform `pirouette` about which parameter of the `transition` function
+represent the user input (also referred to as the contract's entrypoints).
 In fact, to go from `MultiSigStateMachine.flat` to a model-checkable TLA+ spec
-we need to run:
+we need to run the following command from the repository's root:
 
 ```
-cabal run pirouette -- MultiSigStateMachine.flat \
+cabal run pirouette -- tests/integration/MultiSigStateMachine/MultiSigStateMachine.flat \
   --prefix transition \
-  --pull-destr 2 \
-  --with-args param,st,i \
-  --tla-skel Skeleton.tla \
+  --with-args param,st,INPUT \
+  --tla-skel tests/integration/MultiSigStateMachine/Skeleton.tla \
   --action-wrapper "LET res == ___ IN st' = res.arg1 /\ txConstr' = res.arg0"
 ```
 
@@ -141,90 +141,32 @@ write the equivalent command line for your contract.
 
 ### Identifying the User Input
 
-The Plutus Intermediate Representation language is not meant to be
-read nor written by a human, therefore, it has no case
-statement. Instead, it uses datatype destructors (or eliminators) as a
-builtin to represent pattern matching.  A destructor for a type is the
-opposite of a constructor. It characterizes the use of the type's
-inhabitants.  As a concrete example, the `maybe` function in Haskell
-is the destructor (or eliminator) for the `Maybe` datatype.  In
-PlutusIR there is no pattern-matching hence we must rely on destructors
-to do case analisys.
-
-The `--pull-destr n` (or `-p n`) option will instruct pirouette to pull the `n`-th destructor
-to the top of the program, if possible. Because we are receiving generated code, we never know for sure
-which value the plutus decided to pattern-match on first. We can, however, interactively discover this.
-We can ask pirouette to print its _terms_ and inspect what we're dealing with by running:
+The `--with-args param,st,INPUT` option tells pirouette to pass the given list of free names
+to the transition function and tells pirouette which of those parameters represents the user input,
+through the `INPUT` identifier. Under the hood, pirouette eta-expands the underlying program with:
 
 ```
-cabal exec pirouette -- MultiSigStateMachine.flat --prefix transition --term-only | less
+transition' param st INPUT
+  = case INPUT of
+      Cons1 a1 ... aN -> transition param st (Cons1 a1 ... aN)
+      ...
+      ConsK a1 ... aM -> transition param st (ConsK a1 ... aM)
 ```
 
-Here, we are instructing pirouette to load the definitions from `MultiSigStateMachine.flat`, filter all of those whose name contains `transition` as a prefix and print their definitions. In this case, we should see a lot of output, the beginning of which is:
+Then we normalize the resulting program and produce TLA+ code out of it.
+This ensures that the first thing that happens is the pattern matching on the variable representing
+the contract's endpoints.
 
-```
-transition :=
-  Params0 -> (State0 MSState) -> Input -> (Maybe (Tuple20 (TxConstraints0 Void
-                                                                          Void)
-                                                          (State0 MSState)))
-  λ (params1098 : Params0) (ds1099 : State0 MSState) (i1100 : Input)
-  . State_match @MSState
-      1#ds1099
-      @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
-      (λ (ds1101 : MSState) (ds1102 : List0 (Tuple20 ByteString
-                                                     (List0 (Tuple20 ByteString
-                                                                     Integer))))
-       . MSState_match 1#ds1101
-           @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
-           (λ (pmt1107 : Payment0) (pks1108 : List0 ByteString)
-            . Input_match 4#i1100
-                @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
-  ...
-```
-
-This is a simplification of the PlutusIR representation of the
-`transition` function and is what pirouette is going to use
-when extracting the TLA+ model from it.  Yet, the first
-pattern-match happens on the variable `1#ds1099` (the `1#` prefix is the De Bruijn index of this variable),
-of type `State`.  If we were to ask `pirouette` for some TLA+ without any further
-modification, it would think that the `1#ds1099` is the variable that
-represents user input. In fact, the variable representing the user's
-input is matched third. First we match on `State`, then we match on
-`MSState`, then finally we match on `Input`. Hence, we pass `--pull-destr 2`
-or `-p 2` to instruct pirouette to pull the (starting at 0) destructor number 2
-to the root of the term.
-
-
-```
-cabal exec pirouette -- MultiSigStateMachine.flat --prefix transition --term-only -p 2 | less
-```
-
-Which will instruct pirouette to pull the third destructor to the root (the first destructor is of index 0).  We should now see:
-
-```
-transition :=
-  Params0 -> (State0 MSState) -> Input -> (Maybe (Tuple20 (TxConstraints0 Void
-                                                                          Void)
-                                                          (State0 MSState)))
-  λ (params1098 : Params0) (ds1099 : State0 MSState) (i1100 : Input)
-  . Input_match 0#i1100
-      @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
-      (λ pk1110 : ByteString . State_match @MSState
-           2#ds1099
-           @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
-           (λ (ds1101 : MSState) (ds1102 : List0 (Tuple20 ByteString
-                                                          (List0 (Tuple20 ByteString
-                                                                          Integer))))
-            . MSState_match 1#ds1101
-                @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
-```
+The `param` and `st` names have been chosen to match TLA+ variables and constants declared
+in the skeleton, which we shall look at next.
 
 ### Using a TLA+ Skeleton
 
 Running the command:
 
 ```
-cabal exec pirouette -- MultiSigStateMachine.flat --prefix transition -p 2 | less
+cabal exec pirouette -- tests/integration/MultiSigStateMachine/MultiSigStateMachine.flat \
+  --prefix transition -a param,st,INPUT | less
 ```
 
 Will produce a large amount of TLA+ code, but this code will not work
@@ -242,7 +184,7 @@ A separator in TLA+ is a line containing four or more `'-'` characters. A Skelet
 
 EXTENDS Integers, FiniteSequences, ...
 CONSTANTS ...
-VARIABLES ...
+VARIABLES st, ...
 
 vars == << ... >>
 
@@ -305,6 +247,14 @@ It is represented with:
 ```
 [ cons |-> "Just" , arg0 |-> 42 ]
 ```
+
+### Specializing Values
+
+TLA+ already has builtin definitions for some of the datatypes that your Haskell contract uses. For example,
+instead of using lists encoded with `[ cons |-> "Cons", arg0 |-> x , arg0 |-> xs]` and `[cons |-> "Nil"]`,
+we can use TLA+ sequences directly. You can choose to specialize certain datatypes with the `--ty-spz` option.
+To specialize [all currently supported types](https://github.com/tweag/pirouette/blob/main/src/Pirouette/Specializer.hs),
+use `--ty-spz ALL`, otherwise pass the names of the types you want to specify separated by commas.
 
 ## Conclusion
 
