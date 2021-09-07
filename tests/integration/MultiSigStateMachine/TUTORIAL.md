@@ -256,6 +256,42 @@ we can use TLA+ sequences directly. You can choose to specialize certain datatyp
 To specialize [all currently supported types](https://github.com/tweag/pirouette/blob/main/src/Pirouette/Specializer.hs),
 use `--ty-spz ALL`, otherwise pass the names of the types you want to specify separated by commas.
 
+### Inpecting Terms
+
+We can ask pirouette to print its _terms_ and inspect what we're dealing with by running the tool
+with the `--term-only` option:
+
+```
+cabal exec pirouette -- tests/integration/MultiSigStateMachine/MultiSigStateMachine.flat \
+  --prefix transition --term-only | less
+```
+
+Here, we are instructing pirouette to load the definitions from `MultiSigStateMachine.flat`, filter all of those whose name contains `transition` as a prefix and print their definitions. In this case, we should see a lot of output, the beginning of which is:
+
+```
+transition :=
+  Params0 -> (State0 MSState) -> Input -> (Maybe (Tuple20 (TxConstraints0 Void
+                                                                          Void)
+                                                          (State0 MSState)))
+  λ (params1098 : Params0) (ds1099 : State0 MSState) (i1100 : Input)
+  . State_match @MSState
+      1#ds1099
+      @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
+      (λ (ds1101 : MSState) (ds1102 : List0 (Tuple20 ByteString
+                                                     (List0 (Tuple20 ByteString
+                                                                     Integer))))
+       . MSState_match 1#ds1101
+           @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
+           (λ (pmt1107 : Payment0) (pks1108 : List0 ByteString)
+            . Input_match 4#i1100
+                @(Maybe (Tuple20 (TxConstraints0 Void Void) (State0 MSState)))
+  ...
+```
+
+This is the pirouette internal representation of the PlutusIR 
+`transition` function. This pirouette internal represenatation is what 
+pirouette is going to use when extracting the TLA+ model from it.
+
 ## Conclusion
 
 We have seen how to produce a usable TLA+ model from the `MultiSigStateMachine` contract. Running this TLA+ model

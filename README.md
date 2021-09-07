@@ -56,7 +56,7 @@ For a more in depth tutorial on using Pirouette, have a look at the [MultiSigSta
 Because the PlutusIR parser is [still experimental](https://github.com/input-output-hk/plutus/issues/3445),
 we recommend to pass a binary PlutusIR file
 to `pirouette`. You can save the PlutusIR code of your contract as a binary file
-by loading your contract on GHCi, then running a `saveBinaryFile` function, exemplified below.
+by loading your contract on GHCi, then running the `saveBinaryFile` or `savePirFile` functions, exemplified below.
 
 
 ```haskell
@@ -69,6 +69,14 @@ saveBinaryFile :: Haskell.IO ()
 saveBinaryFile = case getPir $$(PlutusTx.compile [|| mkValidator ||]) of
                    Just res -> BS.writeFile "contract.flat" (flat res)
                    Nothing  -> error "plutus compilation failed"
+
+-- If you want to save a .pir file, make sure to call prettyClassicDebug to avoid
+-- a pretty printer bug where variables can get shadowed
+import qualified PlutusCore.Pretty as P
+savePirFile :: Haskell.IO ()
+savePirFile = case getPir $$(PlutusTx.compile [|| mkValidator ||]) of
+                Just res -> Haskell.writeFile "contract.pir" (P.prettyClassicDebug res)
+                Nothing  -> error "plutus compilation failed"
 ```
 
 Note that you _do not_ need to import Pirouette to get a `.pir` or a `.flat` file from your contract,
