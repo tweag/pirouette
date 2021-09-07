@@ -75,7 +75,7 @@ saveBinaryFile = case getPir $$(PlutusTx.compile [|| mkValidator ||]) of
 import qualified PlutusCore.Pretty as P
 savePirFile :: Haskell.IO ()
 savePirFile = case getPir $$(PlutusTx.compile [|| mkValidator ||]) of
-                Just res -> Haskell.writeFile "contract.pir" (P.prettyClassicDebug res)
+                Just res -> Haskell.writeFile "contract.pir" (show $ P.prettyClassicDebug res)
                 Nothing  -> error "plutus compilation failed"
 ```
 
