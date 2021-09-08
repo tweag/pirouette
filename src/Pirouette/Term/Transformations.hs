@@ -35,6 +35,8 @@ import           Data.Text.Prettyprint.Doc hiding (pretty)
 import qualified Data.Text as T
 import qualified Data.Map as M
 
+import Debug.Trace
+
 -- * Monomorphic Transformations
 
 -- |Removes superfluous Bool-match. For example,
@@ -187,7 +189,8 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
     appExcessive l (R.TyFun a b) _              =
        error "Ill-typed program! Number of lambdas in case-branch must be bigger than constructor arity"
     appExcessive l _             t              =
-       R.appN t l
+       trace ("Applying: " ++ renderSingleLineStr (pretty t) ++ "\n to: " ++ renderSingleLineStr (pretty l))
+           $ R.appN t l
 
     tyDrop :: Int -> PrtType -> PrtType
     tyDrop 0 t               = t
