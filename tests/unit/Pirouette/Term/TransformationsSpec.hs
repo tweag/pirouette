@@ -54,55 +54,7 @@ runPrtTest = either (error . show) id . fst . runIdentity . runPrtT testOpts tes
 
 -- * Actual Tests
 
-swapDestrIdemp :: String -> TestTerm -> Spec
-swapDestrIdemp n t = do
-  it ("is idempotent for " ++ show n) $
-    runPrtTest (runMaybeT $ swapDestr t >>= swapDestr) `shouldBe` Just t
-
-swapDestrFails :: String -> TestTerm -> Spec
-swapDestrFails n t = do
-  it ("fails for " ++ show n) $
-    runPrtTest (runMaybeT $ swapDestr t) `shouldBe` Nothing
-
-dnfId :: String -> TestTerm -> Spec
-dnfId n t = do
-  it ("is the identity for " ++ show n) $
-    runPrtTest (destrNF t) `shouldBe` t
-
-dnfExpected :: (String, TestTerm, TestTerm) -> Spec
-dnfExpected (n, t, res) = do
-  it ("destrNF " ++ show n ++ " matches expectation") $
-    runPrtTest (destrNF t) `shouldBe` res
-
 spec = do
-  describe "swap-destructors" $ do
-    -- We don't need to check that swapDestr tSwap2 == Just tSwap1 because
-    -- it is implied by 'swapDestr tSwap1 == Just tSwap2' and 'swapDestrIdemp tSwap1'
-    it "works for Maybe and Either" $
-       runPrtTest (runMaybeT $ swapDestr tSwap1) `shouldBe` Just tSwap2
-
-    it "works for Maybe and Expr" $
-       runPrtTest (runMaybeT $ swapDestr tSwap4) `shouldBe` Just tSwap5
-
-    it "works for Maybe and Simpl" $
-       runPrtTest (runMaybeT $ swapDestr tSwap6) `shouldBe` Just tSwap7
-
-    it "works for Maybe and Maybe" $
-       runPrtTest (runMaybeT $ swapDestr tSwap9) `shouldBe` Just tSwap10
-
-    mapM_ (uncurry swapDestrIdemp) tSwaps
-
-    mapM_ (uncurry swapDestrFails) tSwapFails
-
-  describe "pullNthDestr" $ do
-    it "works for tSwap8" $
-      runPrtTest (pullNthDestr 2 tSwap8) `shouldBe` tSwap8_2
-
-  describe "dnf" $ do
-    mapM_ (uncurry dnfId) tSwaps
-
-    mapM_ dnfExpected tDNFs
-
   describe "cfoldmapSpecialize" $ do
     it "works for cfoldmapSpecialize" $
       runPrtTest

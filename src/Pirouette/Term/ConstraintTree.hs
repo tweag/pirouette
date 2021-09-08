@@ -117,7 +117,8 @@ execute t = do
   mdest <- runMaybeT $ unDest t
   case mdest of
     Nothing -> return (Result t)
-    Just (dName, tyName, tyArgs, x, tyRet, cases) -> do
+    Just (dName, tyName, tyArgs, x, tyRet, cases, excess) -> do
+      unless (null excess) $ throwError' (PEOther "ConstraintTree.execute'ing a term with excessive destr args. Please use removeExcessiveDestrArgs before execute")
       cons <- constructors <$> typeDefOf tyName
       -- Since excessive arguments to a destructor are suppressed by the transformation
       -- `removeExcessiveDest`, this error should never be triggered.
