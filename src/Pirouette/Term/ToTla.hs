@@ -34,15 +34,18 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
 
+import           Data.Foldable
 import           Data.Functor ( ($>) )
 import           Data.Maybe ( mapMaybe, isJust, catMaybes )
 import           Data.Generics.Uniplate.Operations
 import           Data.String
 import           Data.Bifunctor (bimap)
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.List as L
+import qualified Data.Sequence as Seq
+import           Data.Sequence(Seq, (|>))
 
 import qualified Language.TLAPlus.Pretty as TLA
 
@@ -173,13 +176,14 @@ data TlaState = TlaState
   , tsTyVars       :: [(Name, R.Kind)]
   , tsTypeOf       :: M.Map TLA.AS_Expression TlaType
   , tsSubst        :: M.Map Name TLA.AS_Expression
+  , tsDefunDefs    :: M.Map Int (Seq TLA.AS_Expression)
   }
 
 tsRegisterSubst :: (Monad m) => Name -> TLA.AS_Expression -> TlaT m ()
 tsRegisterSubst n term = modify (\st -> st{ tsSubst = M.insert n term (tsSubst st) })
 
 tlaState0 :: TlaState
-tlaState0 = TlaState 0 [] M.empty M.empty
+tlaState0 = TlaState 0 [] M.empty M.empty M.empty
 
 tlaFreshNameStr :: (Monad m) => TlaT m String
 tlaFreshNameStr = do
@@ -214,6 +218,41 @@ tlaWithTyVars tyvs f = do
   modify (\st -> st { tsTyVars = pre })
   return res
 
+
+-- ** Defunctionalization
+
+defunLabel :: Int -> Int -> TLA.AS_Expression
+defunLabel arity idx = tlaString $ "defun_" <> show arity <> "_" <> show idx
+
+applyFunIdent :: Int -> TLA.AS_Expression
+applyFunIdent arity = tlaIdent $ "apply" <> show arity
+
+genApply :: Int -> Seq TLA.AS_Expression -> TLA.AS_UnitDef
+genApply arity cases = tlaOpDef (applyFunIdent arity) (lbl : args) $ TLA.AS_Case di arms Nothing
+  where
+    args = [ tlaIdent $ "x" <> show n | n <- [1..arity] ]
+    arms = [ TLA.AS_CaseArm di (isIndex idx) (unwrapFunBody expr)
+           | (idx, expr) <- zip [0..] $ toList cases
+           ]
+
+    lbl = tlaIdent "label"
+    isIndex idx = lbl `tlaEq` defunLabel arity idx
+
+    unwrapFunBody (TLA.AS_QuantifierBoundFunction _ funargs expr) = transformBi (replaceArgs funargNames) expr
+      where
+       funargNames = (\(TLA.AS_QBoundN [TLA.AS_Ident _ [] name] _) -> name) <$> funargs
+    unwrapFunBody expr = error $ "Unexpected expression: " <> show expr
+
+    replaceArgs funargs expr@(TLA.AS_Ident _ [] name)
+      | Just val <- lookup name (zip funargs args) = val
+      | otherwise = expr
+    replaceArgs _       expr = expr
+
+genApplies :: (MonadPirouette m) => TlaT m [TLA.AS_UnitDef]
+genApplies = do
+  defuns <- gets tsDefunDefs
+  pure $ uncurry genApply <$> M.toList defuns
+
 -- ** Top-Level Translation
 
 -- |Translates a term to a TLA specification by first symbolically executing the term
@@ -239,10 +278,12 @@ termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ d
                         >> throwError' (PEOther "CTreeIsNotAMatch")
   let next = tlaOpDef (tlaIdent "Next") [] $ tlaOr $ map (tlaIdentPrefixed "Wrapped") $ ctreeFirstMatches mctree
 
+  applies <- genApplies
+
   tlaPure $ logDebug "Assembling the spec"
   skel <- asks toSkeleton
   return $ wrapSpec skel
-         $ concat deps ++ defs ++ [next]
+         $ concat deps ++ applies ++ defs ++ [next]
   where
     p2l (x, y) = [x, y]
 
@@ -813,9 +854,23 @@ trFreeName n args = do
       tlaAppName n args
     DTypeDef _        -> throwError' $ PEOther "trFreeName: Found TypeDef where a term was expected"
 
+-- |Saves a function into the state for defunctionalization and returns its index
+saveDefun :: (MonadPirouette m) => Int -> TLA.AS_Expression -> TlaT m Int
+saveDefun arity fun = do
+  allFuns <- gets tsDefunDefs
+  let thisArityFuns = M.findWithDefault mempty arity allFuns
+  modify' $ \st -> st { tsDefunDefs = M.insert arity (thisArityFuns |> fun) allFuns }
+  pure $ Seq.length thisArityFuns
+
 -- |Constructs a value of a datatype as a TLA expression.
 trConstrApp :: (MonadPirouette m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
-trConstrApp = tlaAppName
+trConstrApp n args = mapM defun args >>= tlaAppName n
+  where
+    defun arg@(TLA.AS_QuantifierBoundFunction _ funargs _) = do
+      let arity = length funargs
+      curIdx <- saveDefun arity arg
+      pure $ defunLabel arity curIdx
+    defun arg = pure arg
 
 -- |Constructs a value of a datatype as a TLA expression.
 trDestrApp :: (MonadPirouette m) => Name -> TyName -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
@@ -842,8 +897,9 @@ tlaAppNamePref pref n args = do
   arity <- case mty of
              Just ty -> return (arity $ tlaTyDropAll ty)
              Nothing -> tlaPure (logWarn $ "Undeclared type for " ++ pref ++ show (toString n)) >> return 0
-  let (tas, das) = L.splitAt arity args
-  return $ tlaFunApp (tlaOpApp (tlaIdentPrefixed pref n) tas) das
+  if arity >= length args
+  then pure $ tlaOpApp (tlaIdentPrefixed pref n) args
+  else pure $ tlaOpApp (applyFunIdent $ length args - arity) (tlaIdentPrefixed pref n : args)
 
 trBuiltin :: (MonadPirouette m) => P.DefaultFun -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 trBuiltin P.AddInteger args            = tlaPartialApp2 (tlaInfix TLA.AS_Plus) args
