@@ -273,6 +273,14 @@ trTerm mn t = do
                    $ S.toList ns
           return $ R.App (R.F $ FreeName n) args
 
+-- A straightforward translation of a PIRTerm to the Pirouette representation of term.
+-- This function is not used by `trProgram` which is the main function to translate
+-- the file we want to verify.
+-- It remains useful however, especially to define transformations using the PIR syntax.
+trPIRTerm :: PIRConstraint tyname name fun
+          => PIR.Term tyname name DefaultUni fun loc
+          -> Except (Err loc) (Term Name fun)
+trPIRTerm t = runReaderT (evalStateT (fst <$> runWriterT (fst <$> trTerm Nothing t)) M.empty) envEmpty
 
 -- |Given a stack of bound variables and a dependency map, compute one step
 -- of the transitive dependencies of a term. For example, let @t@ be

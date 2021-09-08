@@ -81,6 +81,7 @@ data CliOpts = CliOpts
   , skeleton      :: Maybe FilePath
   , pruneMaybe    :: Bool
   , tySpecializer :: [String]
+  , transfo       :: Maybe FilePath
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -186,9 +187,10 @@ processDecls opts = do
   postDs <- sequence $ M.map processOne preDs
   modify (\st -> st { decls = postDs })
  where
-   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   generalTransformations :: (MonadPirouette m, MonadIO m) => PrtTerm -> m PrtTerm
    generalTransformations
       =   expandDefs
+      >=> maybe return applyFileTransfo (transfo opts)
       >=> constrDestrId
       >=> removeExcessiveDestArgs
       >=> cfoldmapSpecialize
@@ -292,6 +294,7 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseSkeletonFile
                        <*> parsePruneMaybe
                        <*> parseTySpecializer
+                       <*> parseFileTransfo
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -355,6 +358,13 @@ parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
   where
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
+
+parseFileTransfo :: Opt.Parser (Maybe FilePath)
+parseFileTransfo = Opt.option (fmap Just Opt.str)
+                 (  Opt.metavar "FILE"
+                 <> Opt.long "transfo"
+                 <> Opt.value Nothing
+                 <> Opt.help "Uses the transformations in the given file.")
 
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")

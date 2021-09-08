@@ -6,17 +6,20 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE TypeApplications     #-}
 
 module Pirouette.Term.Transformations where
 
 import           Pirouette.Monad
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
+import           Pirouette.Term.FromPlutusIR
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
 import           Pirouette.PlutusIR.Utils
 
+import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore as P
 import           Control.Applicative
 import           Control.Arrow (first, second, (&&&))
@@ -30,10 +33,14 @@ import           Data.Generics.Uniplate.Data
 import           Data.Generics.Uniplate.Operations
 import           Data.List (elemIndex, groupBy, transpose, foldl', span, lookup)
 import           Data.String (fromString)
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (fromMaybe, isJust, fromJust)
 import           Data.Text.Prettyprint.Doc hiding (pretty)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Map as M
+
+import           Text.Megaparsec.Error (errorBundlePretty)
+import           Text.Regex (mkRegex, matchRegex)
 
 -- * Monomorphic Transformations
 
@@ -375,3 +382,158 @@ chooseHeadCase t ty args fstArg =
     transitionArgs s n
       | s == fstArg = R.Arg $ R.termPure (R.B (fromString "DUMMY_ARG") 0)
       | otherwise   = R.Arg $ R.termPure (R.B (fromString s) (toInteger n))
+
+
+applyFileTransfo :: (MonadPirouette m, MonadIO m)
+                 => FilePath -> PrtTerm -> m PrtTerm
+applyFileTransfo fileName t = do
+  content <- liftIO $ T.readFile fileName
+  let lines = T.lines content
+  foldM (\te txt -> rewriteM (runMaybeT . transfoOfLine txt) te) t lines
+  where
+    transfoOfLine :: (MonadPirouette m)
+                  => T.Text -> PrtTerm -> MaybeT m PrtTerm
+    transfoOfLine l t = do
+      let sendError = lift . throwError' . PEOther
+      let [transfoName,def] = T.splitOn ":" l
+      let [lhsTxt,rhsTxt] = map T.strip $ T.splitOn "==>" def
+      lhsPIR <-
+        either (sendError . errorBundlePretty) return $
+          PIR.parse
+            (PIR.term @P.DefaultUni @P.DefaultFun)
+            (T.unpack transfoName  ++ "-LEFT")
+            lhsTxt
+      lhs <- either (sendError . show) return $
+        runExcept (trPIRTerm lhsPIR)
+      rhsPIR <-
+        either (sendError . errorBundlePretty) return $
+          PIR.parse
+            (PIR.term @P.DefaultUni @P.DefaultFun)
+            (T.unpack transfoName ++ "-RIGHT")
+            rhsTxt
+      rhs <- either (sendError . show) return $
+        runExcept (trPIRTerm rhsPIR)
+      MaybeT $ traverse (flip instantiate rhs) (isInstance lhs t)
+
+    isInstance :: PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstance (R.App vL@(R.F (FreeName x)) []) t =
+      case isHole x of
+        Nothing ->
+          case t of
+            R.App vT [] -> isVarInstance vL vT
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.Arg t)
+    isInstance (R.App vL argsL) (R.App vT argsT) =
+      foldl' M.union <$> isVarInstance vL vT <*> zipWithM isArgInstance argsL argsT
+    isInstance (R.Lam _ tyL tL) (R.Lam _ tyT tT) =
+      M.union <$> isInstance tL tT <*> isTyInstance tyL tyT
+    isInstance (R.Abs _ _ tL) (R.Abs _ _ tT) =
+      isInstance tL tT
+    isInstance _ _ = Nothing
+
+    isVarInstance :: PrtVar -> PrtVar -> Maybe (M.Map String PrtArg)
+    isVarInstance vL@(R.F (FreeName x)) vT =
+      case isHole x of
+        Nothing ->
+          case vT of
+            R.F y -> if haveSameString (FreeName x) y then Just M.empty else Nothing
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.Arg $ R.termPure vT)
+    isVarInstance (R.F nL) (R.F nT) =
+      if haveSameString nL nT then Just M.empty else Nothing
+    isVarInstance (R.B _ i) (R.F _) = Nothing
+    isVarInstance (R.B _ i) (R.B _ j) =
+      if i == j  then Just M.empty else Nothing
+    isVarInstance _ _ = Nothing
+
+    isTyInstance :: PrtType -> PrtType -> Maybe (M.Map String PrtArg)
+    isTyInstance (R.TyApp vL@(R.F (TyFree x)) []) ty =
+      case isHole x of
+        Nothing ->
+          case ty of
+            R.TyApp vT [] -> isTyVarInstance vL vT
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.TyArg ty)
+    isTyInstance (R.TyApp vL argsL) (R.TyApp vT argsT) =
+      foldl' M.union <$> isTyVarInstance vL vT <*> zipWithM isTyInstance argsL argsT
+    isTyInstance (R.TyLam _ _ tyL) (R.TyLam _ _ tyT) = isTyInstance tyL tyT
+    isTyInstance (R.TyAll _ _ tyL) (R.TyAll _ _ tyT) = isTyInstance tyL tyT
+    isTyInstance (R.TyFun aL bL) (R.TyFun aT bT) =
+      M.union <$> isTyInstance aL aT <*> isTyInstance bL bT
+    isTyInstance _ _ = Nothing
+
+    isTyVarInstance :: PrtTyVar -> PrtTyVar -> Maybe (M.Map String PrtArg)
+    isTyVarInstance vL@(R.F (TyFree x)) vT =
+      case isHole x of
+        Nothing ->
+          case vT of
+            R.F y -> if tyHaveSameString (TyFree x) y then Just M.empty else Nothing
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.TyArg $ R.tyPure vT)
+    isTyVarInstance (R.F nL) (R.F nT) =
+      if tyHaveSameString nL nT then Just M.empty else Nothing
+    isTyVarInstance (R.B _ i) (R.F _) = Nothing
+    isTyVarInstance (R.B _ i) (R.B _ j) =
+      if i == j  then Just M.empty else Nothing
+    isTyVarInstance _ _ = Nothing
+
+    isArgInstance :: PrtArg -> PrtArg -> Maybe (M.Map String PrtArg)
+    isArgInstance (R.Arg tL) (R.Arg tT) = isInstance tL tT
+    isArgInstance (R.TyArg tyL) (R.TyArg tyT) = isTyInstance tyL tyT
+    isArgInstance _ _ = Nothing
+
+    instantiate :: (MonadPirouette m)
+                => M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiate m (R.App v@(R.F (FreeName x)) args) =
+      case isHole x of
+        Nothing -> R.App v <$> mapM (instantiateArg m) args
+        Just i ->
+          case M.lookup i m of
+            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
+            Just (R.Arg t) -> R.appN t <$> mapM (instantiateArg m) args
+            Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ "_ is at a term position on the right hand side, but was a type on the left-hand side."
+    instantiate m (R.App v args) =
+      R.App v <$> mapM (instantiateArg m) args
+    instantiate m (R.Lam ann ty t) =
+      R.Lam ann <$> instantiateTy m ty <*> instantiate m t
+    instantiate m (R.Abs ann k t) =
+      R.Abs ann k <$> instantiate m t
+
+    instantiateTy :: (MonadPirouette m)
+                  => M.Map String PrtArg -> PrtType -> m PrtType
+    instantiateTy m (R.TyApp v@(R.F (TyFree x)) args) =
+      case isHole x of
+        Nothing -> R.TyApp v <$> mapM (instantiateTy m) args
+        Just i ->
+          case M.lookup i m of
+            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
+            Just (R.TyArg t) -> R.appN t <$> mapM (instantiateTy m) args
+            Just (R.Arg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ is at a type position on the right hand side, but was a term on the left-hand side."
+    instantiateTy m (R.TyApp v args) =
+      R.TyApp v <$> mapM (instantiateTy m) args
+    instantiateTy m (R.TyLam ann k ty) =
+      R.TyLam ann k <$> instantiateTy m ty
+    instantiateTy m (R.TyAll ann k ty) =
+      R.TyAll ann k <$> instantiateTy m ty
+    instantiateTy m (R.TyFun a b) =
+      R.TyFun <$> instantiateTy m a <*> instantiateTy m b
+
+    instantiateArg :: (MonadPirouette m)
+                   => M.Map String PrtArg -> PrtArg -> m PrtArg
+    instantiateArg m (R.Arg t) = R.Arg <$> instantiate m t
+    instantiateArg m (R.TyArg ty) = R.TyArg <$> instantiateTy m ty
+
+    isHole :: Name -> Maybe String
+    isHole x = head <$> matchRegex (mkRegex "([a-zA-Z][0-9]+)_") (T.unpack $ nameString x)
+
+    haveSameString :: PIRBase P.DefaultFun Name -> PIRBase P.DefaultFun Name -> Bool
+    haveSameString (Constant a) (Constant b) = a == b
+    haveSameString (Builtin f) (Builtin g) = f == g
+    haveSameString Bottom Bottom = True
+    haveSameString (FreeName x) (FreeName y) = nameString x == nameString y
+    haveSameString _ _ = False
+
+    tyHaveSameString :: TypeBase Name -> TypeBase Name -> Bool
+    tyHaveSameString (TyBuiltin f) (TyBuiltin g) = f == g
+    tyHaveSameString (TyFree x) (TyFree y) = nameString x == nameString y
+    tyHaveSameString _ _ = False

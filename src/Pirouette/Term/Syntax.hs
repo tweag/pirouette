@@ -2,7 +2,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Pirouette.Term.Syntax
   ( module EXPORT
-  , PrtTerm, PrtType, PrtDef, PrtTypeDef
+  , PrtTerm, PrtType, PrtDef, PrtTypeDef, PrtArg
+  , PrtVar, PrtTyVar
   , Name(..), ToName(..), TyName
   , separateBoundFrom
   , declsUniqueNames
@@ -33,8 +34,13 @@ import           Data.String
 
 type PrtTerm    = Term Name P.DefaultFun
 type PrtType    = Type Name
+type PrtArg     = R.Arg PrtType PrtTerm
+
 type PrtDef     = Definition Name P.DefaultFun
 type PrtTypeDef = TypeDef Name
+
+type PrtVar     = R.Var Name (PIRBase P.DefaultFun Name)
+type PrtTyVar   = R.Var Name (TypeBase Name)
 
 -- * Names
 

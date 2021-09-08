@@ -30,6 +30,7 @@ dependencies:
   - bound
   - interpolate
   - deriving-compat
+  - regex-compat
 
 library:
   source-dirs: src
