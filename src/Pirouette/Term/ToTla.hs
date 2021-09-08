@@ -503,6 +503,7 @@ trBuiltinType PIRTypeByteString = tlaIdentPrefixed "Plutus" "ByteString"
 trBuiltinType PIRTypeUnit       = tlaIdentPrefixed "Plutus" "Unit"
 trBuiltinType PIRTypeBool       = tlaIdentPrefixed "Plutus" "Bool"
 trBuiltinType PIRTypeString     = tlaIdentPrefixed "Plutus" "String"
+trBuiltinType PIRTypeData       = tlaIdentPrefixed "Plutus" "Data"
 trBuiltinType (PIRTypeList t) =
   TLA.AS_OpApp di (tlaIdentPrefixed "Plutus" "List") [trBuiltinType t]
 trBuiltinType (PIRTypePair t u) =
@@ -827,6 +828,7 @@ trTermConstant :: (MonadPirouette m) => PIRConstant -> TlaT m TLA.AS_Expression
 trTermConstant (PIRConstInteger i) = return $ TLA.AS_Num di i
 trTermConstant (PIRConstBool b)    = return $ TLA.AS_Bool di b
 trTermConstant (PIRConstString s)  = return $ TLA.AS_StringLiteral di (T.unpack s)
+trTermConstant PIRConstUnit        = return $ TLA.AS_DiscreteSet di []
 trTermConstant c = throwError' $ PEOther $ "NotYetImplemented trTermConstant " ++ show c
 
 -- |Application of a defined name as a TLA expression. This is tricky because
@@ -861,6 +863,8 @@ trBuiltin P.AppendByteString args      = tlaPartialApp2 (tlaInfix TLA.AS_Circ) a
 trBuiltin P.EqualsByteString  args     = tlaPartialApp2 tlaEq args
 trBuiltin P.IfThenElse  [x,y,z]        = return $ TLA.AS_IF di x y z
 trBuiltin P.Sha2_256 args              = tlaPartialApp  (tlaApp1 "SHA2") args
+trBuiltin P.ConstrData args            = tlaPartialApp2 (tlaApp2 "ConstrData") args
+trBuiltin P.MkNilData args             = tlaPartialApp  (tlaApp1 "MkNilData") args
 trBuiltin bin args = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
 
 tlaPartialApp

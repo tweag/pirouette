@@ -72,14 +72,29 @@ tlaTyBool = TlaVal pirTyBool
 tlaTyBS :: TlaType
 tlaTyBS = TlaVal pirTyBS
 
+tlaTyData :: TlaType
+tlaTyData = TlaVal pirTyData
+
+tlaTyUnit :: TlaType
+tlaTyUnit = TlaVal pirTyUnit
+
 pirTyNat :: PrtType
 pirTyNat = R.tyPure $ R.F $ TyBuiltin PIRTypeInteger
 
 pirTyBool :: PrtType
 pirTyBool = R.tyPure $ R.F $ TyBuiltin PIRTypeBool
 
+pirTyData :: PrtType
+pirTyData = R.tyPure $ R.F $ TyBuiltin PIRTypeData
+
 pirTyBS :: PrtType
 pirTyBS = R.tyPure $ R.F $ TyBuiltin PIRTypeByteString
+
+pirTyUnit :: PrtType
+pirTyUnit = R.tyPure $ R.F $ TyBuiltin PIRTypeUnit
+
+pirTyList :: PIRType -> PrtType
+pirTyList a = R.tyPure $ R.F $ TyBuiltin (PIRTypeList a)
 
 tlaAll :: [(Name, R.Kind)] -> TlaType -> TlaType
 tlaAll = flip (foldr (\(n, k) t -> TlaAll (R.Ann n) k t))
@@ -126,6 +141,8 @@ tlaTyBuiltin P.IfThenElse            =
                                , TlaVal (R.tyPure $ R.B a 0)
                                ] (R.tyPure $ R.B a 0)
 tlaTyBuiltin P.Sha2_256             = TlaOp [tlaTyBS] pirTyBS
+tlaTyBuiltin P.ConstrData           = TlaOp [tlaTyNat, tlaTyData] pirTyData
+tlaTyBuiltin P.MkNilData            = TlaOp [tlaTyUnit] (pirTyList PIRTypeData)
 tlaTyBuiltin b = error ("Unsuported builtin: " ++ show b)
 
 
