@@ -191,7 +191,6 @@ processDecls opts = do
       =   expandDefs
       >=> constrDestrId
       >=> removeExcessiveDestArgs
-      >=> cfoldmapSpecialize
 
    processOne = defTermMapM generalTransformations
 
