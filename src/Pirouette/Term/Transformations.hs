@@ -167,12 +167,12 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
   where
     go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
-      (n, tyN, tyArgs, x, tyReturn@(R.TyFun tyA tyB), cases, excess) <- unDest t
-      Datatype _ _ _ cons <- lift (typeDefOf tyN)
+      (n, tyN, tyArgs, x, tyReturn, cases, excess) <- unDest t
       if null excess
-      then fail "Destruction to a function type without excessive arguments"
+      then fail "No excessive destr arguments"
       else do
         logTrace $ show n
+        Datatype _ _ _ cons <- lift (typeDefOf tyN)
         return $
           R.App (R.F $ FreeName n) $
             map R.TyArg tyArgs
