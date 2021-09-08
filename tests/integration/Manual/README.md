@@ -25,11 +25,12 @@ by the plutus compiler.
 
 ## [HO Constructor, Simple Transition](ho-constr-simple-transi.pir)
 
-Defines a simple contract that uses values of type `Maybe (State -> State)` but,
+Defines a simple contract that uses values of type `forall s . Maybe (s -> s)` but,
 upon normalization reduzes to a first order program. The main objective here
 is testing the `removeExcessiveDestrArgs` function ([here](https://github.com/tweag/pirouette/blob/88d38d34b52184957e89d9183db1fbd45e0055ea/src/Pirouette/Term/Transformations.hs#L165)), 
 which ensures that the over-saturated `Input_match` on `ho-constr-simple-transi.pir:45`
 gets its last parameter distributed, then gets all its branches normalized.
+Note that this tests `removeExcessiveDestrArgs` with distributing both term and type arguments.
 
 ## [HO Constructor, HO transition](ho-constr-ho-transi.pir)
 _PENDING:_ Waiting for issue #3

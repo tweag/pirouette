@@ -167,55 +167,33 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
   where
     go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
-      (n, tyN, tyArgs, x, tyReturn@(R.TyFun tyA tyB), cases) <- unDest t
-      Datatype _ _ _ cons <- lift $ typeDefOf tyN
-      let nbCons = length cons
-      let (cases', excess) = splitAt nbCons cases
+      (n, tyN, tyArgs, x, tyReturn, cases, excess) <- unDest t
       if null excess
-      then fail "Destruction to a function type without excessive arguments"
+      then fail "No excessive destr arguments"
       else do
         logTrace $ show n
+        Datatype _ _ _ cons <- lift (typeDefOf tyN)
         return $
           R.App (R.F $ FreeName n) $
             map R.TyArg tyArgs
               ++ [R.Arg x, R.TyArg $ tyDrop (length excess) tyReturn]
-              ++ zipWith (\(_,cty) t -> R.Arg $ appExcessive excess cty t) cons cases'
+              ++ zipWith (\(_,cty) t -> R.Arg $ appExcessive excess cty t) cons cases
 
-    appExcessive :: [PrtTerm] -> Type Name -> PrtTerm -> PrtTerm
+    -- Receives the excessive arguments, the type of the constructor whose case we're on and
+    -- the term defining the value at this constructor's case.
+    appExcessive :: [R.Arg PrtType PrtTerm] -> Type Name -> PrtTerm -> PrtTerm
     appExcessive l (R.TyFun a b) (R.Lam n ty t) =
-      R.Lam n ty (appExcessive (map (shift 1) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
+      R.Lam n ty (appExcessive (map (R.argMap id (shift 1)) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
     appExcessive l (R.TyFun a b) _              =
-       undefined -- When matching, the number of lambdas should be bigger than the number of arguments of a constructor.
+       error "Ill-typed program! Number of lambdas in case-branch must be bigger than constructor arity"
     appExcessive l _             t              =
-       R.appN t $ map R.Arg l
+       R.appN t l
 
     tyDrop :: Int -> PrtType -> PrtType
-    tyDrop 0 t             = t
-    tyDrop n (R.TyFun a b) = tyDrop (n-1) b
-    tyDrop n t             = undefined -- If `n` is not 0, then the type must be an arrow.
-
--- |Simpler version of 'removeExcessiveArgs' that removes arguments of type Unit only.
-removeThunks :: (MonadPirouette m) => PrtTerm -> m PrtTerm
-removeThunks = pushCtx "removeThunks" . rewriteM (runMaybeT . go)
-  where
-    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
-    go t = do
-      (n, tyN, tyArgs, x, R.TyFun tyA tyB, cases) <- unDest t
-      isUnit <- lift $ typeIsUnit tyA
-      if not isUnit then fail "Can't rewrite; not Unit"
-      else do
-        let (cases', [unit]) = splitAt (length cases - 1) cases
-        logTrace $ show n
-        return $ R.App (R.F $ FreeName n)
-               $ map R.TyArg tyArgs
-              ++ [R.Arg x, R.TyArg tyB]
-              ++ map (R.Arg . (`appLast` unit)) cases'
-
-    appLast :: (HasSubst ty, IsVar f)
-            => R.AnnTerm ty ann f -> R.AnnTerm ty ann f -> R.AnnTerm ty ann f
-    appLast t@(R.Lam _ _ (R.App _ _)) arg = R.termApp t (R.Arg arg)
-    appLast (R.Lam ann ty t)          arg = R.Lam ann ty (appLast t arg)
-    appLast t                         arg = R.termApp t (R.Arg arg)
+    tyDrop 0 t               = t
+    tyDrop n (R.TyFun a b)   = tyDrop (n-1) b
+    tyDrop n (R.TyAll _ _ t) = tyDrop (n-1) t
+    tyDrop n t               = error "Ill-typed program: not enough type parameters to drop"
 
 -- |Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
 -- after performing any sort of inlining.
@@ -287,14 +265,12 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
     go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
-      (_, tyN, tyArgs, x, ret, cases) <- unDest t
+      (_, tyN, tyArgs, x, ret, cases, excess) <- unDest t
       (tyN', xTyArgs, xIdx, xArgs) <- unCons x
       guard (tyN == tyN')
-      ar <- length . constructors <$> lift (typeDefOf tyN)
-      let (cases0, rest) = splitAt ar cases
-      let xCase          = cases0 !! xIdx
+      let xCase          = cases !! xIdx
       logTrace $ show tyN
-      return $ R.appN (R.appN xCase (map R.Arg xArgs)) (map R.Arg rest)
+      return $ R.appN (R.appN xCase (map R.Arg xArgs)) excess
 
 -- `chooseHeadCase f tyf [st,INPUT,param] INPUT` creates a term which contains the body of `f`
 -- but with a matching on the `INPUT` at the head of it.
