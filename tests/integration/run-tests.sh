@@ -263,7 +263,7 @@ run-single-test() {
 
     rm tla.out
     if ! $keep; then
-      rm "output.tla"
+      rm "$output"
     fi
   fi
 
