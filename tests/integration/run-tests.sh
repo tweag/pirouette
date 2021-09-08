@@ -5,36 +5,6 @@ set -euo pipefail
 # Command Line Options #
 ########################
 
-# Tells use we're running on ci
-onci=false
-
-# Tells us to run fast tests only
-fast=false
-
-# Speficies part of a string that we want the tests to be ran to contain
-matching=""
-
-# copy the comand line to generate the TLA+ files to the clipboard
-copy_cmd=false
-
-# Only generates the TLA+ files, don't run TLA+
-gen_only=false
-
-keep=false
-
-while [[ $# -ge 1 ]]; do
-  case $1 in
-    --ci)   onci=true;;
-    --fast) fast=true;;
-    --containing) shift; matching=".*$1.*";;
-    --copy-cmd|-c) copy_cmd=true;;
-    --gen-only|-g) gen_only=true;;
-    --keep-objects|-k) keep=true;;
-    *)  echo "Unknown option: $1"; exit 1;;
-  esac
-  shift
-done
-
 showHelp () {
 cat <<EOF
 run-tests.sh [options]
@@ -61,6 +31,38 @@ run-tests.sh [options]
     Does not delete the generated files after running TLA+.
 EOF
 }
+
+
+# Tells use we're running on ci
+onci=false
+
+# Tells us to run fast tests only
+fast=false
+
+# Speficies part of a string that we want the tests to be ran to contain
+matching=""
+
+# copy the comand line to generate the TLA+ files to the clipboard
+copy_cmd=false
+
+# Only generates the TLA+ files, don't run TLA+
+gen_only=false
+
+keep=false
+
+while [[ $# -ge 1 ]]; do
+  case $1 in
+    --ci)   onci=true;;
+    --fast) fast=true;;
+    --containing) shift; matching=".*$1.*";;
+    --copy-cmd|-c) copy_cmd=true;;
+    --gen-only|-g) gen_only=true;;
+    --keep-objects|-k) keep=true;;
+    --help|-h) showHelp; exit 0;;
+    *)  echo "Unknown option: $1"; showHelp; exit 1;;
+  esac
+  shift
+done
 
 ######################
 # Auxiliar Functions #
