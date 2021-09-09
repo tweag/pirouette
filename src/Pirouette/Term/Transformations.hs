@@ -64,7 +64,7 @@ etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
 
 -- |Specialize @cfoldableNil_cfoldMap@ applied to the disjunctive bool and endofunction monoids
 cfoldmapSpecialize :: forall m . (MonadPirouette m) => PrtTerm -> m PrtTerm
-cfoldmapSpecialize = pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
+cfoldmapSpecialize = fmap deshadowBoundNames . pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
   where
     isCfoldmap :: (Monad t) => PrtTerm -> MaybeT t (PrtType, PrtType, [PrtTerm])
     isCfoldmap (R.App (R.F (FreeName n)) (R.TyArg m : R.TyArg a : args)) = do
