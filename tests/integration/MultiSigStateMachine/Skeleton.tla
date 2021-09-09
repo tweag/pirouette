@@ -9,6 +9,8 @@ vars ==
 PlutusInteger ==
   0..6
 
+PlutusData == {}
+
 ----
 ----
 
