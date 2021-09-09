@@ -7,6 +7,18 @@ vars ==
 PlutusInteger == 0..6
 PlutusByteString == {pk1, pk2, pk3, pk4, pk5}
 SHA2(x) == x
+
+RECURSIVE PlutusDataBounded(_)
+PlutusDataBounded(n) == 
+  IF n = 0
+  THEN {}
+  ELSE [ cons : {"Constr"}, arg0 : PlutusInteger, arg1 : PlutusDataBounded(n-1) ]
+
+PlutusData == UNION { PlutusDataBounded(n) : n \in 0 .. MAXDEPTH }
+
+ConstrData(n,i) == [cons |-> "Constr", arg0 |-> n, arg1 |-> i]
+MkNilData(x) == [cons |-> "Nil" ]
+
 ----
 ----
 

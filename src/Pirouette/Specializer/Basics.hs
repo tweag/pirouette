@@ -38,7 +38,7 @@ listSpzMatch t n [x,tl] freeName exp
 
 listSpz :: TypeSpecializer
 listSpz = TypeSpecializer {
-  spzSet = [tla_u|SetOfList0(a) == UNION {[1..n -> a]: n \in 0..(MAXDEPTH - 1)}|],
+  spzSet = [tla_u|SetOfList(a) == UNION {[1..n -> a]: n \in 0..(MAXDEPTH - 1)}|],
   spzConstructors = [[tla_u|Nil == <<>>|], [tla_u|Cons(x,tl) == <<x>> \o tl|]],
   spzDestructor = [tla_u|Nil_match(l,cN,cC(_,_)) == IF l = <<>> THEN cN ELSE LET hd == Head(l) tl == Tail(l) IN cC(hd,tl)|],
   spzMatch = listSpzMatch

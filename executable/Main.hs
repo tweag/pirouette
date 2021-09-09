@@ -258,7 +258,7 @@ openAndParsePIR :: (MonadIO m)
                 -> m (Either String (Showable (Program P.TyName P.Name P.DefaultUni P.DefaultFun)))
 openAndParsePIR fileName = do
   content <- liftIO $ T.readFile fileName
-  return . either (Left . errorBundlePretty) (Right . Showable)
+  return . either (Left . show) (Right . Showable)
          $ PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content
 
 contains :: String -> Name -> Bool
