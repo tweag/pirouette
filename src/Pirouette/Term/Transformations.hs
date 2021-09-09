@@ -359,6 +359,16 @@ chooseHeadCase t ty args fstArg =
       | s == fstArg = R.Arg $ R.termPure (R.B (fromString "DUMMY_ARG") 0)
       | otherwise   = R.Arg $ R.termPure (R.B (fromString s) (toInteger n))
 
+-- If a transformation file is declared,
+-- then all rewriting rules of the form
+-- Name : left-hand side ==> right-hand side
+-- are applied in the top to bottom order.
+
+-- TODO: Currently we do simple pattern matching,
+-- meaning that the matching substitution cannot contain any bound variables.
+-- Ideally, one would like to have matching variables with contexts.
+-- For instance, one would like to write something like:
+-- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
 
 applyFileTransfo :: (MonadPirouette m, MonadIO m)
                  => FilePath -> PrtTerm -> m PrtTerm
@@ -374,7 +384,7 @@ applyFileTransfo fileName t = do
       let [transfoName,def] = T.splitOn ":" l
       let [lhsTxt,rhsTxt] = map T.strip $ T.splitOn "==>" def
       lhsPIR <-
-        either (sendError . errorBundlePretty) return $
+        either (sendError . show) return $
           PIR.parse
             (PIR.term @P.DefaultUni @P.DefaultFun)
             (T.unpack transfoName  ++ "-LEFT")
@@ -382,37 +392,40 @@ applyFileTransfo fileName t = do
       lhs <- either (sendError . show) return $
         runExcept (trPIRTerm lhsPIR)
       rhsPIR <-
-        either (sendError . errorBundlePretty) return $
+        either (sendError . show) return $
           PIR.parse
             (PIR.term @P.DefaultUni @P.DefaultFun)
             (T.unpack transfoName ++ "-RIGHT")
             rhsTxt
       rhs <- either (sendError . show) return $
         runExcept (trPIRTerm rhsPIR)
-      MaybeT $ traverse (flip instantiate rhs) (isInstance lhs t)
+      MaybeT $ traverse (flip (instantiate 0 0) rhs) (isInstance 0 0 lhs t)
 
-    isInstance :: PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
-    isInstance (R.App vL@(R.F (FreeName x)) []) t =
+    isInstance :: Int -> Int -> PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstance nTe nTy (R.App vL@(R.F (FreeName x)) []) t =
       case isHole x of
         Nothing ->
           case t of
             R.App vT [] -> isVarInstance vL vT
             _ -> Nothing
-        Just i -> Just $ M.singleton i (R.Arg t)
-    isInstance (R.App vL argsL) (R.App vT argsT) =
-      foldl' M.union <$> isVarInstance vL vT <*> zipWithM isArgInstance argsL argsT
-    isInstance (R.Lam _ tyL tL) (R.Lam _ tyT tT) =
-      M.union <$> isInstance tL tT <*> isTyInstance tyL tyT
-    isInstance (R.Abs _ _ tL) (R.Abs _ _ tT) =
-      isInstance tL tT
-    isInstance _ _ = Nothing
+        Just i -> Just $ M.singleton i (R.Arg $ shift (toInteger (- nTe)) t)
+    isInstance nTe nTy  (R.App vL argsL) (R.App vT argsT) =
+      foldl' M.union <$> isVarInstance vL vT <*> zipWithM (isArgInstance nTe nTy) argsL argsT
+    isInstance nTe nTy  (R.Lam _ tyL tL) (R.Lam _ tyT tT) =
+      M.union <$> isInstance (nTe + 1) nTy tL tT <*> isTyInstance nTy tyL tyT
+    isInstance nTe nTy (R.Abs _ _ tL) (R.Abs _ _ tT) =
+      isInstance nTe (nTy + 1) tL tT
+    isInstance nTe nTy _ _ = Nothing
 
     isVarInstance :: PrtVar -> PrtVar -> Maybe (M.Map String PrtArg)
     isVarInstance vL@(R.F (FreeName x)) vT =
       case isHole x of
         Nothing ->
           case vT of
-            R.F y -> if haveSameString (FreeName x) y then Just M.empty else Nothing
+            R.F y ->
+              if haveSameString (FreeName x) y
+              then Just M.empty
+              else Nothing
             _ -> Nothing
         Just i -> Just $ M.singleton i (R.Arg $ R.termPure vT)
     isVarInstance (R.F nL) (R.F nT) =
@@ -422,28 +435,31 @@ applyFileTransfo fileName t = do
       if i == j  then Just M.empty else Nothing
     isVarInstance _ _ = Nothing
 
-    isTyInstance :: PrtType -> PrtType -> Maybe (M.Map String PrtArg)
-    isTyInstance (R.TyApp vL@(R.F (TyFree x)) []) ty =
+    isTyInstance :: Int -> PrtType -> PrtType -> Maybe (M.Map String PrtArg)
+    isTyInstance nTy (R.TyApp vL@(R.F (TyFree x)) []) ty =
       case isHole x of
         Nothing ->
           case ty of
             R.TyApp vT [] -> isTyVarInstance vL vT
             _ -> Nothing
-        Just i -> Just $ M.singleton i (R.TyArg ty)
-    isTyInstance (R.TyApp vL argsL) (R.TyApp vT argsT) =
-      foldl' M.union <$> isTyVarInstance vL vT <*> zipWithM isTyInstance argsL argsT
-    isTyInstance (R.TyLam _ _ tyL) (R.TyLam _ _ tyT) = isTyInstance tyL tyT
-    isTyInstance (R.TyAll _ _ tyL) (R.TyAll _ _ tyT) = isTyInstance tyL tyT
-    isTyInstance (R.TyFun aL bL) (R.TyFun aT bT) =
-      M.union <$> isTyInstance aL aT <*> isTyInstance bL bT
-    isTyInstance _ _ = Nothing
+        Just i -> Just $ M.singleton i (R.TyArg $ shift (toInteger (- nTy)) ty)
+    isTyInstance nTy (R.TyApp vL argsL) (R.TyApp vT argsT) =
+      foldl' M.union <$> isTyVarInstance vL vT <*> zipWithM (isTyInstance nTy) argsL argsT
+    isTyInstance nTy (R.TyLam _ _ tyL) (R.TyLam _ _ tyT) = isTyInstance (nTy + 1) tyL tyT
+    isTyInstance nTy (R.TyAll _ _ tyL) (R.TyAll _ _ tyT) = isTyInstance (nTy + 1) tyL tyT
+    isTyInstance nTy (R.TyFun aL bL) (R.TyFun aT bT) =
+      M.union <$> isTyInstance nTy aL aT <*> isTyInstance nTy bL bT
+    isTyInstance nTy _ _ = Nothing
 
     isTyVarInstance :: PrtTyVar -> PrtTyVar -> Maybe (M.Map String PrtArg)
     isTyVarInstance vL@(R.F (TyFree x)) vT =
       case isHole x of
         Nothing ->
           case vT of
-            R.F y -> if tyHaveSameString (TyFree x) y then Just M.empty else Nothing
+            R.F y ->
+              if tyHaveSameString (TyFree x) y
+              then Just M.empty
+              else Nothing
             _ -> Nothing
         Just i -> Just $ M.singleton i (R.TyArg $ R.tyPure vT)
     isTyVarInstance (R.F nL) (R.F nT) =
@@ -453,51 +469,53 @@ applyFileTransfo fileName t = do
       if i == j  then Just M.empty else Nothing
     isTyVarInstance _ _ = Nothing
 
-    isArgInstance :: PrtArg -> PrtArg -> Maybe (M.Map String PrtArg)
-    isArgInstance (R.Arg tL) (R.Arg tT) = isInstance tL tT
-    isArgInstance (R.TyArg tyL) (R.TyArg tyT) = isTyInstance tyL tyT
-    isArgInstance _ _ = Nothing
+    isArgInstance :: Int -> Int -> PrtArg -> PrtArg -> Maybe (M.Map String PrtArg)
+    isArgInstance nTe nTy (R.Arg tL) (R.Arg tT) = isInstance nTe nTy tL tT
+    isArgInstance nTe nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
+    isArgInstance nTe nTy _ _ = Nothing
 
     instantiate :: (MonadPirouette m)
-                => M.Map String PrtArg -> PrtTerm -> m PrtTerm
-    instantiate m (R.App v@(R.F (FreeName x)) args) =
+                => Int -> Int -> M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiate nTe nTy m (R.App v@(R.F (FreeName x)) args) =
       case isHole x of
-        Nothing -> R.App v <$> mapM (instantiateArg m) args
+        Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
         Just i ->
           case M.lookup i m of
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
-            Just (R.Arg t) -> R.appN t <$> mapM (instantiateArg m) args
+            Just (R.Arg t) ->
+              shift (toInteger nTe) . R.appN t <$> mapM (instantiateArg nTe nTy m) args
             Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ "_ is at a term position on the right hand side, but was a type on the left-hand side."
-    instantiate m (R.App v args) =
-      R.App v <$> mapM (instantiateArg m) args
-    instantiate m (R.Lam ann ty t) =
-      R.Lam ann <$> instantiateTy m ty <*> instantiate m t
-    instantiate m (R.Abs ann k t) =
-      R.Abs ann k <$> instantiate m t
+    instantiate nTe nTy m (R.App v args) =
+      R.App v <$> mapM (instantiateArg nTe nTy m) args
+    instantiate nTe nTy m (R.Lam ann ty t) =
+      R.Lam ann <$> instantiateTy nTy m ty <*> instantiate nTe nTy m t
+    instantiate nTe nTy m (R.Abs ann k t) =
+      R.Abs ann k <$> instantiate nTe nTy m t
 
     instantiateTy :: (MonadPirouette m)
-                  => M.Map String PrtArg -> PrtType -> m PrtType
-    instantiateTy m (R.TyApp v@(R.F (TyFree x)) args) =
+                  => Int -> M.Map String PrtArg -> PrtType -> m PrtType
+    instantiateTy nTy m (R.TyApp v@(R.F (TyFree x)) args) =
       case isHole x of
-        Nothing -> R.TyApp v <$> mapM (instantiateTy m) args
+        Nothing -> R.TyApp v <$> mapM (instantiateTy nTy m) args
         Just i ->
           case M.lookup i m of
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
-            Just (R.TyArg t) -> R.appN t <$> mapM (instantiateTy m) args
+            Just (R.TyArg t) ->
+              shift (toInteger nTy) . R.appN t <$> mapM (instantiateTy nTy m) args
             Just (R.Arg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ is at a type position on the right hand side, but was a term on the left-hand side."
-    instantiateTy m (R.TyApp v args) =
-      R.TyApp v <$> mapM (instantiateTy m) args
-    instantiateTy m (R.TyLam ann k ty) =
-      R.TyLam ann k <$> instantiateTy m ty
-    instantiateTy m (R.TyAll ann k ty) =
-      R.TyAll ann k <$> instantiateTy m ty
-    instantiateTy m (R.TyFun a b) =
-      R.TyFun <$> instantiateTy m a <*> instantiateTy m b
+    instantiateTy nTy m (R.TyApp v args) =
+      R.TyApp v <$> mapM (instantiateTy nTy m) args
+    instantiateTy nTy m (R.TyLam ann k ty) =
+      R.TyLam ann k <$> instantiateTy (nTy + 1) m ty
+    instantiateTy nTy m (R.TyAll ann k ty) =
+      R.TyAll ann k <$> instantiateTy (nTy + 1) m ty
+    instantiateTy nTy m (R.TyFun a b) =
+      R.TyFun <$> instantiateTy nTy m a <*> instantiateTy nTy m b
 
     instantiateArg :: (MonadPirouette m)
-                   => M.Map String PrtArg -> PrtArg -> m PrtArg
-    instantiateArg m (R.Arg t) = R.Arg <$> instantiate m t
-    instantiateArg m (R.TyArg ty) = R.TyArg <$> instantiateTy m ty
+                   => Int -> Int -> M.Map String PrtArg -> PrtArg -> m PrtArg
+    instantiateArg nTe nTy m (R.Arg t) = R.Arg <$> instantiate nTe nTy m t
+    instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
 
     isHole :: Name -> Maybe String
     isHole x = head <$> matchRegex (mkRegex "([a-zA-Z][0-9]+)_") (T.unpack $ nameString x)

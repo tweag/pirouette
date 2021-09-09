@@ -73,7 +73,7 @@
 , { "name"       : "MultiSigStateMachine Silly Invariant"
   , "cd"         : "MultiSigStateMachine"
   , "pir"        : "MultiSigStateMachine.flat"
-  , "options"    : "-a param,st,INPUT -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition --ty-spz ALL"
+  , "options"    : "-a param,st,INPUT -s Skeleton.tla -w \"LET res == ___ IN st' = res[2] /\\ txConstr' = res[1]\" --prefix transition --ty-spz ALL --transfo ../../../src/Pirouette/Specializer/etaIfThenElse.spz"
   , "output"     : "Contract.tla"
   , "postprocess": "sed -i '/^SetOfParams0/i param == Params1(ParamSigners,ParamN)' Contract.tla"
   , "tla"        : "tlc Contract_MC"
