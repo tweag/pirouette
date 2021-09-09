@@ -30,23 +30,24 @@
       )
       (termbind
         (strict)
-        (vardecl defaultId (fun [Maybe (fun State State)] (fun State State)))
-        (lam f [Maybe (fun State State)] (lam st State
-          [[ { [ { Maybe_match (fun State State) } f ] State }
-            (lam x (fun State State) [x st]) ]
+        (vardecl defaultId (all s (type) (fun [Maybe (fun s s)] (fun s s))))
+        (abs s (type) (lam f [Maybe (fun s s)] (lam st s
+          [[ { [ { Maybe_match (fun s s) } f ] s }
+            (lam x (fun s s) [x st]) ]
             st ]
-        ))
+        )))
       )
       (termbind
         (strict)
         (vardecl transition (fun State (fun Input State)))
         (lam s State
           (lam i Input
-            [[[[{[Input_match i] (fun State State)}
-              [defaultId Nothing]]
-              [defaultId [Just Inc]]]
-              [defaultId [Just Dec]]]
-              s
+            [{[[[{[Input_match i] (all s (type) (fun s s))}
+               (abs s (type) [{ defaultId s } Nothing])]
+               (abs s (type) [{ defaultId s } [Just Inc]])]
+               (abs s (type) [{ defaultId s } [Just Dec]])]
+               State }
+               s
             ]
           )
         )

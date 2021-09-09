@@ -15,6 +15,8 @@ import qualified Data.Text.Prettyprint.Doc as Prettyprint (Pretty, pretty)
 import           Data.Text.Prettyprint.Doc hiding (Pretty, pretty)
 import           Data.Text.Prettyprint.Doc.Render.Text
 
+import qualified PlutusCore.Data as P
+
 -- |Renders a doc in a single line.
 renderSingleLine :: Doc ann -> T.Text
 renderSingleLine = renderStrict . layoutPretty (LayoutOptions Unbounded)
@@ -138,13 +140,20 @@ instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SF.AnnTerm ann ty f) where
 
 -- * Plutus-specific Instances
 
+instance Pretty P.Data where
+  pretty (P.Constr cN fields) = pretty cN <+> pretty fields
+  pretty (P.Map kvs)          = pretty kvs
+  pretty (P.List xs)          = pretty xs
+  pretty (P.I i)              = pretty i
+  pretty (P.B bs)             = pretty bs
+
 instance Pretty PIRType where
   pretty PIRTypeInteger    = "Integer"
   pretty PIRTypeByteString = "ByteString"
-  pretty PIRTypeChar       = "Char"
   pretty PIRTypeUnit       = "Unit"
   pretty PIRTypeBool       = "Bool"
   pretty PIRTypeString     = "String"
+  pretty PIRTypeData       = "Data"
   pretty (PIRTypeList a)   = brackets (sep ["List", pretty a])
   pretty (PIRTypePair a b) = brackets (sep ["Pair", pretty a, pretty b])
 
@@ -161,10 +170,10 @@ instance (Pretty n) => Pretty (TypeDef n) where
 instance Pretty PIRConstant where
   pretty (PIRConstInteger x) = pretty x
   pretty (PIRConstByteString x) = "b" <> pretty x
-  pretty (PIRConstChar x) = pretty x
   pretty PIRConstUnit = "unit"
   pretty (PIRConstBool x) = pretty x
   pretty (PIRConstString x) = dquotes (pretty x)
+  pretty (PIRConstData d)  = "d" <> braces (pretty d)
   pretty (PIRConstList xs) = "l" <> brackets (sep $ punctuate comma $ map pretty xs)
   pretty (PIRConstPair x y) = "p" <> brackets (sep $ punctuate comma $ map pretty [x, y])
 

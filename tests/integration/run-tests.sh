@@ -5,6 +5,34 @@ set -euo pipefail
 # Command Line Options #
 ########################
 
+showHelp () {
+cat <<EOF
+run-tests.sh [options]
+
+  Run all integration tests as specified in 'all.json'. Options are:
+
+  --ci
+    Informs the script we're running on ci
+
+  --fast
+    Runs only the tests that do NOT have the slow attribute set to true.
+
+  --containing STR
+    Runs only tests whose name contains a given string
+
+  -c | --copy-cmd
+    Instead of running anything, copies the command that would be used to generate
+    the TLA+ files to the clipboard and exits
+
+  -g | --gen-only
+    Only generate the TLA+ files but does not run TLA+ on them.
+
+  -k | --keep-objects
+    Does not delete the generated files after running TLA+.
+EOF
+}
+
+
 # Tells use we're running on ci
 onci=false
 
@@ -20,6 +48,8 @@ copy_cmd=false
 # Only generates the TLA+ files, don't run TLA+
 gen_only=false
 
+keep=false
+
 while [[ $# -ge 1 ]]; do
   case $1 in
     --ci)   onci=true;;
@@ -27,7 +57,9 @@ while [[ $# -ge 1 ]]; do
     --containing) shift; matching=".*$1.*";;
     --copy-cmd|-c) copy_cmd=true;;
     --gen-only|-g) gen_only=true;;
-    *)  echo "Unknown option: $1"; exit 1;;
+    --keep-objects|-k) keep=true;;
+    --help|-h) showHelp; exit 0;;
+    *)  echo "Unknown option: $1"; showHelp; exit 1;;
   esac
   shift
 done
@@ -145,6 +177,11 @@ run-single-test() {
 
   # Gets the necessary JSON keys
   get-json-key-into name     ".name"     "$json"
+  if [[ ! -z "$matching" ]] && [[ ! "$name" =~ ${matching} ]]; then
+    mecho yellow "+ Skipping Unselected Test: $name"
+    return 0
+  fi
+
   get-json-key-into testdir  ".cd"       "$json"
   get-json-key-into pir      ".pir"      "$json"
   get-json-key-into options  ".options"  "$json"
@@ -167,11 +204,6 @@ run-single-test() {
 
   if $fast && [[ "$slowtest" == "true" ]]; then
     mecho yellow "+ Skipping Slow Test: $name"
-    return 0
-  fi
-
-  if [[ ! -z "$matching" ]] && [[ ! "$name" =~ ${matching} ]]; then
-    mecho yellow "+ Skipping Unselected Test: $name"
     return 0
   fi
 
@@ -231,7 +263,10 @@ run-single-test() {
       cat tla.out
     fi
 
-    rm tla.out "$output"
+    rm tla.out
+    if ! $keep; then
+      rm "$output"
+    fi
   fi
 
   cd - > /dev/null

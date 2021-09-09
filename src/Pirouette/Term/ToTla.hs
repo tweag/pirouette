@@ -500,10 +500,10 @@ trDestrDecl tyVars destrName tyCons tyName = do
 trBuiltinType :: PIRType -> TLA.AS_Expression
 trBuiltinType PIRTypeInteger    = tlaIdentPrefixed "Plutus" "Integer"
 trBuiltinType PIRTypeByteString = tlaIdentPrefixed "Plutus" "ByteString"
-trBuiltinType PIRTypeChar       = tlaIdentPrefixed "Plutus" "Char"
 trBuiltinType PIRTypeUnit       = tlaIdentPrefixed "Plutus" "Unit"
 trBuiltinType PIRTypeBool       = tlaIdentPrefixed "Plutus" "Bool"
 trBuiltinType PIRTypeString     = tlaIdentPrefixed "Plutus" "String"
+trBuiltinType PIRTypeData       = tlaIdentPrefixed "Plutus" "Data"
 trBuiltinType (PIRTypeList t) =
   TLA.AS_OpApp di (tlaIdentPrefixed "Plutus" "List") [trBuiltinType t]
 trBuiltinType (PIRTypePair t u) =
@@ -827,7 +827,8 @@ trDestrApp n _ = tlaAppName n
 trTermConstant :: (MonadPirouette m) => PIRConstant -> TlaT m TLA.AS_Expression
 trTermConstant (PIRConstInteger i) = return $ TLA.AS_Num di i
 trTermConstant (PIRConstBool b)    = return $ TLA.AS_Bool di b
-trTermConstant (PIRConstString s)  = return $ TLA.AS_StringLiteral di s
+trTermConstant (PIRConstString s)  = return $ TLA.AS_StringLiteral di (T.unpack s)
+trTermConstant PIRConstUnit        = return $ TLA.AS_DiscreteSet di []
 trTermConstant c = throwError' $ PEOther $ "NotYetImplemented trTermConstant " ++ show c
 
 -- |Application of a defined name as a TLA expression. This is tricky because
@@ -848,25 +849,22 @@ tlaAppNamePref pref n args = do
   return $ tlaFunApp (tlaOpApp (tlaIdentPrefixed pref n) tas) das
 
 trBuiltin :: (MonadPirouette m) => P.DefaultFun -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
-trBuiltin P.AddInteger args           = tlaPartialApp2 (tlaInfix TLA.AS_Plus) args
-trBuiltin P.SubtractInteger args      = tlaPartialApp2 (tlaInfix TLA.AS_Minus) args
-trBuiltin P.MultiplyInteger args      = tlaPartialApp2 (tlaInfix TLA.AS_Mult) args
-trBuiltin P.DivideInteger args        = tlaPartialApp2 (tlaInfix TLA.AS_DIV) args
-trBuiltin P.QuotientInteger args      = tlaPartialApp2 (tlaInfix TLA.AS_DIV) args
-trBuiltin P.RemainderInteger args     = tlaPartialApp2 (tlaInfix TLA.AS_MOD) args
-trBuiltin P.ModInteger args           = tlaPartialApp2 (tlaInfix TLA.AS_MOD) args
-trBuiltin P.LessThanInteger args      = tlaPartialApp2 (tlaInfix TLA.AS_LT) args
-trBuiltin P.LessThanEqInteger args    = tlaPartialApp2 (tlaInfix TLA.AS_LTEQ) args
-trBuiltin P.GreaterThanInteger args   = tlaPartialApp2 (tlaInfix TLA.AS_GT) args
-trBuiltin P.GreaterThanEqInteger args = tlaPartialApp2 (tlaInfix TLA.AS_GTEQ) args
-trBuiltin P.EqInteger args            = tlaPartialApp2 tlaEq args
-trBuiltin P.Concatenate args          = tlaPartialApp2 (tlaInfix TLA.AS_Circ) args
-trBuiltin P.Append args               = tlaPartialApp2 (tlaInfix TLA.AS_Circ) args
-trBuiltin P.TakeByteString args       = tlaPartialApp2 (tlaApp2 ("Plutus", "TakeByteString")) args
-trBuiltin P.DropByteString args       = tlaPartialApp2 (tlaApp2 ("Plutus", "DropByteString")) args
-trBuiltin P.EqByteString  args        = tlaPartialApp2 tlaEq args
-trBuiltin P.IfThenElse  [x,y,z]       = return $ TLA.AS_IF di x y z
-trBuiltin P.SHA2 args                 = tlaPartialApp  (tlaApp1 "SHA2") args
+trBuiltin P.AddInteger args            = tlaPartialApp2 (tlaInfix TLA.AS_Plus) args
+trBuiltin P.SubtractInteger args       = tlaPartialApp2 (tlaInfix TLA.AS_Minus) args
+trBuiltin P.MultiplyInteger args       = tlaPartialApp2 (tlaInfix TLA.AS_Mult) args
+trBuiltin P.DivideInteger args         = tlaPartialApp2 (tlaInfix TLA.AS_DIV) args
+trBuiltin P.QuotientInteger args       = tlaPartialApp2 (tlaInfix TLA.AS_DIV) args
+trBuiltin P.RemainderInteger args      = tlaPartialApp2 (tlaInfix TLA.AS_MOD) args
+trBuiltin P.ModInteger args            = tlaPartialApp2 (tlaInfix TLA.AS_MOD) args
+trBuiltin P.LessThanInteger args       = tlaPartialApp2 (tlaInfix TLA.AS_LT) args
+trBuiltin P.LessThanEqualsInteger args = tlaPartialApp2 (tlaInfix TLA.AS_LTEQ) args
+trBuiltin P.EqualsInteger args         = tlaPartialApp2 tlaEq args
+trBuiltin P.AppendByteString args      = tlaPartialApp2 (tlaInfix TLA.AS_Circ) args
+trBuiltin P.EqualsByteString  args     = tlaPartialApp2 tlaEq args
+trBuiltin P.IfThenElse  [x,y,z]        = return $ TLA.AS_IF di x y z
+trBuiltin P.Sha2_256 args              = tlaPartialApp  (tlaApp1 "SHA2") args
+trBuiltin P.ConstrData args            = tlaPartialApp2 (tlaApp2 "ConstrData") args
+trBuiltin P.MkNilData args             = tlaPartialApp  (tlaApp1 "MkNilData") args
 trBuiltin bin args = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
 
 tlaPartialApp

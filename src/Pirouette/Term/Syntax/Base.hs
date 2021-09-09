@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
@@ -15,6 +16,7 @@ import           PlutusCore         ( DefaultUni(..)
                                     , pattern DefaultUniString
                                     , pattern DefaultUniPair )
 import qualified PlutusCore        as P
+import qualified PlutusCore.Data   as P
 import qualified PlutusCore.Pretty as P
 
 import           Control.Arrow ((&&&))
@@ -37,10 +39,10 @@ import           Data.Data
 data PIRType
   = PIRTypeInteger
   | PIRTypeByteString
-  | PIRTypeChar
   | PIRTypeUnit
   | PIRTypeBool
   | PIRTypeString
+  | PIRTypeData
   | PIRTypeList PIRType
   | PIRTypePair PIRType PIRType
   deriving (Eq, Ord, Show, Data, Typeable)
@@ -48,10 +50,10 @@ data PIRType
 defUniToType :: forall k (a :: k) . DefaultUni (P.Esc a) -> PIRType
 defUniToType DefaultUniInteger     = PIRTypeInteger
 defUniToType DefaultUniByteString  = PIRTypeByteString
-defUniToType DefaultUniChar        = PIRTypeChar
 defUniToType DefaultUniUnit        = PIRTypeUnit
 defUniToType DefaultUniBool        = PIRTypeBool
 defUniToType DefaultUniString      = PIRTypeString
+defUniToType DefaultUniData        = PIRTypeData
 defUniToType (DefaultUniList a)    = PIRTypeList (defUniToType a)
 defUniToType (DefaultUniPair a b)  = PIRTypePair (defUniToType a) (defUniToType b)
 
@@ -111,25 +113,27 @@ destructorTypeFor (Datatype k vs n cs) = undefined
 -- a recursive function, a constructor or a destructor of a datatype,
 -- yielding a @Term (Name2 ...)@.
 
+deriving instance Data P.Data
+
 -- |Untyped Plutus Constants
 data PIRConstant
   = PIRConstInteger Integer
   | PIRConstByteString BS.ByteString
-  | PIRConstChar Char
   | PIRConstUnit
   | PIRConstBool Bool
-  | PIRConstString String
+  | PIRConstString T.Text
   | PIRConstList [PIRConstant]
   | PIRConstPair PIRConstant PIRConstant
+  | PIRConstData P.Data
   deriving (Eq, Show, Data, Typeable)
 
 defUniToConstant :: DefaultUni (P.Esc a) -> a -> PIRConstant
 defUniToConstant DefaultUniInteger     x = PIRConstInteger x
 defUniToConstant DefaultUniByteString  x = PIRConstByteString x
-defUniToConstant DefaultUniChar        x = PIRConstChar x
 defUniToConstant DefaultUniUnit        x = PIRConstUnit
 defUniToConstant DefaultUniBool        x = PIRConstBool x
 defUniToConstant DefaultUniString      x = PIRConstString x
+defUniToConstant DefaultUniData        x = PIRConstData x
 defUniToConstant (DefaultUniList a)    x = PIRConstList (map (defUniToConstant a) x)
 defUniToConstant (DefaultUniPair a b)  x = PIRConstPair (defUniToConstant a (fst x)) (defUniToConstant b (snd x))
 

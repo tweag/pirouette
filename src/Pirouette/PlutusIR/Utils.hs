@@ -16,6 +16,7 @@ import           Pirouette.Term.FromPlutusIR
 
 import qualified PlutusCore         as P
 
+import           Control.Monad.Trans
 import           Data.Data
 import qualified Data.Text as T
 
@@ -61,23 +62,29 @@ nameIsITE _ = False
 
 -- |A destructor application has the following form:
 --
--- > [d/Type tyArg0 ... tyArgN X ReturnType case0 ... caseK]
+-- > [d/Type tyArg0 ... tyArgN X ReturnType case0 ... caseK extra0 ... extraL]
 --
 -- This function splits it up into:
 --
--- > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK])
+-- > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK], [extra0 .. extraL])
+--
+-- Moreover, we already remove the 'R.Arg' wrapper for all the predefined argument positions.
+-- Only the extra arguments are kept with their 'R.Arg' because they could be types or terms.
 --
 unDest :: (MonadPirouette m)
        => PrtTerm
-       -> MaybeT m (Name, TyName, [PrtType], PrtTerm, PrtType, [PrtTerm])
+       -> MaybeT m (Name, TyName, [PrtType], PrtTerm, PrtType, [PrtTerm], [R.Arg PrtType PrtTerm])
 unDest (R.App (R.F (FreeName n)) args) = do
   tyN <- isDest n
+  Datatype _ _ _ cons <- lift (typeDefOf tyN)
+  let nCons = length cons
   let (tyArgs, args1) = span R.isTyArg args
+  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
   case args1 of
-    (R.Arg x : R.TyArg retTy : rest) -> do
-      rest' <- mapM (wrapMaybe . R.fromArg) rest
-      tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
-      return (n, tyN, tyArgs', x, retTy, rest')
+    (R.Arg x : R.TyArg retTy : casesrest) -> do
+      let (cases, rest) = splitAt nCons casesrest
+      cases' <- mapM (wrapMaybe . R.fromArg) cases
+      return (n, tyN, tyArgs', x, retTy, cases', rest)
     _ -> fail "unDest: Destructor arguments has non-cannonical structure"
 unDest _ = fail "unDest: not an R.App"
 

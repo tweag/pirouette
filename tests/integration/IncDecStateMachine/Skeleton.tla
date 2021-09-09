@@ -10,6 +10,8 @@ PlutusInteger == 0..6
 
 PlutusByteString == {"a", "b"}
 
+PlutusData == {}
+
 ----
 ----
 
