@@ -193,7 +193,7 @@ processDecls opts = do
       >=> maybe return applyFileTransfo (transfo opts)
       >=> constrDestrId
       >=> removeExcessiveDestArgs
-      >=> cfoldmapSpecialize
+      -- >=> cfoldmapSpecialize
 
    processOne = defTermMapM generalTransformations
 

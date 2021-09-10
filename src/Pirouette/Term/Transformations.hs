@@ -375,7 +375,7 @@ applyFileTransfo :: (MonadPirouette m, MonadIO m)
 applyFileTransfo fileName t = do
   content <- liftIO $ T.readFile fileName
   let lines = T.lines content
-  foldM (\te txt -> rewriteM (runMaybeT . transfoOfLine txt) te) t lines
+  foldM (\te txt -> deshadowBoundNames <$> rewriteM (runMaybeT . transfoOfLine txt) te) t lines
   where
     transfoOfLine :: (MonadPirouette m)
                   => T.Text -> PrtTerm -> MaybeT m PrtTerm
@@ -476,21 +476,21 @@ applyFileTransfo fileName t = do
 
     instantiate :: (MonadPirouette m)
                 => Int -> Int -> M.Map String PrtArg -> PrtTerm -> m PrtTerm
-    instantiate nTe nTy m (R.App v@(R.F (FreeName x)) args) =
+    instantiate nTe nTy m tt@(R.App v@(R.F (FreeName x)) args) =do
       case isHole x of
         Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
         Just i ->
           case M.lookup i m of
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
             Just (R.Arg t) ->
-              shift (toInteger nTe) . R.appN t <$> mapM (instantiateArg nTe nTy m) args
+              R.appN (shift (toInteger nTe) t) <$> mapM (instantiateArg nTe nTy m) args
             Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ "_ is at a term position on the right hand side, but was a type on the left-hand side."
     instantiate nTe nTy m (R.App v args) =
       R.App v <$> mapM (instantiateArg nTe nTy m) args
     instantiate nTe nTy m (R.Lam ann ty t) =
-      R.Lam ann <$> instantiateTy nTy m ty <*> instantiate nTe nTy m t
+      R.Lam ann <$> instantiateTy nTy m ty <*> instantiate (nTe + 1) nTy m t
     instantiate nTe nTy m (R.Abs ann k t) =
-      R.Abs ann k <$> instantiate nTe nTy m t
+      R.Abs ann k <$> instantiate nTe (nTy + 1) m t
 
     instantiateTy :: (MonadPirouette m)
                   => Int -> M.Map String PrtArg -> PrtType -> m PrtType
@@ -501,7 +501,7 @@ applyFileTransfo fileName t = do
           case M.lookup i m of
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
             Just (R.TyArg t) ->
-              shift (toInteger nTy) . R.appN t <$> mapM (instantiateTy nTy m) args
+              R.appN (shift (toInteger nTy) t) <$> mapM (instantiateTy nTy m) args
             Just (R.Arg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ is at a type position on the right hand side, but was a term on the left-hand side."
     instantiateTy nTy m (R.TyApp v args) =
       R.TyApp v <$> mapM (instantiateTy nTy m) args
