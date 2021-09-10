@@ -554,9 +554,7 @@ trTree (Choose x pirTy cases) tyRes = do
         mapM (\(cstr,tr) -> trConstrainedExp nx pirTy cstr (trTree tr tyRes)) cases
   where
     nameOf :: PrtType -> Maybe String
-    nameOf (R.TyApp (R.B (R.Ann x) _) []) =
-      Just $ T.unpack (nameString x)
-    nameOf (R.TyApp (R.F (TyFree x)) []) =
+    nameOf (R.TyApp (R.F (TyFree x)) _) =
       Just $ T.unpack (nameString x)
     nameOf _ = Nothing
 
