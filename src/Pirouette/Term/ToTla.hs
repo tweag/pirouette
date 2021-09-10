@@ -226,6 +226,9 @@ defunLabel arity idx = tlaString $ "defun_" <> show arity <> "_" <> show idx
 applyFunIdent :: Int -> TLA.AS_Expression
 applyFunIdent arity = tlaIdent $ "apply" <> show arity
 
+applyFunArgs :: Int -> [TLA.AS_Expression]
+applyFunArgs arity = [ tlaIdent $ "x" <> show n | n <- [1..arity] ]
+
 newtype DefunState = DefunState
   { defunDefs :: M.Map Int (Seq TLA.AS_Expression)
   }
@@ -247,7 +250,7 @@ saveDefun arity fun = do
 genApply :: Int -> Seq TLA.AS_Expression -> TLA.AS_UnitDef
 genApply arity cases = tlaOpDef (applyFunIdent arity) (lbl : args) $ TLA.AS_Case di arms Nothing
   where
-    args = [ tlaIdent $ "x" <> show n | n <- [1..arity] ]
+    args = applyFunArgs arity
     arms = [ TLA.AS_CaseArm di (isIndex idx) (unwrapFunBody expr)
            | (idx, expr) <- zip [0..] $ toList cases
            ]
@@ -267,6 +270,11 @@ genApply arity cases = tlaOpDef (applyFunIdent arity) (lbl : args) $ TLA.AS_Case
 
 genApplies :: DefunState -> [TLA.AS_UnitDef]
 genApplies st = uncurry genApply <$> M.toList (defunDefs st)
+
+genAppliesFwdDecls :: DefunState -> [TLA.AS_UnitDef]
+genAppliesFwdDecls st = genFwdDecl <$> M.keys (defunDefs st)
+  where
+    genFwdDecl arity = TLA.AS_RecursiveDecl diu [TLA.AS_OpHead (applyFunIdent arity) (applyFunArgs arity)]
 
 defunCtor :: (MonadState DefunState m)
           => TLA.AS_UnitDef
@@ -289,7 +297,8 @@ defunDtor = transformBi f
     f expr = expr
 
 defunctionalize :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
-defunctionalize defs = (defunDtor <$> defs')
+defunctionalize defs = genAppliesFwdDecls st
+                    <> (defunDtor <$> defs')
                     <> genApplies st
   where
     (defs', st) = runState (mapM defunCtor defs) defunState0
