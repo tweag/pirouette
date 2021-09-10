@@ -70,17 +70,3 @@ tuple2Spz = TypeSpecializer {
   spzDestructor = [tla_u|Tuple2_match(t,cT(_,_)) == cT(t[1],t[2])|],
   spzMatch = tuple2SpzMatch
 }
-
-maybeSpzMatch t n []  _ exp
-  | nameString n == T.pack "Nothing" = exp
-maybeSpzMatch t n [x] _ exp
-  | nameString n == T.pack "Just" =
-    tlaLet [tlaAssign (tlaIdent x) t] exp
-
-maybeSpz :: TypeSpecializer
-maybeSpz = TypeSpecializer {
-  spzSet = [tla_u|SetOfMaybe(a) == {{}} \union a|],
-  spzConstructors = [[tla_u|Nothing == {}|], [tla_u|Just(x) == x|]],
-  spzDestructor = [tla_u|Maybe_match(m,cN,cJ(_)) == IF m = {} THEN cN ELSE cJ(m)|],
-  spzMatch = maybeSpzMatch
-}

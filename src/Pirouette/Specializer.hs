@@ -11,5 +11,4 @@ allSpz "Bool"   = Just boolSpz
 allSpz "List"   = Just listSpz
 allSpz "Unit"   = Just unitSpz
 allSpz "Tuple2" = Just tuple2Spz
-allSpz "Maybe"  = Just maybeSpz
 allSpz _        = Nothing
