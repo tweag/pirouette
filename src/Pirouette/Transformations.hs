@@ -114,8 +114,8 @@ expandAllNonRec keep = do
   go (names, currDecls, inlinableDecls) (R.Arg k) =
     let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
      in if R.Arg k `S.member` termNames kDef || keep k
-        then (R.Arg k : names , decls' , inlinableDecls)
-        else (names           , decls' , M.insert k kDef inlinableDecls)
+        then (R.Arg k : names , decls'            , inlinableDecls)
+        else (names           , M.delete k decls' , M.insert k kDef inlinableDecls)
 
   expandDefsIn :: M.Map Name PrtTerm
                -> Decls Name P.DefaultFun
