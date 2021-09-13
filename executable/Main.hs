@@ -92,7 +92,7 @@ optsToCTreeOpts co = CTreeOpts
   , coWithArguments = withArguments co
   }
 
-optsToTlaOpts :: (MonadIO m , MonadPirouette m) => CliOpts -> m TlaOpts
+optsToTlaOpts :: (MonadIO m , PirouetteReadDefs m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0  <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
   skel   <- mkTLASpecWrapper skel0
@@ -119,9 +119,9 @@ optsToTlaOpts co = do
 
 main :: IO ()
 main = Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
-  pirouette file opts $ do
+  pirouette file opts $ \uDefs -> do
     flushLogs $ logInfo ("Running with opts: " ++ show opts)
-    mainOpts cliOpts
+    mainOpts cliOpts uDefs
 
 -- ** Return Codes and Command definitions
 
@@ -146,19 +146,20 @@ ecTooManyDefs = ExitFailure 16
 -- |Converts a PIR file to a term, displaying the results to the user.
 -- The 'CliOpts' argument controls which transformations should be applied,
 -- which definitions the user is interested into, etc...
-mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtT m ()
-mainOpts opts = do
-  processDecls opts
-  allDecls <- gets decls
-  let relDecls =
-        M.toList $ M.filterWithKey (\k _ -> contains (funNamePrefix opts) k) allDecls
-  case stage opts of
-    ToTerm  -> mapM_ (uncurry printDef) relDecls
-    ToCTree -> mapM_ (uncurry printCTree) relDecls
-    ToTLA   -> do
-      when (length relDecls /= 1) $
-        throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-      uncurry toTla (head relDecls)
+mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m ()
+mainOpts opts uDefs = do
+  decls <- processDecls opts uDefs
+  flip runReaderT decls $ do
+    allDecls <- prtAllDefs
+    let relDecls =
+          M.toList $ M.filterWithKey (\k _ -> contains (funNamePrefix opts) k) allDecls
+    case stage opts of
+      ToTerm  -> mapM_ (uncurry printDef) relDecls
+      ToCTree -> mapM_ (uncurry printCTree) relDecls
+      ToTLA   -> do
+        when (length relDecls /= 1) $
+          throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
+        uncurry toTla (head relDecls)
   where
     printDef name def = do
       let pdef = pretty def
@@ -170,24 +171,19 @@ mainOpts opts = do
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
       putStrLn' ""
 
-    toTla :: Name -> PrtDef -> PrtT m ()
     toTla n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
 
-processDecls :: (MonadIO m) => CliOpts -> PrtT m ()
-processDecls opts = do
-  elimEvenOddMutRec -- TODO: once we split the processing in multiple phases, processDecls
-                    -- should happen only after dependency cycles have been eliminated; for now,
-                    -- just make sure that this is the first thing we call.
-  expandAllNonRec (contains (funNamePrefix opts))
-  preDs  <- gets decls
-  postDs <- sequence $ M.map processOne preDs
-  modify (\st -> st { decls = postDs })
+processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
+processDecls opts uDefs = do
+  oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
+  postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
+  return $ oDefs { prtDecls = postDs }
  where
-   generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
+   generalTransformations :: PirouetteReadDefs m => PrtTerm -> m PrtTerm
    generalTransformations
       =   constrDestrId
       >=> removeExcessiveDestArgs
@@ -198,13 +194,13 @@ processDecls opts = do
 -- ** Auxiliar Defs
 
 pirouette :: (MonadIO m) => FilePath -> PrtOpts
-          -> PrtT m a -> m a
+          -> (PrtUnorderedDefs -> PrtT m a) -> m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl decls0 -> do
     let decls = declsUniqueNames decls0
-    let st = PrtState decls toplvl M.empty Nothing
-    (eres, msgs) <- runPrtT opts st f
+    let defs  = PrtUnorderedDefs decls toplvl
+    (eres, msgs) <- runPrtT opts (f defs)
     mapM_ printLogMessage msgs
     case eres of
       Left  err -> liftIO $ print err >> exitWith ecInternalError

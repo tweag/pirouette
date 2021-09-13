@@ -19,6 +19,7 @@ import qualified Data.Text          as T
 import qualified Data.Text.IO       as T
 import           Text.Megaparsec.Error (errorBundlePretty)
 import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Control.Monad.Identity
 import           Test.Hspec
 import           Debug.Trace
@@ -31,11 +32,7 @@ openAndParsePIR fileName = do
     Left err -> putStrLn (show err) >> error "Couldn't parse"
     Right p  -> return p
 
-mockPrtLog :: Decls Name P.DefaultFun -> PrtT Identity a -> Either String a
-mockPrtLog ds f =
-  let (res, logs) = runIdentity $ mockPrtT ds f
-   in trace (unlines $ map msgContent logs) res
-
+mocked = flip PrtUnorderedDefs undefined
 
 spec = do
   mod <- runIO (openAndParsePIR "tests/unit/resources/fromPlutusIRSpec-01.pir")
@@ -57,4 +54,4 @@ spec = do
   let (DFunction _ short _) = fromJust $ M.lookup shortN decls
   describe "PrtTerms Expansion" $ do
     it "Produces NF terms" $ do
-      mockPrt decls (expandDefs long) `shouldBe` Right short
+      mockPrt (runReaderT (expandDefs long) (mocked decls)) `shouldBe` Right short

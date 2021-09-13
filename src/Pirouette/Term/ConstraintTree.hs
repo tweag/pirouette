@@ -112,14 +112,14 @@ instance (Pretty name) => Pretty (CTree name) where
 -- the term in question is of the form @\ a b ... zz -> case i of ... @,
 -- or, in words, its a closed WHNF abstraction whose body starts by pattern
 -- matching on whatever value is supposed to be the user's input.
-execute :: forall m . (MonadPirouette m) => PrtTerm -> m (CTree Name)
+execute :: forall m . (PirouetteReadDefs m) => PrtTerm -> m (CTree Name)
 execute t = do
   mdest <- runMaybeT $ unDest t
   case mdest of
     Nothing -> return (Result t)
     Just (dName, tyName, tyArgs, x, tyRet, cases, excess) -> do
       unless (null excess) $ throwError' (PEOther "ConstraintTree.execute'ing a term with excessive destr args. Please use removeExcessiveDestrArgs before execute")
-      cons <- constructors <$> typeDefOf tyName
+      cons <- constructors <$> prtTypeDefOf tyName
       -- Since excessive arguments to a destructor are suppressed by the transformation
       -- `removeExcessiveDest`, this error should never be triggered.
       when (length cons /= length cases) $ throwError' (PEOther $ "Different number of cases for " ++ show dName)
@@ -134,7 +134,7 @@ execute t = do
         in (Match conName args, ) <$> execute tl
 
 -- |Prune all the paths leading to @Result t@ such that @f t == Nothing@
-pruneMaybe :: forall m . (MonadPirouette m)
+pruneMaybe :: forall m . (PirouetteReadDefs m)
            => CTree Name
            -> MaybeT m (CTree Name)
 pruneMaybe (Result t)  = Result <$> MaybeT (go t)
@@ -151,7 +151,7 @@ pruneMaybe (Choose x ty ts) =
   where choose [] = fail "empty tree"
         choose ts = return (Choose x ty ts)
 
-termToCTree :: (MonadPirouette m) => CTreeOpts -> Name -> PrtDef -> m (CTree Name)
+termToCTree :: (PirouetteReadDefs m) => CTreeOpts -> Name -> PrtDef -> m (CTree Name)
 termToCTree opts name def =
   case def of
     DFunction _ t ty -> do

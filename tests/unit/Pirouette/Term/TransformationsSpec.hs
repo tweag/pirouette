@@ -30,8 +30,8 @@ import qualified Data.Text as T
 
 -- * Mocking a number of definitions for the PrtT monad
 
-testingDefs :: [(S.Name, S.PrtDef)]
-testingDefs =
+testingDefs :: [S.Name] -> [(S.Name, S.PrtDef)]
+testingDefs extras =
   [("destMaybe", S.DDestructor "Maybe")
   ,("destEither", S.DDestructor "Either")
   ,("destSimple", S.DDestructor "Simple")
@@ -41,25 +41,33 @@ testingDefs =
   , "IN", "J", "N", "JJJ", "JJN", "JNN", "NNN"
   , "AJ", "NR", "NJ", "S", "JL", "AN", "NN", "SJ", "NL"
   , "JR", "SN", "JNJ", "MJ", "MN", "NJJ", "NJN", "NNJ"
-  , "def"]
+  , "def"
+  ] ++ map withDummyFunc extras
  where
    stubsFor n = (n , S.DConstructor 0 n)
 
-testState = PrtState (M.fromList testingDefs) undefined M.empty Nothing
+withDummyFunc :: S.Name -> (S.Name, S.PrtDef)
+withDummyFunc s = (s, dummyFun)
+  where
+    dummyFun = S.DFunction S.Rec dummyTerm dummyType
+    dummyTerm = R.termPure (R.F (S.FreeName "_"))
+    dummyType = R.tyPure (R.F (S.TyFree "_"))
+
+testState extras = PrtUnorderedDefs (M.fromList $ testingDefs extras) undefined
 
 testOpts = PrtOpts DEBUG []
 
-runPrtTest :: PrtT Identity a -> a
-runPrtTest = either (error . show) id . fst . runIdentity . runPrtT testOpts testState
+runPrtTest :: [S.Name] -> ReaderT PrtUnorderedDefs (PrtT Identity) a -> a
+runPrtTest extras =
+  either (error . show) id . fst . runIdentity . runPrtT testOpts . flip runReaderT (testState extras)
 
 -- * Actual Tests
 
 spec = do
   describe "cfoldmapSpecialize" $ do
     it "works for cfoldmapSpecialize" $
-      runPrtTest
-        (mapM_ declareDummyFunc ["foldr0", "Bool_match", "True", "False"] >> cfoldmapSpecialize tcfoldBool)
-        `shouldBe` tcfoldBoolSpec
+      runPrtTest ["foldr0", "Bool_match", "True", "False"]
+        (cfoldmapSpecialize tcfoldBool) `shouldBe` tcfoldBoolSpec
 
 -- The test terms grouped by their categories
 
