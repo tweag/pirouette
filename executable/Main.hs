@@ -182,14 +182,14 @@ processDecls opts = do
   elimEvenOddMutRec -- TODO: once we split the processing in multiple phases, processDecls
                     -- should happen only after dependency cycles have been eliminated; for now,
                     -- just make sure that this is the first thing we call.
+  expandAllNonRec (contains (funNamePrefix opts))
   preDs  <- gets decls
   postDs <- sequence $ M.map processOne preDs
   modify (\st -> st { decls = postDs })
  where
    generalTransformations :: MonadPirouette m => PrtTerm -> m PrtTerm
    generalTransformations
-      =   expandDefs
-      >=> constrDestrId
+      =   constrDestrId
       >=> removeExcessiveDestArgs
       >=> cfoldmapSpecialize
 

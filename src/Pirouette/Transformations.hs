@@ -15,8 +15,12 @@ import qualified PlutusCore as P
 
 import           Control.Monad.State
 import qualified Data.List.NonEmpty as NE
+import           Data.List (foldl')
 import           Data.Maybe (mapMaybe)
 import qualified Data.Map as M
+import qualified Data.Set as S
+import           Data.Generics.Uniplate.Operations
+
 
 -- |Removes all Even-Odd mutually recursive functions from the program.
 -- When successfull, sets the 'tord' state field with a list of names indicating the order in which
@@ -81,3 +85,52 @@ elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
             then solveTermDeps (ctr + 1) (ns ++ [n])
             else mapM_ (expandDefIn n) ns
               >> snoc n <$> solveTermDeps 0 ns
+
+-- |Expand all non-recursive definitions in our state, keeping only the
+-- recursive definitions or those satisfying the @keep@ predicate.
+expandAllNonRec :: (MonadPirouette m) => (Name -> Bool) -> m ()
+expandAllNonRec keep = do
+  ds  <- gets decls
+  ord <- dependencyOrder
+  let (remainingNames, ds', _) = foldl' go ([], ds, M.empty) ord
+  modify (\st -> st{ decls = ds' , tord = Just $ reverse remainingNames })
+ where
+  -- The 'go' functions goes over the defined terms in dependency order
+  -- and inlines terms as much as possible. To do so efficiently,
+  -- we keep a map of inlinable definitions and we also maintain the order
+  -- for the names that are left in the actual definitions.
+  --
+  -- In general, say that: (rNs, ds', rest) = foldl' go ([], decls, M.empty) ord
+  -- then, with a slight abuse of notation:
+  --
+  -- >    M.union ds' rest == decls -- module beta equivalence
+  -- > && S.fromList rNs == S.fromList (M.keys ds')
+  -- > && reverse rNs `isSubListOf` ord
+  --
+  go :: ([R.Arg Name Name], Decls Name P.DefaultFun, M.Map Name PrtTerm)
+     -> R.Arg Name Name
+     -> ([R.Arg Name Name], Decls Name P.DefaultFun, M.Map Name PrtTerm)
+  go (names, currDecls, inlinableDecls) (R.TyArg ty) = (R.TyArg ty : names, currDecls, inlinableDecls)
+  go (names, currDecls, inlinableDecls) (R.Arg k) =
+    let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
+     in if R.Arg k `S.member` termNames kDef || keep k
+        then (R.Arg k : names , decls' , inlinableDecls)
+        else (names           , decls' , M.insert k kDef inlinableDecls)
+
+  expandDefsIn :: M.Map Name PrtTerm
+               -> Decls Name P.DefaultFun
+               -> Name
+               -> (Decls Name P.DefaultFun, PrtTerm)
+  expandDefsIn inlinables decls k =
+    case M.lookup k decls of
+      Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
+      Just (DFunction r t ty) ->
+        let t' = rewrite (inlineAll inlinables) t
+         in (M.insert k (DFunction r t' ty) decls, t')
+      Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
+
+  inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
+  inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
+    nDef <- M.lookup n inlinables
+    return . deshadowBoundNames $ R.appN nDef args
+  inlineAll _ _ = Nothing
