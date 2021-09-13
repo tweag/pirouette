@@ -206,7 +206,6 @@ tlaWithDeclTypeOf ntys f = do
   modify (\st -> st { tsTypeOf = pre })
   return res
 
-
 tlaWithTyVars :: (Monad m) => [(Name, R.Kind)] -> TlaT m a -> TlaT m a
 tlaWithTyVars tyvs f = do
   pre <- gets tsTyVars
