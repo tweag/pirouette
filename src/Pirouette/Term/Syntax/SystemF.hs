@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -13,11 +15,12 @@ import           Pirouette.Term.Syntax.Subst
 import qualified PlutusCore        as P
 import qualified PlutusCore.Pretty as P
 
-import           Control.Arrow (first)
+import           Control.Arrow (first, second)
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Monad.Identity
-import           Data.Maybe (mapMaybe)
+import           Data.Void
+import           Data.Maybe (mapMaybe, fromJust)
 import           Data.Either (fromRight)
 import           Data.Foldable
 import qualified Data.Set   as S
@@ -118,11 +121,21 @@ instance HasApp (AnnType ann) where
 
 -- ** Terms
 
-data AnnTerm ty ann v
-  = App   v              [Arg ty (AnnTerm ty ann v)]
-  | Lam   (Ann ann) ty   (AnnTerm ty ann v)
-  | Abs   (Ann ann) Kind (AnnTerm ty ann v)
+-- |Named de Bruijn System-F terms in normal form, augmented with holes
+-- and types annotations. The @ann@ variable represents the type of
+-- names we're using for explicit variable names. It's important to do so
+-- to preserve user-given names throughout the transformations.
+--
+-- The 'Hole' constructor represents a hole and is analogous to "Control.Monad.Free.Pure",
+-- the only difference being that we didn't write 'AnnTermH' as an explicit pattern-functor.
+data AnnTermH h ty ann v
+  = App   v              [Arg ty (AnnTermH h ty ann v)]
+  | Lam   (Ann ann) ty   (AnnTermH h ty ann v)
+  | Abs   (Ann ann) Kind (AnnTermH h ty ann v)
+  | Hole  h
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
+
+type AnnTerm = AnnTermH Void
 
 termTyFoldMap :: (Monoid m) => (ty -> m) -> AnnTerm ty ann v -> m
 termTyFoldMap f (App _ args) = mconcat $ mapMaybe (fmap f . fromTyArg) args
@@ -169,6 +182,11 @@ getHeadAbs :: AnnTerm ty ann f -> ([(ann, Kind)], AnnTerm ty ann f)
 getHeadAbs (Abs (Ann v) k t) = first ((v, k):) $ getHeadAbs t
 getHeadAbs t                 = ([], t)
 
+getNHeadAbs :: Int -> AnnTerm ty ann f -> ([(ann, Kind)], AnnTerm ty ann f)
+getNHeadAbs 0 t                 = ([] , t)
+getNHeadAbs n (Abs (Ann v) k t) = first ((v, k):) $ getNHeadAbs (n-1) t
+getNHeadAbs _ _                 = error "getNHeadAbs: Not enough type-abstractions"
+
 getHeadLams :: AnnTerm ty ann f -> ([(ann, ty)], AnnTerm ty ann f)
 getHeadLams (Lam (Ann v) ty t) = first ((v, ty):) $ getHeadLams t
 getHeadLams t                  = ([], t)
@@ -177,10 +195,6 @@ getNHeadLams :: Int -> AnnTerm ty ann f -> ([(ann, ty)], AnnTerm ty ann f)
 getNHeadLams 0 t                  = ([], t)
 getNHeadLams n (Lam (Ann v) ty t) = first ((v, ty):) $ getNHeadLams (n-1) t
 getNHeadLams _ _                  = error "getNHeadLams: Not enough lambdas"
-
-getHeadTyAbs :: AnnTerm ty ann f -> ([(ann, Kind)], AnnTerm ty ann f)
-getHeadTyAbs (Abs (Ann v) k t) = first ((v, k):) $ getHeadTyAbs t
-getHeadTyAbs t                  = ([], t)
 
 withLams :: [(ann, ty)] -> AnnTerm ty ann f -> AnnTerm ty ann f
 withLams = foldr (\bv t -> uncurry Lam (first Ann bv) . t) id
@@ -266,10 +280,32 @@ expandVar (n, defn) = rewrite go
       | otherwise = Just $ appN defn args
     go _ = Nothing
 
--- TODO: write an efficient appN that substitutes multiple variables in one go
 instance (HasSubst ty) => HasApp (AnnTerm ty ann) where
   type AppArg (AnnTerm ty ann) v = Arg ty (AnnTerm ty ann v)
-  appN = foldl' termApp
+
+  -- Single pass substitution;
+  appN t            []     = t
+  appN (App n args) us     = App n (args ++ us)
+  appN t            (u:us) =
+    case (t, u) of
+      (Lam {}, Arg   _) -> goTerm t (u:us)
+      (Abs {}, TyArg _) -> goType t (u:us)
+      (_     , _      ) -> error "Mismatched Term/Type application"
+    where
+      go getHead getNHead from s t us =
+        -- first we decide whether we have more lambdas or more arguments;
+        let (ar, _)    = first length $ getHead t
+            n          = min ar (length us)
+            -- Now we know we'll be applying n arguments at once.
+            (_, tgt)   = getNHead n t
+            (args,bs)  = splitAt n us
+            sigma xs   = foldl' (\s t -> Just t :< s) (Inc 0) xs
+         in case mapM from args of
+              Just as -> appN (s (sigma as) tgt) bs
+              Nothing -> error "Mismatched Term/Type application"
+
+      goTerm = go getHeadLams getNHeadLams fromArg   subst
+      goType = go getHeadAbs  getNHeadAbs  fromTyArg substTy
 
 -- |Maps a function over names, keeping track of how the scope by counting
 -- how many lambdas have we traversed
