@@ -32,6 +32,7 @@ library
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.ToTla
       Pirouette.Term.Transformations
+      Pirouette.Term.TransitiveDeps
       Pirouette.TLA.Syntax
       Pirouette.TLA.Type
       Pirouette.Transformations

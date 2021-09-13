@@ -31,10 +31,6 @@ elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
                 >>= foldM (\res c -> (++ res) <$> elimDepCycles c) []
                 >>= \ord -> modify (\st -> st { tord = Just ord })
  where
-  funOrType n (DFunction {}) = Just $ R.Arg n
-  funOrType n (DTypeDef {})  = Just $ R.TyArg n
-  funOrType _ _              = Nothing
-
   -- Attempts to eliminate dependency cycles for a set of mutually recursive definitions.
   -- If successfull, returns a @ns@ containing the order in which the
   -- inputs should be declared. The declarations within the state monad will

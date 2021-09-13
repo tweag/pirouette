@@ -10,14 +10,15 @@ module Pirouette.Monad.Logger where
 
 import Pirouette.Monad.Maybe
 
-import Control.Arrow (second)
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer.Strict
-import Control.Monad.Except
-import Data.List (intercalate)
-import Data.Foldable (toList)
-import Data.Sequence hiding (null)
+import           Control.Arrow (second)
+import           Control.Monad.Reader
+import qualified Control.Monad.State.Lazy    as Lazy
+import qualified Control.Monad.State.Strict  as Strict
+import           Control.Monad.Writer.Strict
+import           Control.Monad.Except
+import           Data.List (intercalate)
+import           Data.Foldable (toList)
+import           Data.Sequence hiding (null)
 
 data LogLevel = TRACE | DEBUG | INFO | WARN | ERROR | CRIT
   deriving (Eq, Show, Ord)
@@ -105,7 +106,12 @@ instance (MonadLogger m) => MonadLogger (ReaderT r m) where
   pushCtx ctx  = mapReaderT (pushCtx ctx)
   context      = lift context
 
-instance (MonadLogger m) => MonadLogger (StateT s m) where
+instance (MonadLogger m) => MonadLogger (Lazy.StateT s m) where
   logMsg lvl m = lift $ logMsg lvl m
-  pushCtx ctx  = mapStateT (pushCtx ctx)
+  pushCtx ctx  = Lazy.mapStateT (pushCtx ctx)
+  context      = lift context
+
+instance (MonadLogger m) => MonadLogger (Strict.StateT s m) where
+  logMsg lvl m = lift $ logMsg lvl m
+  pushCtx ctx  = Strict.mapStateT (pushCtx ctx)
   context      = lift context
