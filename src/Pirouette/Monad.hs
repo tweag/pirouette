@@ -255,14 +255,14 @@ runPrtT opts = runLoggerT . runExceptT . flip runReaderT opts . unPirouette
 
 -- |Mocks a 'PrtT' computation, running it with default options, omitting any logging
 -- and displaying errors as strings already.
-mockPrtT :: (Monad m) => Decls Name DefaultFun -> PrtT m a -> m (Either String a, [LogMessage])
-mockPrtT ds f = first (either (Left . show) Right) <$> runPrtT opts f
+mockPrtT :: (Monad m) => PrtT m a -> m (Either String a, [LogMessage])
+mockPrtT f = first (either (Left . show) Right) <$> runPrtT opts f
   where
     opts = PrtOpts TRACE []
 
 -- |Pure variant of 'mockPrtT', over the Identity monad
-mockPrt :: Decls Name DefaultFun -> PrtT Identity a -> Either String a
-mockPrt ds = fst . runIdentity . mockPrtT ds
+mockPrt :: PrtT Identity a -> Either String a
+mockPrt = fst . runIdentity . mockPrtT
 
 -- |If we have a 'MonadIO' in our stack, we can ask for all the logs produced so far.
 -- This is useful for the main function, to output the logs of different stages as these stages
