@@ -29,28 +29,28 @@ deriving instance Data P.DefaultFun
 
 -- TODO: actually check that the given name is a constructor of
 -- a declared 'Bool' datatype.
-termIsBoolVal :: (MonadPirouette m) => Bool -> PrtTerm -> m Bool
+termIsBoolVal :: (PirouetteReadDefs m) => Bool -> PrtTerm -> m Bool
 termIsBoolVal b (R.Free (FreeName n)) = consIsBoolVal b n
 termIsBoolVal _ _                     = return False
 
-consIsBoolVal :: (MonadPirouette m) => Bool -> Name -> m Bool
+consIsBoolVal :: (PirouetteReadDefs m) => Bool -> Name -> m Bool
 consIsBoolVal b n = return $ nameString n == T.pack (show b)
 
-consIsMaybeVal :: (MonadPirouette m) => Name -> MaybeT m (Maybe ())
+consIsMaybeVal :: (PirouetteReadDefs m) => Name -> MaybeT m (Maybe ())
 consIsMaybeVal n
   | nameString n == "Just"    = return (Just ())
   | nameString n == "Nothing" = return Nothing
   | otherwise                 = fail "Not a constructor from Maybe"
 
 -- TODO: Similarly to 'termIsBoolVal', check this is really a unit type
-typeIsUnit :: (MonadPirouette m) => PrtType -> m Bool
+typeIsUnit :: (PirouetteReadDefs m) => PrtType -> m Bool
 typeIsUnit (R.TyApp (R.F (TyFree n)) []) = return $ nameString n == "Unit"
 typeIsUnit _                             = return False
 
-tynameIsBool :: (MonadPirouette m) => Name -> m Bool
+tynameIsBool :: (PirouetteReadDefs m) => Name -> m Bool
 tynameIsBool n = return $ nameString n == "Bool"
 
-typeIsBool :: (MonadPirouette m) => PrtType -> m Bool
+typeIsBool :: (PirouetteReadDefs m) => PrtType -> m Bool
 typeIsBool (R.TyApp (R.F (TyFree n)) []) = tynameIsBool n
 typeIsBool _ = return False
 
@@ -71,12 +71,12 @@ nameIsITE _ = False
 -- Moreover, we already remove the 'R.Arg' wrapper for all the predefined argument positions.
 -- Only the extra arguments are kept with their 'R.Arg' because they could be types or terms.
 --
-unDest :: (MonadPirouette m)
+unDest :: (PirouetteReadDefs m)
        => PrtTerm
        -> MaybeT m (Name, TyName, [PrtType], PrtTerm, PrtType, [PrtTerm], [R.Arg PrtType PrtTerm])
 unDest (R.App (R.F (FreeName n)) args) = do
-  tyN <- isDest n
-  Datatype _ _ _ cons <- lift (typeDefOf tyN)
+  tyN <- prtIsDest n
+  Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
   let nCons = length cons
   let (tyArgs, args1) = span R.isTyArg args
   tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
@@ -89,11 +89,11 @@ unDest (R.App (R.F (FreeName n)) args) = do
 unDest _ = fail "unDest: not an R.App"
 
 -- |Analogous to 'unDest', but works fro constructors.
-unCons :: (MonadPirouette m)
+unCons :: (PirouetteReadDefs m)
        => PrtTerm
        -> MaybeT m (TyName, [PrtType], Int, [PrtTerm])
 unCons (R.App (R.F (FreeName n)) args) = do
-  (idx, tyN) <- isConst n
+  (idx, tyN) <- prtIsConst n
   let (tyArgs, args1) = span R.isTyArg args
   tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
   args1'  <- mapM (wrapMaybe . R.fromArg) args1

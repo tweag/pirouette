@@ -65,7 +65,7 @@ data PrtErrorCtx = PrtErrorCtx
   } deriving (Eq, Show)
 
 -- |The base monadic layer we use in most places.
-type PirouetteBase m = (MonadError PrtErrorCtx m, MonadLogger m)
+type PirouetteBase m = (MonadError PrtErrorCtx m, MonadLogger m, MonadFail m)
 
 -- |'throwError' variant that automatically gets the logger context.
 throwError' :: (PirouetteBase m) => PrtError -> m a
@@ -101,11 +101,11 @@ class (PirouetteBase m) => PirouetteReadDefs m where
   prtIsConst :: Name -> MaybeT m (Int , TyName)
   prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf n
 
-instance (PirouetteReadDefs m) => PirouetteReadDefs (Lazy.StateT s m) where
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs m) => PirouetteReadDefs (Lazy.StateT s m) where
   prtAllDefs = lift prtAllDefs
   prtMain    = lift prtMain
 
-instance (PirouetteReadDefs m) => PirouetteReadDefs (Strict.StateT s m) where
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs m) => PirouetteReadDefs (Strict.StateT s m) where
   prtAllDefs = lift prtAllDefs
   prtMain    = lift prtMain
 
@@ -188,6 +188,10 @@ instance (PirouetteBase m) => PirouetteReadDefs (ReaderT PrtUnorderedDefs m) whe
   prtAllDefs = asks prtUODecls
   prtMain    = asks prtUOMainTerm
 
+instance {-# OVERLAPPING #-} (PirouetteBase m) => PirouetteReadDefs (Strict.StateT PrtUnorderedDefs m) where
+  prtAllDefs = Strict.gets prtUODecls
+  prtMain    = Strict.gets prtUOMainTerm
+
 -- |In contrast to ordered definitions, where we have a dependency order
 -- for all term and type declarations in 'prtDecls'. That is, given two
 -- terms @f@ and @g@, @f@ depends on @g@ if @elemIndex f prtDepOrder > elemIndex g prtDepOrder@,
@@ -197,6 +201,9 @@ data PrtOrderedDefs = PrtOrderedDefs
   , prtDepOrder :: [R.Arg Name Name]
   , prtMainTerm :: PrtTerm
   }
+
+prtOrderedDefs :: PrtUnorderedDefs -> [R.Arg Name Name] -> PrtOrderedDefs
+prtOrderedDefs uod ord = PrtOrderedDefs (prtUODecls uod) ord (prtUOMainTerm uod)
 
 instance (PirouetteBase m) => PirouetteReadDefs (ReaderT PrtOrderedDefs m) where
   prtAllDefs = asks prtDecls
