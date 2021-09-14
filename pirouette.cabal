@@ -60,7 +60,6 @@ library
     , parsec
     , plutus-core
     , prettyprinter
-    , regex-compat
     , text
     , tlaplus
     , tlaplus-qq
@@ -93,7 +92,6 @@ executable pirouette
     , pirouette
     , plutus-core
     , prettyprinter
-    , regex-compat
     , text
     , tlaplus
     , tlaplus-qq
@@ -131,7 +129,6 @@ test-suite spec
     , pirouette
     , plutus-core
     , prettyprinter
-    , regex-compat
     , text
     , tlaplus
     , tlaplus-qq

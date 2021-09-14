@@ -41,7 +41,6 @@ import qualified Data.Text.IO as T
 import qualified Data.Map as M
 
 import           Text.Megaparsec.Error (errorBundlePretty)
-import           Text.Regex (mkRegex, matchRegex)
 
 -- * Monomorphic Transformations
 
@@ -458,10 +457,10 @@ applyTransfo (RewritingRule _ lhs rhs) t =
         Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
         Just i ->
           case M.lookup i m of
-            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
+            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
             Just (R.Arg t) ->
               R.appN (shift (toInteger nTe) t) <$> mapM (instantiateArg nTe nTy m) args
-            Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ "_ is at a term position on the right hand side, but was a type on the left-hand side."
+            Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ " is at a term position on the right hand side, but was a type on the left-hand side."
     instantiate nTe nTy m (R.App v args) =
       R.App v <$> mapM (instantiateArg nTe nTy m) args
     instantiate nTe nTy m (R.Lam ann ty t) =
@@ -476,10 +475,10 @@ applyTransfo (RewritingRule _ lhs rhs) t =
         Nothing -> R.TyApp v <$> mapM (instantiateTy nTy m) args
         Just i ->
           case M.lookup i m of
-            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ appears on the right hand side, but not on the left-hand side."
+            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
             Just (R.TyArg t) ->
               R.appN (shift (toInteger nTy) t) <$> mapM (instantiateTy nTy m) args
-            Just (R.Arg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ "_ is at a type position on the right hand side, but was a term on the left-hand side."
+            Just (R.Arg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ " is at a type position on the right hand side, but was a term on the left-hand side."
     instantiateTy nTy m (R.TyApp v args) =
       R.TyApp v <$> mapM (instantiateTy nTy m) args
     instantiateTy nTy m (R.TyLam ann k ty) =
@@ -495,7 +494,9 @@ applyTransfo (RewritingRule _ lhs rhs) t =
     instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
 
     isHole :: Name -> Maybe String
-    isHole x = head <$> matchRegex (mkRegex "([a-zA-Z][0-9]+)_") (T.unpack $ nameString x)
+    isHole n =
+      let x = T.unpack $ nameString n in
+      if length x > 1 && last x == '_' then Just x else Nothing
 
     haveSameString :: PIRBase P.DefaultFun Name -> PIRBase P.DefaultFun Name -> Bool
     haveSameString (Constant a) (Constant b) = a == b
