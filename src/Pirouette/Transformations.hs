@@ -130,12 +130,12 @@ expandDefsIn inlinables decls k =
   case M.lookup k decls of
     Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
     Just (DFunction r t ty) ->
-      let t' = rewrite (inlineAll inlinables) t
+      let t' = deshadowBoundNames $ rewrite (inlineAll inlinables) t
        in (M.insert k (DFunction r t' ty) decls, t')
     Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
  where
    inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
    inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
      nDef <- M.lookup n inlinables
-     return . deshadowBoundNames $ R.appN nDef args
+     Just $ R.appN nDef args
    inlineAll _ _ = Nothing
