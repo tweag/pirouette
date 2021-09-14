@@ -13,6 +13,11 @@ extra-source-files:
     LICENSE
     README.md
 
+common lang
+    ghc-options:
+      -fprof-auto
+      "-with-rtsopts=-N -p -s -h -i0.1"
+
 library
   exposed-modules:
       Pirouette.Monad
