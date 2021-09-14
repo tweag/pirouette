@@ -26,6 +26,7 @@ import Pirouette.Term.Transformations
 import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
+import Pirouette.Specializer.Rewriting
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
@@ -181,18 +182,18 @@ mainOpts opts uDefs = do
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
   oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
-  postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
+  mRules <- traverse parseFileTransfo (transfo opts)
+  postDs <- runReaderT (sequence $ M.map (processOne mRules) $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
-   generalTransformations :: (MonadIO m, PirouetteReadDefs m)
-                          => PrtTerm -> m PrtTerm
-   generalTransformations
-      =   maybe return applyFileTransfo (transfo opts)
+    generalTransformations :: (PirouetteReadDefs m)
+                           => Maybe [RewritingRule PrtTerm PrtTerm] -> PrtTerm -> m PrtTerm
+    generalTransformations mRules =
+          maybe return (flip (foldM (flip applyTransfo))) mRules
       >=> constrDestrId
       >=> removeExcessiveDestArgs
-      -- >=> cfoldmapSpecialize
 
-   processOne = defTermMapM generalTransformations
+    processOne = defTermMapM . generalTransformations
 
 -- ** Auxiliar Defs
 
@@ -291,7 +292,7 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseSkeletonFile
                        <*> parsePruneMaybe
                        <*> parseTySpecializer
-                       <*> parseFileTransfo
+                       <*> parseTransfo
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -356,8 +357,8 @@ parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
 
-parseFileTransfo :: Opt.Parser (Maybe FilePath)
-parseFileTransfo = Opt.option (fmap Just Opt.str)
+parseTransfo :: Opt.Parser (Maybe FilePath)
+parseTransfo = Opt.option (fmap Just Opt.str)
                  (  Opt.metavar "FILE"
                  <> Opt.long "transfo"
                  <> Opt.value Nothing

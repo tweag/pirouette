@@ -22,6 +22,7 @@ library
       Pirouette.PlutusIR.Utils
       Pirouette.Specializer
       Pirouette.Specializer.Basics
+      Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.ConstraintTree
       Pirouette.Term.FromPlutusIR

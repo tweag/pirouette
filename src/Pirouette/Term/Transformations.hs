@@ -17,6 +17,7 @@ import           Pirouette.Term.FromPlutusIR
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
+import           Pirouette.Specializer.Rewriting
 import           Pirouette.PlutusIR.Utils
 
 import qualified PlutusIR.Parser    as PIR
@@ -372,37 +373,11 @@ chooseHeadCase t ty args fstArg =
 -- For instance, one would like to write something like:
 -- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
 
-applyFileTransfo :: (PirouetteReadDefs m, MonadIO m)
-                 => FilePath -> PrtTerm -> m PrtTerm
-applyFileTransfo fileName t = do
-  content <- liftIO $ T.readFile fileName
-  let lines = T.lines content
-  foldM (\te txt -> deshadowBoundNames <$> rewriteM (runMaybeT . transfoOfLine txt) te) t lines
+applyTransfo :: (PirouetteReadDefs m)
+             => RewritingRule PrtTerm PrtTerm -> PrtTerm -> m PrtTerm
+applyTransfo (RewritingRule _ lhs rhs) t =
+  deshadowBoundNames <$> rewriteM (traverse (flip (instantiate 0 0) rhs) . isInstance 0 0 lhs) t
   where
-    transfoOfLine :: (PirouetteReadDefs m)
-                  => T.Text -> PrtTerm -> MaybeT m PrtTerm
-    transfoOfLine l t = do
-      let sendError = lift . throwError' . PEOther
-      let [transfoName,def] = T.splitOn ":" l
-      let [lhsTxt,rhsTxt] = map T.strip $ T.splitOn "==>" def
-      lhsPIR <-
-        either (sendError . show) return $
-          PIR.parse
-            (PIR.term @P.DefaultUni @P.DefaultFun)
-            (T.unpack transfoName  ++ "-LEFT")
-            lhsTxt
-      lhs <- either (sendError . show) return $
-        runExcept (trPIRTerm lhsPIR)
-      rhsPIR <-
-        either (sendError . show) return $
-          PIR.parse
-            (PIR.term @P.DefaultUni @P.DefaultFun)
-            (T.unpack transfoName ++ "-RIGHT")
-            rhsTxt
-      rhs <- either (sendError . show) return $
-        runExcept (trPIRTerm rhsPIR)
-      MaybeT $ traverse (flip (instantiate 0 0) rhs) (isInstance 0 0 lhs t)
-
     isInstance :: Int -> Int -> PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
     isInstance nTe nTy (R.App vL@(R.F (FreeName x)) []) t =
       case isHole x of
