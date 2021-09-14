@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 -- |Implements whole-program transformations. If you're looking
 -- for term transformations, check "Pirouette.Term.Transformations"
 --
@@ -10,27 +11,29 @@ import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
 import           Pirouette.Term.Transformations
+import           Pirouette.Term.TransitiveDeps
 
 import qualified PlutusCore as P
 
-import           Control.Monad.State
+import           Control.Monad.Reader
+import           Control.Monad.State.Strict
 import qualified Data.List.NonEmpty as NE
+import           Data.List (foldl')
 import           Data.Maybe (mapMaybe)
 import qualified Data.Map as M
+import qualified Data.Set as S
+import           Data.Generics.Uniplate.Operations
+
 
 -- |Removes all Even-Odd mutually recursive functions from the program.
 -- When successfull, sets the 'tord' state field with a list of names indicating the order in which
 -- they should be defined so that the dependencies of a term @T@ are defined before @T@.
-elimEvenOddMutRec :: (MonadPirouette m) => m ()
-elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
-                >>= sortDeps
-                >>= foldM (\res c -> (++ res) <$> elimDepCycles c) []
-                >>= \ord -> modify (\st -> st { tord = Just ord })
+elimEvenOddMutRec :: (PirouetteBase m) => PrtUnorderedDefs -> m PrtOrderedDefs
+elimEvenOddMutRec udefs = do
+  ordWithCycles <- runReaderT sortAllDeps udefs
+  (ord, udefs') <- runStateT (foldM (\res c -> (++ res) <$> elimDepCycles c) [] ordWithCycles) udefs
+  return $ prtOrderedDefs udefs' ord
  where
-  funOrType n (DFunction {}) = Just $ R.Arg n
-  funOrType n (DTypeDef {})  = Just $ R.TyArg n
-  funOrType _ _              = Nothing
-
   -- Attempts to eliminate dependency cycles for a set of mutually recursive definitions.
   -- If successfull, returns a @ns@ containing the order in which the
   -- inputs should be declared. The declarations within the state monad will
@@ -47,7 +50,8 @@ elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
   -- > h x = f (x - 3)
   -- > g x = h x + 2
   --
-  elimDepCycles :: (MonadPirouette m) => NE.NonEmpty (R.Arg Name Name) -> m [R.Arg Name Name]
+  elimDepCycles :: (PirouetteBase m)
+                => NE.NonEmpty (R.Arg Name Name) -> StateT PrtUnorderedDefs m [R.Arg Name Name]
   elimDepCycles (e NE.:| []) = return [e]
   elimDepCycles (e NE.:| es) = pushCtx ("elimDepCycles " ++ show (e:es)) $ go (e:es)
     where
@@ -79,5 +83,59 @@ elimEvenOddMutRec = gets (mapMaybe (uncurry funOrType) . M.toList . decls)
             isRec <- termIsRecursive n
             if isRec
             then solveTermDeps (ctr + 1) (ns ++ [n])
-            else mapM_ (expandDefIn n) ns
+            else mapM_ (expandDefInSt n) ns
               >> snoc n <$> solveTermDeps 0 ns
+
+      expandDefInSt :: (PirouetteBase m) => Name -> Name -> StateT PrtUnorderedDefs m ()
+      expandDefInSt n m = do
+        defn <- prtTermDefOf n
+        modify (\st -> st { prtUODecls = fst $ expandDefsIn (M.singleton n defn) (prtUODecls st) m })
+
+-- |Expand all non-recursive definitions in our state, keeping only the
+-- recursive definitions or those satisfying the @keep@ predicate.
+expandAllNonRec :: (Name -> Bool) -> PrtOrderedDefs -> PrtOrderedDefs
+expandAllNonRec keep prtDefs =
+  let ds  = prtDecls prtDefs
+      ord = prtDepOrder prtDefs
+      (remainingNames, ds', _) = foldl' go ([], ds, M.empty) ord
+   in PrtOrderedDefs ds' (reverse remainingNames) (prtMainTerm prtDefs)
+ where
+  -- The 'go' functions goes over the defined terms in dependency order
+  -- and inlines terms as much as possible. To do so efficiently,
+  -- we keep a map of inlinable definitions and we also maintain the order
+  -- for the names that are left in the actual definitions.
+  --
+  -- In general, say that: (rNs, ds', rest) = foldl' go ([], decls, M.empty) ord
+  -- then, with a slight abuse of notation:
+  --
+  -- >    M.union ds' rest == decls -- module beta equivalence
+  -- > && S.fromList rNs == S.fromList (M.keys ds')
+  -- > && reverse rNs `isSubListOf` ord
+  --
+  go :: ([R.Arg Name Name], Decls Name P.DefaultFun, M.Map Name PrtTerm)
+     -> R.Arg Name Name
+     -> ([R.Arg Name Name], Decls Name P.DefaultFun, M.Map Name PrtTerm)
+  go (names, currDecls, inlinableDecls) (R.TyArg ty) = (R.TyArg ty : names, currDecls, inlinableDecls)
+  go (names, currDecls, inlinableDecls) (R.Arg k) =
+    let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
+     in if R.Arg k `S.member` termNames kDef || keep k
+        then (R.Arg k : names , decls'            , inlinableDecls)
+        else (names           , M.delete k decls' , M.insert k kDef inlinableDecls)
+
+expandDefsIn :: M.Map Name PrtTerm
+             -> Decls Name P.DefaultFun
+             -> Name
+             -> (Decls Name P.DefaultFun, PrtTerm)
+expandDefsIn inlinables decls k =
+  case M.lookup k decls of
+    Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
+    Just (DFunction r t ty) ->
+      let t' = deshadowBoundNames $ rewrite (inlineAll inlinables) t
+       in (M.insert k (DFunction r t' ty) decls, t')
+    Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
+ where
+   inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
+   inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
+     nDef <- M.lookup n inlinables
+     return $ R.appN nDef args
+   inlineAll _ _ = Nothing

@@ -116,6 +116,7 @@ caseofAnn destr tyRes ty x pats = do
 caseof :: String -> TermM -> [PatternM] -> TermM
 caseof ty = caseofAnn ("dest" ++ ty) "stub" ty
 
+{-
 declareDummyFunc :: (MonadPirouette m) => Name -> m ()
 declareDummyFunc s =
   modify (\st -> st { decls = M.insert s dummyFun (decls st) })
@@ -123,3 +124,4 @@ declareDummyFunc s =
     dummyFun = S.DFunction S.Rec dummyTerm dummyType
     dummyTerm = R.termPure (R.F (S.FreeName "_"))
     dummyType = R.tyPure (R.F (S.TyFree "_"))
+-}

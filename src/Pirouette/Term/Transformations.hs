@@ -56,7 +56,7 @@ import           Text.Regex (mkRegex, matchRegex)
 -- can break things. In the example above, @b/greaterThanEqualsInteger@ returns a plutus builtin boolean,
 -- whereas the @ifThenElse@ is returning an element of a @(datatypedecl ... Bool)@.
 --
-etaIfThenElse :: (MonadPirouette m) => PrtTerm -> m PrtTerm
+etaIfThenElse :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
 etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
   where
     go r@(R.App (R.F n) [R.TyArg _, R.Arg x, R.Arg t, R.Arg f]) = do
@@ -70,7 +70,7 @@ etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
 -- * Polymorphic Transformations
 
 -- |Specialize @cfoldableNil_cfoldMap@ applied to the disjunctive bool and endofunction monoids
-cfoldmapSpecialize :: forall m . (MonadPirouette m) => PrtTerm -> m PrtTerm
+cfoldmapSpecialize :: forall m . (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
 cfoldmapSpecialize = fmap deshadowBoundNames . pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
   where
     isCfoldmap :: (Monad t) => PrtTerm -> MaybeT t (PrtType, PrtType, [PrtTerm])
@@ -169,17 +169,17 @@ cfoldmapSpecialize = fmap deshadowBoundNames . pushCtx "cfoldmapSpecialize" . re
 -- > v = [d/Bool x T[thunk := Unit] F[thunk := Unit]]
 -- Generally v = [d/Bool T F] since `thunk` has no reason to appear in `T` and `F`.
 --
-removeExcessiveDestArgs :: (MonadPirouette m) => PrtTerm -> m PrtTerm
+removeExcessiveDestArgs :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
 removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
+    go :: (PirouetteReadDefs m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
       (n, tyN, tyArgs, x, tyReturn, cases, excess) <- unDest t
       if null excess
       then fail "No excessive destr arguments"
       else do
         logTrace $ show n
-        Datatype _ _ _ cons <- lift (typeDefOf tyN)
+        Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
         return $
           R.App (R.F $ FreeName n) $
             map R.TyArg tyArgs
@@ -229,48 +229,50 @@ deshadowBoundNames = go []
        in R.App n' args'
 
 -- |Expand all non-recursive definitions
-expandDefs :: (MonadPirouette m) => PrtTerm -> m PrtTerm
+expandDefs :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
 expandDefs = fmap deshadowBoundNames . pushCtx "expandDefs" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
+    go :: (PirouetteReadDefs m) => PrtTerm -> MaybeT m PrtTerm
     go (R.App (R.F (FreeName n)) args) = do
       isRec <- lift $ termIsRecursive n
       if isRec
       then fail "expandDefs: wont expand"
       else do
-       def <- MaybeT (fromTermDef <$> defOf n)
+       def <- MaybeT (fromTermDef <$> prtDefOf n)
        logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args) ++ "\n" ++ show (pretty def))
        let res = R.appN def args
        logTrace ("Result: " ++ show (pretty res))
        return res
     go _ = fail "expandDefs: not an R.App"
 
+{-
 -- |Expand the occurences of @n@ in the body of @m@
-expandDefIn :: (MonadPirouette m) => Name -> Name -> m ()
+expandDefIn :: (PirouetteReadDefs m) => Name -> Name -> m ()
 expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
   isRec <- termIsRecursive n -- let's ensure n is not recursive
   if isRec
   then fail "expandDefIn: can't expand recursive term"
   else do
     -- fetch the current definition of n,
-    mdefn <- fromTermDef <$> defOf n
+    mdefn <- fromTermDef <$> prtDefOf n
     defn  <- maybe (fail "expandDefIn: n not a termdef") return mdefn
     -- fetch the current definition of m and, if its a DFunction, perform the rewrite
-    mdefm <- defOf m
+    mdefm <- prtDefOf m
     case mdefm of
       DFunction r body ty -> do
         let body' = deshadowBoundNames $ R.expandVar (R.F $ FreeName n, defn) body
         modifyDef m (const $ Just $ DFunction r body' ty)
       _ -> fail "expandDefIn: m not a termdef"
+-}
 
 -- |Simplify /destructor after constructor/ applications. For example,
 --
 -- > [d/Maybe [c/Just X] N (\ J)] == [J X]
 --
-constrDestrId :: (MonadPirouette m) => PrtTerm -> m PrtTerm
+constrDestrId :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
 constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
-    go :: (MonadPirouette m) => PrtTerm -> MaybeT m PrtTerm
+    go :: (PirouetteReadDefs m) => PrtTerm -> MaybeT m PrtTerm
     go t = do
       (_, tyN, tyArgs, x, ret, cases, excess) <- unDest t
       (tyN', xTyArgs, xIdx, xArgs) <- unCons x
@@ -287,7 +289,7 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
 --   C1 x -> f st#3 (C1 x#0) param#1
 --   C2 x y -> f st#4 (c2 x#1 y#0) param#2
 
-chooseHeadCase :: (MonadPirouette m)
+chooseHeadCase :: (PirouetteReadDefs m)
                => PrtTerm -> PrtType -> [String] -> String -> m PrtTerm
 chooseHeadCase t ty args fstArg =
   let argLength = length args in
@@ -299,7 +301,7 @@ chooseHeadCase t ty args fstArg =
       case nameOf tyInput of
         Nothing -> throwError' $ PEOther "The input is not of a pattern-matchable type"
         Just tyName -> do
-          dest <- blindDest tyOut <$> typeDefOf tyName
+          dest <- blindDest tyOut <$> prtTypeDefOf tyName
           let transiAbsInput = R.Lam (R.Ann $ fromString "DUMMY_ARG") tyInput $
                 R.appN t (zipWith transitionArgs args [argLength, argLength - 1 .. 1])
           let body = subst
@@ -370,14 +372,14 @@ chooseHeadCase t ty args fstArg =
 -- For instance, one would like to write something like:
 -- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
 
-applyFileTransfo :: (MonadPirouette m, MonadIO m)
+applyFileTransfo :: (PirouetteReadDefs m, MonadIO m)
                  => FilePath -> PrtTerm -> m PrtTerm
 applyFileTransfo fileName t = do
   content <- liftIO $ T.readFile fileName
   let lines = T.lines content
   foldM (\te txt -> deshadowBoundNames <$> rewriteM (runMaybeT . transfoOfLine txt) te) t lines
   where
-    transfoOfLine :: (MonadPirouette m)
+    transfoOfLine :: (PirouetteReadDefs m)
                   => T.Text -> PrtTerm -> MaybeT m PrtTerm
     transfoOfLine l t = do
       let sendError = lift . throwError' . PEOther
@@ -474,7 +476,7 @@ applyFileTransfo fileName t = do
     isArgInstance nTe nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
     isArgInstance nTe nTy _ _ = Nothing
 
-    instantiate :: (MonadPirouette m)
+    instantiate :: (PirouetteReadDefs m)
                 => Int -> Int -> M.Map String PrtArg -> PrtTerm -> m PrtTerm
     instantiate nTe nTy m tt@(R.App v@(R.F (FreeName x)) args) =do
       case isHole x of
@@ -492,7 +494,7 @@ applyFileTransfo fileName t = do
     instantiate nTe nTy m (R.Abs ann k t) =
       R.Abs ann k <$> instantiate nTe (nTy + 1) m t
 
-    instantiateTy :: (MonadPirouette m)
+    instantiateTy :: (PirouetteReadDefs m)
                   => Int -> M.Map String PrtArg -> PrtType -> m PrtType
     instantiateTy nTy m (R.TyApp v@(R.F (TyFree x)) args) =
       case isHole x of
@@ -512,7 +514,7 @@ applyFileTransfo fileName t = do
     instantiateTy nTy m (R.TyFun a b) =
       R.TyFun <$> instantiateTy nTy m a <*> instantiateTy nTy m b
 
-    instantiateArg :: (MonadPirouette m)
+    instantiateArg :: (PirouetteReadDefs m)
                    => Int -> Int -> M.Map String PrtArg -> PrtArg -> m PrtArg
     instantiateArg nTe nTy m (R.Arg t) = R.Arg <$> instantiate nTe nTy m t
     instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
