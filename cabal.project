@@ -10,7 +10,6 @@ tests: true
 benchmarks: false
 
 -- Profiling related options
-profiling: true
 package plutus-core
   ghc-options: -fexternal-interpreter
 
