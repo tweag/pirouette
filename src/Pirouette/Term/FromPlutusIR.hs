@@ -52,7 +52,6 @@ type PIRConstraint tyname name fun
 data Err loc
   = NotYetImplemented loc String
   | NoTermBindAllowed loc
-  | ApplicationError
   deriving (Eq, Show)
 
 -- |Translating to De Bruijn requires us to keep the stack of bound variables, whereas
@@ -72,9 +71,6 @@ data Env name = Env
 
 envEmpty :: Env name
 envEmpty = Env [] []
-
-addDeps :: DepsOf Name -> TrM loc ()
-addDeps d = modify (\ds -> d `M.union` ds)
 
 pushNames :: [(name, Type name)] -> Env name -> Env name
 pushNames ns env = env { termStack = ns ++ termStack env }
@@ -117,7 +113,6 @@ trBindings bs = do
   -- This has to be done as a fixpoint calculation because dependencies are transitive.
   -- That is, if f depedends on z, but g depends on f, then g also depends on z.
   deps <- bindingCtxDeps (map (second fst . snd) termBinds)
-  addDeps deps
   (terms', additionalDecls) <- runWriterT
                              $ mapM (secondM $ splitSndM fst (uncurry2 trTermType)) termBinds
   let termDeclsList = map (\(r , (n, (t , ty))) -> (n , termToDef r t ty)) terms'
@@ -130,18 +125,64 @@ trBindings bs = do
 bindingCtxDeps :: forall tyname name fun loc
                 . (PIRConstraint tyname name fun)
                => [(Name, PIR.Term tyname name DefaultUni fun loc)]
-               -> TrM loc (DepsOf Name)
-bindingCtxDeps termBinds = get >>= go termBinds
+               -> TrM loc ()
+bindingCtxDeps termBinds = do
+  deps  <- get
+  deps' <- go termBinds deps M.empty
+  put deps'
   where
+    -- The go function below runs a fixpoint computation on a delta over the original dependencies;
+    -- We keep computing a new delta until we find nothing different to add;
     go :: [(Name, PIR.Term tyname name DefaultUni fun loc)]
        -> DepsOf Name
+       -> DepsOf Name
        -> TrM loc (DepsOf Name)
-    go xs prevDeps = do
+    go xs origDeps delta = do
       vs <- asks termStack
-      let newDeps = M.fromList $ map (second $ termCtxDeps vs prevDeps) xs
-      if prevDeps == newDeps
-      then return newDeps
-      else go xs newDeps
+      let currDeps = M.unionWith S.union origDeps delta
+      let newDelta = M.fromList $ map (second $ termCtxDeps vs currDeps) xs
+      if delta == newDelta
+      then return currDeps
+      else go xs origDeps newDelta
+
+-- |Given a stack of bound variables and a dependency map, compute one step
+-- of the transitive dependencies of a term. For example, let @t@ be
+-- the term: @\a b -> mult x (add a (g b))@
+--
+-- Running:
+-- > termCtxDeps [w,x,y,z] (M.fromList [(g, {z,w}),(h, {z})]) t
+--
+-- Will return:
+-- > S.fromList {x,z,w}
+--
+-- That is, the term @t@ depends on {x}, but since it uses @g@
+-- and @g@ depends on @z@ and @w@, @t@ depends on all of them.
+--
+-- The stack of bound variables reflect the variables that were bound by
+-- a lambda outside the scope of the current term; hence, in the current term
+-- these will be free variables.
+termCtxDeps :: forall tyname name uni fun loc
+             . (PIRConstraint tyname name fun)
+            => [(Name, Type Name)]
+            -> DepsOf Name
+            -> PIR.Term tyname name uni fun loc
+            -> S.Set (Name, Type Name)
+termCtxDeps vs deps (PIR.Var l n) =
+  -- The vs represent the stack of bound variables that were bound OUTSIDE the term we're
+  -- looking at. note how we do NOT change vs on the PIR.LamAbs case!
+  case L.elemIndex (toName n) (map fst vs) of
+    Just i  -> S.singleton (unsafeIdx "termCtxDeps" vs i)
+    Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
+termCtxDeps vs deps (PIR.LamAbs _ _ _ t)    = termCtxDeps vs deps t -- TODO: What happens in case there is name shadowing? We'll mess this up!
+termCtxDeps vs deps (PIR.Apply _ tfun targ) = S.union (termCtxDeps vs deps tfun) (termCtxDeps vs deps targ)
+termCtxDeps vs deps (PIR.TyInst _ t _)      = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.TyAbs _ _ _ t)     = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.IWrap _ _ _ t)     = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.Unwrap _ t)        = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.Let _ _ bs t)      =
+  S.union (termCtxDeps vs deps t)
+          (S.unions (map (either (termCtxDeps vs deps . fst . snd) (const S.empty) . eitherDataTerm) $ NE.toList bs))
+termCtxDeps _ _ _ = S.empty
 
 -- |Handles a data/type binding by creating a number of declarations for the constructors
 -- and desctructors involved.
@@ -272,41 +313,6 @@ trTerm mn t = do
                           . (\x -> (R.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs)) . fst)
                    $ S.toList ns
           return $ R.App (R.F $ FreeName n) args
-
-
--- |Given a stack of bound variables and a dependency map, compute one step
--- of the transitive dependencies of a term. For example, let @t@ be
--- the term: @\a b -> mult x (add a (g b))@
---
--- Running:
--- > termCtxDeps [w,x,y,z] (M.fromList [(g, {z,w}),(h, {z})]) t
---
--- Will return:
--- > S.fromList {x,z,w}
---
--- That is, the term @t@ depends on {x}, but since it uses @g@
--- and @g@ depends on @z@ and @w@, @t@ depends on all of them.
---
-termCtxDeps :: forall tyname name uni fun loc
-             . (PIRConstraint tyname name fun)
-            => [(Name, Type Name)]
-            -> DepsOf Name
-            -> PIR.Term tyname name uni fun loc
-            -> S.Set (Name, Type Name)
-termCtxDeps vs deps (PIR.Var l n) = do
-  case L.elemIndex (toName n) (map fst vs) of
-    Just i  -> S.singleton (vs !! i)
-    Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
-termCtxDeps vs deps (PIR.LamAbs _ _ _ t)    = termCtxDeps vs deps t -- TODO: What happens in case there is name shadowing? We'll mess this up!
-termCtxDeps vs deps (PIR.Apply _ tfun targ) = S.union (termCtxDeps vs deps tfun) (termCtxDeps vs deps targ)
-termCtxDeps vs deps (PIR.TyInst _ t _)      = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.TyAbs _ _ _ t)     = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.IWrap _ _ _ t)     = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.Unwrap _ t)        = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.Let _ _ bs t)      =
-  S.union (termCtxDeps vs deps t)
-          (S.unions (map (either (termCtxDeps vs deps . fst . snd) (const S.empty) . eitherDataTerm) $ NE.toList bs))
-termCtxDeps _ _ _ = S.empty
 
 --------------------------------
 -- Auxiliary Functions Follow --

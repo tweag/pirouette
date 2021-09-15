@@ -81,6 +81,7 @@ data CliOpts = CliOpts
   , skeleton      :: Maybe FilePath
   , pruneMaybe    :: Bool
   , tySpecializer :: [String]
+  , checkSanity   :: Bool
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -179,6 +180,12 @@ mainOpts opts uDefs = do
 
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
+  -- If the user wishes, we can perform checks on the sanity of the translation
+  -- from PlutusIR to PrtDefs
+  when (checkSanity opts) $ do
+    runReaderT checkDeBruijnIndices uDefs
+
+  -- Otherwise, we proceed normally
   oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
@@ -210,7 +217,7 @@ withDecls :: (MonadIO m, Show l)
           => Program P.TyName P.Name P.DefaultUni P.DefaultFun l
           -> (PrtTerm -> Decls Name P.DefaultFun -> m a)
           -> m a
-withDecls pir cont =
+withDecls pir cont = do
   case runExcept $ trProgram pir of
     Left err         -> putStrLn' (show err) >> liftIO (exitWith ecTranslationError)
     Right (t, decls) -> cont t decls
@@ -288,6 +295,13 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseSkeletonFile
                        <*> parsePruneMaybe
                        <*> parseTySpecializer
+                       <*> parseTrSanity
+
+parseTrSanity :: Opt.Parser Bool
+parseTrSanity = Opt.switch
+                  (  Opt.long "sanity-check"
+                  <> Opt.help "Perform a series of extra checks, can help with debugging"
+                  )
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))

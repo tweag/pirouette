@@ -43,8 +43,8 @@ data PIRType
   | PIRTypeBool
   | PIRTypeString
   | PIRTypeData
-  | PIRTypeList PIRType
-  | PIRTypePair PIRType PIRType
+  | PIRTypeList (Maybe PIRType)
+  | PIRTypePair (Maybe PIRType) (Maybe PIRType)
   deriving (Eq, Ord, Show, Data, Typeable)
 
 defUniToType :: forall k (a :: k) . DefaultUni (P.Esc a) -> PIRType
@@ -54,8 +54,12 @@ defUniToType DefaultUniUnit        = PIRTypeUnit
 defUniToType DefaultUniBool        = PIRTypeBool
 defUniToType DefaultUniString      = PIRTypeString
 defUniToType DefaultUniData        = PIRTypeData
-defUniToType (DefaultUniList a)    = PIRTypeList (defUniToType a)
-defUniToType (DefaultUniPair a b)  = PIRTypePair (defUniToType a) (defUniToType b)
+defUniToType (DefaultUniList a)    = PIRTypeList (Just (defUniToType a))
+defUniToType (DefaultUniPair a b)  = PIRTypePair (Just $ defUniToType a) (Just $ defUniToType b)
+defUniToType DefaultUniProtoList   = PIRTypeList Nothing
+defUniToType DefaultUniProtoPair   = PIRTypePair Nothing Nothing
+defUniToType (DefaultUniApply DefaultUniProtoPair a) = PIRTypePair (Just $ defUniToType a) Nothing
+
 
 -- |The language of types will consits of the standard polymorphic type-level lambda calculus
 -- where the free variables will be of type 'TypeBase', that is, they are either a builtin type or

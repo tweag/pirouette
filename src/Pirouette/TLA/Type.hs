@@ -94,7 +94,7 @@ pirTyUnit :: PrtType
 pirTyUnit = R.tyPure $ R.F $ TyBuiltin PIRTypeUnit
 
 pirTyList :: PIRType -> PrtType
-pirTyList a = R.tyPure $ R.F $ TyBuiltin (PIRTypeList a)
+pirTyList a = R.tyPure $ R.F $ TyBuiltin (PIRTypeList $ Just a)
 
 tlaAll :: [(Name, R.Kind)] -> TlaType -> TlaType
 tlaAll = flip (foldr (\(n, k) t -> TlaAll (R.Ann n) k t))
