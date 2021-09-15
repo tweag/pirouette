@@ -75,9 +75,6 @@ data Env name = Env
 envEmpty :: Env name
 envEmpty = Env [] []
 
-addDeps :: DepsOf Name -> TrM loc ()
-addDeps d = modify (\ds -> M.unionWith S.union ds d)
-
 pushNames :: [(name, Type name)] -> Env name -> Env name
 pushNames ns env = env { termStack = ns ++ termStack env }
 
@@ -119,7 +116,6 @@ trBindings bs = do
   -- This has to be done as a fixpoint calculation because dependencies are transitive.
   -- That is, if f depedends on z, but g depends on f, then g also depends on z.
   deps <- bindingCtxDeps (map (second fst . snd) termBinds)
-  addDeps deps
   (terms', additionalDecls) <- runWriterT
                              $ mapM (secondM $ splitSndM fst (uncurry2 trTermType)) termBinds
   let termDeclsList = map (\(r , (n, (t , ty))) -> (n , termToDef r t ty)) terms'
@@ -132,21 +128,25 @@ trBindings bs = do
 bindingCtxDeps :: forall tyname name fun loc
                 . (PIRConstraint tyname name fun)
                => [(Name, PIR.Term tyname name DefaultUni fun loc)]
-               -> TrM loc (DepsOf Name)
-bindingCtxDeps termBinds = get >>= go termBinds
+               -> TrM loc ()
+bindingCtxDeps termBinds = do
+  deps  <- get
+  deps' <- go termBinds deps M.empty
+  put deps'
   where
+    -- The go function below runs a fixpoint computation on a delta over the original dependencies;
+    -- We keep computing a new delta until we find nothing different to add.
     go :: [(Name, PIR.Term tyname name DefaultUni fun loc)]
        -> DepsOf Name
+       -> DepsOf Name
        -> TrM loc (DepsOf Name)
-    go xs prevDeps = do
+    go xs origDeps delta = do
       vs <- asks termStack
-      let newDeps' = map (second $ termCtxDeps vs prevDeps) xs
-      trace ("Computing deps:\n" ++ unlines (map (\(n, ds) -> "  " ++ show n ++ ": " ++ show ds) newDeps'))
-            (return ())
-      let newDeps = M.fromList newDeps'
-      if prevDeps == newDeps
-      then return newDeps
-      else go xs newDeps
+      let currDeps = M.unionWith S.union origDeps delta
+      let newDelta = M.fromList $ map (second $ termCtxDeps vs currDeps) xs
+      if newDelta == delta
+      then return currDeps
+      else go xs origDeps newDelta
 
 -- |Given a stack of bound variables and a dependency map, compute one step
 -- of the transitive dependencies of a term. For example, let @t@ be
@@ -161,6 +161,9 @@ bindingCtxDeps termBinds = get >>= go termBinds
 -- That is, the term @t@ depends on {x}, but since it uses @g@
 -- and @g@ depends on @z@ and @w@, @t@ depends on all of them.
 --
+-- The stack of bound variables reflect the variables that were bound by
+-- a lambda outside the scope of the current term; hence, in the current term
+-- these will be free variables.
 termCtxDeps :: forall tyname name uni fun loc
              . (PIRConstraint tyname name fun)
             => [(Name, Type Name)]
@@ -168,6 +171,8 @@ termCtxDeps :: forall tyname name uni fun loc
             -> PIR.Term tyname name uni fun loc
             -> S.Set (Name, Type Name)
 termCtxDeps vs deps (PIR.Var l n) =
+  -- The vs represent the stack of bound variables that were bound OUTSIDE the term we're
+  -- looking at. note how we do NOT change vs on the PIR.LamAbs case!
   case L.elemIndex (toName n) (map fst vs) of
     Just i  -> S.singleton (unsafeIdx "termCtxDeps" vs i)
     Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
