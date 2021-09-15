@@ -48,6 +48,12 @@ to avoid building GHC when you start the nix shell.
 You might want to consider `direnv` and [`nix-direnv`](https://github.com/nix-community/nix-direnv)
 instead of running `nix-shell` directly.
 
+### Profling Pirouette
+
+To build with profiling enabled, open a nix shell with `nix-shell --arg enableHaskellProfiling true` (
+_WARNING:_ This will take a long time to complete). Once inside the nix shell, you can 
+`cabal build --enable-profiling` and pass `+RTS` options to the executable normally.
+
 ## Usage
 
 Run `cabal run pirouette -- --help` to see an updated list of options.
