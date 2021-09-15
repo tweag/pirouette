@@ -54,7 +54,7 @@ type PIRConstraint tyname name fun
 data Err loc
   = NotYetImplemented loc String
   | NoTermBindAllowed loc
-  | ApplicationError
+  | DependencyComputationOverflow
   deriving (Eq, Show)
 
 -- |Translating to De Bruijn requires us to keep the stack of bound variables, whereas
@@ -131,22 +131,26 @@ bindingCtxDeps :: forall tyname name fun loc
                -> TrM loc ()
 bindingCtxDeps termBinds = do
   deps  <- get
-  deps' <- go termBinds deps M.empty
+  deps' <- go 32 termBinds deps M.empty
   put deps'
   where
     -- The go function below runs a fixpoint computation on a delta over the original dependencies;
-    -- We keep computing a new delta until we find nothing different to add.
-    go :: [(Name, PIR.Term tyname name DefaultUni fun loc)]
+    -- We keep computing a new delta until we find nothing different to add; just to be sure we
+    -- wont loop here, we decrease a gas-counter on every recursive call.
+    go :: Int
+       -> [(Name, PIR.Term tyname name DefaultUni fun loc)]
        -> DepsOf Name
        -> DepsOf Name
        -> TrM loc (DepsOf Name)
-    go xs origDeps delta = do
+    go i xs origDeps delta = do
       vs <- asks termStack
       let currDeps = M.unionWith S.union origDeps delta
       let newDelta = M.fromList $ map (second $ termCtxDeps vs currDeps) xs
+      when (i <= 0) $
+        throwError DependencyComputationOverflow
       if newDelta == delta
       then return currDeps
-      else go xs origDeps newDelta
+      else go (i-1) xs origDeps newDelta
 
 -- |Given a stack of bound variables and a dependency map, compute one step
 -- of the transitive dependencies of a term. For example, let @t@ be
