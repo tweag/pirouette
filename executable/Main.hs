@@ -205,7 +205,7 @@ pirouette :: (MonadIO m) => FilePath -> PrtOpts
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl decls0 -> do
-    let decls = decls0 -- declsUniqueNames decls0
+    let decls = declsUniqueNames decls0
     let defs  = PrtUnorderedDefs decls toplvl
     (eres, msgs) <- runPrtT opts (f defs)
     mapM_ printLogMessage msgs
