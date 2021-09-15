@@ -811,7 +811,7 @@ trFreeName n args = do
     DDestructor ty    -> trDestrApp n ty args
     DFunction r df ty -> do
       tlaAppName n args
-    DTypeDef _        -> throwError' $ PEOther "trFreeName: Found TypeDef where a term was expected"
+    DTypeDef _        -> throwError' $ PEOther $ "trFreeName: Found TypeDef where a term was expected: " ++ show n
 
 -- |Constructs a value of a datatype as a TLA expression.
 trConstrApp :: (PirouetteReadDefs m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
