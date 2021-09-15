@@ -6,6 +6,7 @@
 , compiler-nix-name
 , lib
 , libsodium-vrf
+, enableHaskellProfiling
 }:
 
 let
@@ -49,13 +50,16 @@ let
           # Broken due to haddock errors. Refer to https://github.com/input-output-hk/plutus/blob/master/nix/pkgs/haskell/haskell.nix
           plutus-ledger.doHaddock = false;
           plutus-use-cases.doHaddock = false;
-          
+
           # See https://github.com/input-output-hk/iohk-nix/pull/488
           cardano-crypto-praos.components.library.pkgconfig = lib.mkForce [ [ libsodium-vrf ] ];
           cardano-crypto-class.components.library.pkgconfig = lib.mkForce [ [ libsodium-vrf ] ];
         };
       }
-    ];
+    ] ++ lib.optional enableHaskellProfiling {
+      enableLibraryProfiling = true;
+      enableExecutableProfiling = true;
+    };
   };
 in
   project

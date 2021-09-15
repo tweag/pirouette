@@ -5,7 +5,9 @@
 # developing plutus-starter.
 #
 ########################################################################
-
+{ packages ? import ./nix { inherit enableHaskellProfiling; }
+, enableHaskellProfiling ? false
+}:
 let
   # Here a some of the various attributes for the variable 'packages':
   #
@@ -22,7 +24,6 @@ let
   #     haskell-language-server
   #   }
   # }
-  packages = import ./nix;
 
   inherit (packages) pkgs pirouette;
   project = pirouette.haskell.project;

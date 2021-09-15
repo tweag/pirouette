@@ -2,6 +2,7 @@
 , sources
 , plutus
 , haskell-nix
+, enableHaskellProfiling
 }:
 let
   gitignore-nix = pkgs.callPackage plutus."gitignore.nix" { };
@@ -11,6 +12,7 @@ let
   haskell = pkgs.callPackage ./haskell {
     inherit gitignore-nix sources haskell-nix;
     inherit compiler-nix-name; # Use the same GHC version as plutus
+    inherit enableHaskellProfiling;
     inherit (pkgs) libsodium-vrf;
   };
 

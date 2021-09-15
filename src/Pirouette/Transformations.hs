@@ -137,5 +137,5 @@ expandDefsIn inlinables decls k =
    inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
    inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
      nDef <- M.lookup n inlinables
-     return $ R.appN nDef args
+     Just $ R.appN nDef args
    inlineAll _ _ = Nothing
