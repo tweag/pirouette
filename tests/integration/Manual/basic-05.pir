@@ -54,8 +54,8 @@
       (vardecl twoPossiblePeanoEndos (fun Peano (fun Bool PeanoEndo)))
       (lam freeV Peano (lam choice Bool
         [[ { [ Bool_match choice ] PeanoEndo }
-           [ PeanoEndo (lam y Peano [[psum y] freeV]) ] ]
-           [ PeanoEndo (lam y Peano [[pmul y] freeV]) ] ]
+           [ PE (lam y Peano [[psum y] freeV]) ] ]
+           [ PE (lam y Peano [[pmul y] freeV]) ] ]
     )))
     (datatypebind
       (datatype
