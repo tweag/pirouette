@@ -41,8 +41,6 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Map as M
 
-import           Text.Megaparsec.Error (errorBundlePretty)
-
 -- |Put excessive arguments of a a destructor in the branches.
 -- Because we have n-ary applications, whenever we translate something like:
 --
@@ -136,7 +134,7 @@ deshadowBoundNames = go []
     go bvs (R.App n args) =
       let args' = map (R.argMap id (go bvs)) args
           n' = case n of
-                 R.B _ i -> R.B (R.Ann (bvs !! fromInteger i)) i
+                 R.B _ i -> R.B (R.Ann (unsafeIdx "deshadowBoundNames" bvs $ fromInteger i)) i
                  _       -> n
        in R.App n' args'
 
@@ -189,7 +187,7 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
       (_, tyN, tyArgs, x, ret, cases, excess) <- unDest t
       (tyN', xTyArgs, xIdx, xArgs) <- unCons x
       guard (tyN == tyN')
-      let xCase          = cases !! xIdx
+      let xCase          = unsafeIdx "constrDestrId" cases xIdx
       logTrace $ show tyN
       return $ R.appN (R.appN xCase (map R.Arg xArgs)) excess
 
@@ -209,7 +207,7 @@ chooseHeadCase t ty args fstArg =
   case elemIndex fstArg args of
     Nothing -> throwError' $ PEOther "No argument declared as input"
     Just index ->
-      let tyInput = fst (R.tyFunArgs ty) !! index in
+      let tyInput = unsafeIdx "chooseHeadCase" (fst $ R.tyFunArgs ty) index in
       case nameOf tyInput of
         Nothing -> throwError' $ PEOther "The input is not of a pattern-matchable type"
         Just tyName -> do

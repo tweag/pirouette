@@ -411,7 +411,7 @@ trBoundedSetDef tyName tyVars cons = do
       | tn == tyName = tlaOpApp (tlaIdentPrefixed "BoundedSetOf" tn) . (nMinus1:) $ map (trSimpleType env) args
       | otherwise    = tlaOpApp (tlaIdentPrefixed "SetOf" tn) $ map (trSimpleType env) args
     trSimpleType env (R.TyApp (R.F (TyBuiltin n)) args) = tlaOpApp (trBuiltinType n) (map (trSimpleType env) args)
-    trSimpleType env (R.TyApp (R.B _ i) args) = tlaOpApp (tlaIdent $ env L.!! fromInteger i) $ map (trSimpleType env) args
+    trSimpleType env (R.TyApp (R.B _ i) args) = tlaOpApp (tlaIdent $ unsafeIdx "trSimpleType" env (fromInteger i)) $ map (trSimpleType env) args
 
 trType :: (PirouetteReadDefs m) => PrtType -> TlaT m TLA.AS_Expression
 trType (R.TyApp n args)  = tlaOpApp <$> trTypeVar n <*> mapM trType args
@@ -503,9 +503,9 @@ trBuiltinType PIRTypeUnit       = tlaIdentPrefixed "Plutus" "Unit"
 trBuiltinType PIRTypeBool       = tlaIdentPrefixed "Plutus" "Bool"
 trBuiltinType PIRTypeString     = tlaIdentPrefixed "Plutus" "String"
 trBuiltinType PIRTypeData       = tlaIdentPrefixed "Plutus" "Data"
-trBuiltinType (PIRTypeList t) =
+trBuiltinType (PIRTypeList (Just t)) =
   TLA.AS_OpApp di (tlaIdentPrefixed "Plutus" "List") [trBuiltinType t]
-trBuiltinType (PIRTypePair t u) =
+trBuiltinType (PIRTypePair (Just t) (Just u)) =
   TLA.AS_OpApp di (tlaIdentPrefixed "Plutus" "Pair") [trBuiltinType t, trBuiltinType u]
 
 -- |Returns a TLA quantifier bound. It is used in, for example,
@@ -811,7 +811,7 @@ trFreeName n args = do
     DDestructor ty    -> trDestrApp n ty args
     DFunction r df ty -> do
       tlaAppName n args
-    DTypeDef _        -> throwError' $ PEOther "trFreeName: Found TypeDef where a term was expected"
+    DTypeDef _        -> throwError' $ PEOther $ "trFreeName: Found TypeDef where a term was expected: " ++ show n
 
 -- |Constructs a value of a datatype as a TLA expression.
 trConstrApp :: (PirouetteReadDefs m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression

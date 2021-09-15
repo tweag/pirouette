@@ -24,7 +24,6 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import           Data.Generics.Uniplate.Operations
 
-
 -- |Removes all Even-Odd mutually recursive functions from the program.
 -- When successfull, sets the 'tord' state field with a list of names indicating the order in which
 -- they should be defined so that the dependencies of a term @T@ are defined before @T@.
@@ -139,3 +138,29 @@ expandDefsIn inlinables decls k =
      nDef <- M.lookup n inlinables
      Just $ R.appN nDef args
    inlineAll _ _ = Nothing
+
+-- ** Sanity Checks
+
+-- |Checks that all deBruijn indices make sense, this gets run whenever pirouette
+-- is ran with the @--sanity-check@ flag.
+checkDeBruijnIndices :: (PirouetteReadDefs m) => m ()
+checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
+  allDefs <- prtAllDefs
+  forM_ (M.toList allDefs) $ \(n, def) -> do
+    case defTermMapM (\t -> go 0 0 t >> return t) def of
+      Left err -> logError ("Invalid de Bruijn index for " ++ show n ++ "; " ++ show err)
+               >> logError (renderSingleLineStr (pretty def))
+               >> throwError' (PEOther "Invalid de Bruijn index")
+      Right _  -> return ()
+  where
+    go :: Integer -> Integer -> PrtTerm -> Either String ()
+    go ty term (R.Lam (R.Ann ann) _ t)
+        = go ty (term + 1) t
+    go ty term (R.Abs (R.Ann ann) _ t)
+        = go (ty + 1) term t
+    go ty term (R.App n args) = do
+      mapM_ (R.argElim (const $ return ()) (go ty term)) args
+      case n of
+        R.B _ i -> when (i >= term) $
+                     Left $ "Referencing var " ++ show i ++ " with only " ++ show term ++ " lams"
+        _       -> return ()

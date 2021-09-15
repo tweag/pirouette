@@ -157,6 +157,10 @@ instance Pretty PIRType where
   pretty (PIRTypeList a)   = brackets (sep ["List", pretty a])
   pretty (PIRTypePair a b) = brackets (sep ["Pair", pretty a, pretty b])
 
+instance Pretty (Maybe PIRType) where
+  pretty Nothing  = "-"
+  pretty (Just t) = pretty t
+
 instance (Pretty tyname) => Pretty (TypeBase tyname) where
   pretty (TyBuiltin x)   = pretty x
   pretty (TyFree n)      = pretty n

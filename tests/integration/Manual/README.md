@@ -51,6 +51,15 @@ _PENDING:_ needs to be added to `all.json`
 Tests let-expansion. Our representation of System F has no let-bindings, hence we lift all
 definitions within a let-binding to the outer scope transforming its free variables
 into bound variables, then passing all the necessary arguments on all call sites.
+In this particular example, this is the dependency relation we're encoding:
+
+```haskell
+\ x -> let ds = ... x ...
+           m  = ... r ...
+           r  = ... ds ...
+        in \ n -> let j = ... n ... m ...
+                   in j
+```
 
 ## [Mutual Recursion](mutual-recursion.pir)
 _PENDING:_ Pirouette cannot output valid TLA+ for mutually recursive datatypes; nevertheless, we need to add this to `all.json`

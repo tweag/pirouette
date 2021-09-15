@@ -7,6 +7,8 @@ module Pirouette.Term.Syntax
   , Name(..), ToName(..), TyName
   , separateBoundFrom
   , declsUniqueNames
+  , safeIdx
+  , unsafeIdx
   ) where
 
 import           Pirouette.Term.Syntax.Base    as EXPORT
@@ -24,6 +26,7 @@ import qualified Data.Map.Strict           as M
 import qualified Data.Set                  as S
 import           Data.Data
 import           Data.String
+import           Data.Maybe (fromMaybe)
 
 -- * Top Level Terms and Types
 --
@@ -228,3 +231,15 @@ typeUNSubst = R.tyBimapM return subst
   where
     subst (R.F (TyFree n))  = R.F . TyFree <$> unNameSubst n
     subst x                 = return x
+
+-- ** Utility Functions
+
+safeIdx :: (Integral i) => [a] -> i -> Maybe a
+safeIdx l = go l . fromIntegral
+  where
+    go []     _ = Nothing
+    go (x:_)  0 = Just x
+    go (_:xs) n = go xs (n-1)
+
+unsafeIdx :: (Integral i) => String -> [a] -> i -> a
+unsafeIdx lbl l = fromMaybe (error $ "unsafeIdx: out-of-bounds; " ++ lbl) . safeIdx l
