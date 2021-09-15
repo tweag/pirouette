@@ -179,6 +179,7 @@ mainOpts opts uDefs = do
 
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
+  runReaderT checkDeBruijn uDefs
   oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
@@ -198,7 +199,7 @@ pirouette :: (MonadIO m) => FilePath -> PrtOpts
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl decls0 -> do
-    let decls = declsUniqueNames decls0
+    let decls = decls0 -- declsUniqueNames decls0
     let defs  = PrtUnorderedDefs decls toplvl
     (eres, msgs) <- runPrtT opts (f defs)
     mapM_ printLogMessage msgs
@@ -210,7 +211,7 @@ withDecls :: (MonadIO m, Show l)
           => Program P.TyName P.Name P.DefaultUni P.DefaultFun l
           -> (PrtTerm -> Decls Name P.DefaultFun -> m a)
           -> m a
-withDecls pir cont =
+withDecls pir cont = do
   case runExcept $ trProgram pir of
     Left err         -> putStrLn' (show err) >> liftIO (exitWith ecTranslationError)
     Right (t, decls) -> cont t decls

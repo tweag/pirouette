@@ -36,6 +36,8 @@ import           Control.Monad.Writer
 import           Control.Monad.State
 import           Control.Monad.Reader
 
+import Debug.Trace
+
 -- |Plutus' Internal Representation AST requires a lot of type variables
 -- and constraints; we'll just add a constraint synonym to make it easier
 -- to write this everywhere.
@@ -74,7 +76,7 @@ envEmpty :: Env name
 envEmpty = Env [] []
 
 addDeps :: DepsOf Name -> TrM loc ()
-addDeps d = modify (\ds -> d `M.union` ds)
+addDeps d = modify (\ds -> M.unionWith S.union ds d)
 
 pushNames :: [(name, Type name)] -> Env name -> Env name
 pushNames ns env = env { termStack = ns ++ termStack env }
@@ -138,10 +140,47 @@ bindingCtxDeps termBinds = get >>= go termBinds
        -> TrM loc (DepsOf Name)
     go xs prevDeps = do
       vs <- asks termStack
-      let newDeps = M.fromList $ map (second $ termCtxDeps vs prevDeps) xs
+      let newDeps' = map (second $ termCtxDeps vs prevDeps) xs
+      trace ("Computing deps:\n" ++ unlines (map (\(n, ds) -> "  " ++ show n ++ ": " ++ show ds) newDeps'))
+            (return ())
+      let newDeps = M.fromList newDeps'
       if prevDeps == newDeps
       then return newDeps
       else go xs newDeps
+
+-- |Given a stack of bound variables and a dependency map, compute one step
+-- of the transitive dependencies of a term. For example, let @t@ be
+-- the term: @\a b -> mult x (add a (g b))@
+--
+-- Running:
+-- > termCtxDeps [w,x,y,z] (M.fromList [(g, {z,w}),(h, {z})]) t
+--
+-- Will return:
+-- > S.fromList {x,z,w}
+--
+-- That is, the term @t@ depends on {x}, but since it uses @g@
+-- and @g@ depends on @z@ and @w@, @t@ depends on all of them.
+--
+termCtxDeps :: forall tyname name uni fun loc
+             . (PIRConstraint tyname name fun)
+            => [(Name, Type Name)]
+            -> DepsOf Name
+            -> PIR.Term tyname name uni fun loc
+            -> S.Set (Name, Type Name)
+termCtxDeps vs deps (PIR.Var l n) =
+  case L.elemIndex (toName n) (map fst vs) of
+    Just i  -> S.singleton (unsafeIdx "termCtxDeps" vs i)
+    Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
+termCtxDeps vs deps (PIR.LamAbs _ _ _ t)    = termCtxDeps vs deps t -- TODO: What happens in case there is name shadowing? We'll mess this up!
+termCtxDeps vs deps (PIR.Apply _ tfun targ) = S.union (termCtxDeps vs deps tfun) (termCtxDeps vs deps targ)
+termCtxDeps vs deps (PIR.TyInst _ t _)      = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.TyAbs _ _ _ t)     = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.IWrap _ _ _ t)     = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.Unwrap _ t)        = termCtxDeps vs deps t
+termCtxDeps vs deps (PIR.Let _ _ bs t)      =
+  S.union (termCtxDeps vs deps t)
+          (S.unions (map (either (termCtxDeps vs deps . fst . snd) (const S.empty) . eitherDataTerm) $ NE.toList bs))
+termCtxDeps _ _ _ = S.empty
 
 -- |Handles a data/type binding by creating a number of declarations for the constructors
 -- and desctructors involved.
@@ -272,41 +311,6 @@ trTerm mn t = do
                           . (\x -> (R.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs)) . fst)
                    $ S.toList ns
           return $ R.App (R.F $ FreeName n) args
-
-
--- |Given a stack of bound variables and a dependency map, compute one step
--- of the transitive dependencies of a term. For example, let @t@ be
--- the term: @\a b -> mult x (add a (g b))@
---
--- Running:
--- > termCtxDeps [w,x,y,z] (M.fromList [(g, {z,w}),(h, {z})]) t
---
--- Will return:
--- > S.fromList {x,z,w}
---
--- That is, the term @t@ depends on {x}, but since it uses @g@
--- and @g@ depends on @z@ and @w@, @t@ depends on all of them.
---
-termCtxDeps :: forall tyname name uni fun loc
-             . (PIRConstraint tyname name fun)
-            => [(Name, Type Name)]
-            -> DepsOf Name
-            -> PIR.Term tyname name uni fun loc
-            -> S.Set (Name, Type Name)
-termCtxDeps vs deps (PIR.Var l n) = do
-  case L.elemIndex (toName n) (map fst vs) of
-    Just i  -> S.singleton (vs !! i)
-    Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
-termCtxDeps vs deps (PIR.LamAbs _ _ _ t)    = termCtxDeps vs deps t -- TODO: What happens in case there is name shadowing? We'll mess this up!
-termCtxDeps vs deps (PIR.Apply _ tfun targ) = S.union (termCtxDeps vs deps tfun) (termCtxDeps vs deps targ)
-termCtxDeps vs deps (PIR.TyInst _ t _)      = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.TyAbs _ _ _ t)     = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.IWrap _ _ _ t)     = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.Unwrap _ t)        = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.Let _ _ bs t)      =
-  S.union (termCtxDeps vs deps t)
-          (S.unions (map (either (termCtxDeps vs deps . fst . snd) (const S.empty) . eitherDataTerm) $ NE.toList bs))
-termCtxDeps _ _ _ = S.empty
 
 --------------------------------
 -- Auxiliary Functions Follow --

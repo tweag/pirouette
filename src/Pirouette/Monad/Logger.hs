@@ -68,6 +68,9 @@ class (Monad m) => MonadLogger m where
   logWarn  :: String -> m ()
   logWarn  = logMsg WARN
 
+  logError  :: String -> m ()
+  logError  = logMsg ERROR
+
 newtype LoggerT m a = LoggerT { unLogger :: WriterT LogMessages (ReaderT [String] m) a }
   deriving newtype (Functor, Applicative, Monad, MonadIO)
 
