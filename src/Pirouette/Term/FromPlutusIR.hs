@@ -52,7 +52,6 @@ type PIRConstraint tyname name fun
 data Err loc
   = NotYetImplemented loc String
   | NoTermBindAllowed loc
-  | DependencyComputationOverflow
   deriving (Eq, Show)
 
 -- |Translating to De Bruijn requires us to keep the stack of bound variables, whereas
@@ -142,7 +141,7 @@ bindingCtxDeps termBinds = do
       vs <- asks termStack
       let currDeps = M.unionWith S.union origDeps delta
       let newDelta = M.fromList $ map (second $ termCtxDeps vs currDeps) xs
-      if M.null newDelta
+      if delta == newDelta
       then return currDeps
       else go xs origDeps newDelta
 
