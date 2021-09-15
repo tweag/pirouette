@@ -9,6 +9,10 @@ write-ghc-environment-files: never
 tests: true
 benchmarks: false
 
+-- Profiling related options
+package plutus-core
+  ghc-options: -fexternal-interpreter
+
 -- Plutus revision from 2021/06/11
 source-repository-package
   type: git

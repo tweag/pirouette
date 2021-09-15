@@ -1,6 +1,8 @@
-{ nixpkgs ? import <nixpkgs> {} }:
+{ nixpkgs ? import <nixpkgs> {}
+, enableHaskellProfiling ? false
+, packages ? import ./. { inherit enableHaskellProfiling; }
+}:
 let
-  packages = import ./.;
   inherit (packages) pkgs pirouette;
   inherit (pirouette) haskell;
 
