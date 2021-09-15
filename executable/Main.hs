@@ -82,7 +82,6 @@ data CliOpts = CliOpts
   , skeleton      :: Maybe FilePath
   , pruneMaybe    :: Bool
   , tySpecializer :: [String]
-  , transfo       :: Maybe FilePath
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -182,15 +181,15 @@ mainOpts opts uDefs = do
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
   oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
-  mRules <- traverse parseFileTransfo (transfo opts)
+  mRules <- parseFileTransfo transfoFilePath
   postDs <- runReaderT (sequence $ M.map (processOne mRules) $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
     generalTransformations :: (PirouetteReadDefs m)
-                           => Maybe [RewritingRule PrtTerm PrtTerm] -> PrtTerm -> m PrtTerm
+                           => [RewritingRule PrtTerm PrtTerm] -> PrtTerm -> m PrtTerm
     generalTransformations mRules =
-          maybe return (flip (foldM (flip applyTransfo))) mRules
-      >=> constrDestrId
+          constrDestrId
+      >=> flip (foldM (flip applyTransfo)) mRules
       >=> removeExcessiveDestArgs
 
     processOne = defTermMapM . generalTransformations
@@ -292,7 +291,6 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseSkeletonFile
                        <*> parsePruneMaybe
                        <*> parseTySpecializer
-                       <*> parseTransfo
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -356,13 +354,6 @@ parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
   where
     r :: String -> [String]
     r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x,y]) . filter (/= ' ')
-
-parseTransfo :: Opt.Parser (Maybe FilePath)
-parseTransfo = Opt.option (fmap Just Opt.str)
-                 (  Opt.metavar "FILE"
-                 <> Opt.long "transfo"
-                 <> Opt.value Nothing
-                 <> Opt.help "Uses the transformations in the given file.")
 
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")

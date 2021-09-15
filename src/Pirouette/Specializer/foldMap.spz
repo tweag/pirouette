@@ -1,7 +1,0 @@
-foldableNilEndo:
-  lhs: "[[[[{{fFoldableNil_cfoldMap m0_} a1_} [[{CConsMonoid (fun t21_ t22_)} o3_] n4_]] f5_] l6_] x7_]"
-  rhs: "[[[{{foldr a1_} t22_} (lam aSpz a1_ (lam bSpz t22_ [[f5_ aSpz] bSpz]))] x7_] l6_]"
-
-foldableNilOther:
-  lhs: "[[[{{fFoldableNil_cfoldMap m0_} a1_} [[{CConsMonoid t2_} o3_] n4_]] f5_] l6_]"
-  rhs: "[[[{{foldr a1_} t2_} (lam aSpz a1_ (lam bSpz t2_ [[o3_ [f5_ aSpz]] bSpz]))] n4_] l6_]"

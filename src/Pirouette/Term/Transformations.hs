@@ -42,95 +42,6 @@ import qualified Data.Map as M
 
 import           Text.Megaparsec.Error (errorBundlePretty)
 
--- * Monomorphic Transformations
-
--- |Removes superfluous Bool-match. For example,
---
--- > [b/ifThenElse [b/greaterThanEqualsInteger m n] c/True/Bool c/False/Bool]
---
--- Could be simply:
---
--- > [b/greaterThanEqualsInteger m n]
---
--- WARNING: Before specializing plutus booleans to TLA booleans, this transformation
--- can break things. In the example above, @b/greaterThanEqualsInteger@ returns a plutus builtin boolean,
--- whereas the @ifThenElse@ is returning an element of a @(datatypedecl ... Bool)@.
---
-etaIfThenElse :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
-etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
-  where
-    go r@(R.App (R.F n) [R.TyArg _, R.Arg x, R.Arg t, R.Arg f]) = do
-      pt <- termIsBoolVal True t
-      pf <- termIsBoolVal False f
-      if nameIsITE n && pt && pf
-      then logTrace mempty >> return x
-      else return r
-    go r = return r
-
--- * Polymorphic Transformations
-
--- |Specialize @cfoldableNil_cfoldMap@ applied to the disjunctive bool and endofunction monoids
-cfoldmapSpecialize :: forall m . (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
-cfoldmapSpecialize = fmap deshadowBoundNames . pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
-  where
-    isCfoldmap :: (Monad t) => PrtTerm -> MaybeT t (PrtType, PrtType, [PrtTerm])
-    isCfoldmap (R.App (R.F (FreeName n)) (R.TyArg m : R.TyArg a : args)) = do
-      guard ("fFoldableNil_cfoldMap" `T.isPrefixOf` nameString n)
-      args' <- mapM (wrapMaybe . R.fromArg) args
-      return (m , a , args')
-    isCfoldmap _ = fail "not cfoldmap"
-
-    go :: PrtTerm -> MaybeT m PrtTerm
-    go t = do
-      (m, a, args) <- isCfoldmap t
-      tyIsBool <- lift $ typeIsBool m
-      if tyIsBool
-      then do
-        res <- goBool m a args
-        logDebug ("Specializing: " ++ renderSingleLineStr (pretty t))
-        logDebug ("  for: " ++ renderSingleLineStr (pretty res))
-        return res
-      else case m of
-        R.TyFun t u | t == u -> goEndo t a args
-        _ -> logWarn ("Can't specialize for " ++ renderSingleLineStr (pretty m))
-          >> fail ""
-
-    -- foldr_135 (all a_136 (type) (all b_137 (type) (fun (fun a_136 (fun b_137 b_137)) (fun b_137 (fun [List_29 a_136] b_137)))))
-
-    -- fFoldableNil_cfoldMap_200 (all m_201 (type) (all a_202 (type) (fun [Monoid_130 m_201] (fun (fun a_202 m_201) (fun [List_29 a_202] m_201)))))
-
-    goBool :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
-    goBool m a [mon,f,xs] = do
-      foldrName <- lift $ nameForPrefix "foldr"
-      boolMatch <- lift $ nameForPrefix "Bool_match"
-      true      <- lift $ nameForPrefix "True"
-      false     <- lift $ nameForPrefix "False"
-      let annA = R.Ann "a"
-          annB = R.Ann "b"
-          -- gene = \ a b -> f a || b
-          gene = R.Lam annA a $ R.Lam annB m $ R.App (R.F $ FreeName boolMatch)
-                 [ R.Arg (R.app (shift 2 f) (R.Arg $ R.App (R.B annA 1) []))
-                 , R.TyArg m
-                 , R.Arg (R.App (R.F $ FreeName true) [])
-                 , R.Arg (R.App (R.B annB 0) [])
-                 ]
-          zero = R.App (R.F $ FreeName false) []
-      return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg zero, R.Arg xs]
-
-    goEndo :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
-    goEndo m a [mon,f,xs,k] = do
-      foldrName <- lift $ nameForPrefix "foldr"
-      let annA = R.Ann "a"
-          annB = R.Ann "b"
-          -- gene = \ a b -> f a b
-          gene = R.Lam annA a $ R.Lam annB m $ R.appN (shift 2 f)
-                 [ R.Arg (R.App (R.B annA 1) [])
-                 , R.Arg (R.App (R.B annB 0) [])
-                 ]
-       in return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg k, R.Arg xs]
-
-
-
 -- |Put excessive arguments of a a destructor in the branches.
 -- Because we have n-ary applications, whenever we translate something like:
 --
@@ -411,7 +322,7 @@ applyTransfo (RewritingRule name lhs rhs) t =
       if haveSameString nL nT then Just M.empty else Nothing
     isVarInstance (R.B _ i) (R.F _) = Nothing
     isVarInstance (R.B _ i) (R.B _ j) =
-      if i == j  then Just M.empty else Nothing
+      if i == j then Just M.empty else Nothing
     isVarInstance _ _ = Nothing
 
     isTyInstance :: Int -> PrtType -> PrtType -> Maybe (M.Map String PrtArg)

@@ -1,3 +1,0 @@
-etaIfThenElse:
-  lhs : "[[[{(builtin ifThenElse) A1_} x2_ ] True] False]"
-  rhs: "x2_"

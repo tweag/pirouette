@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Pirouette.Specializer.Rewriting where
 
@@ -14,8 +15,11 @@ import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
 
 import           Control.Monad.Except
-import           GHC.Generics
+import Language.Haskell.TH
+import System.Directory
+import System.FilePath
 
+import Data.Functor
 import qualified Data.Text           as T
 import qualified Data.Text.IO        as T
 import qualified Data.Yaml           as Yaml
@@ -25,14 +29,20 @@ data RewritingRule l r = RewritingRule {
   name :: T.Text,
   lhs  :: l,
   rhs  :: r
-} deriving (Show, Generic)
+} deriving Show
+
+transfoFilePath :: String
+transfoFilePath = takeDirectory $(do
+    dir <- runIO getCurrentDirectory
+    filename <- loc_filename <$> location
+    litE $ stringL $ dir </> filename) ++ "/PIR-transformations.spz"
 
 parseFileTransfo :: (MonadIO m)
                  => FilePath -> m [RewritingRule PrtTerm PrtTerm]
 parseFileTransfo fileName = do
   v <- Yaml.decodeFileThrow fileName
   let res = Yaml.parseEither yamlObjToRewRules v
-  either (error . show) return $ res
+  either (error . show) return res
 
   where
 

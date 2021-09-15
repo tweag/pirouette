@@ -13,11 +13,6 @@ extra-source-files:
     LICENSE
     README.md
 
-common lang
-    ghc-options:
-      -fprof-auto
-      "-with-rtsopts=-N -p -s -h -i0.1"
-
 library
   exposed-modules:
       Pirouette.Monad
@@ -53,6 +48,8 @@ library
     , bytestring
     , containers
     , deriving-compat
+    , directory
+    , filepath
     , flat >=0.4.5
     , freer-extras
     , gitrev
@@ -65,6 +62,7 @@ library
     , parsec
     , plutus-core
     , prettyprinter
+    , template-haskell
     , text
     , tlaplus
     , tlaplus-qq
@@ -86,6 +84,8 @@ executable pirouette
     , bytestring
     , containers
     , deriving-compat
+    , directory
+    , filepath
     , flat >=0.4.5
     , freer-extras
     , gitrev
@@ -99,6 +99,7 @@ executable pirouette
     , pirouette
     , plutus-core
     , prettyprinter
+    , template-haskell
     , text
     , tlaplus
     , tlaplus-qq
@@ -125,6 +126,8 @@ test-suite spec
     , bytestring
     , containers
     , deriving-compat
+    , directory
+    , filepath
     , flat >=0.4.5
     , freer-extras
     , gitrev
@@ -138,6 +141,7 @@ test-suite spec
     , pirouette
     , plutus-core
     , prettyprinter
+    , template-haskell
     , text
     , tlaplus
     , tlaplus-qq

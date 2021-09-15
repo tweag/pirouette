@@ -32,6 +32,9 @@ dependencies:
   - deriving-compat
   - yaml
   - unordered-containers
+  - template-haskell
+  - directory
+  - filepath
 
 library:
   source-dirs: src
