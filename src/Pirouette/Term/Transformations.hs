@@ -374,24 +374,27 @@ chooseHeadCase t ty args fstArg =
 
 applyTransfo :: (PirouetteReadDefs m)
              => RewritingRule PrtTerm PrtTerm -> PrtTerm -> m PrtTerm
-applyTransfo (RewritingRule _ lhs rhs) t =
-  deshadowBoundNames <$> rewriteM (traverse (flip (instantiate 0 0) rhs) . isInstance 0 0 lhs) t
+applyTransfo (RewritingRule name lhs rhs) t =
+  deshadowBoundNames <$> rewriteM (traverse (flip instantiate rhs) . isInstance lhs) t
   where
-    isInstance :: Int -> Int -> PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
-    isInstance nTe nTy (R.App vL@(R.F (FreeName x)) []) t =
+    isInstance :: PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstance = isInstanceUnder 0 0
+
+    isInstanceUnder :: Int -> Int -> PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstanceUnder nTe nTy (R.App vL@(R.F (FreeName x)) []) t =
       case isHole x of
         Nothing ->
           case t of
             R.App vT [] -> isVarInstance vL vT
             _ -> Nothing
         Just i -> Just $ M.singleton i (R.Arg $ shift (toInteger (- nTe)) t)
-    isInstance nTe nTy  (R.App vL argsL) (R.App vT argsT) =
+    isInstanceUnder nTe nTy  (R.App vL argsL) (R.App vT argsT) =
       foldl' M.union <$> isVarInstance vL vT <*> zipWithM (isArgInstance nTe nTy) argsL argsT
-    isInstance nTe nTy  (R.Lam _ tyL tL) (R.Lam _ tyT tT) =
-      M.union <$> isInstance (nTe + 1) nTy tL tT <*> isTyInstance nTy tyL tyT
-    isInstance nTe nTy (R.Abs _ _ tL) (R.Abs _ _ tT) =
-      isInstance nTe (nTy + 1) tL tT
-    isInstance nTe nTy _ _ = Nothing
+    isInstanceUnder nTe nTy  (R.Lam _ tyL tL) (R.Lam _ tyT tT) =
+      M.union <$> isInstanceUnder (nTe + 1) nTy tL tT <*> isTyInstance nTy tyL tyT
+    isInstanceUnder nTe nTy (R.Abs _ _ tL) (R.Abs _ _ tT) =
+      isInstanceUnder nTe (nTy + 1) tL tT
+    isInstanceUnder nTe nTy _ _ = Nothing
 
     isVarInstance :: PrtVar -> PrtVar -> Maybe (M.Map String PrtArg)
     isVarInstance vL@(R.F (FreeName x)) vT =
@@ -446,13 +449,17 @@ applyTransfo (RewritingRule _ lhs rhs) t =
     isTyVarInstance _ _ = Nothing
 
     isArgInstance :: Int -> Int -> PrtArg -> PrtArg -> Maybe (M.Map String PrtArg)
-    isArgInstance nTe nTy (R.Arg tL) (R.Arg tT) = isInstance nTe nTy tL tT
+    isArgInstance nTe nTy (R.Arg tL) (R.Arg tT) = isInstanceUnder nTe nTy tL tT
     isArgInstance nTe nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
     isArgInstance nTe nTy _ _ = Nothing
 
     instantiate :: (PirouetteReadDefs m)
+                => M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiate = instantiateUnder 0 0
+
+    instantiateUnder :: (PirouetteReadDefs m)
                 => Int -> Int -> M.Map String PrtArg -> PrtTerm -> m PrtTerm
-    instantiate nTe nTy m tt@(R.App v@(R.F (FreeName x)) args) =do
+    instantiateUnder nTe nTy m tt@(R.App v@(R.F (FreeName x)) args) =do
       case isHole x of
         Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
         Just i ->
@@ -461,12 +468,12 @@ applyTransfo (RewritingRule _ lhs rhs) t =
             Just (R.Arg t) ->
               R.appN (shift (toInteger nTe) t) <$> mapM (instantiateArg nTe nTy m) args
             Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ " is at a term position on the right hand side, but was a type on the left-hand side."
-    instantiate nTe nTy m (R.App v args) =
+    instantiateUnder nTe nTy m (R.App v args) =
       R.App v <$> mapM (instantiateArg nTe nTy m) args
-    instantiate nTe nTy m (R.Lam ann ty t) =
-      R.Lam ann <$> instantiateTy nTy m ty <*> instantiate (nTe + 1) nTy m t
-    instantiate nTe nTy m (R.Abs ann k t) =
-      R.Abs ann k <$> instantiate nTe (nTy + 1) m t
+    instantiateUnder nTe nTy m (R.Lam ann ty t) =
+      R.Lam ann <$> instantiateTy nTy m ty <*> instantiateUnder (nTe + 1) nTy m t
+    instantiateUnder nTe nTy m (R.Abs ann k t) =
+      R.Abs ann k <$> instantiateUnder nTe (nTy + 1) m t
 
     instantiateTy :: (PirouetteReadDefs m)
                   => Int -> M.Map String PrtArg -> PrtType -> m PrtType
@@ -490,7 +497,7 @@ applyTransfo (RewritingRule _ lhs rhs) t =
 
     instantiateArg :: (PirouetteReadDefs m)
                    => Int -> Int -> M.Map String PrtArg -> PrtArg -> m PrtArg
-    instantiateArg nTe nTy m (R.Arg t) = R.Arg <$> instantiate nTe nTy m t
+    instantiateArg nTe nTy m (R.Arg t) = R.Arg <$> instantiateUnder nTe nTy m t
     instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
 
     isHole :: Name -> Maybe String
