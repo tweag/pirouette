@@ -18,6 +18,7 @@ import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
 import           Pirouette.Specializer.Rewriting
+import           Pirouette.Specializer.PIRTransformations
 import           Pirouette.PlutusIR.Utils
 
 import qualified PlutusIR.Parser    as PIR
@@ -283,11 +284,17 @@ chooseHeadCase t ty args fstArg =
 -- For instance, one would like to write something like:
 -- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
 
-applyTransfo :: (PirouetteReadDefs m)
-             => RewritingRule PrtTerm PrtTerm -> PrtTerm -> m PrtTerm
-applyTransfo (RewritingRule name lhs rhs) t =
-  deshadowBoundNames <$> rewriteM (traverse (flip instantiate rhs) . isInstance lhs) t
+applyRewRules :: (PirouetteReadDefs m)
+              => PrtTerm -> m PrtTerm
+applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
+
   where
+
+    applyOneRule :: (PirouetteReadDefs m)
+                 => RewritingRule PrtTerm PrtTerm -> PrtTerm -> m PrtTerm
+    applyOneRule (RewritingRule name lhs rhs) t =
+      deshadowBoundNames <$> rewriteM (traverse (flip instantiate rhs) . isInstance lhs) t
+
     isInstance :: PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
     isInstance = isInstanceUnder 0 0
 

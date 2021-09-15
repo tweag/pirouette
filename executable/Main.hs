@@ -181,18 +181,17 @@ mainOpts opts uDefs = do
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
   oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
-  mRules <- parseFileTransfo transfoFilePath
-  postDs <- runReaderT (sequence $ M.map (processOne mRules) $ prtDecls oDefs) oDefs
+  postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
     generalTransformations :: (PirouetteReadDefs m)
-                           => [RewritingRule PrtTerm PrtTerm] -> PrtTerm -> m PrtTerm
-    generalTransformations mRules =
+                           => PrtTerm -> m PrtTerm
+    generalTransformations =
           constrDestrId
-      >=> flip (foldM (flip applyTransfo)) mRules
+      >=> applyRewRules
       >=> removeExcessiveDestArgs
 
-    processOne = defTermMapM . generalTransformations
+    processOne = defTermMapM generalTransformations
 
 -- ** Auxiliar Defs
 
