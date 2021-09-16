@@ -34,6 +34,7 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
 
+import           Data.Data
 import           Data.Foldable
 import           Data.Functor ( ($>) )
 import           Data.Maybe ( mapMaybe, isJust, catMaybes )
@@ -229,8 +230,13 @@ applyFunIdent arity = tlaIdent $ "apply" <> show arity
 applyFunArgs :: Int -> [TLA.AS_Expression]
 applyFunArgs arity = [ tlaIdent $ "x" <> show n | n <- [1..arity] ]
 
+data DefunClosureInfo = DefunClosureInfo
+  { savedBody :: TLA.AS_Expression
+  , freeVarNames :: S.Set String
+  }
+
 newtype DefunState = DefunState
-  { defunDefs :: M.Map Int (Seq TLA.AS_Expression)
+  { defunDefs :: M.Map Int (Seq DefunClosureInfo)
   }
 
 defunState0 :: DefunState
@@ -240,33 +246,40 @@ defunState0 = DefunState mempty
 saveDefun :: (MonadState DefunState m)
           => Int
           -> TLA.AS_Expression
+          -> S.Set String
           -> m Int
-saveDefun arity fun = do
+saveDefun arity fun freevars = do
   allFuns <- gets defunDefs
   let thisArityFuns = M.findWithDefault mempty arity allFuns
-  modify' $ \st -> st { defunDefs = M.insert arity (thisArityFuns |> fun) allFuns }
+  modify' $ \st -> st { defunDefs = M.insert arity (thisArityFuns |> DefunClosureInfo fun freevars) allFuns }
   pure $ Seq.length thisArityFuns
 
-genApply :: Int -> Seq TLA.AS_Expression -> TLA.AS_UnitDef
-genApply arity cases = tlaOpDef (applyFunIdent arity) (lbl : args) $ TLA.AS_Case di arms Nothing
+funargNames :: [TLA.AS_QBoundN] -> [String]
+funargNames = fmap (\(TLA.AS_QBoundN [TLA.AS_Ident _ [] name] _) -> name)
+
+defunClosureLabel, defunClosureFreeVars :: String
+defunClosureLabel = "label"
+defunClosureFreeVars = "freevars"
+
+genApply :: Int -> Seq DefunClosureInfo -> TLA.AS_UnitDef
+genApply arity cases = tlaOpDef (applyFunIdent arity) (clos : args) $ TLA.AS_Case di arms Nothing
   where
     args = applyFunArgs arity
-    arms = [ TLA.AS_CaseArm di (isIndex idx) (unwrapFunBody expr)
-           | (idx, expr) <- zip [0..] $ toList cases
+    arms = [ TLA.AS_CaseArm di (isIndex idx) (unwrapFunBody freevars expr)
+           | (idx, DefunClosureInfo expr freevars) <- zip [0..] $ toList cases
            ]
 
-    lbl = tlaIdent "label"
-    isIndex idx = lbl `tlaEq` defunLabel arity idx
+    clos = tlaIdent "closure"
+    isIndex idx = (clos `tlaProj'` defunClosureLabel) `tlaEq` defunLabel arity idx
 
-    unwrapFunBody (TLA.AS_QuantifierBoundFunction _ funargs expr) = transformBi (replaceArgs funargNames) expr
-      where
-       funargNames = (\(TLA.AS_QBoundN [TLA.AS_Ident _ [] name] _) -> name) <$> funargs
-    unwrapFunBody expr = error $ "Unexpected expression: " <> show expr
+    unwrapFunBody freevars (TLA.AS_QuantifierBoundFunction _ funargs expr) = transformBi (replaceArgs freevars (funargNames funargs)) expr
+    unwrapFunBody _        expr = error $ "Unexpected expression: " <> show expr
 
-    replaceArgs funargs expr@(TLA.AS_Ident _ [] name)
+    replaceArgs freevars funargs expr@(TLA.AS_Ident _ [] name)
       | Just val <- lookup name (zip funargs args) = val
+      | name `S.member` freevars = clos `tlaProj'` defunClosureFreeVars `tlaProj'` name
       | otherwise = expr
-    replaceArgs _       expr = expr
+    replaceArgs _        _       expr = expr
 
 genApplies :: DefunState -> [TLA.AS_UnitDef]
 genApplies st = uncurry genApply <$> M.toList (defunDefs st)
@@ -279,16 +292,33 @@ genAppliesFwdDecls st = genFwdDecl <$> M.keys (defunDefs st)
 defunCtor :: (MonadState DefunState m)
           => TLA.AS_UnitDef
           -> m TLA.AS_UnitDef
-defunCtor = transformBiM defunApp
+defunCtor (TLA.AS_OperatorDef opinfo flag h@(TLA.AS_OpHead _ args) expr) = TLA.AS_OperatorDef opinfo flag h <$> goTree (vars args) expr
   where
-    defunApp (TLA.AS_OpApp info expr args) = TLA.AS_OpApp info expr <$> mapM defunArg args
-    defunApp expr = pure expr
+    goTree inScope (TLA.AS_OpApp info expr args)
+        = TLA.AS_OpApp info <$> goTree inScope expr <*> mapM (goTree inScope >=> defunArg inScope) args
+    goTree inScope (TLA.AS_QuantifierBoundFunction info funargs expr)
+        = TLA.AS_QuantifierBoundFunction info funargs <$> goTree (inScope <> S.fromList (funargNames funargs)) expr
+    goTree inScope (TLA.AS_Lambda info funargs expr)
+        = TLA.AS_Lambda info funargs <$> goTree (inScope <> vars funargs) expr
+    goTree inScope expr = descendM (goTree inScope) expr
 
-    defunArg arg@(TLA.AS_QuantifierBoundFunction _ funargs _) = do
+    defunArg inScope arg@(TLA.AS_QuantifierBoundFunction _ funargs expr) = do
       let arity = length funargs
-      curIdx <- saveDefun arity arg
-      pure $ defunLabel arity curIdx
-    defunArg arg = pure arg
+      let freevars = inScope `S.intersection` vars expr
+          varsMap = TLA.AS_RecordFunction di [ TLA.AS_MapTo (TLA.AS_Field var) (TLA.AS_Ident di [] var)
+                                             | var <- S.toList freevars
+                                             ]
+      curIdx <- saveDefun arity arg freevars
+      pure $ TLA.AS_RecordFunction di [ TLA.AS_MapTo (TLA.AS_Field defunClosureLabel) (defunLabel arity curIdx)
+                                      , TLA.AS_MapTo (TLA.AS_Field defunClosureFreeVars) varsMap
+                                      ]
+    defunArg _ arg = pure arg
+
+    vars :: Data ast => ast -> S.Set String
+    vars ast = S.fromList [ name
+                          | TLA.AS_Ident _ [] name <- universeBi ast
+                          ]
+defunCtor def = pure def
 
 defunDtor :: TLA.AS_UnitDef -> TLA.AS_UnitDef
 defunDtor = transformBi f
