@@ -57,6 +57,7 @@
   , "options"    : "-s ho-constr.skel --prefix transition -a INPUT"
   , "tla"        : "tlacli check --constant MAXDEPTH 4 --property Inv -- HOConstr.tla"
   , "expected"   : "Counter-example"
+  , "pending"    : "Waiting until general defunctionalization work"
   }
 
 , { "name"       : "GameStateMachine"
