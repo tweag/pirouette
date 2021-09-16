@@ -63,11 +63,8 @@ runPrtTest extras =
 
 -- * Actual Tests
 
-spec = do
-  describe "cfoldmapSpecialize" $ do
-    it "works for cfoldmapSpecialize" $
-      runPrtTest ["foldr0", "Bool_match", "True", "False"]
-        (cfoldmapSpecialize tcfoldBool) `shouldBe` tcfoldBoolSpec
+spec :: SpecWith ()
+spec = return ()
 
 -- The test terms grouped by their categories
 

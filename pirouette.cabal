@@ -13,11 +13,6 @@ extra-source-files:
     LICENSE
     README.md
 
-common lang
-    ghc-options:
-      -fprof-auto
-      "-with-rtsopts=-N -p -s -h -i0.1"
-
 library
   exposed-modules:
       Pirouette.Monad
@@ -27,6 +22,8 @@ library
       Pirouette.PlutusIR.Utils
       Pirouette.Specializer
       Pirouette.Specializer.Basics
+      Pirouette.Specializer.PIRTransformations
+      Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.ConstraintTree
       Pirouette.Term.FromPlutusIR

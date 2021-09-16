@@ -26,6 +26,7 @@ import Pirouette.Term.Transformations
 import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
+import Pirouette.Specializer.Rewriting
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
@@ -190,13 +191,14 @@ processDecls opts uDefs = do
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
-   generalTransformations :: PirouetteReadDefs m => PrtTerm -> m PrtTerm
-   generalTransformations
-      =   constrDestrId
+    generalTransformations :: (PirouetteReadDefs m)
+                           => PrtTerm -> m PrtTerm
+    generalTransformations =
+          constrDestrId
+      >=> applyRewRules
       >=> removeExcessiveDestArgs
-      >=> cfoldmapSpecialize
 
-   processOne = defTermMapM generalTransformations
+    processOne = defTermMapM generalTransformations
 
 -- ** Auxiliar Defs
 

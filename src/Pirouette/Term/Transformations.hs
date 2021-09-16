@@ -6,17 +6,22 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE TypeApplications     #-}
 
 module Pirouette.Term.Transformations where
 
 import           Pirouette.Monad
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
+import           Pirouette.Term.FromPlutusIR
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
+import           Pirouette.Specializer.Rewriting
+import           Pirouette.Specializer.PIRTransformations
 import           Pirouette.PlutusIR.Utils
 
+import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore as P
 import           Control.Applicative
 import           Control.Arrow (first, second, (&&&))
@@ -30,101 +35,11 @@ import           Data.Generics.Uniplate.Data
 import           Data.Generics.Uniplate.Operations
 import           Data.List (elemIndex, groupBy, transpose, foldl', span, lookup)
 import           Data.String (fromString)
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (fromMaybe, isJust, fromJust)
 import           Data.Text.Prettyprint.Doc hiding (pretty)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Map as M
-
-import Debug.Trace
-
--- * Monomorphic Transformations
-
--- |Removes superfluous Bool-match. For example,
---
--- > [b/ifThenElse [b/greaterThanEqualsInteger m n] c/True/Bool c/False/Bool]
---
--- Could be simply:
---
--- > [b/greaterThanEqualsInteger m n]
---
--- WARNING: Before specializing plutus booleans to TLA booleans, this transformation
--- can break things. In the example above, @b/greaterThanEqualsInteger@ returns a plutus builtin boolean,
--- whereas the @ifThenElse@ is returning an element of a @(datatypedecl ... Bool)@.
---
-etaIfThenElse :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
-etaIfThenElse = pushCtx "etaIfThenElse" . transformM go
-  where
-    go r@(R.App (R.F n) [R.TyArg _, R.Arg x, R.Arg t, R.Arg f]) = do
-      pt <- termIsBoolVal True t
-      pf <- termIsBoolVal False f
-      if nameIsITE n && pt && pf
-      then logTrace mempty >> return x
-      else return r
-    go r = return r
-
--- * Polymorphic Transformations
-
--- |Specialize @cfoldableNil_cfoldMap@ applied to the disjunctive bool and endofunction monoids
-cfoldmapSpecialize :: forall m . (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
-cfoldmapSpecialize = fmap deshadowBoundNames . pushCtx "cfoldmapSpecialize" . rewriteM (runMaybeT . go)
-  where
-    isCfoldmap :: (Monad t) => PrtTerm -> MaybeT t (PrtType, PrtType, [PrtTerm])
-    isCfoldmap (R.App (R.F (FreeName n)) (R.TyArg m : R.TyArg a : args)) = do
-      guard ("fFoldableNil_cfoldMap" `T.isPrefixOf` nameString n)
-      args' <- mapM (wrapMaybe . R.fromArg) args
-      return (m , a , args')
-    isCfoldmap _ = fail "not cfoldmap"
-
-    go :: PrtTerm -> MaybeT m PrtTerm
-    go t = do
-      (m, a, args) <- isCfoldmap t
-      tyIsBool <- lift $ typeIsBool m
-      if tyIsBool
-      then do
-        res <- goBool m a args
-        logDebug ("Specializing: " ++ renderSingleLineStr (pretty t))
-        logDebug ("  for: " ++ renderSingleLineStr (pretty res))
-        return res
-      else case m of
-        R.TyFun t u | t == u -> goEndo t a args
-        _ -> logWarn ("Can't specialize for " ++ renderSingleLineStr (pretty m))
-          >> fail ""
-
-    -- foldr_135 (all a_136 (type) (all b_137 (type) (fun (fun a_136 (fun b_137 b_137)) (fun b_137 (fun [List_29 a_136] b_137)))))
-
-    -- fFoldableNil_cfoldMap_200 (all m_201 (type) (all a_202 (type) (fun [Monoid_130 m_201] (fun (fun a_202 m_201) (fun [List_29 a_202] m_201)))))
-
-    goBool :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
-    goBool m a [mon,f,xs] = do
-      foldrName <- lift $ nameForPrefix "foldr"
-      boolMatch <- lift $ nameForPrefix "Bool_match"
-      true      <- lift $ nameForPrefix "True"
-      false     <- lift $ nameForPrefix "False"
-      let annA = R.Ann "a"
-          annB = R.Ann "b"
-          -- gene = \ a b -> f a || b
-          gene = R.Lam annA a $ R.Lam annB m $ R.App (R.F $ FreeName boolMatch)
-                 [ R.Arg (R.app (shift 2 f) (R.Arg $ R.App (R.B annA 1) []))
-                 , R.TyArg m
-                 , R.Arg (R.App (R.F $ FreeName true) [])
-                 , R.Arg (R.App (R.B annB 0) [])
-                 ]
-          zero = R.App (R.F $ FreeName false) []
-      return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg zero, R.Arg xs]
-
-    goEndo :: PrtType -> PrtType -> [PrtTerm] -> MaybeT m PrtTerm
-    goEndo m a [mon,f,xs,k] = do
-      foldrName <- lift $ nameForPrefix "foldr"
-      let annA = R.Ann "a"
-          annB = R.Ann "b"
-          -- gene = \ a b -> f a b
-          gene = R.Lam annA a $ R.Lam annB m $ R.appN (shift 2 f)
-                 [ R.Arg (R.App (R.B annA 1) [])
-                 , R.Arg (R.App (R.B annB 0) [])
-                 ]
-       in return $ R.App (R.F $ FreeName foldrName) [R.TyArg a, R.TyArg m, R.Arg gene, R.Arg k, R.Arg xs]
-
-
 
 -- |Put excessive arguments of a a destructor in the branches.
 -- Because we have n-ary applications, whenever we translate something like:
@@ -355,3 +270,165 @@ chooseHeadCase t ty args fstArg =
     transitionArgs s n
       | s == fstArg = R.Arg $ R.termPure (R.B (fromString "DUMMY_ARG") 0)
       | otherwise   = R.Arg $ R.termPure (R.B (fromString s) (toInteger n))
+
+-- If a transformation file is declared,
+-- then all rewriting rules of the form
+-- Name : left-hand side ==> right-hand side
+-- are applied in the top to bottom order.
+
+-- TODO: Currently we do simple pattern matching,
+-- meaning that the matching substitution cannot contain any bound variables.
+-- Ideally, one would like to have matching variables with contexts.
+-- For instance, one would like to write something like:
+-- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
+
+applyRewRules :: (PirouetteReadDefs m)
+              => PrtTerm -> m PrtTerm
+applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
+
+  where
+
+    applyOneRule :: (PirouetteReadDefs m)
+                 => RewritingRule PrtTerm PrtTerm -> PrtTerm -> m PrtTerm
+    applyOneRule (RewritingRule name lhs rhs) t =
+      deshadowBoundNames <$> rewriteM (traverse (flip instantiate rhs) . isInstance lhs) t
+
+    isInstance :: PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstance = isInstanceUnder 0 0
+
+    isInstanceUnder :: Int -> Int -> PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstanceUnder nTe nTy (R.App vL@(R.F (FreeName x)) []) t =
+      case isHole x of
+        Nothing ->
+          case t of
+            R.App vT [] -> isVarInstance vL vT
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.Arg $ shift (toInteger (- nTe)) t)
+    isInstanceUnder nTe nTy  (R.App vL argsL) (R.App vT argsT) =
+      foldl' M.union <$> isVarInstance vL vT <*> zipWithM (isArgInstance nTe nTy) argsL argsT
+    isInstanceUnder nTe nTy  (R.Lam _ tyL tL) (R.Lam _ tyT tT) =
+      M.union <$> isInstanceUnder (nTe + 1) nTy tL tT <*> isTyInstance nTy tyL tyT
+    isInstanceUnder nTe nTy (R.Abs _ _ tL) (R.Abs _ _ tT) =
+      isInstanceUnder nTe (nTy + 1) tL tT
+    isInstanceUnder nTe nTy _ _ = Nothing
+
+    isVarInstance :: PrtVar -> PrtVar -> Maybe (M.Map String PrtArg)
+    isVarInstance vL@(R.F (FreeName x)) vT =
+      case isHole x of
+        Nothing ->
+          case vT of
+            R.F y ->
+              if haveSameString (FreeName x) y
+              then Just M.empty
+              else Nothing
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.Arg $ R.termPure vT)
+    isVarInstance (R.F nL) (R.F nT) =
+      if haveSameString nL nT then Just M.empty else Nothing
+    isVarInstance (R.B _ i) (R.F _) = Nothing
+    isVarInstance (R.B _ i) (R.B _ j) =
+      if i == j then Just M.empty else Nothing
+    isVarInstance _ _ = Nothing
+
+    isTyInstance :: Int -> PrtType -> PrtType -> Maybe (M.Map String PrtArg)
+    isTyInstance nTy (R.TyApp vL@(R.F (TyFree x)) []) ty =
+      case isHole x of
+        Nothing ->
+          case ty of
+            R.TyApp vT [] -> isTyVarInstance vL vT
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.TyArg $ shift (toInteger (- nTy)) ty)
+    isTyInstance nTy (R.TyApp vL argsL) (R.TyApp vT argsT) =
+      foldl' M.union <$> isTyVarInstance vL vT <*> zipWithM (isTyInstance nTy) argsL argsT
+    isTyInstance nTy (R.TyLam _ _ tyL) (R.TyLam _ _ tyT) = isTyInstance (nTy + 1) tyL tyT
+    isTyInstance nTy (R.TyAll _ _ tyL) (R.TyAll _ _ tyT) = isTyInstance (nTy + 1) tyL tyT
+    isTyInstance nTy (R.TyFun aL bL) (R.TyFun aT bT) =
+      M.union <$> isTyInstance nTy aL aT <*> isTyInstance nTy bL bT
+    isTyInstance nTy _ _ = Nothing
+
+    isTyVarInstance :: PrtTyVar -> PrtTyVar -> Maybe (M.Map String PrtArg)
+    isTyVarInstance vL@(R.F (TyFree x)) vT =
+      case isHole x of
+        Nothing ->
+          case vT of
+            R.F y ->
+              if tyHaveSameString (TyFree x) y
+              then Just M.empty
+              else Nothing
+            _ -> Nothing
+        Just i -> Just $ M.singleton i (R.TyArg $ R.tyPure vT)
+    isTyVarInstance (R.F nL) (R.F nT) =
+      if tyHaveSameString nL nT then Just M.empty else Nothing
+    isTyVarInstance (R.B _ i) (R.F _) = Nothing
+    isTyVarInstance (R.B _ i) (R.B _ j) =
+      if i == j  then Just M.empty else Nothing
+    isTyVarInstance _ _ = Nothing
+
+    isArgInstance :: Int -> Int -> PrtArg -> PrtArg -> Maybe (M.Map String PrtArg)
+    isArgInstance nTe nTy (R.Arg tL) (R.Arg tT) = isInstanceUnder nTe nTy tL tT
+    isArgInstance nTe nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
+    isArgInstance nTe nTy _ _ = Nothing
+
+    instantiate :: (PirouetteReadDefs m)
+                => M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiate = instantiateUnder 0 0
+
+    instantiateUnder :: (PirouetteReadDefs m)
+                => Int -> Int -> M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiateUnder nTe nTy m tt@(R.App v@(R.F (FreeName x)) args) =do
+      case isHole x of
+        Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
+        Just i ->
+          case M.lookup i m of
+            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
+            Just (R.Arg t) ->
+              R.appN (shift (toInteger nTe) t) <$> mapM (instantiateArg nTe nTy m) args
+            Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ " is at a term position on the right hand side, but was a type on the left-hand side."
+    instantiateUnder nTe nTy m (R.App v args) =
+      R.App v <$> mapM (instantiateArg nTe nTy m) args
+    instantiateUnder nTe nTy m (R.Lam ann ty t) =
+      R.Lam ann <$> instantiateTy nTy m ty <*> instantiateUnder (nTe + 1) nTy m t
+    instantiateUnder nTe nTy m (R.Abs ann k t) =
+      R.Abs ann k <$> instantiateUnder nTe (nTy + 1) m t
+
+    instantiateTy :: (PirouetteReadDefs m)
+                  => Int -> M.Map String PrtArg -> PrtType -> m PrtType
+    instantiateTy nTy m (R.TyApp v@(R.F (TyFree x)) args) =
+      case isHole x of
+        Nothing -> R.TyApp v <$> mapM (instantiateTy nTy m) args
+        Just i ->
+          case M.lookup i m of
+            Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
+            Just (R.TyArg t) ->
+              R.appN (shift (toInteger nTy) t) <$> mapM (instantiateTy nTy m) args
+            Just (R.Arg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ " is at a type position on the right hand side, but was a term on the left-hand side."
+    instantiateTy nTy m (R.TyApp v args) =
+      R.TyApp v <$> mapM (instantiateTy nTy m) args
+    instantiateTy nTy m (R.TyLam ann k ty) =
+      R.TyLam ann k <$> instantiateTy (nTy + 1) m ty
+    instantiateTy nTy m (R.TyAll ann k ty) =
+      R.TyAll ann k <$> instantiateTy (nTy + 1) m ty
+    instantiateTy nTy m (R.TyFun a b) =
+      R.TyFun <$> instantiateTy nTy m a <*> instantiateTy nTy m b
+
+    instantiateArg :: (PirouetteReadDefs m)
+                   => Int -> Int -> M.Map String PrtArg -> PrtArg -> m PrtArg
+    instantiateArg nTe nTy m (R.Arg t) = R.Arg <$> instantiateUnder nTe nTy m t
+    instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
+
+    isHole :: Name -> Maybe String
+    isHole n =
+      let x = T.unpack $ nameString n in
+      if length x > 1 && last x == '_' then Just x else Nothing
+
+    haveSameString :: PIRBase P.DefaultFun Name -> PIRBase P.DefaultFun Name -> Bool
+    haveSameString (Constant a) (Constant b) = a == b
+    haveSameString (Builtin f) (Builtin g) = f == g
+    haveSameString Bottom Bottom = True
+    haveSameString (FreeName x) (FreeName y) = nameString x == nameString y
+    haveSameString _ _ = False
+
+    tyHaveSameString :: TypeBase Name -> TypeBase Name -> Bool
+    tyHaveSameString (TyBuiltin f) (TyBuiltin g) = f == g
+    tyHaveSameString (TyFree x) (TyFree y) = nameString x == nameString y
+    tyHaveSameString _ _ = False
