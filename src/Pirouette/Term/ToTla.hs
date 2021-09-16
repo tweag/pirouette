@@ -257,9 +257,8 @@ saveDefun arity fun freevars = do
 funargNames :: [TLA.AS_QBoundN] -> [String]
 funargNames = fmap (\(TLA.AS_QBoundN [TLA.AS_Ident _ [] name] _) -> name)
 
-defunClosureLabel, defunClosureFreeVars :: String
+defunClosureLabel :: String
 defunClosureLabel = "label"
-defunClosureFreeVars = "freevars"
 
 genApply :: Int -> Seq DefunClosureInfo -> TLA.AS_UnitDef
 genApply arity cases = tlaOpDef (applyFunIdent arity) (clos : args) $ TLA.AS_Case di arms Nothing
@@ -277,7 +276,7 @@ genApply arity cases = tlaOpDef (applyFunIdent arity) (clos : args) $ TLA.AS_Cas
 
     replaceArgs freevars funargs expr@(TLA.AS_Ident _ [] name)
       | Just val <- lookup name (zip funargs args) = val
-      | name `S.member` freevars = clos `tlaProj'` defunClosureFreeVars `tlaProj'` name
+      | name `S.member` freevars = clos `tlaProj'` name
       | otherwise = expr
     replaceArgs _        _       expr = expr
 
@@ -305,13 +304,12 @@ defunCtor (TLA.AS_OperatorDef opinfo flag h@(TLA.AS_OpHead _ args) expr) = TLA.A
     defunArg inScope arg@(TLA.AS_QuantifierBoundFunction _ funargs expr) = do
       let arity = length funargs
       let freevars = inScope `S.intersection` vars expr
-          varsMap = TLA.AS_RecordFunction di [ TLA.AS_MapTo (TLA.AS_Field var) (TLA.AS_Ident di [] var)
-                                             | var <- S.toList freevars
-                                             ]
+          varsMap = [ TLA.AS_MapTo (TLA.AS_Field var) (TLA.AS_Ident di [] var)
+                    | var <- S.toList freevars
+                    ]
       curIdx <- saveDefun arity arg freevars
-      pure $ TLA.AS_RecordFunction di [ TLA.AS_MapTo (TLA.AS_Field defunClosureLabel) (defunLabel arity curIdx)
-                                      , TLA.AS_MapTo (TLA.AS_Field defunClosureFreeVars) varsMap
-                                      ]
+      pure $ TLA.AS_RecordFunction di $ TLA.AS_MapTo (TLA.AS_Field defunClosureLabel) (defunLabel arity curIdx)
+                                      : varsMap
     defunArg _ arg = pure arg
 
     vars :: Data ast => ast -> S.Set String
