@@ -286,7 +286,7 @@ genApplies st = uncurry genApply <$> M.toList (defunDefs st)
 genAppliesFwdDecls :: DefunState -> [TLA.AS_UnitDef]
 genAppliesFwdDecls st = genFwdDecl <$> M.keys (defunDefs st)
   where
-    genFwdDecl arity = TLA.AS_RecursiveDecl diu [TLA.AS_OpHead (applyFunIdent arity) (replicate arity $ tlaIdent "_")]
+    genFwdDecl arity = TLA.AS_RecursiveDecl diu [TLA.AS_OpHead (applyFunIdent arity) (replicate (1 + arity) $ tlaIdent "_")]
 
 defunCtor :: (MonadState DefunState m)
           => TLA.AS_UnitDef
