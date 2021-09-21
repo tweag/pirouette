@@ -329,10 +329,11 @@ defunDtor = transformBi f
 
 defunctionalize :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
 defunctionalize defs = genAppliesFwdDecls st
-                    <> (defunDtor <$> defs')
+                    <> defs''
                     <> genApplies st
   where
-    (defs', st) = runState (mapM defunCtor defs) defunState0
+    defs' = defunDtor <$> defs
+    (defs'', st) = runState (mapM defunCtor defs') defunState0
 
 -- ** Top-Level Translation
 
