@@ -321,7 +321,10 @@ defunCtor def = pure def
 defunDtor :: TLA.AS_UnitDef -> TLA.AS_UnitDef
 defunDtor = transformBi f
   where
-    f (TLA.AS_InfixOP info TLA.AS_FunApp funExpr (TLA.AS_FunArgList _ args)) = tlaOpApp (applyFunIdent $ length args) (funExpr : args)
+    f expr@(TLA.AS_InfixOP info TLA.AS_FunApp funExpr (TLA.AS_FunArgList _ args))
+      = case args of
+             [TLA.AS_Num {}] -> expr
+             _               -> tlaOpApp (applyFunIdent $ length args) (funExpr : args)
     f expr = expr
 
 defunctionalize :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
