@@ -170,6 +170,7 @@ data TlaOpts = TlaOpts
   , toActionWrapper :: TLAExprWrapper
   , toSkeleton      :: TLASpecWrapper
   , toSpecialize    :: String -> Maybe TypeSpecializer
+  , defsPostproc    :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
   }
 
 data TlaState = TlaState
@@ -247,6 +248,7 @@ termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ d
   tlaPure $ logDebug "Assembling the spec"
   skel <- asks toSkeleton
   return $ wrapSpec skel
+         $ defsPostproc opts
          $ concat deps ++ defs ++ [next]
   where
     p2l (x, y) = [x, y]

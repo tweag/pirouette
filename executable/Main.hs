@@ -24,6 +24,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
 import Pirouette.Term.Transformations
 import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
+import Pirouette.Term.Defunctionalize
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 
@@ -103,6 +104,7 @@ optsToTlaOpts co = do
     , toActionWrapper = wr
     , toSkeleton = skel
     , toSpecialize = spz
+    , defsPostproc = defunctionalize
     }
   where
     defaultSkel = unlines
