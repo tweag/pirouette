@@ -31,6 +31,7 @@ library
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.ToTla
+      Pirouette.Term.Defunctionalize
       Pirouette.Term.Transformations
       Pirouette.TLA.Syntax
       Pirouette.TLA.Type
