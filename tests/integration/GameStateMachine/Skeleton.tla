@@ -19,6 +19,10 @@ PlutusData == UNION { PlutusDataBounded(n) : n \in 0 .. MAXDEPTH }
 ConstrData(n,i) == [cons |-> "Constr", arg0 |-> n, arg1 |-> i]
 MkNilData(x) == [cons |-> "Nil" ]
 
+fst(tup) == tup[1]
+
+snd(tup) == tup[2]
+
 ----
 ----
 
