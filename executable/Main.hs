@@ -81,6 +81,7 @@ data CliOpts = CliOpts
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
   , pruneMaybe    :: Bool
+  , dontDefun     :: Bool
   , tySpecializer :: [String]
   } deriving Show
 
@@ -104,7 +105,7 @@ optsToTlaOpts co = do
     , toActionWrapper = wr
     , toSkeleton = skel
     , toSpecialize = spz
-    , defsPostproc = defunctionalize
+    , defsPostproc = if dontDefun co then id else defunctionalize
     }
   where
     defaultSkel = unlines
@@ -292,6 +293,7 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
                        <*> parsePruneMaybe
+                       <*> parseDontDefunctionalize
                        <*> parseTySpecializer
 
 parseWithArgs :: Opt.Parser [String]
@@ -347,6 +349,12 @@ parsePruneMaybe = Opt.switch
                   (  Opt.long "dont-prune-maybe"
                   <> Opt.help "Do not suppress the maybe type in the output of the transition function."
                   )
+
+parseDontDefunctionalize :: Opt.Parser Bool
+parseDontDefunctionalize = Opt.switch
+                           (  Opt.long "dont-defunctionalize"
+                           <> Opt.help "Do not defunctionalize functions passed as constructor arguments."
+                           )
 
 parseTySpecializer :: Opt.Parser [String]
 parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
