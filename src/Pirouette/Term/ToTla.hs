@@ -34,8 +34,6 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Arrow (first, second, (***))
 
-import           Data.Data
-import           Data.Foldable
 import           Data.Functor ( ($>) )
 import           Data.Maybe ( mapMaybe, isJust, catMaybes )
 import           Data.Generics.Uniplate.Operations
@@ -45,8 +43,6 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.Sequence as Seq
-import           Data.Sequence(Seq, (|>))
 
 import qualified Language.TLAPlus.Pretty as TLA
 
