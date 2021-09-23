@@ -8,7 +8,6 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-deferred-type-errors #-}
 module Pirouette.Term.ToTla where
 
 import           Pirouette.Monad
@@ -41,10 +40,10 @@ import           Data.Maybe ( mapMaybe, isJust, catMaybes )
 import           Data.Generics.Uniplate.Operations
 import           Data.String
 import           Data.Bifunctor (bimap)
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.List as L
 
 import qualified Language.TLAPlus.Pretty as TLA
 
@@ -168,6 +167,7 @@ data TlaOpts = TlaOpts
   , toActionWrapper :: TLAExprWrapper
   , toSkeleton      :: TLASpecWrapper
   , toSpecialize    :: String -> Maybe TypeSpecializer
+  , defsPostproc    :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
   }
 
 data TlaState = TlaState
@@ -215,6 +215,7 @@ tlaWithTyVars tyvs f = do
   modify (\st -> st { tsTyVars = pre })
   return res
 
+
 -- ** Top-Level Translation
 
 -- |Translates a term to a TLA specification by first symbolically executing the term
@@ -242,6 +243,7 @@ termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ d
   tlaPure $ logDebug "Assembling the spec"
   skel <- asks toSkeleton
   return $ wrapSpec skel
+         $ defsPostproc opts
          $ concat deps ++ defs ++ [next]
   where
     p2l (x, y) = [x, y]

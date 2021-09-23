@@ -67,6 +67,6 @@ tuple2Spz :: TypeSpecializer
 tuple2Spz = TypeSpecializer {
   spzSet = [tla_u|SetOfTuple20(a,b) == a \X b|],
   spzConstructors = [[tla_u|Tuple21(x,y) == <<x, y>>|]],
-  spzDestructor = [tla_u|Tuple2_match(t,cT(_,_)) == cT(t[1],t[2])|],
+  spzDestructor = [tla_u|Tuple2_match(t,cT(_,_)) == cT(fst(t),snd(t))|],
   spzMatch = tuple2SpzMatch
 }

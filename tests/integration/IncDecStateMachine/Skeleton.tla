@@ -12,6 +12,10 @@ PlutusByteString == {"a", "b"}
 
 PlutusData == {}
 
+fst(tup) == tup[1]
+
+snd(tup) == tup[2]
+
 ----
 ----
 

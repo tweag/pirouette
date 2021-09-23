@@ -24,6 +24,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
 import Pirouette.Term.Transformations
 import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
+import Pirouette.Term.Defunctionalize
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 import Pirouette.Specializer.Rewriting
@@ -81,6 +82,7 @@ data CliOpts = CliOpts
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
   , pruneMaybe    :: Bool
+  , dontDefun     :: Bool
   , tySpecializer :: [String]
   , checkSanity   :: Bool
   } deriving Show
@@ -105,6 +107,7 @@ optsToTlaOpts co = do
     , toActionWrapper = wr
     , toSkeleton = skel
     , toSpecialize = spz
+    , defsPostproc = if dontDefun co then id else defunctionalize
     }
   where
     defaultSkel = unlines
@@ -296,6 +299,7 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
                        <*> parsePruneMaybe
+                       <*> parseDontDefunctionalize
                        <*> parseTySpecializer
                        <*> parseTrSanity
 
@@ -358,6 +362,12 @@ parsePruneMaybe = Opt.switch
                   (  Opt.long "dont-prune-maybe"
                   <> Opt.help "Do not suppress the maybe type in the output of the transition function."
                   )
+
+parseDontDefunctionalize :: Opt.Parser Bool
+parseDontDefunctionalize = Opt.switch
+                           (  Opt.long "dont-defunctionalize"
+                           <> Opt.help "Do not defunctionalize functions passed as constructor arguments."
+                           )
 
 parseTySpecializer :: Opt.Parser [String]
 parseTySpecializer = Opt.option (Opt.maybeReader (Just . r))
