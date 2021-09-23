@@ -113,12 +113,49 @@ defunCtor (TLA.AS_OperatorDef opinfo flag h@(TLA.AS_OpHead _ args) expr) = TLA.A
                           ]
 defunCtor def = pure def
 
+-- Note that this would also defunctionalize tuple accesses (of the form `tup[1]`),
+-- since they are represented as function applications in the AST.
+--
+-- Since we only really need pairs for now,
+-- the workaround is to access tuple elements via helper functions `fst`/`snd`
+-- defined in the skeleton files.
 defunDtor :: TLA.AS_UnitDef -> TLA.AS_UnitDef
 defunDtor = transformBi f
   where
     f expr@(TLA.AS_InfixOP info TLA.AS_FunApp funExpr (TLA.AS_FunArgList _ args)) = tlaOpApp (applyFunIdent $ length args) (funExpr : args)
     f expr = expr
 
+-- There are three main steps during defunctionalization:
+-- * defunctionalizing constructors:
+--   replacing any function being passed as an argument by the corresponding closure info
+--   (basically a struct containing the function identifier along with any free variables).
+--   As an example,
+--   `Con([arg1 \in ArgTy1 |-> arg1 + freevar1 + freevar2], ...)`
+--   gets replaced with
+--   `Con([label |-> "some_unique_id", freevar1 |-> freevar1, freevar2 |-> freevar2], ...)`
+-- * defunctionalizing destructors, or, rather, function applications:
+--   any function application `f[arg1, ..., argN]` gets replaced with a call to `applyN`,
+--   or, in particular, `applyN(f, arg1, ..., argN)`.
+-- * generation of the `applyN` functions.
+--
+-- The order of first two steps matters:
+-- transforming the AST to defunctionalize constructors means that the bodies of the corresponding functions
+-- get replaced in the original AST, and since they might contain function applications,
+-- they need to also be "destructor-defunctionalized".
+-- So, if defunctionalizing destructors happens first, those applications also get transformed in one fell swoop.
+-- Otherwise, the applyN function would have been had defunctionalized as well,
+-- which just requires more extra steps.
+--
+-- As an example, consider `Con([arg1 \in ..., arg2 \in ... |-> arg1[arg2]])`.
+-- Defunctionalizing destructors first yields `Con([arg1 \in ..., arg2 \in ... |-> apply1(arg1, arg2)])`
+-- which then gets replaced by `Con([label |-> "some_unique_label"])` with
+-- apply2(label, arg1, arg2) == CASE label = "some_unique_label" -> apply1(arg1, arg2)
+--
+-- If, on the other hand, we did defunctionalize ctors first and didn't pay attention to
+-- defunctionalize function applications in function bodies stashed away for the applyN function,
+-- we could've ended up with
+-- apply2(label, arg1, arg2) == CASE label = "some_unique_label" -> arg1[arg2]
+-- which is incorrect.
 defunctionalize :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
 defunctionalize defs = genAppliesFwdDecls st
                     <> defs''
