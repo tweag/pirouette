@@ -96,8 +96,10 @@ expandAllNonRec :: (Name -> Bool) -> PrtOrderedDefs -> PrtOrderedDefs
 expandAllNonRec keep prtDefs =
   let ds  = prtDecls prtDefs
       ord = prtDepOrder prtDefs
-      (remainingNames, ds', _) = foldl' go ([], ds, M.empty) ord
-   in PrtOrderedDefs ds' (reverse remainingNames) (prtMainTerm prtDefs)
+      (remainingNames, ds', inlinables) = foldl' go ([], ds, M.empty) ord
+      mainTerm = rewrite (inlineAll inlinables) $ prtMainTerm prtDefs
+  in
+  PrtOrderedDefs ds' (reverse remainingNames) mainTerm
  where
   -- The 'go' functions goes over the defined terms in dependency order
   -- and inlines terms as much as possible. To do so efficiently,
@@ -132,12 +134,12 @@ expandDefsIn inlinables decls k =
       let t' = deshadowBoundNames $ rewrite (inlineAll inlinables) t
        in (M.insert k (DFunction r t' ty) decls, t')
     Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
- where
-   inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
-   inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
-     nDef <- M.lookup n inlinables
-     Just $ R.appN nDef args
-   inlineAll _ _ = Nothing
+
+inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
+inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
+  nDef <- M.lookup n inlinables
+  Just $ R.appN nDef args
+inlineAll _ _ = Nothing
 
 -- ** Sanity Checks
 

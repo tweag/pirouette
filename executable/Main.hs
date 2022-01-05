@@ -59,6 +59,7 @@ import           Data.List (isSuffixOf, groupBy, partition)
 import qualified Data.ByteString    as BS
 import           Data.Semigroup ((<>))
 import           Data.Bifunctor (bimap)
+import           Data.String
 import           Development.GitRev
 import qualified Flat
 import           Flat.Decoder.Types
@@ -71,6 +72,7 @@ import           Text.Megaparsec.Error (errorBundlePretty)
 
 import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 
+import Debug.Trace (trace)
 ---------------------
 -- * CLI Options * --
 ---------------------
@@ -78,6 +80,7 @@ import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 data CliOpts = CliOpts
   { stage         :: Stage
   , funNamePrefix :: String
+  , asFunction    :: Bool
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
@@ -85,6 +88,7 @@ data CliOpts = CliOpts
   , dontDefun     :: Bool
   , tySpecializer :: [String]
   , checkSanity   :: Bool
+  , noInlining    :: Bool
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -99,7 +103,7 @@ optsToCTreeOpts co = CTreeOpts
 optsToTlaOpts :: (MonadIO m , PirouetteReadDefs m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0  <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
-  skel   <- mkTLASpecWrapper skel0
+  skel   <- if asFunction co then return mkEmptySpecWrapper else mkTLASpecWrapper skel0
   wr     <- mkTLAExprWrapper (exprWrapper co)
   let spz = mkTLATySpecializer (tySpecializer co)
   return $ TlaOpts
@@ -108,6 +112,7 @@ optsToTlaOpts co = do
     , toSkeleton = skel
     , toSpecialize = spz
     , defsPostproc = if dontDefun co then id else defunctionalize
+    , toAsFunction = asFunction co
     }
   where
     defaultSkel = unlines
@@ -161,10 +166,15 @@ mainOpts opts uDefs = do
     case stage opts of
       ToTerm  -> mapM_ (uncurry printDef) relDecls
       ToCTree -> mapM_ (uncurry printCTree) relDecls
-      ToTLA   -> do
-        when (length relDecls /= 1) $
-          throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-        uncurry toTla (head relDecls)
+      ToTLA   ->
+        if asFunction opts
+        then do
+          mainTerm <- prtMain
+          toTla (fromString $ funNamePrefix opts) (DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) [])
+        else do
+          when (length relDecls /= 1) $
+            throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
+          uncurry toTla (head relDecls)
   where
     printDef name def = do
       let pdef = pretty def
@@ -190,7 +200,11 @@ processDecls opts uDefs = do
     runReaderT checkDeBruijnIndices uDefs
 
   -- Otherwise, we proceed normally
-  oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
+  noMutDefs <- elimEvenOddMutRec uDefs
+  let oDefs =
+        if noInlining opts
+        then noMutDefs
+        else expandAllNonRec (contains (funNamePrefix opts)) noMutDefs
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
@@ -198,7 +212,7 @@ processDecls opts uDefs = do
                            => PrtTerm -> m PrtTerm
     generalTransformations =
           constrDestrId
-      >=> applyRewRules
+      -- >=> applyRewRules
       >=> removeExcessiveDestArgs
 
     processOne = defTermMapM generalTransformations
@@ -209,8 +223,8 @@ pirouette :: (MonadIO m) => FilePath -> PrtOpts
           -> (PrtUnorderedDefs -> PrtT m a) -> m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
-  withDecls pirProg $ \toplvl decls0 -> do
-    let decls = declsUniqueNames decls0
+  withDecls pirProg $ \toplvl0 decls0 -> do
+    let (decls, toplvl) = declsUniqueNames decls0 toplvl0
     let defs  = PrtUnorderedDefs decls toplvl
     (eres, msgs) <- runPrtT opts (f defs)
     mapM_ printLogMessage msgs
@@ -295,6 +309,7 @@ pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
 parseCliOpts :: Opt.Parser CliOpts
 parseCliOpts = CliOpts <$> parseStage
                        <*> parsePrefix
+                       <*> parseAsFunction
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
@@ -302,12 +317,19 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseDontDefunctionalize
                        <*> parseTySpecializer
                        <*> parseTrSanity
+                       <*> parseNoInlining
 
 parseTrSanity :: Opt.Parser Bool
 parseTrSanity = Opt.switch
                   (  Opt.long "sanity-check"
                   <> Opt.help "Perform a series of extra checks, can help with debugging"
                   )
+
+parseNoInlining :: Opt.Parser Bool
+parseNoInlining = Opt.switch
+                    (  Opt.long "no-inlining"
+                    <> Opt.help "Disable inlining of definitions when generating TLA+ programs"
+                    )
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -354,8 +376,14 @@ treeOnly = Opt.flag' ToCTree
 parsePrefix :: Opt.Parser String
 parsePrefix = Opt.option Opt.str
              (  Opt.long "prefix"
-             <> Opt.value ""
+             <> Opt.value " "
              <> Opt.help "Extract only the terms whose name contains the specified prefix")
+
+parseAsFunction :: Opt.Parser Bool
+parseAsFunction = Opt.switch
+                  (  Opt.long "as-function"
+                  <> Opt.help "Directly generate a TLA+ function. Do not transform it into an action."
+                  )
 
 parsePruneMaybe :: Opt.Parser Bool
 parsePruneMaybe = Opt.switch
