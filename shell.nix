@@ -18,5 +18,6 @@ in
       stylish-haskell
       pkgs.niv
       cardano-repo-tool
+      nixpkgs.cvc4
     ];
   }

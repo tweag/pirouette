@@ -30,6 +30,8 @@ dependencies:
   - bound
   - interpolate
   - deriving-compat
+  - simple-smt
+  - process
 
 library:
   source-dirs: src

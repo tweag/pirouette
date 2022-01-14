@@ -28,6 +28,7 @@ import Pirouette.Term.Defunctionalize
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 import Pirouette.Specializer.Rewriting
+import Pirouette.SMT.Datatypes (smtMain)
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
@@ -85,6 +86,7 @@ data CliOpts = CliOpts
   , dontDefun     :: Bool
   , tySpecializer :: [String]
   , checkSanity   :: Bool
+  , smtMode       :: Bool
   } deriving Show
 
 data Stage = ToTerm | ToTLA | ToCTree
@@ -124,9 +126,17 @@ optsToTlaOpts co = do
 
 main :: IO ()
 main = Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
-  pirouette file opts $ \uDefs -> do
-    flushLogs $ logInfo ("Running with opts: " ++ show opts)
-    mainOpts cliOpts uDefs
+  pirouette file opts $
+    if smtMode cliOpts
+       then pirouetteSmt
+       else \uDefs -> do
+        flushLogs $ logInfo ("Running with opts: " ++ show opts)
+        mainOpts cliOpts uDefs
+
+pirouetteSmt :: (MonadIO m) => PrtUnorderedDefs -> PrtT m ()
+pirouetteSmt unorderedDefs = do
+    orderedDefs <- elimEvenOddMutRec unorderedDefs
+    liftIO $ smtMain orderedDefs
 
 -- ** Return Codes and Command definitions
 
@@ -302,6 +312,13 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseDontDefunctionalize
                        <*> parseTySpecializer
                        <*> parseTrSanity
+                       <*> parseSmtMode
+
+parseSmtMode :: Opt.Parser Bool
+parseSmtMode = Opt.switch
+                  (  Opt.long "smt-mode"
+                  <> Opt.help "Execute work in progress SMT experiments on the input"
+                  )
 
 parseTrSanity :: Opt.Parser Bool
 parseTrSanity = Opt.switch

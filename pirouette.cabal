@@ -1,6 +1,6 @@
 cabal-version: 2.4
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.34.6.
 --
 -- see: https://github.com/sol/hpack
 
@@ -20,12 +20,17 @@ library
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
       Pirouette.PlutusIR.Utils
+      Pirouette.SMT.Common
+      Pirouette.SMT.Datatypes
+      Pirouette.SMT.Playground
+      Pirouette.SMT.SimpleSMT
       Pirouette.Specializer
       Pirouette.Specializer.Basics
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.ConstraintTree
+      Pirouette.Term.Defunctionalize
       Pirouette.Term.FromPlutusIR
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
@@ -33,13 +38,14 @@ library
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.ToTla
-      Pirouette.Term.Defunctionalize
       Pirouette.Term.Transformations
       Pirouette.Term.TransitiveDeps
       Pirouette.TLA.Syntax
       Pirouette.TLA.Type
       Pirouette.Transformations
   other-modules:
+      Paths_pirouette
+  autogen-modules:
       Paths_pirouette
   hs-source-dirs:
       src
@@ -62,6 +68,8 @@ library
     , parsec
     , plutus-core
     , prettyprinter
+    , process
+    , simple-smt
     , text
     , tlaplus
     , tlaplus-qq
@@ -71,6 +79,8 @@ library
 executable pirouette
   main-is: Main.hs
   other-modules:
+      Paths_pirouette
+  autogen-modules:
       Paths_pirouette
   hs-source-dirs:
       executable
@@ -94,6 +104,8 @@ executable pirouette
     , pirouette
     , plutus-core
     , prettyprinter
+    , process
+    , simple-smt
     , text
     , tlaplus
     , tlaplus-qq
@@ -108,6 +120,8 @@ test-suite spec
       Pirouette.Term.FromPlutusIRSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
+      Paths_pirouette
+  autogen-modules:
       Paths_pirouette
   hs-source-dirs:
       tests/unit
@@ -131,6 +145,8 @@ test-suite spec
     , pirouette
     , plutus-core
     , prettyprinter
+    , process
+    , simple-smt
     , text
     , tlaplus
     , tlaplus-qq
