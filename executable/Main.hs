@@ -28,6 +28,7 @@ import Pirouette.Term.Defunctionalize
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 import Pirouette.Specializer.Rewriting
+import Pirouette.SymbolicEval as SymbolicEval
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
@@ -91,7 +92,7 @@ data CliOpts = CliOpts
   , noInlining    :: Bool
   } deriving Show
 
-data Stage = ToTerm | ToTLA | ToCTree
+data Stage = ToTerm | ToTLA | ToCTree | SymbolicExecution
   deriving Show
 
 optsToCTreeOpts :: CliOpts -> CTreeOpts
@@ -162,16 +163,29 @@ mainOpts opts uDefs = do
   flip runReaderT decls $ do
     allDecls <- prtAllDefs
     let relDecls =
-          M.toList $ M.filterWithKey (\k _ -> contains (funNamePrefix opts) k) allDecls
+          M.toList $ M.filterWithKey (\k _ -> startsBy (funNamePrefix opts) k) allDecls
+    mainTerm <- prtMain
+    let relDecls' =
+          if asFunction opts
+          then
+            let mainFunName = fromString $
+                  if funNamePrefix opts == ""
+                  then "DEFAULT_FUN_NAME"
+                  else funNamePrefix opts
+            in
+            let mainDef =
+                  DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) []
+            in
+            (mainFunName, mainDef) : relDecls
+          else relDecls
     case stage opts of
-      ToTerm  -> mapM_ (uncurry printDef) relDecls
-      ToCTree -> mapM_ (uncurry printCTree) relDecls
-      ToTLA   ->
-        if asFunction opts
-        then do
-          mainTerm <- prtMain
-          toTla (fromString $ funNamePrefix opts) (DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) [])
-        else do
+      SymbolicExecution -> do
+          when (length relDecls /= 1) $
+            throwError' (PEOther "I need a single term to symbolically execute. Try a stricter --prefix")
+          uncurry symbExec (head relDecls)
+      ToTerm  -> mapM_ (uncurry printDef) relDecls'
+      ToCTree -> mapM_ (uncurry printCTree) relDecls'
+      ToTLA   -> do
           when (length relDecls /= 1) $
             throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
           uncurry toTla (head relDecls)
@@ -191,6 +205,10 @@ mainOpts opts uDefs = do
       spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
+    symbExec n (DFunction _ t _) = do
+      constrs <- SymbolicEval.evaluate t
+      putStrLn' (show constrs)
+      putStrLn' ""
 
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
@@ -204,7 +222,7 @@ processDecls opts uDefs = do
   let oDefs =
         if noInlining opts
         then noMutDefs
-        else expandAllNonRec (contains (funNamePrefix opts)) noMutDefs
+        else expandAllNonRec (startsBy (funNamePrefix opts)) noMutDefs
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
@@ -283,8 +301,8 @@ openAndParsePIR fileName = do
   return . either (Left . show) (Right . Showable)
          $ PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content
 
-contains :: String -> Name -> Bool
-contains str n = T.pack str `T.isPrefixOf` nameString n
+startsBy :: String -> Name -> Bool
+startsBy str n = T.pack str `T.isPrefixOf` nameString n
 
 ----------------------
 -- * CLI Parsers  * --
@@ -359,7 +377,7 @@ parseExprWrapper = Opt.option Opt.str
                  <> Opt.help "How to wrap the produced actions into action-formulas")
 
 parseStage :: Opt.Parser Stage
-parseStage = termOnly Opt.<|> treeOnly Opt.<|> pure ToTLA
+parseStage = termOnly Opt.<|> treeOnly Opt.<|> symbExec Opt.<|> pure ToTLA
 
 termOnly :: Opt.Parser Stage
 termOnly = Opt.flag' ToTerm
@@ -373,10 +391,16 @@ treeOnly = Opt.flag' ToCTree
            <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --tree-only is given, we display the terms that have been produced before symbolically evaluating and translating to TLA"
            )
 
+symbExec :: Opt.Parser Stage
+symbExec = Opt.flag' SymbolicExecution
+           (Opt.long "symb-exec"
+           <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --symb-exec is given, we display the terms that have been produced by symbolically evaluating the top-level one"
+           )
+
 parsePrefix :: Opt.Parser String
 parsePrefix = Opt.option Opt.str
              (  Opt.long "prefix"
-             <> Opt.value " "
+             <> Opt.value ""
              <> Opt.help "Extract only the terms whose name contains the specified prefix")
 
 parseAsFunction :: Opt.Parser Bool
