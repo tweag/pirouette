@@ -180,20 +180,25 @@ mainOpts opts uDefs = do
           else relDecls
     case stage opts of
       SymbolicExecution -> do
-          when (length relDecls /= 1) $
+          when (length relDecls' /= 1) $
             throwError' (PEOther "I need a single term to symbolically execute. Try a stricter --prefix")
-          uncurry symbExec (head relDecls)
+          uncurry symbExec (head relDecls')
       ToTerm  -> mapM_ (uncurry printDef) relDecls'
       ToCTree -> mapM_ (uncurry printCTree) relDecls'
       ToTLA   -> do
-          when (length relDecls /= 1) $
+          when (length relDecls' /= 1) $
             throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-          uncurry toTla (head relDecls)
+          uncurry toTla (head relDecls')
   where
     printDef name def = do
       let pdef = pretty def
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
+
+    -- printDef name (DFunction _ def _) = do
+    --   pdef <- pretty <$> (constrDestrId =<< destrNF def)
+    --   putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
+    --   putStrLn' ""
 
     printCTree name def = do
       ct <- termToCTree (optsToCTreeOpts opts) name def
@@ -206,8 +211,8 @@ mainOpts opts uDefs = do
       putStrLn' (TLA.prettyPrintAS spec)
 
     symbExec n (DFunction _ t _) = do
-      constrs <- SymbolicEval.evaluate t
-      putStrLn' (show constrs)
+      constrs <- SymbolicEval.runEvaluation n t
+      putStrLn' $ show (pretty constrs)
       putStrLn' ""
 
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs

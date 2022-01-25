@@ -41,6 +41,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Map as M
 
+import Debug.Trace (trace)
+
 -- |Put excessive arguments of a a destructor in the branches.
 -- Because we have n-ary applications, whenever we translate something like:
 --
@@ -115,28 +117,37 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
 -- |Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
 -- after performing any sort of inlining.
 deshadowBoundNames :: PrtTerm -> PrtTerm
-deshadowBoundNames = go []
+deshadowBoundNames = deshadowBoundNamesWithForbiddenNames []
+
+
+deshadowBoundNamesWithForbiddenNames :: [Name] -> PrtTerm -> PrtTerm
+deshadowBoundNamesWithForbiddenNames = go []
   where
     -- @newAnnFrom ns n@ returns a fresh name similar to @n@ given a list of declared names @ns@.
     -- it does so by incrementing the 'nameUnique' part of 'n'. Instead of incrementing one-by-one,
     -- we increment by i to hopefully require less iterations to find a fresh name.
-    newAnnFrom :: [Name] -> Name -> Name
-    newAnnFrom anns a =
-      case a `elemIndex` anns of
+    newAnnFrom :: [Name] -> [Name] -> Name -> Name
+    newAnnFrom anns forbidden a =
+      case a `elemIndex` (anns ++ forbidden) of
         Nothing -> a
-        Just i  -> newAnnFrom anns (a { nameUnique = Just $ maybe i ((+i) . (+1)) (nameUnique a) })
+        Just i  -> newAnnFrom anns forbidden (a { nameUnique = Just $ maybe i ((+i) . (+1)) (nameUnique a) })
 
-    go bvs (R.Lam (R.Ann ann) ty t)
-      = let ann' = newAnnFrom bvs ann
-         in R.Lam (R.Ann ann') ty (go (ann' : bvs) t)
+    go bvs forbidden (R.Lam (R.Ann ann) ty t)
+      = let ann' = newAnnFrom bvs forbidden ann
+         in R.Lam (R.Ann ann') ty (go (ann' : bvs) forbidden t)
 
-    go bvs (R.Abs a ki t) = R.Abs a ki (go bvs t)
-    go bvs (R.App n args) =
-      let args' = map (R.argMap id (go bvs)) args
-          n' = case n of
-                 R.B _ i -> R.B (R.Ann (unsafeIdx "deshadowBoundNames" bvs $ fromInteger i)) i
-                 _       -> n
-       in R.App n' args'
+    go bvs forbidden (R.Abs a ki t) = R.Abs a ki (go bvs forbidden t)
+    go bvs forbidden(R.App n args) =
+      let args' = map (R.argMap id (go bvs forbidden)) args
+          n' =
+            case n of
+              R.B x i ->
+                if fromInteger i >= length bvs
+                then n
+                else
+                  R.B (R.Ann (unsafeIdx "deshadowBoundNames" bvs $ fromInteger i)) i
+              _       -> n
+      in R.App n' args'
 
 -- |Expand all non-recursive definitions
 expandDefs :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
@@ -432,3 +443,83 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     tyHaveSameString (TyBuiltin f) (TyBuiltin g) = f == g
     tyHaveSameString (TyFree x) (TyFree y) = nameString x == nameString y
     tyHaveSameString _ _ = False
+
+-- |Returns an equivalent /destructor normal-form/ (DNF) term.
+-- We say a term is in /destructor normal-form/ when all destructors
+-- are pushed to the root of the term. For example, take
+--
+-- > t = [f [d/Maybe x N (\ J)] a0 a1]
+--
+-- We return:
+--
+-- >  [d/Maybe x $(destrNF [f N a0 a1]) (\ $(destrNF [f J a0 a1]))]
+--
+-- that is, we push the application of f down to the branches of the "case" statement.
+
+destrNF :: forall m . (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
+destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
+  where
+    onApp :: (R.Var Name (PIRBase P.DefaultFun Name)
+               -> [R.Arg PrtType PrtTerm] -> MaybeT m PrtTerm)
+          -> PrtTerm -> m PrtTerm
+    onApp f t@(R.App n args) = fromMaybe t <$> runMaybeT (f n args)
+    onApp _ t                = return t
+
+    -- Returns a term that is a destructor from a list of terms respecting
+    -- the invariant that if @splitDest t == Just (xs , d , ys)@, then @t == xs ++ [d] ++ ys@
+    splitDest :: [R.Arg PrtType PrtTerm]
+              -> MaybeT m ( PrtTerm
+                          , ListZipper (R.Arg PrtType PrtTerm))
+    splitDest [] = fail "splitDest: can't split empty list"
+    splitDest (a@(R.Arg a2@(R.App (R.F (FreeName n)) args)) : ds) =
+          (prtIsDest n >> return (a2, ListZipper ([], ds)))
+      <|> (splitDest ds <&> second (zipperCons a))
+    splitDest (a : ds) = splitDest ds <&> second (zipperCons a)
+
+    go :: PrtTerm -> MaybeT m PrtTerm
+    go (R.App (R.B _ _)           fargs) = fail "destrNF.go: bound name"
+    go (R.App (R.F (FreeName fn)) fargs) = do
+      -- Try to see if there's at least one destructor in the arguments.
+      -- If we find a destructor within the arguments, we can make sure it
+      -- is an `App` and has at least one argument, the value being eliminated.
+      (dest, fargsZ) <- splitDest fargs
+      MaybeT $
+        case prtIsDest fn of
+          MaybeT isDestFn -> do
+            mIsDestFn <- isDestFn
+            case mIsDestFn of
+              Nothing -> runMaybeT $ continue dest fargsZ
+              Just _ ->
+                if any isTermArg (fst (unListZipper fargsZ))
+                then return Nothing
+                else runMaybeT $ continue dest fargsZ
+      where
+        isTermArg (R.Arg _) = True
+        isTermArg (R.TyArg _) = False
+
+        continue dest fargsZ= do
+          (dn, tyN, tyArgs, x, ret, cases, excess) <- unDest dest
+          -- Now, we need to push `fn` down the arguments of the destructor, but in doing
+          -- so, we need to shift the bound variables depending on how many arguments each
+          -- constructor has. Finally, there might be more destructors in fargsZ, which we need to handle,
+          -- hence we resurse with the 'onApp' modifier,
+          let cases' = map (R.preserveLams $ \k
+                              -> R.App (R.F $ FreeName fn) . flip plug (fmap (R.argMap id $ shift k) fargsZ) . R.Arg) cases
+          -- TODO: This is still wrong, the destructor now doesn't return something of type `ret`,
+          --       but instead, it returns something of whichever type f returns.
+          logTrace $ "Pushing " ++ show fn ++ " through " ++ show dn
+          return $ R.App (R.F (FreeName dn))
+                $ map R.TyArg tyArgs ++ [R.Arg x, R.TyArg ret] ++ map R.Arg cases'
+    go _ = fail "destrNF.go: not an app"
+
+-- |A 'ListZipper' is a zipper as in one-hole-contexts
+newtype ListZipper a = ListZipper { unListZipper :: ([a], [a]) }
+
+instance Functor ListZipper where
+  fmap f (ListZipper (xs, xs')) = ListZipper (map f xs, map f xs')
+
+plug :: a -> ListZipper a -> [a]
+plug a (ListZipper (xs, xs')) = xs ++ [a] ++ xs'
+
+zipperCons :: a -> ListZipper a -> ListZipper a
+zipperCons a (ListZipper (xs, xs')) = ListZipper (a:xs, xs')
