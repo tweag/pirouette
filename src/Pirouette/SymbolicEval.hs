@@ -85,8 +85,10 @@ data SMTResult =
 
 -- TODO: Plug a real SMT here
 -- This is currently not used
-sendToSMT :: (MonadIO m) => Constraint -> m SMTResult
-sendToSMT _ = return SAT
+sendToSMT :: (MonadIO m) => Constraint -> [(Name, PrtType)] -> m SMTResult
+sendToSMT Bot _ = return UNSAT
+sendToSMT (And []) _ = return SAT
+sendToSMT constr env = return SAT -- Here we should be using a real SMT
 
 -- A very simple unification test.
 -- If two terms are constructor-headed with different constructors,
@@ -135,13 +137,13 @@ evaluate = auxEvaluateInputs []
 
     -- The first step is to collect the arguments of the function in a list of name.
     auxEvaluateInputs :: (PirouetteReadDefs m, MonadIO m)
-                      => [Name] -> Name -> PrtTerm -> m SymbRes
+                      => [(Name, PrtType)] -> Name -> PrtTerm -> m SymbRes
     auxEvaluateInputs vars mainFun t@(R.App _ _) =
-      SymbRes mainFun vars <$> evalStateT (auxEvaluate mainFuel true t) vars
-    auxEvaluateInputs vars mainFun (R.Lam a _ t) =
-      auxEvaluateInputs (R.ann a : vars) mainFun t
+      SymbRes mainFun (map fst vars) <$> evalStateT (auxEvaluate mainFuel true t) vars
+    auxEvaluateInputs vars mainFun (R.Lam a ty t) =
+      auxEvaluateInputs ((R.ann a, ty) : vars) mainFun t
     auxEvaluateInputs vars mainFun (R.Abs a _ t) =
-      auxEvaluateInputs (R.ann a : vars) mainFun t
+      auxEvaluateInputs vars mainFun t
     auxEvaluateInputs _ _ (R.Hole h) =
       absurd h
 
@@ -149,7 +151,7 @@ evaluate = auxEvaluateInputs []
     -- This is in a `State` monad, since the fuel for inlining and the names of already met variables should be shared between the symbolic evaluation of the different arguments of a function.
     auxEvaluate :: (PirouetteReadDefs m, MonadIO m)
                 => Int -> Constraint -> PrtTerm
-                -> StateT [Name] m [CstrBranch]
+                -> StateT [(Name, PrtType)] m [CstrBranch]
     auxEvaluate _ Bot _ = return []
     auxEvaluate remainingFuel conds t@(R.App hd args) = do
       vars <- get
@@ -175,7 +177,7 @@ evaluate = auxEvaluateInputs []
                 auxEvaluate (remainingFuel - 1) conds =<<
                   normalizeTerm
                     (R.appN
-                      (deshadowBoundNamesWithForbiddenNames vars u)
+                      (deshadowBoundNamesWithForbiddenNames (map fst vars) u)
                       args
                     )
               -- If the studied term is headed by a constructor, we have to symbolically execute the arguments,
@@ -204,8 +206,8 @@ evaluate = auxEvaluateInputs []
                 vars <- get
                 -- We deshadow the terms, since the symbolic evaluation of the studied term could
                 -- involve variable names present in those terms too.
-                let cleanedCases = map (deshadowBoundNamesWithForbiddenNames vars) cases
-                let cleanedExcess = map (R.argMap id (deshadowBoundNamesWithForbiddenNames vars)) excess
+                let cleanedCases = map (deshadowBoundNamesWithForbiddenNames (map fst vars)) cases
+                let cleanedExcess = map (R.argMap id (deshadowBoundNamesWithForbiddenNames (map fst vars))) excess
                 DTypeDef (Datatype _ _ _ consList) <- prtDefOf tyName
                 concat <$>
                   -- For each branch of the match, we create the associated constraint and
@@ -217,17 +219,23 @@ evaluate = auxEvaluateInputs []
                         -- during the symbolic execution of the studied term.
                         mapM
                           (\(CstrBranch tx condx) -> do
-                            modify (map fst argCons ++)
+                            modify (argCons ++)
                             newCond <-
                               eqT tx
                                 (R.appN
                                   (var cons)
                                   (map (R.Arg . var . fst) argCons)
                                 )
-                            auxEvaluate
-                              (remainingFuel - 1)
-                              (andConstr condx newCond) =<<
-                              normalizeTerm (R.appN caseTerm cleanedExcess)
+                            let totalConds = andConstr condx newCond
+                            smtResult <- sendToSMT totalConds vars
+                            case smtResult of
+                              SAT ->
+                                auxEvaluate
+                                  (remainingFuel - 1)
+                                  (andConstr condx newCond) =<<
+                                  normalizeTerm (R.appN caseTerm cleanedExcess)
+                              UNSAT ->
+                                return []
                           )
                           nconstr
                     )
@@ -237,9 +245,11 @@ evaluate = auxEvaluateInputs []
                 error "We do not expect name of inductive types here"
       where
         var x = R.App (R.F (FreeName x)) []
-    auxEvaluate remainingFuel conds (R.Lam x _ u) = do
-      modify (R.ann x :)
-      auxEvaluate remainingFuel conds u
+    auxEvaluate remainingFuel conds (R.Lam x ty u) = do
+      modify ((R.ann x, ty) :)
+      branches <- auxEvaluate remainingFuel conds u
+      return $
+        map (\(CstrBranch t conds) -> CstrBranch (R.Lam x ty t) conds) branches
     auxEvaluate remainingFuel conds (R.Abs ann _ t) =
       auxEvaluate remainingFuel conds t
     auxEvaluate _ _ (R.Hole h) =
