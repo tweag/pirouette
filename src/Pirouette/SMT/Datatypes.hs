@@ -3,20 +3,18 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Translation of datatype declarations and type terms from
+-- PlutusIR/Pirouette to smtlib through the SimpleSMT library.
 module Pirouette.SMT.Datatypes where
 
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Pirouette.Monad
-import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.SMT.Common
+import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
-
--- | Prefix Pirouette names with "pir" to avoid name clashes with SMT builtins
-toSmtName :: Show name => name -> String
-toSmtName = ("pir_" <>) . show
 
 -- | Declare a datatype in the solver
 declareDatatype :: Show name => SmtLib.Solver -> name -> TypeDef name -> IO ()
@@ -73,10 +71,6 @@ smtMain decls = do
 type TranslationConstraints name builtins =
   (Show name, Show builtins, Translatable builtins)
 
--- | What can be translated to an smtlib statement
-class Translatable a where
-  translate :: a -> SmtLib.SExpr
-
 instance Show name => Translatable (TypeBase name) where
   translate (TyBuiltin pirType) = translate pirType
   translate (TyFree name) = SmtLib.symbol (toSmtName name)
@@ -90,10 +84,10 @@ instance Translatable PIRType where
   translate (PIRTypePair (Just pirType1) (Just pirType2)) =
     SmtLib.tTuple [translate pirType1, translate pirType2]
   translate pirType =
-    error $ "Builtin type " <> show pirType <> " not yet handled."
+    error $ "Translate builtin type to smtlib: " <> show pirType <> " not yet handled."
 
 instance TranslationConstraints name builtins => Translatable (AnnType name (Var name builtins)) where
   translate (TyApp (F ty) args) = SmtLib.app (translate ty) (map translate args)
   translate (TyApp (B (Ann ann) index) args) =
     SmtLib.app (SmtLib.symbol (toSmtName ann)) (map translate args)
-  translate x = error $ "Cannot handle " <> show x
+  translate x = error $ "Translate type to smtlib: cannot handle " <> show x

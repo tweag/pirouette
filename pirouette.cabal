@@ -21,6 +21,7 @@ library
       Pirouette.Pipeline
       Pirouette.PlutusIR.Utils
       Pirouette.SMT.Common
+      Pirouette.SMT.Constraints
       Pirouette.SMT.Datatypes
       Pirouette.SMT.Playground
       Pirouette.SMT.SimpleSMT
