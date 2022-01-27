@@ -81,6 +81,10 @@ mkTLASpecWrapper exp =
     expand (TLA.AS_Separator d : us) e = TLA.AS_Separator d : e ++ us
     expand (u                  : us) e = u : expand us e
 
+mkEmptySpecWrapper :: TLASpecWrapper
+mkEmptySpecWrapper =
+  TLASpecWrapper (TLA.AS_Spec "" (TLA.AS_ExtendDecl diu []))
+
 mkTLATySpecializer :: [String] -> String -> Maybe TypeSpecializer
 mkTLATySpecializer ["ALL"] s = allSpz s
 mkTLATySpecializer l       s =
@@ -168,6 +172,7 @@ data TlaOpts = TlaOpts
   , toSkeleton      :: TLASpecWrapper
   , toSpecialize    :: String -> Maybe TypeSpecializer
   , defsPostproc    :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]
+  , toAsFunction    :: Bool
   }
 
 data TlaState = TlaState
@@ -226,25 +231,36 @@ termToSpec :: (PirouetteDepOrder m)
            -> m TLA.AS_Spec
 termToSpec opts mainFun t = flip evalStateT tlaState0 $ flip runReaderT opts $ do
   tlaPure $ logDebug "Translating Dependencies"
-  depsMain   <- tlaPure $ transitiveDepsOf mainFun
   sortedDeps <- tlaPure prtDependencyOrder
-  let neededDeps = filter (`S.member` depsMain) sortedDeps
+  neededDeps <-
+        if toAsFunction opts
+        then
+          return sortedDeps
+        else do
+          depsMain <- tlaPure $ transitiveDepsOf mainFun
+          return $ filter (`S.member` depsMain) sortedDeps
   deps <- mapM (R.argElim (trTypeName opts) trTermName) neededDeps
 
-  tlaPure $ logDebug $ "Symbolically executing " ++ show mainFun
-  mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun t
-  tlaPure $ logDebug $ "Translating Action Definitions for " ++ show mainFun
-  defs   <- case mctree of
-    Choose x ty br -> concatMap p2l <$> mapM (uncurry $ matchToAction x ty) br
-    Result t       -> tlaPure (logDebug ("tree: " ++ show (pretty t)))
-                        >> throwError' (PEOther "CTreeIsNotAMatch")
-  let next = tlaOpDef (tlaIdent "Next") [] $ tlaOr $ map (tlaIdentPrefixed "Wrapped") $ ctreeFirstMatches mctree
+  mainPart <-
+    if toAsFunction opts
+    then
+      case t of
+        DFunction _ te ty ->
+          (\(x,y) -> [x,y]) <$> trTermDecl mainFun te (toTlaOpType ty)
+    else do
+      tlaPure $ logDebug $ "Symbolically executing " ++ show mainFun
+      mctree <- tlaPure $ termToCTree (toSymbExecOpts opts) mainFun t
+      tlaPure $ logDebug $ "Translating Action Definitions for " ++ show mainFun
+      defs   <- case mctree of
+        Choose x ty br -> concatMap p2l <$> mapM (uncurry $ matchToAction x ty) br
+        Result t       -> tlaPure (logDebug ("tree: " ++ show (pretty t)))
+                            >> throwError' (PEOther "CTreeIsNotAMatch")
+      let next = tlaOpDef (tlaIdent "Next") [] $ tlaOr $ map (tlaIdentPrefixed "Wrapped") $ ctreeFirstMatches mctree
+      return $ defs ++ [next]
 
   tlaPure $ logDebug "Assembling the spec"
   skel <- asks toSkeleton
-  return $ wrapSpec skel
-         $ defsPostproc opts
-         $ concat deps ++ defs ++ [next]
+  return $ wrapSpec skel $ defsPostproc opts $ concat deps ++ mainPart
   where
     p2l (x, y) = [x, y]
 
@@ -629,7 +645,8 @@ trTerm = go
     tlaFun x ty t =
       TLA.AS_QuantifierBoundFunction di [TLA.AS_QBoundN [x] ty] t
 
-    go R.Abs {} _ = throwError' $ PEOther "NotYetImplemented trTerm Type Abstractions"
+    go (R.Abs _ _ t) (TlaAll _ _ ty) = go t ty -- throwError' $ PEOther "NotYetImplemented trTerm Type Abstractions"
+    go (R.Abs _ _ t) ty = go t ty
     go (R.Lam (R.Ann x) tyx t) ty =
       lamOrFun ty (tlaIdent x) <$> trType tyx
                                <*> tlaWithDeclTypeOf [(tlaIdent x, TlaVal tyx)] (go t $ tlaTyRet ty)
@@ -828,6 +845,7 @@ trTermConstant (PIRConstInteger i) = return $ TLA.AS_Num di i
 trTermConstant (PIRConstBool b)    = return $ TLA.AS_Bool di b
 trTermConstant (PIRConstString s)  = return $ TLA.AS_StringLiteral di (T.unpack s)
 trTermConstant PIRConstUnit        = return $ TLA.AS_DiscreteSet di []
+trTermConstant (PIRConstByteString s)  = return $ TLA.AS_StringLiteral di (show s)
 trTermConstant c = throwError' $ PEOther $ "NotYetImplemented trTermConstant " ++ show c
 
 -- |Application of a defined name as a TLA expression. This is tricky because
@@ -861,9 +879,21 @@ trBuiltin P.EqualsInteger args         = tlaPartialApp2 tlaEq args
 trBuiltin P.AppendByteString args      = tlaPartialApp2 (tlaInfix TLA.AS_Circ) args
 trBuiltin P.EqualsByteString  args     = tlaPartialApp2 tlaEq args
 trBuiltin P.IfThenElse  [x,y,z]        = return $ TLA.AS_IF di x y z
+trBuiltin P.IfThenElse  args        = return $ tlaOpApp (tlaIdent "IfThenElse") args
 trBuiltin P.Sha2_256 args              = tlaPartialApp  (tlaApp1 "SHA2") args
 trBuiltin P.ConstrData args            = tlaPartialApp2 (tlaApp2 "ConstrData") args
 trBuiltin P.MkNilData args             = tlaPartialApp  (tlaApp1 "MkNilData") args
+trBuiltin P.Trace args                 = tlaPartialApp2  (tlaApp2 "Trace") args
+trBuiltin P.ChooseData args            = return $ tlaOpApp (tlaIdent "ChooseData") args
+trBuiltin P.ChooseList  args            = return $ tlaOpApp (tlaIdent "ChooseList") args
+trBuiltin P.FstPair  args              = tlaPartialApp  (tlaApp1 "FstPair") args
+trBuiltin P.SndPair  args              = tlaPartialApp  (tlaApp1 "SndPair") args
+trBuiltin P.UnConstrData  args         = tlaPartialApp  (tlaApp1 "UnConstrData") args
+trBuiltin P.HeadList  args         = tlaPartialApp  (tlaApp1 "HeadList") args
+trBuiltin P.TailList  args         = tlaPartialApp  (tlaApp1 "TailList") args
+trBuiltin P.UnBData  args         = tlaPartialApp  (tlaApp1 "UnBData") args
+trBuiltin P.UnIData  args         = tlaPartialApp  (tlaApp1 "UnIData") args
+trBuiltin P.BData  args         = tlaPartialApp  (tlaApp1 "BData") args
 trBuiltin bin args = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
 
 tlaPartialApp
@@ -890,11 +920,73 @@ tlaPartialApp2 f [x] = do
 tlaPartialApp2 f [x,y] = return $ f x y
 tlaPartialApp2 _ _     = throwError' $ PEOther "tlaPartialApp2: Overapplied f"
 
+tlaPartialApp3
+  :: (PirouetteReadDefs m)
+  => (TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression ->TLA.AS_Expression)
+  -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+tlaPartialApp3 f [] = do
+  x1 <- tlaFreshName
+  x2 <- tlaFreshName
+  x3 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x1, x2, x3] (f x1 x2 x3)
+tlaPartialApp3 f [x1] = do
+  x2 <- tlaFreshName
+  x3 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x2, x3] (f x1 x2 x3)
+tlaPartialApp3 f [x1, x2] = do
+  x3 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x3] (f x1 x2 x3)
+tlaPartialApp3 f [x1, x2, x3] = return $ f x1 x2 x3
+tlaPartialApp3 _ _     = throwError' $ PEOther "tlaPartialApp3: Overapplied f"
+
+tlaPartialApp6
+  :: (PirouetteReadDefs m)
+  => (TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression ->TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression)
+  -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+tlaPartialApp6 f [] = do
+  x1 <- tlaFreshName
+  x2 <- tlaFreshName
+  x3 <- tlaFreshName
+  x4 <- tlaFreshName
+  x5 <- tlaFreshName
+  x6 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x1, x2, x3, x4, x5, x6] (f x1 x2 x3 x4 x5 x6)
+tlaPartialApp6 f [x1] = do
+  x2 <- tlaFreshName
+  x3 <- tlaFreshName
+  x4 <- tlaFreshName
+  x5 <- tlaFreshName
+  x6 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x2, x3, x4, x5, x6] (f x1 x2 x3 x4 x5 x6)
+tlaPartialApp6 f [x1, x2] = do
+  x3 <- tlaFreshName
+  x4 <- tlaFreshName
+  x5 <- tlaFreshName
+  x6 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x3, x4, x5, x6] (f x1 x2 x3 x4 x5 x6)
+tlaPartialApp6 f [x1, x2, x3] = do
+  x4 <- tlaFreshName
+  x5 <- tlaFreshName
+  x6 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x4, x5, x6] (f x1 x2 x3 x4 x5 x6)
+tlaPartialApp6 f [x1, x2, x3, x4] = do
+  x5 <- tlaFreshName
+  x6 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x5, x6] (f x1 x2 x3 x4 x5 x6)
+tlaPartialApp6 f [x1, x2, x3, x4, x5] = do
+  x6 <- tlaFreshName
+  return $ TLA.AS_Lambda di [x6] (f x1 x2 x3 x4 x5 x6)
+tlaPartialApp6 f [x1, x2, x3, x4, x5, x6] = return $ f x1 x2 x3 x4 x5 x6
+tlaPartialApp6 _ _     = throwError' $ PEOther "tlaPartialApp6: Overapplied f"
+
 tlaApp1 :: (TLAIdent n) => n -> TLA.AS_Expression -> TLA.AS_Expression
 tlaApp1 f x = tlaOpApp (tlaIdent f) [x]
 
 tlaApp2 :: (TLAIdent n) => n -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression
 tlaApp2 f x y = tlaOpApp (tlaIdent f) [x, y]
+
+tlaApp6 :: (TLAIdent n) => n -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression
+tlaApp6 f x1 x2 x3 x4 x5 x6 = tlaOpApp (tlaIdent f) [x1, x2, x3, x4, x5, x6]
 
 isTuple2 :: Name -> Bool
 isTuple2 n = nameString n == T.pack "Tuple2"

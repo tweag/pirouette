@@ -1,6 +1,6 @@
 cabal-version: 2.4
 
--- This file has been generated from package.yaml by hpack version 0.34.6.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 
@@ -30,6 +30,7 @@ library
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
+      Pirouette.SymbolicEval
       Pirouette.Term.ConstraintTree
       Pirouette.Term.Defunctionalize
       Pirouette.Term.FromPlutusIR
@@ -39,6 +40,7 @@ library
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.ToTla
+      Pirouette.Term.Defunctionalize
       Pirouette.Term.Transformations
       Pirouette.Term.TransitiveDeps
       Pirouette.TLA.Syntax

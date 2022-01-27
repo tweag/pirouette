@@ -87,7 +87,11 @@ class (PirouetteBase m) => PirouetteReadDefs m where
   -- |Returns the definition associated with a given name. Raises a 'PEUndefined'
   -- if the name doesn't exist.
   prtDefOf :: Name -> m PrtDef
-  prtDefOf n = prtAllDefs >>= maybe (throwError' $ PEUndefined n) return . M.lookup n
+  prtDefOf n = do
+    defs <- prtAllDefs
+    case M.lookup n defs of
+      Nothing -> throwError' $ PEUndefined n
+      Just x  -> return x
 
   prtTypeDefOf :: Name -> m PrtTypeDef
   prtTypeDefOf n = prtDefOf n >>= maybe (throwError' $ PENotAType n) return . fromTypeDef

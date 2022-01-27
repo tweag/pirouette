@@ -29,6 +29,7 @@ import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 import Pirouette.Specializer.Rewriting
 import Pirouette.SMT.Datatypes (smtMain)
+import Pirouette.SymbolicEval as SymbolicEval
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
@@ -60,6 +61,7 @@ import           Data.List (isSuffixOf, groupBy, partition)
 import qualified Data.ByteString    as BS
 import           Data.Semigroup ((<>))
 import           Data.Bifunctor (bimap)
+import           Data.String
 import           Development.GitRev
 import qualified Flat
 import           Flat.Decoder.Types
@@ -72,6 +74,7 @@ import           Text.Megaparsec.Error (errorBundlePretty)
 
 import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 
+import Debug.Trace (trace)
 ---------------------
 -- * CLI Options * --
 ---------------------
@@ -79,6 +82,7 @@ import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 data CliOpts = CliOpts
   { stage         :: Stage
   , funNamePrefix :: String
+  , asFunction    :: Bool
   , withArguments :: [String]
   , exprWrapper   :: String
   , skeleton      :: Maybe FilePath
@@ -86,10 +90,11 @@ data CliOpts = CliOpts
   , dontDefun     :: Bool
   , tySpecializer :: [String]
   , checkSanity   :: Bool
+  , noInlining    :: Bool
   , smtMode       :: Bool
   } deriving Show
 
-data Stage = ToTerm | ToTLA | ToCTree
+data Stage = ToTerm | ToTLA | ToCTree | SymbolicExecution
   deriving Show
 
 optsToCTreeOpts :: CliOpts -> CTreeOpts
@@ -101,7 +106,7 @@ optsToCTreeOpts co = CTreeOpts
 optsToTlaOpts :: (MonadIO m , PirouetteReadDefs m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0  <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
-  skel   <- mkTLASpecWrapper skel0
+  skel   <- if asFunction co then return mkEmptySpecWrapper else mkTLASpecWrapper skel0
   wr     <- mkTLAExprWrapper (exprWrapper co)
   let spz = mkTLATySpecializer (tySpecializer co)
   return $ TlaOpts
@@ -110,6 +115,7 @@ optsToTlaOpts co = do
     , toSkeleton = skel
     , toSpecialize = spz
     , defsPostproc = if dontDefun co then id else defunctionalize
+    , toAsFunction = asFunction co
     }
   where
     defaultSkel = unlines
@@ -167,14 +173,32 @@ mainOpts opts uDefs = do
   flip runReaderT decls $ do
     allDecls <- prtAllDefs
     let relDecls =
-          M.toList $ M.filterWithKey (\k _ -> contains (funNamePrefix opts) k) allDecls
+          M.toList $ M.filterWithKey (\k _ -> startsBy (funNamePrefix opts) k) allDecls
+    mainTerm <- prtMain
+    let relDecls' =
+          if asFunction opts
+          then
+            let mainFunName = fromString $
+                  if funNamePrefix opts == ""
+                  then "DEFAULT_FUN_NAME"
+                  else funNamePrefix opts
+            in
+            let mainDef =
+                  DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) []
+            in
+            (mainFunName, mainDef) : relDecls
+          else relDecls
     case stage opts of
-      ToTerm  -> mapM_ (uncurry printDef) relDecls
-      ToCTree -> mapM_ (uncurry printCTree) relDecls
+      SymbolicExecution -> do
+          when (length relDecls' /= 1) $
+            throwError' (PEOther "I need a single term to symbolically execute. Try a stricter --prefix")
+          uncurry symbExec (head relDecls')
+      ToTerm  -> mapM_ (uncurry printDef) relDecls'
+      ToCTree -> mapM_ (uncurry printCTree) relDecls'
       ToTLA   -> do
-        when (length relDecls /= 1) $
-          throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-        uncurry toTla (head relDecls)
+          when (length relDecls' /= 1) $
+            throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
+          uncurry toTla (head relDecls')
   where
     printDef name def = do
       let pdef = pretty def
@@ -191,6 +215,10 @@ mainOpts opts uDefs = do
       spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
+    symbExec n (DFunction _ t _) = do
+      constrs <- SymbolicEval.runEvaluation n t
+      putStrLn' $ show (pretty constrs)
+      putStrLn' ""
 
 processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
 processDecls opts uDefs = do
@@ -200,7 +228,11 @@ processDecls opts uDefs = do
     runReaderT checkDeBruijnIndices uDefs
 
   -- Otherwise, we proceed normally
-  oDefs  <- expandAllNonRec (contains (funNamePrefix opts)) <$> elimEvenOddMutRec uDefs
+  noMutDefs <- elimEvenOddMutRec uDefs
+  let oDefs =
+        if noInlining opts
+        then noMutDefs
+        else expandAllNonRec (startsBy (funNamePrefix opts)) noMutDefs
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
@@ -208,7 +240,7 @@ processDecls opts uDefs = do
                            => PrtTerm -> m PrtTerm
     generalTransformations =
           constrDestrId
-      >=> applyRewRules
+      -- >=> applyRewRules
       >=> removeExcessiveDestArgs
 
     processOne = defTermMapM generalTransformations
@@ -219,8 +251,8 @@ pirouette :: (MonadIO m) => FilePath -> PrtOpts
           -> (PrtUnorderedDefs -> PrtT m a) -> m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
-  withDecls pirProg $ \toplvl decls0 -> do
-    let decls = declsUniqueNames decls0
+  withDecls pirProg $ \toplvl0 decls0 -> do
+    let (decls, toplvl) = declsUniqueNames decls0 toplvl0
     let defs  = PrtUnorderedDefs decls toplvl
     (eres, msgs) <- runPrtT opts (f defs)
     mapM_ printLogMessage msgs
@@ -279,8 +311,8 @@ openAndParsePIR fileName = do
   return . either (Left . show) (Right . Showable)
          $ PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content
 
-contains :: String -> Name -> Bool
-contains str n = T.pack str `T.isPrefixOf` nameString n
+startsBy :: String -> Name -> Bool
+startsBy str n = T.pack str `T.isPrefixOf` nameString n
 
 ----------------------
 -- * CLI Parsers  * --
@@ -305,6 +337,7 @@ pirouetteOpts = Opt.info ((,,) <$> parseCliOpts
 parseCliOpts :: Opt.Parser CliOpts
 parseCliOpts = CliOpts <$> parseStage
                        <*> parsePrefix
+                       <*> parseAsFunction
                        <*> parseWithArgs
                        <*> parseExprWrapper
                        <*> parseSkeletonFile
@@ -312,6 +345,7 @@ parseCliOpts = CliOpts <$> parseStage
                        <*> parseDontDefunctionalize
                        <*> parseTySpecializer
                        <*> parseTrSanity
+                       <*> parseNoInlining
                        <*> parseSmtMode
 
 parseSmtMode :: Opt.Parser Bool
@@ -325,6 +359,12 @@ parseTrSanity = Opt.switch
                   (  Opt.long "sanity-check"
                   <> Opt.help "Perform a series of extra checks, can help with debugging"
                   )
+
+parseNoInlining :: Opt.Parser Bool
+parseNoInlining = Opt.switch
+                    (  Opt.long "no-inlining"
+                    <> Opt.help "Disable inlining of definitions when generating TLA+ programs"
+                    )
 
 parseWithArgs :: Opt.Parser [String]
 parseWithArgs = Opt.option (Opt.maybeReader (Just . r))
@@ -354,7 +394,7 @@ parseExprWrapper = Opt.option Opt.str
                  <> Opt.help "How to wrap the produced actions into action-formulas")
 
 parseStage :: Opt.Parser Stage
-parseStage = termOnly Opt.<|> treeOnly Opt.<|> pure ToTLA
+parseStage = termOnly Opt.<|> treeOnly Opt.<|> symbExec Opt.<|> pure ToTLA
 
 termOnly :: Opt.Parser Stage
 termOnly = Opt.flag' ToTerm
@@ -368,11 +408,23 @@ treeOnly = Opt.flag' ToCTree
            <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --tree-only is given, we display the terms that have been produced before symbolically evaluating and translating to TLA"
            )
 
+symbExec :: Opt.Parser Stage
+symbExec = Opt.flag' SymbolicExecution
+           (Opt.long "symb-exec"
+           <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --symb-exec is given, we display the terms that have been produced by symbolically evaluating the top-level one"
+           )
+
 parsePrefix :: Opt.Parser String
 parsePrefix = Opt.option Opt.str
              (  Opt.long "prefix"
              <> Opt.value ""
              <> Opt.help "Extract only the terms whose name contains the specified prefix")
+
+parseAsFunction :: Opt.Parser Bool
+parseAsFunction = Opt.switch
+                  (  Opt.long "as-function"
+                  <> Opt.help "Directly generate a TLA+ function. Do not transform it into an action."
+                  )
 
 parsePruneMaybe :: Opt.Parser Bool
 parsePruneMaybe = Opt.switch

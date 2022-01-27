@@ -20,6 +20,7 @@ import qualified PlutusCore                as P
 import qualified PlutusCore.Pretty         as P (pretty)
 import           Control.Monad.State
 import           Control.Monad.Reader
+import Data.Bifunctor (first)
 import qualified Data.List                 as L
 import qualified Data.Text                 as T
 import qualified Data.Map.Strict           as M
@@ -135,16 +136,20 @@ separateBoundFrom u t =
 -- https://github.com/input-output-hk/plutus/issues/3445
 
 -- |Exported interface function to uniquely naming declarations.
-declsUniqueNames :: Decls Name fun -> Decls Name fun
-declsUniqueNames = M.fromList . go . M.toList
+declsUniqueNames :: Decls Name fun -> PrtTerm -> (Decls Name fun, PrtTerm)
+declsUniqueNames decls mainFun = first M.fromList (go (M.toList decls) mainFun)
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
-    go :: [(Name, Definition Name fun)] -> [(Name , Definition Name fun)]
-    go ds = let (_, ks) = flip runState M.empty
-                          $ mapM (onPairM unNameCollect defUNCollect) ds
-             in flip runReader (M.map S.toList ks)
-              $ mapM (onPairM unNameSubst defUNSubst) ds
+    go :: [(Name, Definition Name fun)] -> PrtTerm
+       -> ([(Name , Definition Name fun)], PrtTerm)
+    go ds mainFun =
+      let (_, ks) =
+            flip runState M.empty $ mapM (onPairM unNameCollect defUNCollect) ds
+      in
+      runReader
+        (onPairM (mapM (onPairM unNameSubst defUNSubst)) termUNSubst (ds, mainFun))
+        (M.map S.toList ks)
 
 -- *** Auxiliar Definitions for Unique Naming
 --

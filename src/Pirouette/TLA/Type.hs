@@ -135,14 +135,83 @@ tlaTyBuiltin P.EqualsInteger         = TlaOp [tlaTyNat, tlaTyNat] pirTyBool
 tlaTyBuiltin P.AppendByteString      = TlaOp [tlaTyBS, tlaTyBS] pirTyBS
 tlaTyBuiltin P.EqualsByteString      = TlaOp [tlaTyBS, tlaTyBS] pirTyBool
 tlaTyBuiltin P.IfThenElse            =
-  let a = R.Ann (fromString "a")
-   in TlaAll a R.KStar $ TlaOp [ tlaTyBool
-                               , TlaVal (R.tyPure $ R.B a 0)
-                               , TlaVal (R.tyPure $ R.B a 0)
-                               ] (R.tyPure $ R.B a 0)
+  let a = R.Ann (fromString "a") in
+  TlaAll a R.KStar $
+    TlaOp [ tlaTyBool
+          , TlaVal (R.tyPure $ R.B a 0)
+          , TlaVal (R.tyPure $ R.B a 0)
+          ] (R.tyPure $ R.B a 0)
 tlaTyBuiltin P.Sha2_256             = TlaOp [tlaTyBS] pirTyBS
-tlaTyBuiltin P.ConstrData           = TlaOp [tlaTyNat, tlaTyData] pirTyData
+tlaTyBuiltin P.ConstrData           = TlaOp [tlaTyNat, TlaVal $ pirTyList PIRTypeData] pirTyData
 tlaTyBuiltin P.MkNilData            = TlaOp [tlaTyUnit] (pirTyList PIRTypeData)
+tlaTyBuiltin P.Trace                =
+  let a = R.Ann (fromString "a") in
+  TlaAll a R.KStar $
+    TlaOp [tlaTyBS, TlaVal (R.tyPure $ R.B a 0)] (R.tyPure $ R.B a 0)
+tlaTyBuiltin P.ChooseData           =
+  let a = R.Ann (fromString "a") in
+  TlaAll a R.KStar $
+    TlaOp [ TlaVal (R.tyPure $ R.B a 0)
+          , TlaVal (R.tyPure $ R.B a 0)
+          , TlaVal (R.tyPure $ R.B a 0)
+          , TlaVal (R.tyPure $ R.B a 0)
+          , TlaVal (R.tyPure $ R.B a 0)
+          , tlaTyData
+          ] (R.tyPure $ R.B a 0)
+tlaTyBuiltin P.ChooseList           =
+  let a = R.Ann (fromString "a")
+      b = R.Ann (fromString "b")
+  in
+  TlaAll a R.KStar $ TlaAll b R.KStar $
+    TlaOp [ TlaVal (R.tyPure $ R.B a 1)
+          , TlaVal (R.tyPure $ R.B a 1)
+          -- We want a list of b,
+          -- but since the 'PIRType' does not include variable,
+          -- 'Nothing' is used to represent it.
+          , TlaVal $ R.tyPure $ R.F $ TyBuiltin (PIRTypeList Nothing)
+          ] (R.tyPure $ R.B a 1)
+tlaTyBuiltin P.FstPair              =
+  let a = R.Ann (fromString "a")
+      b = R.Ann (fromString "b")
+  in
+  TlaAll a R.KStar $ TlaAll b R.KStar $
+    -- We want a pair of a, b,
+    -- but since the 'PIRType' does not include variable,
+    -- 'Nothing' is used to represent it.
+    TlaOp [ TlaVal $ R.tyPure $ R.F $ TyBuiltin (PIRTypePair Nothing Nothing)
+          ] (R.tyPure $ R.B a 1)
+tlaTyBuiltin P.SndPair              =
+  let a = R.Ann (fromString "a")
+      b = R.Ann (fromString "b")
+  in
+  TlaAll a R.KStar $ TlaAll b R.KStar $
+    -- We want a pair of a, b,
+    -- but since the 'PIRType' does not include variable,
+    -- 'Nothing' is used to represent it.
+    TlaOp [ TlaVal $ R.tyPure $ R.F $ TyBuiltin (PIRTypePair Nothing Nothing)
+          ] (R.tyPure $ R.B b 0)
+tlaTyBuiltin P.UnConstrData         =
+  TlaOp [tlaTyData
+        ] (R.tyPure $ R.F $ TyBuiltin (PIRTypePair (Just PIRTypeInteger)  (Just $ PIRTypeList (Just PIRTypeData))))
+tlaTyBuiltin P.HeadList             =
+  let a = R.Ann (fromString "a") in
+  TlaAll a R.KStar $
+    -- We want a list of a,
+    -- but since the 'PIRType' does not include variable,
+    -- 'Nothing' is used to represent it.
+    TlaOp [ TlaVal $ R.tyPure $ R.F $ TyBuiltin (PIRTypeList Nothing)
+          ] (R.tyPure $ R.B a 0)
+tlaTyBuiltin P.TailList             =
+  let a = R.Ann (fromString "a") in
+  TlaAll a R.KStar $
+    -- We want lists of a,
+    -- but since the 'PIRType' does not include variable,
+    -- 'Nothing' is used to represent it.
+    TlaOp [ TlaVal $ R.tyPure $ R.F $ TyBuiltin (PIRTypeList Nothing)
+          ] (R.tyPure $ R.F $ TyBuiltin (PIRTypeList Nothing))
+tlaTyBuiltin P.UnBData              = TlaOp [tlaTyData] pirTyBS
+tlaTyBuiltin P.UnIData              = TlaOp [tlaTyData] pirTyNat
+tlaTyBuiltin P.BData                = TlaOp [tlaTyBS] pirTyData
 tlaTyBuiltin b = error ("Unsuported builtin: " ++ show b)
 
 
