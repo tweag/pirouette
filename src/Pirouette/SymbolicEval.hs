@@ -44,6 +44,8 @@ fuelOver NaturalEnd x = x
 
 -- A branch of the symbolic execution is a result term and
 -- the constraint to fulfill to reach this branch.
+-- Each branch also contains an indication of the reason leading to the generation of this branch,
+-- either this path is fully evaluated, or the evaluation was interupted due to lack of fuel.
 data CstrBranch = CstrBranch Fuel PrtTerm Constraint
 
 instance Pretty CstrBranch where
@@ -127,6 +129,8 @@ eqT _ t u = return $ NonInlinableSymbolEq t u
 -- The main function. It takes a function name and its definition and output a result of symbolic execution.
 -- Since we are doing inlining, we access symbol definition,
 -- so this output is in a `PirouetteReadDefs` monad.
+-- Since we are using the SMT solver, which requires types to be declared
+-- to respect the dependency order, we even use `PirouetteDepOrder`.
 evaluate :: (PirouetteDepOrder m, MonadIO m) => Name -> PrtTerm -> m SymbRes
 evaluate = auxEvaluateInputs []
   where

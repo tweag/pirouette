@@ -92,8 +92,10 @@ instance Translatable PIRType where
   translate PIRTypeString = SmtLib.tString
   translate PIRTypeByteString = SmtLib.tString
   translate PIRTypeUnit = SmtLib.tUnit
-  translate PIRTypeData = SmtLib.tUnit -- XXX DEBUG
+  translate PIRTypeData = SmtLib.tUnit -- TODO: Temporary represention of data
   -- Note: why do Pair have maybes?
+  -- Note answer, because types can be partially applied in System F,
+  -- and `Pair a` is represented by `PIRTypePair (pirType a) Nothing`
   translate (PIRTypePair (Just pirType1) (Just pirType2)) =
     SmtLib.tTuple [translate pirType1, translate pirType2]
   translate pirType =

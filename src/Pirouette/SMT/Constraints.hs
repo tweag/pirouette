@@ -6,16 +6,13 @@ module Pirouette.SMT.Constraints where
 
 import Control.Monad.IO.Class
 import Data.Bifunctor (bimap)
-import qualified Data.List as List (filter)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Void
-import Debug.Trace
 import Pirouette.SMT.Common
 import Pirouette.SMT.Datatypes
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
@@ -27,8 +24,12 @@ type Env = Map Name PrtType
 
 -- | Constraints of a path during symbolic execution
 -- We would like to have
--- type Constraint = Bot | And (Map Name [PrtTerm]) [(PrtTerm, PrtTerm)]
+-- type Constraint = Bot | And (Map Name [PrtTerm]) [(Fuel, PrtTerm, PrtTerm))]
 -- It is isomorphic to our current type, but with better access time to the variable assignements.
+-- The 2 kinds of equalities are quite different,
+-- one represents the complete execution of a branch, which leads to an application which cannot be further inlined
+-- (Because it is a builtin or a constant),
+-- whereas the other one represents an ongoing computation killed by lack of fuel.
 data Constraint
   = Assign Name PrtTerm
   | NonInlinableSymbolEq PrtTerm PrtTerm
@@ -79,9 +80,11 @@ instance Pretty Constraint where
 -- (assert ((_ is Nil) x))
 -- In our case, it seems to be a shortcut that is equivalent to #1
 --
--- All these solutions lead to the same sat result and examples
+-- All these solutions could lead to the same sat result and examples.
+-- However, solution #2 presents the advantage that it allows to give names to the argument of constructors,
+-- which can then be used in further constraints.
 --
--- We chose solution #2
+-- Hence, we chose solution #2
 assertConstraint :: MonadIO m => SmtLib.Solver -> Env -> Constraint -> m ()
 assertConstraint s env (Assign name term) =
   do
@@ -121,11 +124,12 @@ translateData ty (App (F (FreeName name)) args) =
   SmtLib.app
     (SmtLib.as (SmtLib.symbol (toSmtName name)) (translate ty))
     (translateData ty <$> mapMaybe fromArg args)
-  where
-    isNotType :: Arg PrtType PrtTerm -> Bool
-    isNotType (TyArg _) = False
-    isNotType _ = True
 translateData ty _ = error "Illegal term in translate data"
+
+-- TODO: The translation of term is still to be worked on,
+-- since it does not allow to use builtins or defined functions,
+-- and it contains application of term to types,
+-- A frequent situation in system F, but not allowed in the logic of SMT solvers.
 
 instance Translatable (AnnTerm (AnnType Name (Var Name (TypeBase Name))) Name (Var Name (PIRBase P.DefaultFun Name))) where
   translate (App var args) = SmtLib.app (translate var) (translate <$> args)
@@ -150,5 +154,7 @@ instance
         )
     )
   where
-  translate (TyArg ty) = translate ty
   translate (Arg term) = translate term
+-- TODO: This case is known to create invalid SMT terms,
+-- since in SMT solver, application of a term to a type is not allowed.
+  translate (TyArg ty) = translate ty

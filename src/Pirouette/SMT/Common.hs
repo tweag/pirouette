@@ -9,9 +9,11 @@ import Pirouette.Term.Syntax
 prepareSMT :: MonadIO m => m SmtLib.Solver
 prepareSMT =
   do
+    -- This generates a "Solver" which logs every interaction it has.
+    -- To suppress this logging, replace the 2 next lines by
+    -- s <- liiftIO $ SmtLib.newSolver "cvc4" ["--lang=smt2"] Nothing
     l <- liftIO $ SmtLib.newLogger 0
     s <- liftIO $ SmtLib.newSolver "cvc4" ["--lang=smt2"] (Just l)
-    -- s <- SmtLib.newSolver "cvc4" ["--lang=smt2"] Nothing
     liftIO $ SmtLib.setLogic s "ALL_SUPPORTED"
     return s
 
