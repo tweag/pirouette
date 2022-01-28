@@ -8,15 +8,11 @@ module Pirouette.SymbolicEval where
 
 import Control.Monad
 import Control.Monad.State
-import Data.Bifunctor (bimap, first, second)
-import Data.List (concat, concatMap, elemIndex, foldl', intersperse)
+import Data.List (foldl', intersperse)
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
 import Data.Text.Prettyprint.Doc hiding (Pretty (..))
 import Data.Void (absurd)
-import Debug.Trace (trace)
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.PlutusIR.Utils
 import Pirouette.SMT (smtCheckPathConstraint)
@@ -24,7 +20,6 @@ import Pirouette.SMT.Constraints (Constraint (..))
 import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..))
 import Pirouette.Term.FromPlutusIR ()
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 
@@ -39,27 +34,27 @@ instance Pretty SymbRes where
       <> "\n"
       <> pretty cstr
 
+-- The fuel datatype represents the reason why the computation of a branch ended.
+data Fuel = OutOfFuel | NaturalEnd
+
+-- It is a disjunction to know is fuel went over in one of the branch.
+fuelOver :: Fuel -> Fuel -> Fuel
+fuelOver OutOfFuel _ = OutOfFuel
+fuelOver NaturalEnd x = x
+
 -- A branch of the symbolic execution is a result term and
 -- the constraint to fulfill to reach this branch.
-data CstrBranch = CstrBranch PrtTerm Constraint
+data CstrBranch = CstrBranch Fuel PrtTerm Constraint
 
 instance Pretty CstrBranch where
-  pretty (CstrBranch t conds) =
+  pretty (CstrBranch NaturalEnd t conds) =
     "If:\n" <> indent 2 (pretty conds)
       <> "\nthe output is:\n"
       <> indent 2 (pretty t)
-
-instance Pretty Constraint where
-  pretty (Assign n term) =
-    pretty n <+> "↦" <+> pretty term
-  pretty (OutOfFuelEq t u) =
-    pretty t <+> "==" <+> pretty u
-  pretty Bot =
-    "⊥"
-  pretty (And []) =
-    "⊤"
-  pretty (And l) =
-    mconcat $ intersperse "\n∧ " (map pretty l)
+  pretty (CstrBranch OutOfFuel t conds) =
+    "If:\n" <> indent 2 (pretty conds)
+      <> "\nthe computation got stuck on:\n"
+      <> indent 2 (pretty t)
 
 true :: Constraint
 true = And []
@@ -76,14 +71,14 @@ andConstr x y = And [x, y]
 sendToSMT :: (MonadIO m, PirouetteDepOrder m) => Constraint -> [(Name, PrtType)] -> m Bool
 sendToSMT Bot _ = return False
 sendToSMT (And []) _ = return True
-sendToSMT constr env = return True
--- sendToSMT constr env =
---   do
---     smtResult <- smtCheckPathConstraint (Map.fromList env) constr
---     return $
---       case smtResult of
---         SmtLib.Unsat -> False
---         _ -> True
+-- sendToSMT constr env = return True
+sendToSMT constr env =
+  do
+    smtResult <- smtCheckPathConstraint (Map.fromList env) constr
+    return $
+      case smtResult of
+        SmtLib.Unsat -> False
+        _ -> True
 
 -- A very simple unification test.
 -- If two terms are constructor-headed with different constructors,
@@ -97,32 +92,37 @@ sendToSMT constr env = return True
 -- I have the feeling that doing it is steping on the feet of the SMT solver.
 eqT ::
   PirouetteReadDefs m =>
+  Fuel ->
   PrtTerm ->
   PrtTerm ->
   m Constraint
-eqT t@(R.App (R.B (R.Ann x) _) []) u = do
+eqT OutOfFuel t@((R.App (R.B (R.Ann x) _) [])) u = do
+  uData <- isData u
+  if uData
+  then return $ Assign x u
+  else return $ OutOfFuelEq t u
+eqT NaturalEnd (R.App (R.B (R.Ann x) _) []) u =
   return $ Assign x u
-eqT t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
+eqT remFuel t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
   defF <- prtDefOf f
   defG <- prtDefOf g
   case (defF, defG) of
     (DConstructor {}, DConstructor {}) ->
       if f == g
-        then return $ And (zipWith assigns argsG (filter isntType argsF))
+        then
+          And <$>
+            zipWithM
+              -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
+              -- to the variables which are under the lambda abstractions,
+              -- we know that the symbol we are dealing with is a bound variable which is not applied.
+              -- Hence, we have the guarantee that it is not a type argument.
+              -- This justifies our unsafe matching.
+              (\(R.Arg t) (R.Arg u) -> eqT remFuel t u)
+              argsG
+              (filter R.isArg argsF)
         else return Bot
-    _ -> return $ OutOfFuelEq t u
-  where
-    isntType (R.Arg _) = True
-    isntType (R.TyArg _) = False
-
-    -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
-    -- to the variables which are under the lambda abstractions,
-    -- we know that the symbol we are dealing with is not applied.
-    assigns (R.Arg (R.App (R.B (R.Ann x) _) [])) (R.Arg t) =
-      Assign x t
-    assigns (R.Arg (R.App (R.F (FreeName x)) [])) (R.Arg t) =
-      Assign x t
-eqT t u = return $ OutOfFuelEq t u
+    _ -> return $ NonInlinableSymbolEq t u
+eqT _ t u = return $ NonInlinableSymbolEq t u
 
 -- The main function. It takes a function name and its definition and output a result of symbolic execution.
 -- Since we are doing inlining, we access symbol definition,
@@ -165,13 +165,13 @@ evaluate = auxEvaluateInputs []
       vars <- get
       if remainingFuel == 0
         then -- If fuel is over, then we simply output the term as is.
-          return [CstrBranch t conds]
+          return [CstrBranch OutOfFuel t conds]
         else case hd of
           -- TODO: In all those cases, is it interesting to symbolically evaluate the arguments?
-          R.B (R.Ann _) _ -> return [CstrBranch t conds]
-          R.F (Constant _) -> return [CstrBranch t conds]
-          R.F (Builtin _) -> return [CstrBranch t conds]
-          R.F Bottom -> return [CstrBranch t conds]
+          R.B (R.Ann _) _ -> return [CstrBranch NaturalEnd t conds]
+          R.F (Constant _) -> return [CstrBranch NaturalEnd t conds]
+          R.F (Builtin _) -> return [CstrBranch NaturalEnd t conds]
+          R.F Bottom -> return [CstrBranch NaturalEnd t conds]
           -- Here is the interesting case, we are symbolically executing an application of a symbol which is in the `PirouetteReadDefs` monad.
           R.F (FreeName f) -> do
             def <- prtDefOf f
@@ -191,15 +191,15 @@ evaluate = auxEvaluateInputs []
               DConstructor {} ->
                 case args of
                   -- If there are no arguments, it is over.
-                  [] -> return [CstrBranch (R.appN (var f) []) conds]
+                  [] -> return [CstrBranch NaturalEnd (R.appN (signatureSymbol f) []) conds]
                   _ -> do
                     -- Else we symbolically execute the arguments.
                     resArg <- mapM (R.argMapM return (auxEvaluate (remainingFuel - 1) true)) args
                     -- And we create a branch by element of the cartesian product of the branches of the symbolic evaluation of the arguments.
                     mapM
-                      ( \(newConds, args) ->
-                          CstrBranch
-                            <$> normalizeTerm (R.appN (var f) args)
+                      ( \(fuel, newConds, args) ->
+                          CstrBranch fuel
+                            <$> normalizeTerm (R.appN (signatureSymbol f) args)
                             <*> return (andConstr conds newConds)
                       )
                       (cartesianSet resArg)
@@ -226,14 +226,15 @@ evaluate = auxEvaluateInputs []
                           -- And we combine this with the constraints and terms obtained
                           -- during the symbolic execution of the studied term.
                           mapM
-                            ( \(CstrBranch tx condx) -> do
+                            ( \(CstrBranch remFuel tx condx) -> do
                                 modify (argCons ++)
                                 newCond <-
                                   eqT
+                                    remFuel
                                     tx
                                     ( R.appN
-                                        (var cons)
-                                        (map (R.Arg . boundVar . fst) argCons)
+                                        (signatureSymbol cons)
+                                        (termOfConstructorVars argCons)
                                     )
                                 let totalConds = andConstr condx newCond
                                 vars <- get
@@ -253,33 +254,32 @@ evaluate = auxEvaluateInputs []
               DTypeDef _ ->
                 error "We do not expect name of inductive types here"
       where
-        -- Since we collected the name at the creation of the lambda,
-        -- the de Bruijn indices is irrelevant and should not be used.
-        -- **********************FIXME*TODO***********************
-        -- ****************************** | **********************
-        -- ****************************** v **********************
-        boundVar x = R.App (R.B (R.Ann x) 0) []
-        -- *******************************************************
-        var x = R.App (R.F (FreeName x)) []
+        signatureSymbol x = R.App (R.F (FreeName x)) []
+        -- Since we collected the name at the creation of the lambdas,
+        -- the de Bruijn indices have to be computed.
+        -- We do a double reversal of the list to put the index 0 to the inner-most one.
+        termOfConstructorVars args =
+          let reversedNameList = reverse (map fst args) in
+          reverse $ zipWith (\x i -> R.Arg $ R.App (R.B (R.Ann x) i) []) reversedNameList [0..]
     auxEvaluate remainingFuel conds (R.Lam x ty u) = do
       modify ((R.ann x, ty) :)
       branches <- auxEvaluate remainingFuel conds u
       return $
-        map (\(CstrBranch t conds) -> CstrBranch (R.Lam x ty t) conds) branches
+        map (\(CstrBranch f t conds) -> CstrBranch f (R.Lam x ty t) conds) branches
     auxEvaluate remainingFuel conds (R.Abs ann _ t) =
       auxEvaluate remainingFuel conds t
     auxEvaluate _ _ (R.Hole h) =
       absurd h
 
-cartesianSet :: [R.Arg a [CstrBranch]] -> [(Constraint, [R.Arg a PrtTerm])]
-cartesianSet [] = [(true, [])]
+cartesianSet :: [R.Arg a [CstrBranch]] -> [(Fuel, Constraint, [R.Arg a PrtTerm])]
+cartesianSet [] = [(NaturalEnd, true, [])]
 cartesianSet (R.TyArg ty : tl) =
-  map (second (R.TyArg ty :)) (cartesianSet tl)
+  map (\(f,c,l) ->  (f, c, R.TyArg ty :l)) (cartesianSet tl)
 cartesianSet (R.Arg cstrState : tl) =
   concatMap
-    ( \x@(CstrBranch t conds) ->
+    ( \x@(CstrBranch remFuel t conds) ->
         map
-          (bimap (andConstr conds) (R.Arg t :))
+          (\(f,c,l) -> (fuelOver remFuel f, andConstr conds c, R.Arg t :l))
           (cartesianSet tl)
     )
     cstrState
@@ -298,10 +298,10 @@ normalizeTerm ::
   m PrtTerm
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
--- A term `t` verifies the predicate `isTermCons` if it is composed only
+-- A term `t` verifies the predicate `isData` if it is composed only
 -- of variables and type constructors (no destructors and no defined symbols).
-isTermCons :: (PirouetteReadDefs m) => PrtTerm -> m Bool
-isTermCons (R.App hd args) = go hd args
+isData :: (PirouetteReadDefs m) => PrtTerm -> m Bool
+isData (R.App hd args) = go hd args
   where
     go ::
       (PirouetteReadDefs m) =>
@@ -318,8 +318,8 @@ isTermCons (R.App hd args) = go hd args
       (PirouetteReadDefs m) =>
       R.Arg PrtType PrtTerm ->
       m Bool
-    studyArg (R.Arg t) = isTermCons t
+    studyArg (R.Arg t) = isData t
     studyArg (R.TyArg _) = return True
-isTermCons (R.Lam _ _ t) = isTermCons t
-isTermCons (R.Abs _ _ t) = isTermCons t
-isTermCons (R.Hole h) = absurd h
+isData (R.Lam _ _ t) = isData t
+isData (R.Abs _ _ t) = isData t
+isData (R.Hole h) = absurd h

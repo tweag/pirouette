@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Pirouette.SMT.Constraints where
 
@@ -18,6 +19,8 @@ import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
+import Data.Text.Prettyprint.Doc hiding (Pretty (..))
+import Data.List (intersperse)
 
 -- | Bindings from names to types (for the assign constraints)
 type Env = Map Name PrtType
@@ -28,9 +31,24 @@ type Env = Map Name PrtType
 -- It is isomorphic to our current type, but with better access time to the variable assignements.
 data Constraint
   = Assign Name PrtTerm
+  | NonInlinableSymbolEq PrtTerm PrtTerm
   | OutOfFuelEq PrtTerm PrtTerm
   | And [Constraint]
   | Bot
+
+instance Pretty Constraint where
+  pretty (Assign n term) =
+    pretty n <+> "↦" <+> pretty term
+  pretty (NonInlinableSymbolEq t u) =
+    pretty t <+> "==" <+> pretty u
+  pretty (OutOfFuelEq t u) =
+    pretty t <+> "~~" <+> pretty u
+  pretty Bot =
+    "⊥"
+  pretty (And []) =
+    "⊤"
+  pretty (And l) =
+    mconcat $ intersperse "\n∧ " (map pretty l)
 
 -- | Declare constants and assertions in an SMT solver based on a constraint
 -- that characterizes a path in the symbolic execution of a Plutus IR term.
@@ -71,6 +89,8 @@ assertConstraint s env (Assign name term) =
     let (Just ty) = Map.lookup name env
     liftIO $
       SmtLib.assert s (SmtLib.symbol smtName `SmtLib.eq` translateData ty term)
+assertConstraint s _ (NonInlinableSymbolEq term1 term2) =
+  liftIO $ SmtLib.assert s (translate term1 `SmtLib.eq` translate term2)
 assertConstraint s _ (OutOfFuelEq term1 term2) =
   liftIO $ SmtLib.assert s (translate term1 `SmtLib.eq` translate term2)
 assertConstraint s env (And constraints) =
