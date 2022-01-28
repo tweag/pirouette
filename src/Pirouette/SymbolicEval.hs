@@ -39,6 +39,8 @@ instance Pretty SymbRes where
       <> "\n"
       <> pretty cstr
 
+
+
 -- A branch of the symbolic execution is a result term and
 -- the constraint to fulfill to reach this branch.
 data CstrBranch = CstrBranch PrtTerm Constraint
@@ -76,13 +78,13 @@ andConstr x y = And [x, y]
 sendToSMT :: (MonadIO m, PirouetteDepOrder m) => Constraint -> [(Name, PrtType)] -> m Bool
 sendToSMT Bot _ = return False
 sendToSMT (And []) _ = return True
-sendToSMT constr env =
-  do
-    smtResult <- smtCheckPathConstraint (Map.fromList env) constr
-    return $
-      case smtResult of
-        SmtLib.Unsat -> False
-        _ -> True
+sendToSMT constr env = return True
+  -- do
+  --   smtResult <- smtCheckPathConstraint (Map.fromList env) constr
+  --   return $
+  --     case smtResult of
+  --       SmtLib.Unsat -> False
+  --       _ -> True
 
 -- A very simple unification test.
 -- If two terms are constructor-headed with different constructors,
@@ -115,7 +117,10 @@ eqT t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
     isntType (R.TyArg _) = False
 
     -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
-    -- to the variables which are under the lambda abstractions
+    -- to the variables which are under the lambda abstractions,
+    -- we know that the symbol we are dealing with is not applied.
+    assigns (R.Arg (R.App (R.B (Ann x) _) [])) (R.Arg t) =
+      Assign x t
     assigns (R.Arg (R.App (R.F (FreeName x)) [])) (R.Arg t) =
       Assign x t
 eqT t u = return $ OutOfFuelEq t u
@@ -229,7 +234,7 @@ evaluate = auxEvaluateInputs []
                                     tx
                                     ( R.appN
                                         (var cons)
-                                        (map (R.Arg . var . fst) argCons)
+                                        (termOfConstructorVars argCons)
                                     )
                                 let totalConds = andConstr condx newCond
                                 vars <- get
@@ -250,6 +255,11 @@ evaluate = auxEvaluateInputs []
                 error "We do not expect name of inductive types here"
       where
         var x = R.App (R.F (FreeName x)) []
+        -- Since we collected the name at the creation of the lambda,
+        -- the de Bruijn indices is irrelevant and should not be used.
+        termOfConstructorVars args =
+          let reversedNameList = reverse (map fst args) in
+          reverse $ zipWith (\x i -> R.App R.App (R.B (R.Ann x) i) []) reversedNameList [0..]
     auxEvaluate remainingFuel conds (R.Lam x ty u) = do
       modify ((R.ann x, ty) :)
       branches <- auxEvaluate remainingFuel conds u
