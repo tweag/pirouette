@@ -46,13 +46,13 @@
                 (lam l [List (con integer)]
                     [{[{Nil_match (con integer)} l] Bool}
                         False
-                        (lam head (con integer)
-                            (lam tail [List (con integer)]
-                                [{[{Nil_match (con integer)} l] Bool}
+                        (lam Bhead (con integer)
+                            (lam Btail [List (con integer)]
+                                [{[{Nil_match (con integer)} Btail] Bool}
                                     True
-                                    (lam head2 (con integer)
-                                        (lam tail2 [List (con integer)]
-                                            [oddlength tail2]
+                                    (lam Chead (con integer)
+                                        (lam Ctail [List (con integer)]
+                                            [oddlength Ctail]
                                         )
                                     )
                                 ]

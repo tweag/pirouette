@@ -10,6 +10,7 @@ import Control.Monad
 import Control.Monad.State
 import Data.Bifunctor (bimap, first, second)
 import Data.List (concat, concatMap, elemIndex, foldl', intersperse)
+import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Data.Text.Prettyprint.Doc hiding (Pretty (..))
 import Data.Void (absurd)
@@ -26,7 +27,6 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
-import qualified Data.Map as Map
 
 -- The result of symbolically executing `f arg1 arg2 arg3`
 -- is a list of branches.
@@ -76,13 +76,14 @@ andConstr x y = And [x, y]
 sendToSMT :: (MonadIO m, PirouetteDepOrder m) => Constraint -> [(Name, PrtType)] -> m Bool
 sendToSMT Bot _ = return False
 sendToSMT (And []) _ = return True
-sendToSMT constr env =
-  do
-    smtResult <- smtCheckPathConstraint (Map.fromList env) constr
-    return $
-      case smtResult of
-        SmtLib.Unsat -> False
-        _ -> True
+sendToSMT constr env = return True
+-- sendToSMT constr env =
+--   do
+--     smtResult <- smtCheckPathConstraint (Map.fromList env) constr
+--     return $
+--       case smtResult of
+--         SmtLib.Unsat -> False
+--         _ -> True
 
 -- A very simple unification test.
 -- If two terms are constructor-headed with different constructors,
@@ -115,7 +116,10 @@ eqT t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
     isntType (R.TyArg _) = False
 
     -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
-    -- to the variables which are under the lambda abstractions
+    -- to the variables which are under the lambda abstractions,
+    -- we know that the symbol we are dealing with is not applied.
+    assigns (R.Arg (R.App (R.B (R.Ann x) _) [])) (R.Arg t) =
+      Assign x t
     assigns (R.Arg (R.App (R.F (FreeName x)) [])) (R.Arg t) =
       Assign x t
 eqT t u = return $ OutOfFuelEq t u
@@ -229,7 +233,7 @@ evaluate = auxEvaluateInputs []
                                     tx
                                     ( R.appN
                                         (var cons)
-                                        (map (R.Arg . var . fst) argCons)
+                                        (map (R.Arg . boundVar . fst) argCons)
                                     )
                                 let totalConds = andConstr condx newCond
                                 vars <- get
@@ -249,6 +253,13 @@ evaluate = auxEvaluateInputs []
               DTypeDef _ ->
                 error "We do not expect name of inductive types here"
       where
+        -- Since we collected the name at the creation of the lambda,
+        -- the de Bruijn indices is irrelevant and should not be used.
+        -- **********************FIXME*TODO***********************
+        -- ****************************** | **********************
+        -- ****************************** v **********************
+        boundVar x = R.App (R.B (R.Ann x) 0) []
+        -- *******************************************************
         var x = R.App (R.F (FreeName x)) []
     auxEvaluate remainingFuel conds (R.Lam x ty u) = do
       modify ((R.ann x, ty) :)

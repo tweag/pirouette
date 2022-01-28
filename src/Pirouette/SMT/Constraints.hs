@@ -17,6 +17,7 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 import qualified PlutusCore as P
+import Data.Maybe (mapMaybe)
 
 -- | Bindings from names to types (for the assign constraints)
 type Env = Map Name PrtType
@@ -88,12 +89,18 @@ declareVariables s env =
           <$> Map.toList env
       )
 
+-- | In `Assign` constraints, the assigned terms are always fully-applied
+-- constructors. This dedicated translation function provides required type
+-- annotation for the SMT. For example Nil may have a List Int annotation (the
+-- `as` term in smtlib). Besides, this function removes applications of types
+-- to terms ; they do not belong in the term world of the resulting smtlib
+-- term.
 translateData :: PrtType -> PrtTerm -> SmtLib.SExpr
 translateData ty (App var@(B (Ann name) _) []) = translate var
 translateData ty (App (F (FreeName name)) args) =
   SmtLib.app
     (SmtLib.as (SmtLib.symbol (toSmtName name)) (translate ty))
-    (translate <$> List.filter isNotType args)
+    (translateData ty <$> mapMaybe fromArg args)
   where
     isNotType :: Arg PrtType PrtTerm -> Bool
     isNotType (TyArg _) = False
@@ -109,7 +116,7 @@ instance Translatable (AnnTerm (AnnType Name (Var Name (TypeBase Name))) Name (V
 instance Translatable (Var Name (PIRBase P.DefaultFun Name)) where
   translate (B (Ann name) _) = SmtLib.symbol (toSmtName name)
   translate (F (FreeName name)) = SmtLib.symbol (toSmtName name)
-  translate (F _) = error "todo"
+  translate (F _) = error "Free variable translation not yet implemented."
 
 instance
   Translatable
