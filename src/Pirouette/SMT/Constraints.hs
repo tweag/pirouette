@@ -3,8 +3,13 @@
 
 module Pirouette.SMT.Constraints where
 
-import Data.Void
+import Control.Monad.IO.Class
+import Data.Bifunctor (bimap)
 import qualified Data.List as List (filter)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Void
+import Debug.Trace
 import Pirouette.SMT.Common
 import Pirouette.SMT.Datatypes
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
@@ -12,10 +17,6 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 import qualified PlutusCore as P
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Debug.Trace
-import Data.Bifunctor (bimap)
 
 -- | Bindings from names to types (for the assign constraints)
 type Env = Map Name PrtType
@@ -43,9 +44,9 @@ data Constraint
 -- x = Nil
 -- because Nil has type List a. Nil must be applied to Bool.
 --
--- There are two ways to sort things out:
+-- There are three ways to sort things out:
 --
--- 1. Use SMTlib's "match" term 
+-- 1. Use SMTlib's "match" term
 -- e.g. assert ((match x ((Nil true) ((Cons y ys) false))))
 --
 -- 2. Use the weird "as" SMTLib term
@@ -60,21 +61,32 @@ data Constraint
 -- In our case, it seems to be a shortcut that is equivalent to #1
 --
 -- All these solutions lead to the same sat result and examples
-assertConstraint :: SmtLib.Solver -> Env -> Constraint -> IO ()
+--
+-- We chose solution #2
+assertConstraint :: MonadIO m => SmtLib.Solver -> Env -> Constraint -> m ()
 assertConstraint s env (Assign name term) =
   do
     let smtName = toSmtName name
     let (Just ty) = Map.lookup name env
-    SmtLib.assert s (SmtLib.symbol smtName `SmtLib.eq` translateData ty term)
+    liftIO $
+      SmtLib.assert s (SmtLib.symbol smtName `SmtLib.eq` translateData ty term)
 assertConstraint s _ (OutOfFuelEq term1 term2) =
-  SmtLib.assert s (translate term1 `SmtLib.eq` translate term2)
+  liftIO $ SmtLib.assert s (translate term1 `SmtLib.eq` translate term2)
 assertConstraint s env (And constraints) =
   sequence_ (assertConstraint s env <$> constraints)
-assertConstraint s _ Bot = SmtLib.assert s (SmtLib.bool False)
+assertConstraint s _ Bot = liftIO $ SmtLib.assert s (SmtLib.bool False)
 
-declareVariables :: SmtLib.Solver -> Env -> IO ()
+-- | Declare (name and type) all the variables of the environment in the SMT
+-- solver. This step is required before asserting constraints on these
+-- variables.
+declareVariables :: MonadIO m => SmtLib.Solver -> Env -> m ()
 declareVariables s env =
-  sequence_ (uncurry (SmtLib.declare s) . bimap toSmtName translate <$> Map.toList env)
+  liftIO $
+    sequence_
+      ( uncurry (SmtLib.declare s)
+          . bimap toSmtName translate
+          <$> Map.toList env
+      )
 
 translateData :: PrtType -> PrtTerm -> SmtLib.SExpr
 translateData ty (App var@(B (Ann name) _) []) = translate var
@@ -82,10 +94,10 @@ translateData ty (App (F (FreeName name)) args) =
   SmtLib.app
     (SmtLib.as (SmtLib.symbol (toSmtName name)) (translate ty))
     (translate <$> List.filter isNotType args)
-    where
-      isNotType :: Arg PrtType PrtTerm -> Bool
-      isNotType (TyArg _) = False
-      isNotType _ = True
+  where
+    isNotType :: Arg PrtType PrtTerm -> Bool
+    isNotType (TyArg _) = False
+    isNotType _ = True
 translateData ty _ = error "Illegal term in translate data"
 
 instance Translatable (AnnTerm (AnnType Name (Var Name (TypeBase Name))) Name (Var Name (PIRBase P.DefaultFun Name))) where

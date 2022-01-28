@@ -24,13 +24,31 @@
     (let (rec)
         (termbind 
           (strict)
+            (vardecl dup (fun [List (con integer)] [List (con integer)]))
+                (lam l [List (con integer)]
+                    [{[{Nil_match (con integer)} l] [List (con integer)]}
+                        {Nil (con integer)}
+                        (lam head (con integer)
+                            (lam tail [List (con integer)]
+                              [{Cons (con integer)} head
+                                [{Cons (con integer)} head
+                                 [dup tail]
+                                ]
+                              ]
+                            )
+                        )
+                    ]
+                )
+            )
+        (termbind 
+          (strict)
             (vardecl oddlength (fun [List (con integer)] Bool))
                 (lam l [List (con integer)]
                     [{[{Nil_match (con integer)} l] Bool}
                         False
                         (lam head (con integer)
                             (lam tail [List (con integer)]
-                                [{[{Nil_match (con integer)} tail] Bool}
+                                [{[{Nil_match (con integer)} l] Bool}
                                     True
                                     (lam head2 (con integer)
                                         (lam tail2 [List (con integer)]
@@ -43,7 +61,7 @@
                     ]
             )
         )
-    oddlength
+    (lam x [List (con integer)] [oddlength [dup x]])
     )
   )
 )

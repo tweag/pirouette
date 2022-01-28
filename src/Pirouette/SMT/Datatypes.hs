@@ -7,25 +7,27 @@
 -- PlutusIR/Pirouette to smtlib through the SimpleSMT library.
 module Pirouette.SMT.Datatypes where
 
+import Control.Monad.IO.Class
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.SMT.Common
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
-import Debug.Trace
 
 -- | Declare a datatype in the solver
-declareDatatype :: SmtLib.Solver -> Name -> TypeDef Name -> IO ()
+declareDatatype :: MonadIO m => SmtLib.Solver -> Name -> TypeDef Name -> m ()
 declareDatatype solver typeName typeDef@(Datatype _ typeVariabes _ constructors) =
-  SmtLib.declareDatatype
-    solver
-    (toSmtName typeName)
-    (map (toSmtName . fst) typeVariabes)
-    (constructorFromPIR <$> constructors)
+  liftIO $
+    SmtLib.declareDatatype
+      solver
+      (toSmtName typeName)
+      (map (toSmtName . fst) typeVariabes)
+      (constructorFromPIR <$> constructors)
 
 -- | The definition of constructors in SMTlib follows a fixed layout. This
 -- function translates constructor types in PlutusIR to this layout and
@@ -49,7 +51,8 @@ constructorFromPIR (name, constructorType) =
 
 -- Declare all the datatypes in the solver from an ordered set of Pirouette
 -- definitions
-declareDatatypes :: SmtLib.Solver -> Map Name PrtDef -> [Arg Name Name] -> IO ()
+declareDatatypes ::
+  MonadIO m => SmtLib.Solver -> Map Name PrtDef -> [Arg Name Name] -> m ()
 declareDatatypes solver decls orderedNames =
   let typeNames =
         mapMaybe
@@ -57,21 +60,21 @@ declareDatatypes solver decls orderedNames =
           orderedNames
    in mapM_ aux typeNames
   where
-    aux :: Name -> IO ()
+    aux :: MonadIO m => Name -> m ()
     aux name =
       -- We tried to blacklist types with higher order constructor parameters
       -- But these are required further down so it is not a solution
       -- show name == "Monoid" = return () -- XXX DEBUG
       -- show name == "AdditiveMonoid" = return () -- XXX DEBUG
       -- otherwise =
-        trace (show name) $
+      trace (show name) $
         case Map.lookup name decls of
           Just (DTypeDef typeDef) -> declareDatatype solver name typeDef
           _ -> return ()
 
 -- | Initialize a solver and declare datatypes from Pirouette definitions
 smtMain :: PrtOrderedDefs -> IO ()
-smtMain PrtOrderedDefs {prtDecls=decls, prtDepOrder=orderedNames} = do
+smtMain PrtOrderedDefs {prtDecls = decls, prtDepOrder = orderedNames} = do
   s <- prepareSMT
   declareDatatypes s decls orderedNames
 
