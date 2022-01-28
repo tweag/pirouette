@@ -210,7 +210,10 @@ evaluate = auxEvaluateInputs []
               -- If the head of the studied term is a destructor,
               -- then we creates branches.
               DDestructor _ -> do
-                Just (_, tyName, _, studiedTerm, _, cases, excess) <- runMaybeT $ unDest t
+                -- TODO: Currently the TyParams are completely dropped,
+                -- ideally we should apply them to all the constructors when reconstructing the branches
+                -- in order to allow translation to the SMT solver.
+                Just (_, tyName, tyParams, studiedTerm, _, cases, excess) <- runMaybeT $ unDest t
                 -- We symbolically evaluate the term we are studying.
                 nconstr <- auxEvaluate (remainingFuel - 1) conds studiedTerm
                 vars <- get
@@ -238,6 +241,7 @@ evaluate = auxEvaluateInputs []
                                     tx
                                     ( R.appN
                                         (signatureSymbol cons)
+                                        -- TODO: Here we would like to put the application of the constructor to the type parameters.
                                         (termOfConstructorVars argCons)
                                     )
                                 let totalConds = andConstr condx newCond
