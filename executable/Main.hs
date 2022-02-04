@@ -309,7 +309,9 @@ openAndParsePIR :: (MonadIO m)
 openAndParsePIR fileName = do
   content <- liftIO $ T.readFile fileName
   return . either (Left . show) (Right . Showable)
-         $ PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content
+         $ PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName $ dropComments content
+  where
+    dropComments = T.unlines . filter (not . ("%" `T.isPrefixOf`)) . T.lines
 
 startsBy :: String -> Name -> Bool
 startsBy str n = T.pack str `T.isPrefixOf` nameString n
