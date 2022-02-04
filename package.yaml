@@ -12,26 +12,25 @@ dependencies:
   - mtl >= 2.2.2
   - bytestring
   - containers
-  - freer-extras
   - lens
-  - plutus-core
   - text
   - prettyprinter
   - gitrev
   - optparse-applicative
   - parsec
   - megaparsec
-  - flat >= 0.4.5
   - uniplate
   - hspec
-  - tlaplus
-  - tlaplus-qq
   - QuickCheck
   - bound
   - interpolate
   - deriving-compat
   - simple-smt
   - process
+  - tlaplus
+  - tlaplus-qq
+  - flat >= 0.4.5
+  - plutus-core
 
 library:
   source-dirs: src
