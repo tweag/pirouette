@@ -148,7 +148,8 @@ evaluate = auxEvaluateInputs []
       PrtTerm ->
       m SymbRes
     auxEvaluateInputs vars mainFun t@(R.App _ _) =
-      SymbRes mainFun (map fst vars) <$> evalStateT (auxEvaluate mainFuel true t) vars
+      let vars' = reverse vars
+       in SymbRes mainFun (map fst vars') <$> evalStateT (auxEvaluate mainFuel true t) vars'
     auxEvaluateInputs vars mainFun (R.Lam a ty t) =
       auxEvaluateInputs ((R.ann a, ty) : vars) mainFun t
     auxEvaluateInputs vars mainFun (R.Abs a _ t) =
