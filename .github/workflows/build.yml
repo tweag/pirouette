@@ -1,5 +1,8 @@
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -13,6 +16,15 @@ jobs:
         uses: cachix/install-nix-action@v13
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+      - name: Accessing the cabal cache.
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cabal/store
+            dist-newstyle
+          key: cabal-cache-${{ github.sha }}
+          restore-keys: |
+            cabal-cache
       - name: Install tlacli.
         uses: BSFishy/pip-action@v1
         with:
