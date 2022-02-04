@@ -1,14 +1,38 @@
 {
-    "plutus": {
+    "haskellNix": {
         "branch": "master",
-        "description": "The Plutus language implementation and tools",
-        "homepage": "",
+        "description": "Alternative Haskell Infrastructure for Nixpkgs",
+        "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
-        "repo": "plutus",
-        "rev": "plutus-starter-devcontainer/v1.0.8",
-        "sha256": "0fas8kv57lyrsn3larvbfgif48d506w73y7g3g0mxfilfsl5nyfz",
+        "repo": "haskell.nix",
+        "rev": "390926776d35a889852c6de9312661511fade9ed",
+        "sha256": "1dbvpkk0bgg3cirihzwj1s0m6xvjz66rw954ah8661bq96qlfqbr",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/plutus/archive/plutus-starter-devcontainer/v1.0.8.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/390926776d35a889852c6de9312661511fade9ed.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "niv": {
+        "branch": "master",
+        "description": "Easy dependency management for Nix projects",
+        "homepage": "https://github.com/nmattia/niv",
+        "owner": "nmattia",
+        "repo": "niv",
+        "rev": "65a61b147f307d24bfd0a5cd56ce7d7b7cc61d2e",
+        "sha256": "17mirpsx5wyw262fpsd6n6m47jcgw8k2bwcp1iwdnrlzy4dhcgqh",
+        "type": "tarball",
+        "url": "https://github.com/nmattia/niv/archive/65a61b147f307d24bfd0a5cd56ce7d7b7cc61d2e.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "nixpkgs": {
+        "branch": "release-21.05",
+        "description": "Nix Packages collection",
+        "homepage": "",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "0ebb82a648a6f2ca9841fb8e09848a6067a79cbd",
+        "sha256": "11jdi85v2jk915d76drn68ghkqi4xfaz4i0247k6hl6x7lnrbhd1",
+        "type": "tarball",
+        "url": "https://github.com/NixOS/nixpkgs/archive/0ebb82a648a6f2ca9841fb8e09848a6067a79cbd.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
