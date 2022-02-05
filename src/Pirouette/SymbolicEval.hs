@@ -153,8 +153,6 @@ evaluate = auxEvaluateInputs []
       auxEvaluateInputs ((R.ann a, ty) : vars) mainFun t
     auxEvaluateInputs vars mainFun (R.Abs a _ t) =
       auxEvaluateInputs vars mainFun t
-    auxEvaluateInputs _ _ (R.Hole h) =
-      absurd h
 
     -- Once all the names of the argument variables have been collected, we start the symbolic execution part.
     -- This is in a `State` monad, since the fuel for inlining and the names of already met variables should be shared between the symbolic evaluation of the different arguments of a function.
@@ -276,8 +274,6 @@ evaluate = auxEvaluateInputs []
         map (\(CstrBranch f t conds) -> CstrBranch f (R.Lam x ty t) conds) branches
     auxEvaluate remainingFuel conds (R.Abs ann _ t) =
       auxEvaluate remainingFuel conds t
-    auxEvaluate _ _ (R.Hole h) =
-      absurd h
 
 cartesianSet :: [R.Arg a [CstrBranch]] -> [(Fuel, Constraint, [R.Arg a PrtTerm])]
 cartesianSet [] = [(NaturalEnd, true, [])]
@@ -330,4 +326,3 @@ isData (R.App hd args) = go hd args
     studyArg (R.TyArg _) = return True
 isData (R.Lam _ _ t) = isData t
 isData (R.Abs _ _ t) = isData t
-isData (R.Hole h) = absurd h

@@ -125,17 +125,11 @@ instance HasApp (AnnType ann) where
 -- and types annotations. The @ann@ variable represents the type of
 -- names we're using for explicit variable names. It's important to do so
 -- to preserve user-given names throughout the transformations.
---
--- The 'Hole' constructor represents a hole and is analogous to "Control.Monad.Free.Pure",
--- the only difference being that we didn't write 'AnnTermH' as an explicit pattern-functor.
-data AnnTermH h ty ann v
-  = App   v              [Arg ty (AnnTermH h ty ann v)]
-  | Lam   (Ann ann) ty   (AnnTermH h ty ann v)
-  | Abs   (Ann ann) Kind (AnnTermH h ty ann v)
-  | Hole  h
+data AnnTerm ty ann v
+  = App   v              [Arg ty (AnnTerm ty ann v)]
+  | Lam   (Ann ann) ty   (AnnTerm ty ann v)
+  | Abs   (Ann ann) Kind (AnnTerm ty ann v)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
-
-type AnnTerm = AnnTermH Void
 
 termTyFoldMap :: (Monoid m) => (ty -> m) -> AnnTerm ty ann v -> m
 termTyFoldMap f (App _ args) = mconcat $ mapMaybe (fmap f . fromTyArg) args
