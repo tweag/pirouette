@@ -56,4 +56,7 @@ in {
   # Besides what's needed for building, we also want our instance of the
   # the haskell-language-server
   dev-deps = [ custom-hls ];
+
+  # Export the raw nixpkgs to be accessible to whoever imports this.
+  nixPkgsProxy = rawpkgs;
 }
