@@ -76,6 +76,7 @@ data CTreeOpts = CTreeOpts
   , coWithArguments :: [String]
   }
 
+{-
 type CTreeTerm name = Term name P.DefaultFun
 
 data CTree name
@@ -163,3 +164,4 @@ termToCTree opts name def =
         Nothing -> throwError' $ PEOther "termToCTree: empty tree"
         Just tr -> return tr
     _ -> throwError' $ PEOther (show name ++ " is not a function")
+-}

@@ -18,9 +18,10 @@ import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
+import Pirouette.Term.FromPlutusIR
 
 -- | Declare a datatype in the solver
-declareDatatype :: MonadIO m => SmtLib.Solver -> Name -> TypeDef Name -> m ()
+declareDatatype :: MonadIO m => SmtLib.Solver -> Name -> TypeDef PlutusIR Name -> m ()
 declareDatatype solver typeName typeDef@(Datatype _ typeVariabes _ constructors) =
   liftIO $
     SmtLib.declareDatatype
@@ -52,7 +53,7 @@ constructorFromPIR (name, constructorType) =
 -- Declare all the datatypes in the solver from an ordered set of Pirouette
 -- definitions
 declareDatatypes ::
-  MonadIO m => SmtLib.Solver -> Map Name PrtDef -> [Arg Name Name] -> m ()
+  MonadIO m => SmtLib.Solver -> Map Name (PrtDef PlutusIR) -> [Arg Name Name] -> m ()
 declareDatatypes solver decls orderedNames =
   let typeNames =
         mapMaybe
@@ -73,7 +74,7 @@ declareDatatypes solver decls orderedNames =
           _ -> return ()
 
 -- | Initialize a solver and declare datatypes from Pirouette definitions
-smtMain :: PrtOrderedDefs -> IO ()
+smtMain :: PrtOrderedDefs PlutusIR -> IO ()
 smtMain PrtOrderedDefs {prtDecls = decls, prtDepOrder = orderedNames} = do
   s <- prepareSMT
   declareDatatypes s decls orderedNames
@@ -82,7 +83,7 @@ smtMain PrtOrderedDefs {prtDecls = decls, prtDepOrder = orderedNames} = do
 type TranslationConstraints builtins =
   (Show builtins, Translatable builtins)
 
-instance Translatable (TypeBase Name) where
+instance Translatable (TypeBase PlutusIR Name) where
   translate (TyBuiltin pirType) = translate pirType
   translate (TyFree name) = SmtLib.symbol (toSmtName name)
 

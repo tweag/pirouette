@@ -1,12 +1,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE TypeApplications     #-}
 
 module Pirouette.Term.Transformations where
 
@@ -36,7 +31,7 @@ import           Data.Generics.Uniplate.Operations
 import           Data.List (elemIndex, groupBy, transpose, foldl', span, lookup)
 import           Data.String (fromString)
 import           Data.Maybe (fromMaybe, isJust, fromJust)
-import           Data.Text.Prettyprint.Doc hiding (pretty)
+import           Prettyprinter hiding (Pretty, pretty)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Map as M
@@ -81,10 +76,10 @@ import Debug.Trace (trace)
 -- > v = [d/Bool x T[thunk := Unit] F[thunk := Unit]]
 -- Generally v = [d/Bool T F] since `thunk` has no reason to appear in `T` and `F`.
 --
-removeExcessiveDestArgs :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
+removeExcessiveDestArgs :: (PirouetteReadDefs lang m) => PrtTerm lang -> m (PrtTerm lang)
 removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs m) => PrtTerm -> MaybeT m PrtTerm
+    go :: (PirouetteReadDefs lang m) => PrtTerm lang -> MaybeT m (PrtTerm lang)
     go t = do
       (n, tyN, tyArgs, x, tyReturn, cases, excess) <- unDest t
       if null excess
@@ -100,7 +95,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
 
     -- Receives the excessive arguments, the type of the constructor whose case we're on and
     -- the term defining the value at this constructor's case.
-    appExcessive :: [R.Arg PrtType PrtTerm] -> Type Name -> PrtTerm -> PrtTerm
+    appExcessive :: [PrtArg lang] -> PrtType lang -> PrtTerm lang -> PrtTerm lang
     appExcessive l (R.TyFun a b) (R.Lam n ty t) =
       R.Lam n ty (appExcessive (map (R.argMap id (shift 1)) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
     appExcessive l (R.TyFun a b) _              =
@@ -108,7 +103,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
     appExcessive l _             t              =
        R.appN t l
 
-    tyDrop :: Int -> PrtType -> PrtType
+    tyDrop :: Int -> PrtType lang -> PrtType lang
     tyDrop 0 t               = t
     tyDrop n (R.TyFun a b)   = tyDrop (n-1) b
     tyDrop n (R.TyAll _ _ t) = tyDrop (n-1) t
@@ -116,11 +111,11 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
 
 -- |Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
 -- after performing any sort of inlining.
-deshadowBoundNames :: PrtTerm -> PrtTerm
+deshadowBoundNames :: PrtTerm lang -> PrtTerm lang
 deshadowBoundNames = deshadowBoundNamesWithForbiddenNames []
 
 
-deshadowBoundNamesWithForbiddenNames :: [Name] -> PrtTerm -> PrtTerm
+deshadowBoundNamesWithForbiddenNames :: [Name] -> PrtTerm lang -> PrtTerm lang
 deshadowBoundNamesWithForbiddenNames = go []
   where
     -- @newAnnFrom ns n@ returns a fresh name similar to @n@ given a list of declared names @ns@.
@@ -150,10 +145,11 @@ deshadowBoundNamesWithForbiddenNames = go []
       in R.App n' args'
 
 -- |Expand all non-recursive definitions
-expandDefs :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
+expandDefs :: forall lang m . (PirouetteReadDefs lang m, Pretty (Constants lang), Pretty (BuiltinTerms lang) , Pretty (BuiltinTypes lang))
+           => PrtTerm lang -> m (PrtTerm lang)
 expandDefs = fmap deshadowBoundNames . pushCtx "expandDefs" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs m) => PrtTerm -> MaybeT m PrtTerm
+    go :: PrtTerm lang -> MaybeT m (PrtTerm lang)
     go (R.App (R.F (FreeName n)) args) = do
       isRec <- lift $ termIsRecursive n
       if isRec
@@ -190,10 +186,10 @@ expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
 --
 -- > [d/Maybe [c/Just X] N (\ J)] == [J X]
 --
-constrDestrId :: (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
+constrDestrId :: (PirouetteReadDefs lang m) => PrtTerm lang -> m (PrtTerm lang)
 constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs m) => PrtTerm -> MaybeT m PrtTerm
+    go :: (PirouetteReadDefs lang m) => PrtTerm lang -> MaybeT m (PrtTerm lang)
     go t = do
       (_, tyN, tyArgs, x, ret, cases, excess) <- unDest t
       (tyN', xTyArgs, xIdx, xArgs) <- unCons x
@@ -210,8 +206,8 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
 --   C1 x -> f st#3 (C1 x#0) param#1
 --   C2 x y -> f st#4 (c2 x#1 y#0) param#2
 
-chooseHeadCase :: (PirouetteReadDefs m)
-               => PrtTerm -> PrtType -> [String] -> String -> m PrtTerm
+chooseHeadCase :: (PirouetteReadDefs lang m)
+               => PrtTerm lang -> PrtType lang -> [String] -> String -> m (PrtTerm lang)
 chooseHeadCase t ty args fstArg =
   let argLength = length args in
   let tyOut = snd (R.tyFunArgs ty) in
@@ -234,7 +230,7 @@ chooseHeadCase t ty args fstArg =
           constrDestrId body
 
   where
-    nameOf :: PrtType -> Maybe Name
+    nameOf :: PrtType lang -> Maybe Name
     nameOf (R.TyApp (R.F (TyFree x)) _) = Just x
     nameOf _ = Nothing
 
@@ -243,14 +239,14 @@ chooseHeadCase t ty args fstArg =
     --   C1 x0 -> f#0 (C1 x0)
     --   C2 x0 x1 -> f#0 (C2 x0 x1)
     -- where `i` is of type `ty` and `f : ty -> out`
-    blindDest :: PrtType -> PrtTypeDef -> PrtTerm
+    blindDest :: PrtType lang -> PrtTypeDef lang -> PrtTerm lang
     blindDest tyOut (Datatype _ _ dest cons) =
       R.App (R.F (FreeName dest)) $
         R.Arg (R.termPure (R.B (fromString "i") 1)) :
         R.TyArg tyOut :
         map (R.Arg . consCase) cons
 
-    consCase :: (Name, PrtType) -> PrtTerm
+    consCase :: (Name, PrtType lang) -> PrtTerm lang
     consCase (n, ty) =
       let (argsTy,_) = R.tyFunArgs ty in
       createNLams "x" argsTy $
@@ -260,7 +256,7 @@ chooseHeadCase t ty args fstArg =
 
     -- `createNLams "x" [a,b,c] t` constructs the term
     -- \ (x0 : a) (x1 : b) (x2 : c) -> t
-    createNLams :: String -> [PrtType] -> PrtTerm -> PrtTerm
+    createNLams :: String -> [PrtType lang] -> PrtTerm lang -> PrtTerm lang
     createNLams s tys =
       let go [] _ = id
           go (h:tl) i =
@@ -270,14 +266,14 @@ chooseHeadCase t ty args fstArg =
 
     -- `geneXs 3` is the representation of `[x0#2, x1#1, x2#0]`,
     -- which are the arguments expected after a `\x0 x1 x2`.
-    geneXs :: Int -> [R.Arg ty PrtTerm]
+    geneXs :: Int -> [R.Arg ty (PrtTerm lang)]
     geneXs n =
       map
         (\i -> R.Arg $ R.termPure (R.B (fromString $ "x" ++ show i) (toInteger $ n - 1 - i)))
         [0 .. n-1]
 
     -- Replace the argument "INPUT" by a dummy version of it, which is bound at index 0.
-    transitionArgs :: String -> Int -> R.Arg ty PrtTerm
+    transitionArgs :: String -> Int -> R.Arg ty (PrtTerm lang)
     transitionArgs s n
       | s == fstArg = R.Arg $ R.termPure (R.B (fromString "DUMMY_ARG") 0)
       | otherwise   = R.Arg $ R.termPure (R.B (fromString s) (toInteger n))
@@ -293,21 +289,21 @@ chooseHeadCase t ty args fstArg =
 -- For instance, one would like to write something like:
 -- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
 
-applyRewRules :: (PirouetteReadDefs m)
-              => PrtTerm -> m PrtTerm
+applyRewRules :: (PirouetteReadDefs PlutusIR m)
+              => PirTerm -> m PirTerm
 applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
 
   where
 
-    applyOneRule :: (PirouetteReadDefs m)
-                 => RewritingRule PrtTerm PrtTerm -> PrtTerm -> m PrtTerm
+    applyOneRule :: (PirouetteReadDefs PlutusIR m)
+                 => RewritingRule PirTerm PirTerm -> PirTerm -> m PirTerm
     applyOneRule (RewritingRule name lhs rhs) t =
-      deshadowBoundNames <$> rewriteM (traverse (flip instantiate rhs) . isInstance lhs) t
+      deshadowBoundNames <$> rewriteM (traverse (`instantiate` rhs) . isInstance lhs) t
 
-    isInstance :: PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstance :: PirTerm  -> PirTerm -> Maybe (M.Map String (PrtArg PlutusIR))
     isInstance = isInstanceUnder 0 0
 
-    isInstanceUnder :: Int -> Int -> PrtTerm  -> PrtTerm -> Maybe (M.Map String PrtArg)
+    isInstanceUnder :: Int -> Int -> PirTerm  -> PirTerm -> Maybe (M.Map String (PrtArg PlutusIR))
     isInstanceUnder nTe nTy (R.App vL@(R.F (FreeName x)) []) t =
       case isHole x of
         Nothing ->
@@ -323,7 +319,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       isInstanceUnder nTe (nTy + 1) tL tT
     isInstanceUnder nTe nTy _ _ = Nothing
 
-    isVarInstance :: PrtVar -> PrtVar -> Maybe (M.Map String PrtArg)
+    isVarInstance :: PrtVar PlutusIR -> PrtVar PlutusIR -> Maybe (M.Map String (PrtArg PlutusIR))
     isVarInstance vL@(R.F (FreeName x)) vT =
       case isHole x of
         Nothing ->
@@ -341,7 +337,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       if i == j then Just M.empty else Nothing
     isVarInstance _ _ = Nothing
 
-    isTyInstance :: Int -> PrtType -> PrtType -> Maybe (M.Map String PrtArg)
+    isTyInstance :: Int -> PirType -> PirType -> Maybe (M.Map String (PrtArg PlutusIR))
     isTyInstance nTy (R.TyApp vL@(R.F (TyFree x)) []) ty =
       case isHole x of
         Nothing ->
@@ -357,7 +353,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       M.union <$> isTyInstance nTy aL aT <*> isTyInstance nTy bL bT
     isTyInstance nTy _ _ = Nothing
 
-    isTyVarInstance :: PrtTyVar -> PrtTyVar -> Maybe (M.Map String PrtArg)
+    isTyVarInstance :: PrtTyVar PlutusIR -> PrtTyVar PlutusIR -> Maybe (M.Map String (PrtArg PlutusIR))
     isTyVarInstance vL@(R.F (TyFree x)) vT =
       case isHole x of
         Nothing ->
@@ -375,17 +371,17 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       if i == j  then Just M.empty else Nothing
     isTyVarInstance _ _ = Nothing
 
-    isArgInstance :: Int -> Int -> PrtArg -> PrtArg -> Maybe (M.Map String PrtArg)
+    isArgInstance :: Int -> Int -> PrtArg PlutusIR -> PrtArg PlutusIR -> Maybe (M.Map String (PrtArg PlutusIR))
     isArgInstance nTe nTy (R.Arg tL) (R.Arg tT) = isInstanceUnder nTe nTy tL tT
     isArgInstance nTe nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
     isArgInstance nTe nTy _ _ = Nothing
 
-    instantiate :: (PirouetteReadDefs m)
-                => M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiate :: (PirouetteReadDefs PlutusIR m)
+                => M.Map String (PrtArg PlutusIR) -> PrtTerm PlutusIR -> m (PrtTerm PlutusIR)
     instantiate = instantiateUnder 0 0
 
-    instantiateUnder :: (PirouetteReadDefs m)
-                => Int -> Int -> M.Map String PrtArg -> PrtTerm -> m PrtTerm
+    instantiateUnder :: (PirouetteReadDefs PlutusIR m)
+                => Int -> Int -> M.Map String (PrtArg PlutusIR) -> PrtTerm PlutusIR -> m (PrtTerm PlutusIR)
     instantiateUnder nTe nTy m tt@(R.App v@(R.F (FreeName x)) args) =do
       case isHole x of
         Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
@@ -402,8 +398,8 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     instantiateUnder nTe nTy m (R.Abs ann k t) =
       R.Abs ann k <$> instantiateUnder nTe (nTy + 1) m t
 
-    instantiateTy :: (PirouetteReadDefs m)
-                  => Int -> M.Map String PrtArg -> PrtType -> m PrtType
+    instantiateTy :: (PirouetteReadDefs PlutusIR m)
+                  => Int -> M.Map String (PrtArg PlutusIR) -> PrtType PlutusIR -> m (PrtType PlutusIR)
     instantiateTy nTy m (R.TyApp v@(R.F (TyFree x)) args) =
       case isHole x of
         Nothing -> R.TyApp v <$> mapM (instantiateTy nTy m) args
@@ -422,8 +418,8 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     instantiateTy nTy m (R.TyFun a b) =
       R.TyFun <$> instantiateTy nTy m a <*> instantiateTy nTy m b
 
-    instantiateArg :: (PirouetteReadDefs m)
-                   => Int -> Int -> M.Map String PrtArg -> PrtArg -> m PrtArg
+    instantiateArg :: (PirouetteReadDefs PlutusIR m)
+                   => Int -> Int -> M.Map String (PrtArg PlutusIR) -> PrtArg PlutusIR -> m (PrtArg PlutusIR)
     instantiateArg nTe nTy m (R.Arg t) = R.Arg <$> instantiateUnder nTe nTy m t
     instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
 
@@ -432,14 +428,14 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       let x = T.unpack $ nameString n in
       if length x > 1 && last x == '_' then Just x else Nothing
 
-    haveSameString :: PIRBase P.DefaultFun Name -> PIRBase P.DefaultFun Name -> Bool
+    haveSameString :: TermBase PlutusIR Name -> TermBase PlutusIR Name -> Bool
     haveSameString (Constant a) (Constant b) = a == b
     haveSameString (Builtin f) (Builtin g) = f == g
     haveSameString Bottom Bottom = True
     haveSameString (FreeName x) (FreeName y) = nameString x == nameString y
     haveSameString _ _ = False
 
-    tyHaveSameString :: TypeBase Name -> TypeBase Name -> Bool
+    tyHaveSameString :: TypeBase PlutusIR Name -> TypeBase PlutusIR Name -> Bool
     tyHaveSameString (TyBuiltin f) (TyBuiltin g) = f == g
     tyHaveSameString (TyFree x) (TyFree y) = nameString x == nameString y
     tyHaveSameString _ _ = False
@@ -456,27 +452,27 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
 --
 -- that is, we push the application of f down to the branches of the "case" statement.
 
-destrNF :: forall m . (PirouetteReadDefs m) => PrtTerm -> m PrtTerm
+destrNF :: forall lang m . (PirouetteReadDefs lang m) => PrtTerm lang -> m (PrtTerm lang)
 destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
   where
-    onApp :: (R.Var Name (PIRBase P.DefaultFun Name)
-               -> [R.Arg PrtType PrtTerm] -> MaybeT m PrtTerm)
-          -> PrtTerm -> m PrtTerm
+    onApp :: (R.Var Name (TermBase lang Name)
+               -> [R.Arg (PrtType lang) (PrtTerm lang)] -> MaybeT m (PrtTerm lang))
+          -> PrtTerm lang -> m (PrtTerm lang)
     onApp f t@(R.App n args) = fromMaybe t <$> runMaybeT (f n args)
     onApp _ t                = return t
 
     -- Returns a term that is a destructor from a list of terms respecting
     -- the invariant that if @splitDest t == Just (xs , d , ys)@, then @t == xs ++ [d] ++ ys@
-    splitDest :: [R.Arg PrtType PrtTerm]
-              -> MaybeT m ( PrtTerm
-                          , ListZipper (R.Arg PrtType PrtTerm))
+    splitDest :: [PrtArg lang]
+              -> MaybeT m ( PrtTerm lang
+                          , ListZipper (PrtArg lang))
     splitDest [] = fail "splitDest: can't split empty list"
     splitDest (a@(R.Arg a2@(R.App (R.F (FreeName n)) args)) : ds) =
           (prtIsDest n >> return (a2, ListZipper ([], ds)))
       <|> (splitDest ds <&> second (zipperCons a))
     splitDest (a : ds) = splitDest ds <&> second (zipperCons a)
 
-    go :: PrtTerm -> MaybeT m PrtTerm
+    go :: PrtTerm lang -> MaybeT m (PrtTerm lang)
     go (R.App (R.B _ _)           fargs) = fail "destrNF.go: bound name"
     go (R.App (R.F (FreeName fn)) fargs) = do
       -- Try to see if there's at least one destructor in the arguments.

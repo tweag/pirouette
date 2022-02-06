@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 -- |Implements whole-program transformations. If you're looking
 -- for term transformations, check "Pirouette.Term.Transformations"
 --
@@ -27,7 +29,7 @@ import           Data.Generics.Uniplate.Operations
 -- |Removes all Even-Odd mutually recursive functions from the program.
 -- When successfull, sets the 'tord' state field with a list of names indicating the order in which
 -- they should be defined so that the dependencies of a term @T@ are defined before @T@.
-elimEvenOddMutRec :: (PirouetteBase m) => PrtUnorderedDefs -> m PrtOrderedDefs
+elimEvenOddMutRec :: forall lang m . (LanguageDef lang, PirouetteBase m) => PrtUnorderedDefs lang -> m (PrtOrderedDefs lang)
 elimEvenOddMutRec udefs = do
   ordWithCycles <- runReaderT sortAllDeps udefs
   (ord, udefs') <- runStateT (foldM (\res c -> (++ res) <$> elimDepCycles c) [] ordWithCycles) udefs
@@ -49,8 +51,8 @@ elimEvenOddMutRec udefs = do
   -- > h x = f (x - 3)
   -- > g x = h x + 2
   --
-  elimDepCycles :: (PirouetteBase m)
-                => NE.NonEmpty (R.Arg Name Name) -> StateT PrtUnorderedDefs m [R.Arg Name Name]
+  elimDepCycles :: (LanguageDef lang, PirouetteBase m)
+                => NE.NonEmpty (R.Arg Name Name) -> StateT (PrtUnorderedDefs lang) m [R.Arg Name Name]
   elimDepCycles (e NE.:| []) = return [e]
   elimDepCycles (e NE.:| es) = pushCtx ("elimDepCycles " ++ show (e:es)) $ go (e:es)
     where
@@ -85,14 +87,14 @@ elimEvenOddMutRec udefs = do
             else mapM_ (expandDefInSt n) ns
               >> snoc n <$> solveTermDeps 0 ns
 
-      expandDefInSt :: (PirouetteBase m) => Name -> Name -> StateT PrtUnorderedDefs m ()
+      expandDefInSt :: Name -> Name -> StateT (PrtUnorderedDefs lang) m ()
       expandDefInSt n m = do
         defn <- prtTermDefOf n
         modify (\st -> st { prtUODecls = fst $ expandDefsIn (M.singleton n defn) (prtUODecls st) m })
 
 -- |Expand all non-recursive definitions in our state, keeping only the
 -- recursive definitions or those satisfying the @keep@ predicate.
-expandAllNonRec :: (Name -> Bool) -> PrtOrderedDefs -> PrtOrderedDefs
+expandAllNonRec :: forall lang . (LanguageDef lang) => (Name -> Bool) -> PrtOrderedDefs lang -> PrtOrderedDefs lang
 expandAllNonRec keep prtDefs =
   let ds  = prtDecls prtDefs
       ord = prtDepOrder prtDefs
@@ -113,9 +115,9 @@ expandAllNonRec keep prtDefs =
   -- > && S.fromList rNs == S.fromList (M.keys ds')
   -- > && reverse rNs `isSubListOf` ord
   --
-  go :: ([R.Arg Name Name], Decls Name P.DefaultFun, M.Map Name PrtTerm)
+  go :: ([R.Arg Name Name], Decls lang Name, M.Map Name (PrtTerm lang))
      -> R.Arg Name Name
-     -> ([R.Arg Name Name], Decls Name P.DefaultFun, M.Map Name PrtTerm)
+     -> ([R.Arg Name Name], Decls lang Name, M.Map Name (PrtTerm lang))
   go (names, currDecls, inlinableDecls) (R.TyArg ty) = (R.TyArg ty : names, currDecls, inlinableDecls)
   go (names, currDecls, inlinableDecls) (R.Arg k) =
     let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
@@ -123,10 +125,11 @@ expandAllNonRec keep prtDefs =
         then (R.Arg k : names , decls'            , inlinableDecls)
         else (names           , M.delete k decls' , M.insert k kDef inlinableDecls)
 
-expandDefsIn :: M.Map Name PrtTerm
-             -> Decls Name P.DefaultFun
+expandDefsIn :: (LanguageDef lang)
+             => M.Map Name (PrtTerm lang)
+             -> Decls lang Name
              -> Name
-             -> (Decls Name P.DefaultFun, PrtTerm)
+             -> (Decls lang Name, PrtTerm lang)
 expandDefsIn inlinables decls k =
   case M.lookup k decls of
     Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
@@ -135,7 +138,7 @@ expandDefsIn inlinables decls k =
        in (M.insert k (DFunction r t' ty) decls, t')
     Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
 
-inlineAll :: M.Map Name PrtTerm -> PrtTerm -> Maybe PrtTerm
+inlineAll :: M.Map Name (PrtTerm lang) -> PrtTerm lang -> Maybe (PrtTerm lang)
 inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
   nDef <- M.lookup n inlinables
   Just $ R.appN nDef args
@@ -145,7 +148,7 @@ inlineAll _ _ = Nothing
 
 -- |Checks that all deBruijn indices make sense, this gets run whenever pirouette
 -- is ran with the @--sanity-check@ flag.
-checkDeBruijnIndices :: (PirouetteReadDefs m) => m ()
+checkDeBruijnIndices :: (PirouetteReadDefs lang m, PrettyLang lang) => m ()
 checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
   allDefs <- prtAllDefs
   forM_ (M.toList allDefs) $ \(n, def) -> do
@@ -155,7 +158,7 @@ checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
                >> throwError' (PEOther "Invalid de Bruijn index")
       Right _  -> return ()
   where
-    go :: Integer -> Integer -> PrtTerm -> Either String ()
+    go :: Integer -> Integer -> PrtTerm lang -> Either String ()
     go ty term (R.Lam (R.Ann ann) _ t)
         = go ty (term + 1) t
     go ty term (R.Abs (R.Ann ann) _ t)

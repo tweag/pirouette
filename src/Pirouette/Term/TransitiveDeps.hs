@@ -19,7 +19,7 @@ import           Data.List.NonEmpty (NonEmpty(..))
 --
 -- Returns a list of (non-empty) lists where the inner lists represent mutually recursive
 -- definitions.
-sortAllDeps :: (PirouetteReadDefs m) => m [NonEmpty (R.Arg Name Name)]
+sortAllDeps :: (PirouetteReadDefs lang m) => m [NonEmpty (R.Arg Name Name)]
 sortAllDeps = do
    allDefs <- prtAllDefs
    let funOrTyDefs = mapMaybe (uncurry funOrType) . M.toList $ allDefs
@@ -33,7 +33,7 @@ sortAllDeps = do
 -- |Returns the type and term-level transitive dependencies associated with a name.
 -- This is an expensive computation that you might want to memoize; therefore, check
 -- 'transitiveDepsOfCached' also.
-transitiveDepsOf :: (PirouetteReadDefs m) => Name -> m (S.Set (R.Arg Name Name))
+transitiveDepsOf :: (PirouetteReadDefs lang m) => Name -> m (S.Set (R.Arg Name Name))
 transitiveDepsOf n = evalStateT (transitiveDepsOfCached n) (TranDepsCache M.empty)
 
 -- ** Cached Variants
@@ -41,11 +41,11 @@ transitiveDepsOf n = evalStateT (transitiveDepsOfCached n) (TranDepsCache M.empt
 newtype TranDepsCache = TranDepsCache { trDepsOf :: M.Map Name (S.Set (R.Arg Name Name)) }
 
 -- |Given a list of names, sort them according to their dependencies.
-sortDepsCached :: (PirouetteReadDefs m, MonadState TranDepsCache m)
+sortDepsCached :: (PirouetteReadDefs lang m, MonadState TranDepsCache m)
                => [R.Arg Name Name] -> m [NonEmpty (R.Arg Name Name)]
 sortDepsCached = equivClassesM (\x d -> S.member x <$> transitiveDepsOfCached (R.argElim id id d))
 
-transitiveDepsOfCached :: forall m . (PirouetteReadDefs m, MonadState TranDepsCache m)
+transitiveDepsOfCached :: forall lang m . (PirouetteReadDefs lang m, MonadState TranDepsCache m)
                        => Name -> m (S.Set (R.Arg Name Name))
 transitiveDepsOfCached n = pushCtx ("transitiveDepsOf " ++ show n) $ go S.empty n
     where

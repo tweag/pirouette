@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Pirouette.Monad where
 
 import           Pirouette.Term.Syntax
@@ -77,26 +77,26 @@ throwError' msg = do
 
 -- |Whenever we need access to the list of definitions in the current PIR program
 -- being compiled, we probably want to use 'PirouetteReadDefs' instead of 'PirouetteBase'
-class (PirouetteBase m) => PirouetteReadDefs m where
+class (LanguageDef lang, PirouetteBase m) => PirouetteReadDefs lang m | m -> lang where
   -- |Returns all declarations in scope
-  prtAllDefs :: m (M.Map Name PrtDef)
+  prtAllDefs :: m (M.Map Name (PrtDef lang))
 
   -- |Returns the main program
-  prtMain :: m PrtTerm
+  prtMain :: m (PrtTerm lang)
 
   -- |Returns the definition associated with a given name. Raises a 'PEUndefined'
   -- if the name doesn't exist.
-  prtDefOf :: Name -> m PrtDef
+  prtDefOf :: Name -> m (PrtDef lang)
   prtDefOf n = do
     defs <- prtAllDefs
     case M.lookup n defs of
       Nothing -> throwError' $ PEUndefined n
       Just x  -> return x
 
-  prtTypeDefOf :: Name -> m PrtTypeDef
+  prtTypeDefOf :: Name -> m (PrtTypeDef lang)
   prtTypeDefOf n = prtDefOf n >>= maybe (throwError' $ PENotAType n) return . fromTypeDef
 
-  prtTermDefOf :: Name -> m PrtTerm
+  prtTermDefOf :: Name -> m (PrtTerm lang)
   prtTermDefOf n = prtDefOf n >>= maybe (throwError' $ PENotATerm n) return . fromTermDef
 
   prtIsDest :: Name -> MaybeT m TyName
@@ -105,17 +105,17 @@ class (PirouetteBase m) => PirouetteReadDefs m where
   prtIsConst :: Name -> MaybeT m (Int , TyName)
   prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf n
 
-instance {-# OVERLAPPABLE #-} (PirouetteReadDefs m) => PirouetteReadDefs (Lazy.StateT s m) where
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Lazy.StateT s m) where
   prtAllDefs = lift prtAllDefs
   prtMain    = lift prtMain
 
-instance {-# OVERLAPPABLE #-} (PirouetteReadDefs m) => PirouetteReadDefs (Strict.StateT s m) where
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Strict.StateT s m) where
   prtAllDefs = lift prtAllDefs
   prtMain    = lift prtMain
 
 -- |Given a prefix, if there is a single declared name with the given
 -- prefix, returns it. Throws an error otherwise.
-nameForPrefix :: (PirouetteReadDefs m) => T.Text -> m Name
+nameForPrefix :: (PirouetteReadDefs lang m) => T.Text -> m Name
 nameForPrefix pref = pushCtx "nameForPrefix" $ do
   decls <- prtAllDefs
   let d = M.toList $ M.filterWithKey (\k _ -> pref `T.isPrefixOf` nameString k) decls
@@ -128,7 +128,7 @@ nameForPrefix pref = pushCtx "nameForPrefix" $ do
       return $ fst $ head d
 
 -- |Returns the type of an identifier
-typeOfIdent :: (PirouetteReadDefs m) => Name -> m PrtType
+typeOfIdent :: (PirouetteReadDefs lang m) => Name -> m (PrtType lang)
 typeOfIdent n = do
   dn <- prtDefOf n
   case dn of
@@ -146,7 +146,7 @@ typeOfIdent n = do
 --
 -- We'll get @S.fromList [R.Arg "g", R.Arg "h"]@. If you'd expect to see
 -- @R.Arg "f"@ in the result aswell, use "Pirouette.Term.TransitiveDeps.transitiveDepsOf" instead.
-directDepsOf :: (PirouetteReadDefs m) => Name -> m (S.Set (R.Arg Name Name))
+directDepsOf :: (PirouetteReadDefs lang m) => Name -> m (S.Set (R.Arg Name Name))
 directDepsOf n = do
   ndef <- prtDefOf n
   return $ case ndef of
@@ -158,13 +158,13 @@ directDepsOf n = do
 
 -- |Just like 'directDepsOf', but forgets the information of whether certain dependency
 -- was on a type or a term.
-directDepsOf' :: (PirouetteReadDefs m) => Name -> m (S.Set Name)
+directDepsOf' :: (PirouetteReadDefs lang m) => Name -> m (S.Set Name)
 directDepsOf' = fmap (S.map (R.argElim id id)) . directDepsOf
 
 -- |Returns whether a constructor is recursive. For the
 -- type of lists, for example, @Cons@ would be recursive
 -- whereas @Nil@ would not.
-consIsRecursive :: (PirouetteReadDefs m) => TyName -> Name -> m Bool
+consIsRecursive :: (PirouetteReadDefs lang m) => TyName -> Name -> m Bool
 consIsRecursive ty con = do
   conArgs <- fst . R.tyFunArgs <$> typeOfIdent con
   return $ any (\a -> R.TyArg ty `S.member` typeNames a) conArgs
@@ -176,23 +176,24 @@ consIsRecursive ty con = do
 --
 -- calling @termIsRecursive "f"@ would return @False@. See 'transitiveDepsOf' if
 -- you want to know whether a term is depends on itself transitively.
-termIsRecursive :: (PirouetteReadDefs m) => Name -> m Bool
+termIsRecursive :: (PirouetteReadDefs lang m) => Name -> m Bool
 termIsRecursive n = S.member (R.Arg n) <$> directDepsOf n
 
 -- *** Implementations for 'PirouetteReadDefs'
 
 -- |Unordered definitions consist in a map of 'Name' to 'PrtDef' and
 -- a /main/ term.
-data PrtUnorderedDefs = PrtUnorderedDefs
-  { prtUODecls    :: Decls Name DefaultFun
-  , prtUOMainTerm :: PrtTerm
+data PrtUnorderedDefs lang = PrtUnorderedDefs
+  { prtUODecls    :: Decls lang Name
+  , prtUOMainTerm :: PrtTerm lang
   }
 
-instance (PirouetteBase m) => PirouetteReadDefs (ReaderT PrtUnorderedDefs m) where
+instance (LanguageDef lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
   prtAllDefs = asks prtUODecls
   prtMain    = asks prtUOMainTerm
 
-instance {-# OVERLAPPING #-} (PirouetteBase m) => PirouetteReadDefs (Strict.StateT PrtUnorderedDefs m) where
+instance {-# OVERLAPPING #-} (LanguageDef lang, PirouetteBase m)
+    => PirouetteReadDefs lang (Strict.StateT (PrtUnorderedDefs lang) m) where
   prtAllDefs = Strict.gets prtUODecls
   prtMain    = Strict.gets prtUOMainTerm
 
@@ -200,24 +201,24 @@ instance {-# OVERLAPPING #-} (PirouetteBase m) => PirouetteReadDefs (Strict.Stat
 -- for all term and type declarations in 'prtDecls'. That is, given two
 -- terms @f@ and @g@, @f@ depends on @g@ if @elemIndex f prtDepOrder > elemIndex g prtDepOrder@,
 -- that is, @f@ appears before @g@ in @prtDepOrder@.
-data PrtOrderedDefs = PrtOrderedDefs
-  { prtDecls    :: Decls Name DefaultFun
+data PrtOrderedDefs lang = PrtOrderedDefs
+  { prtDecls    :: Decls lang Name
   , prtDepOrder :: [R.Arg Name Name]
-  , prtMainTerm :: PrtTerm
+  , prtMainTerm :: PrtTerm lang
   }
 
-prtOrderedDefs :: PrtUnorderedDefs -> [R.Arg Name Name] -> PrtOrderedDefs
+prtOrderedDefs :: PrtUnorderedDefs lang -> [R.Arg Name Name] -> PrtOrderedDefs lang
 prtOrderedDefs uod ord = PrtOrderedDefs (prtUODecls uod) ord (prtUOMainTerm uod)
 
-instance (PirouetteBase m) => PirouetteReadDefs (ReaderT PrtOrderedDefs m) where
+instance (LanguageDef lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
   prtAllDefs = asks prtDecls
   prtMain    = asks prtMainTerm
 
-class (PirouetteReadDefs m) => PirouetteDepOrder m where
+class (PirouetteReadDefs lang m) => PirouetteDepOrder lang m where
   -- |Returns the dependency ordering of the currently declared terms.
   prtDependencyOrder :: m [R.Arg Name Name]
 
-instance (PirouetteBase m) => PirouetteDepOrder (ReaderT PrtOrderedDefs m) where
+instance (LanguageDef lang, PirouetteBase m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
   prtDependencyOrder = asks prtDepOrder
 
 -- ** A 'PirouetteBase' Implementation:

@@ -1,19 +1,13 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE DeriveFoldable       #-}
+
 module Pirouette.Term.Syntax.SystemF where
 
 import           Pirouette.Term.Syntax.Subst
-
-import qualified PlutusCore        as P
-import qualified PlutusCore.Pretty as P
 
 import           Control.Arrow (first, second)
 import           Control.Monad
@@ -36,11 +30,18 @@ import           Data.Generics.Uniplate.Data
 
 -- ** Annotated Variables
 
-data Var ann f = B (Ann ann) Integer | F f
+data VarMeta meta ann f = B (Ann ann) Integer | F f | M meta
   deriving (Eq, Ord, Functor, Show, Data, Typeable, Foldable, Traversable)
 
-instance IsVar (Var ann f) where
-  type VarAnn (Var ann f) = ann
+-- |Simple variables can't be metavariables. If we want to implement
+-- things like unification algorithms, though, having meta variables
+-- becomes interesting.
+type Var = VarMeta Void
+
+-- |A 'VarMeta' carries the necessary structure for bound variable substitution.
+-- Check "Pirouette.Term.Syntax.Subst" for more on this.
+instance IsVar (VarMeta meta ann f) where
+  type VarAnn (VarMeta meta ann f) = ann
 
   isBound (B _ i) = Just i
   isBound _       = Nothing
@@ -326,23 +327,6 @@ class HasApp term where
 
 app :: (IsVar v, HasApp term) => term v -> AppArg term v -> term v
 app t = appN t . (:[])
-
--- * Renaming of bound variables
-
-renameFirstBounds :: (IsVar v)
-                  => [VarAnn v] -> AnnTerm ty (VarAnn v) v
-                  -> AnnTerm ty (VarAnn v) v
-renameFirstBounds l =
-  let f c x = case isBound x of
-        Just i  ->
-          if i < c
-          then x
-          else
-            let i_int = fromInteger (i - c) in
-            if i_int < length l then annMap (const (l !! i_int)) x else x
-        Nothing -> x
-  in
-  mapNameScoped f
 
 -- ** Proof-Irrelevant Annotations
 

@@ -38,6 +38,7 @@ library
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
+      Pirouette.Term.Syntax.Pretty.Class
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.ToTla
@@ -73,6 +74,8 @@ library
     , text
     , tlaplus
     , tlaplus-qq
+    , unbound-generics
+    , unification-fd
     , uniplate
   default-language: Haskell2010
 
@@ -106,6 +109,8 @@ executable pirouette
     , text
     , tlaplus
     , tlaplus-qq
+    , unbound-generics
+    , unification-fd
     , uniplate
   default-language: Haskell2010
 
@@ -144,5 +149,7 @@ test-suite spec
     , text
     , tlaplus
     , tlaplus-qq
+    , unbound-generics
+    , unification-fd
     , uniplate
   default-language: Haskell2010

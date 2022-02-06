@@ -16,8 +16,6 @@ import           Pirouette.Term.Syntax.Pretty  as EXPORT
 import qualified Pirouette.Term.Syntax.SystemF as R
 import  Pirouette.Term.Syntax.Subst
 
-import qualified PlutusCore                as P
-import qualified PlutusCore.Pretty         as P (pretty)
 import           Control.Monad.State
 import           Control.Monad.Reader
 import Data.Bifunctor (first)
@@ -28,6 +26,7 @@ import qualified Data.Set                  as S
 import           Data.Data
 import           Data.String
 import           Data.Maybe (fromMaybe)
+import Pirouette.Term.Syntax.Pretty.Class
 
 -- * Top Level Terms and Types
 --
@@ -36,15 +35,15 @@ import           Data.Maybe (fromMaybe)
 -- Pirouette terms and types are simply 'Term' and 'Type' with their type variables
 -- instantiated.
 
-type PrtTerm    = Term Name P.DefaultFun
-type PrtType    = Type Name
-type PrtArg     = R.Arg PrtType PrtTerm
+type PrtTerm lang = Term lang Name
+type PrtType lang = Type lang Name
+type PrtArg  lang = R.Arg (PrtType lang) (PrtTerm lang)
 
-type PrtDef     = Definition Name P.DefaultFun
-type PrtTypeDef = TypeDef Name
+type PrtDef lang = Definition lang Name
+type PrtTypeDef lang = TypeDef lang Name
 
-type PrtVar     = R.Var Name (PIRBase P.DefaultFun Name)
-type PrtTyVar   = R.Var Name (TypeBase Name)
+type PrtVar lang = R.Var Name (TermBase lang Name)
+type PrtTyVar lang = R.Var Name (TypeBase lang Name)
 
 -- * Names
 
@@ -70,18 +69,11 @@ instance Pretty Name where
 class ToName v where
   toName :: v -> Name
 
-instance ToName P.Name where
-  toName pn = Name (P.nameString pn) (Just $ P.unUnique $ P.nameUnique pn)
-
-instance ToName P.TyName where
-  toName = toName . P.unTyName
-
-instance Pretty P.DefaultFun where
-  pretty = P.pretty
-
--- `separateBoundFrom u t` outputs `t` where all the bound variables occuring in both terms
--- are renamed to avoid name clashes.
-separateBoundFrom :: Term Name fun -> Term Name fun -> Term Name fun
+-- | @separateBoundFrom u t@ outputs @t@ where all the bound variables occuring in both terms
+-- are renamed to avoid name clashes when outputting code that relies on user given names
+-- while still being able to use something close to the programmer-given names for the
+-- generated code.
+separateBoundFrom :: Term lang Name -> Term lang Name -> Term lang Name
 separateBoundFrom u t =
   let boundOf = R.termAnnFold S.singleton in
   let inter = S.intersection (boundOf u) (boundOf t) in
@@ -136,13 +128,13 @@ separateBoundFrom u t =
 -- https://github.com/input-output-hk/plutus/issues/3445
 
 -- |Exported interface function to uniquely naming declarations.
-declsUniqueNames :: Decls Name fun -> PrtTerm -> (Decls Name fun, PrtTerm)
+declsUniqueNames :: Decls lang Name -> PrtTerm lang -> (Decls lang Name, PrtTerm lang)
 declsUniqueNames decls mainFun = first M.fromList (go (M.toList decls) mainFun)
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
-    go :: [(Name, Definition Name fun)] -> PrtTerm
-       -> ([(Name , Definition Name fun)], PrtTerm)
+    go :: [(Name, Definition lang Name)] -> PrtTerm lang
+       -> ([(Name , Definition lang Name)], PrtTerm lang)
     go ds mainFun =
       let (_, ks) =
             flip runState M.empty $ mapM (onPairM unNameCollect defUNCollect) ds
@@ -169,13 +161,13 @@ type UNSubstM   = Reader (M.Map T.Text [Name])
 unNameCollect :: Name -> UNCollectM Name
 unNameCollect n = modify (M.insertWith (flip S.union) (nameString n) (S.singleton n)) >> return n
 
-defUNCollect :: Definition Name fun -> UNCollectM (Definition Name fun)
+defUNCollect :: Definition lang Name -> UNCollectM (Definition lang Name)
 defUNCollect (DFunction r t ty) = DFunction r <$> termUNCollect t <*> typeUNCollect ty
 defUNCollect (DConstructor i n) = DConstructor i <$> unNameCollect n
 defUNCollect (DDestructor n)    = DDestructor <$> unNameCollect n
 defUNCollect (DTypeDef n)       = DTypeDef <$> unTypeDefCollect n
 
-unTypeDefCollect :: TypeDef Name -> UNCollectM (TypeDef Name)
+unTypeDefCollect :: TypeDef lang Name -> UNCollectM (TypeDef lang Name)
 unTypeDefCollect d@(Datatype _ _ dest cons) = do
   void $ unNameCollect dest
   let (consNames, types) = unzip cons
@@ -183,33 +175,33 @@ unTypeDefCollect d@(Datatype _ _ dest cons) = do
   mapM_ typeUNCollect types
   return d
 
-termUNCollect :: Term Name fun -> UNCollectM (Term Name fun)
+termUNCollect :: Term lang Name -> UNCollectM (Term lang Name)
 termUNCollect = R.termTrimapM typeUNCollect return collectVar
   where
-    collectVar :: R.Var Name (PIRBase fun Name) -> UNCollectM (R.Var Name (PIRBase fun Name))
+    collectVar :: R.Var Name (TermBase lang Name) -> UNCollectM (R.Var Name (TermBase lang Name))
     collectVar v = do
       case v of
         R.F (FreeName n) -> void $ unNameCollect n
         _                -> return ()
       return v
 
-typeUNCollect :: PrtType -> UNCollectM PrtType
+typeUNCollect :: PrtType lang -> UNCollectM (PrtType lang)
 typeUNCollect = mapM collectVar
   where
-    collectVar :: R.Var Name (TypeBase Name) -> UNCollectM (R.Var Name (TypeBase Name))
+    collectVar :: R.Var Name (TypeBase lang Name) -> UNCollectM (R.Var Name (TypeBase lang Name))
     collectVar v = do
       case v of
         R.F (TyFree n) -> void $ unNameCollect n
         _              -> return ()
       return v
 
-defUNSubst :: Definition Name fun -> UNSubstM (Definition Name fun)
+defUNSubst :: Definition lang Name -> UNSubstM (Definition lang Name)
 defUNSubst (DFunction r t ty) = DFunction r <$> termUNSubst t <*> typeUNSubst ty
 defUNSubst (DConstructor i n) = DConstructor i <$> unNameSubst n
 defUNSubst (DDestructor n)    = DDestructor <$> unNameSubst n
 defUNSubst (DTypeDef n)       = DTypeDef <$> unTypeDefSubst n
 
-unTypeDefSubst :: TypeDef Name -> UNSubstM (TypeDef Name)
+unTypeDefSubst :: TypeDef lang Name -> UNSubstM (TypeDef lang Name)
 unTypeDefSubst (Datatype k vs dest cons) =
   Datatype k <$> mapM (\(n, k) -> (,k) <$> unNameSubst n) vs
              <*> unNameSubst dest
@@ -224,14 +216,14 @@ unNameSubst n = do
     Just xs  -> return $ n { nameUnique = L.elemIndex n xs }
     Nothing  -> return n
 
-termUNSubst :: Term Name fun -> UNSubstM (Term Name fun)
+termUNSubst :: Term lang Name -> UNSubstM (Term lang Name)
 termUNSubst = R.termTrimapM typeUNSubst return subst
   where
-    subst :: R.Var Name (PIRBase fun Name) -> UNSubstM (R.Var Name (PIRBase fun Name))
+    subst :: R.Var Name (TermBase lang Name) -> UNSubstM (R.Var Name (TermBase lang Name))
     subst (R.F (FreeName n)) = R.F . FreeName <$> unNameSubst n
     subst x                  = return x
 
-typeUNSubst :: PrtType -> UNSubstM PrtType
+typeUNSubst :: PrtType lang -> UNSubstM (PrtType lang)
 typeUNSubst = R.tyBimapM return subst
   where
     subst (R.F (TyFree n))  = R.F . TyFree <$> unNameSubst n

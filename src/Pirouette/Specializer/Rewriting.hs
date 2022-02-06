@@ -27,13 +27,13 @@ instance Bifunctor RewritingRule where
   bimap f g (RewritingRule name l r) = RewritingRule name (f l) (g r)
 
 
-parseRewRule :: RewritingRule T.Text T.Text -> RewritingRule PrtTerm PrtTerm
+parseRewRule :: RewritingRule T.Text T.Text -> RewritingRule PirTerm PirTerm
 parseRewRule r@(RewritingRule n _ _) =
   bimap (parse (T.unpack n ++ "-LEFT")) (parse (T.unpack n ++ "-RIGHT")) r
 
   where
 
-    parse :: String -> T.Text -> PrtTerm
+    parse :: String -> T.Text -> PirTerm
     parse err t =
       let tPIR =
             either (error . show) id $
