@@ -75,6 +75,7 @@ import           Text.Megaparsec.Error (errorBundlePretty)
 import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
 
 import Debug.Trace (trace)
+import GHC.IO.Encoding
 ---------------------
 -- * CLI Options * --
 ---------------------
@@ -131,7 +132,9 @@ optsToTlaOpts co = do
 -----------------------
 
 main :: IO ()
-main = Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
+main = do
+ setLocaleEncoding utf8
+ Opt.execParser pirouetteOpts >>= \(cliOpts, file, opts) ->
   pirouette file opts $
     if smtMode cliOpts
        then pirouetteSmt
