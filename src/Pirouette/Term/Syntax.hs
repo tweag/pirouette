@@ -43,8 +43,10 @@ import Control.Monad.Identity
 
 type PrtTerm lang = Term lang Name
 type PrtTermMeta lang m = TermMeta lang m Name
+
 type PrtType lang = Type lang Name
 type PrtTypeMeta lang m = TypeMeta lang m Name
+
 type PrtArgMeta lang m = R.Arg (PrtTypeMeta lang m) (PrtTermMeta lang m)
 type PrtArg  lang = R.Arg (PrtType lang) (PrtTerm lang)
 
@@ -53,6 +55,7 @@ type PrtTypeDef lang = TypeDef lang Name
 
 type PrtVar lang = R.Var Name (TermBase lang Name)
 type PrtVarMeta lang meta = R.VarMeta meta Name (TermBase lang Name)
+
 type PrtTyVar lang = R.Var Name (TypeBase lang Name)
 type PrtTyVarMeta lang meta = R.VarMeta meta Name (TypeBase lang Name)
 

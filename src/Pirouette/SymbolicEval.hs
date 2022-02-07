@@ -150,6 +150,10 @@ symevalDef n args (DConstructor ix tyName) = do
   args' <- distr <$> mapM (R.argMapM return symeval) args
   forM args' $ \p ->
     Path
+      -- TODO: Maybe we shouldn't have (t (Path TermMeta)), but define
+      -- a "Paths" monad and this combination of paths we just wrote here
+      -- should be the bind: I'd like to make it explicit that we're building
+      -- a tree of paths
       <$> asks (andConstr (pathConstraint p) . seeConstraint)
       <*> pure (pathStatus p)
       <*> normalizeTerm (R.appN (R.App (R.F (FreeName n)) []) $ pathResult p)
