@@ -22,7 +22,6 @@ dependencies:
   - uniplate
   - hspec
   - QuickCheck
-  - bound
   - interpolate
   - deriving-compat
   - simple-smt
@@ -31,8 +30,7 @@ dependencies:
   - tlaplus-qq
   - flat >= 0.4.5
   - plutus-core
-  - unbound-generics
-  - unification-fd
+  - list-t
 
 library:
   source-dirs: src

@@ -4,6 +4,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Pirouette.SymbolicEval where
 
@@ -28,22 +32,43 @@ import Control.Monad.Except
 import Control.Applicative
 import Data.Data hiding (eqT)
 import Control.Arrow (first)
+import qualified Data.Map.Strict as M
+import ListT
 
-type SymEvalT m = ReaderT SymEvalEnv (StateT SymEvalSt (ExceptT SymEvalErr m))
+type SymEvalT lang m = ReaderT (SymEvalEnv lang) (ListT m)
 
-data SymEvalEnv = SymEvalEnv
-data SymEvalErr = SymEvalErr
-data SymEvalSt = SymEvalSt
+data SymEvalEnv lang = SymEvalEnv
+  { seeFuel :: Integer
+  , seeConstraint :: Constraint
+  , seeEnv :: M.Map Name (PrtType lang)
+  }
 
--- |Creates a fresh symbolic variable and register it with a given type.
-freshSymVar :: (Monad m) => Maybe Name -> PrtType lang -> SymEvalT m SymVar
-freshSymVar = undefined
+runSymEvalT :: (Monad m) => Integer -> SymEvalT lang m a -> m [a]
+runSymEvalT maxFuel = toList . flip runReaderT env0
+  where
+    env0 :: SymEvalEnv lang
+    env0 = SymEvalEnv maxFuel (And []) M.empty
+
+class (PirouetteDepOrder lang m, MonadPlus m, MonadReader (SymEvalEnv lang) m)
+    => MonadSymEval lang m where
+  -- |Extends the environment with a number of declared symbolic variables
+  withSymVars :: [(Name, PrtType lang)] -> ([SymVar] -> m a) -> m a
+
+instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SymEvalT lang m) where
+  prtAllDefs = lift $ lift prtAllDefs
+  prtMain = lift $ lift prtMain
+
+instance PirouetteDepOrder lang m => PirouetteDepOrder lang (SymEvalT lang m) where
+  prtDependencyOrder = lift $ lift prtDependencyOrder
+
+instance (PirouetteDepOrder lang m) => MonadSymEval lang (SymEvalT lang m) where
+  withSymVars = undefined
 
 data Path lang
-  = Complete { pathConstrs :: Constraint,
+  = Complete { pathConstraint :: Constraint,
                pathResult :: PrtTerm lang
              }
-  | Partial { pathConstrs :: Constraint,
+  | Partial { pathConstraint :: Constraint,
               pathCurrent :: PrtTermMeta lang SymVar
             }
 
@@ -51,19 +76,19 @@ newtype SymVar = SymVar { symVar :: Name }
  deriving (Eq, Show, Data, Typeable)
 
 runEvaluation ::
-  (PirouetteDepOrder lang m, MonadIO m, Alternative t) =>
+  (MonadSymEval lang m) =>
   Term lang Name ->
-  SymEvalT m (t (Path lang))
+  m (Path lang)
 runEvaluation t = do
   let (lams, body) = R.getHeadLams t
-  svars <- mapM (uncurry freshSymVar . first Just) lams
-  runEvaluation' (R.appN (prtTermToMeta body) $ map (R.Arg . (`R.App` []) . R.M) svars)
+  withSymVars lams $ \svars ->
+    runEvaluation' (R.appN (prtTermToMeta body) $ map (R.Arg . (`R.App` []) . R.M) svars)
 
 runEvaluation' ::
-  (PirouetteDepOrder lang m, MonadIO m, Alternative t) =>
+  (MonadSymEval lang m) =>
   TermMeta lang SymVar Name ->
-  SymEvalT m (t (Path lang))
-runEvaluation' t = _ =<< lift . lift . lift $ normalizeTerm t
+  m (Path lang)
+runEvaluation' t = symeval =<< normalizeTerm t
   -- evaluate n =<< normalizeTerm t
 
 normalizeTerm ::
@@ -71,6 +96,52 @@ normalizeTerm ::
   TermMeta lang SymVar Name ->
   m (TermMeta lang SymVar Name)
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
+
+symeval ::
+  (MonadSymEval lang m) =>
+  TermMeta lang SymVar Name ->
+  m (Path lang)
+-- We cannot symbolic-evaluate polymorphic terms
+symeval R.Abs {} = error "Can't symbolically evaluate polymorphic things"
+-- If we're forced to symbolic evaluate a lambda, we create a new metavariable
+-- and evaluate the corresponding application.
+symeval t@(R.Lam (R.Ann x) ty body) = do
+  let ty' = prtTypeFromMeta ty
+  withSymVars [(x, ty')] $ \[svars] ->
+    symeval $ t `R.app` R.Arg (R.App (R.M svars) [])
+-- If we're evaluating an applcation, we distinguish between a number
+-- of constituent cases:
+symeval t = do
+  -- We start by ensuring that our current path constraint is satisfiable;
+  constr <- getPathConstraintIfSAT
+  -- Next we check if this is a branch that still has fuel to proceed
+  fuelLeft <- asks seeFuel
+  if fuelLeft <= 0
+  then return $ Partial constr t
+  else undefined
+
+getPathConstraintIfSAT :: (MonadSymEval lang m) => m Constraint
+getPathConstraintIfSAT = do
+  constr <- asks seeConstraint
+  env <- asks seeEnv
+  plausibleBranch <- sendToSMT constr env
+  guard plausibleBranch
+  return constr
+
+sendToSMT :: (MonadSymEval lang m) => Constraint -> M.Map Name (PrtType lang) -> m Bool
+sendToSMT Bot _ = return False
+sendToSMT (And []) _ = return True
+sendToSMT constr env = return True
+-- sendToSMT constr env =
+--   do
+--     smtResult <- smtCheckPathConstraint (Map.fromList env) constr
+--     return $
+--       case smtResult of
+--         SmtLib.Unsat -> False
+--         _ -> True
+
+
+{-
 
 -- The result of symbolically executing `f arg1 arg2 arg3`
 -- is a list of branches.
@@ -118,18 +189,6 @@ andConstr (And l) (And m) = And (l ++ m)
 andConstr (And l) y = And (y : l)
 andConstr x (And m) = And (x : m)
 andConstr x y = And [x, y]
-
-sendToSMT :: (MonadIO m, PirouetteDepOrder PlutusIR m) => Constraint -> [(Name, PirType)] -> m Bool
-sendToSMT Bot _ = return False
-sendToSMT (And []) _ = return True
--- sendToSMT constr env = return True
-sendToSMT constr env =
-  do
-    smtResult <- smtCheckPathConstraint (Map.fromList env) constr
-    return $
-      case smtResult of
-        SmtLib.Unsat -> False
-        _ -> True
 
 -- The main function. It takes a function name and its definition and output a result of symbolic execution.
 -- Since we are doing inlining, we access symbol definition,
@@ -362,3 +421,5 @@ eqT remFuel t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG
         else return Bot
     _ -> return $ NonInlinableSymbolEq t u
 eqT _ t u = return $ NonInlinableSymbolEq t u
+
+-}

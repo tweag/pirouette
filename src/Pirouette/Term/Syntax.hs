@@ -7,7 +7,7 @@ module Pirouette.Term.Syntax
   , PrtVar, PrtTyVar
   , PrtVarMeta, PrtTyVarMeta
   , Name(..), ToName(..), TyName
-  , prtTypeToMeta
+  , prtTypeToMeta , prtTypeFromMeta
   , prtTermToMeta
   , separateBoundFrom
   , declsUniqueNames
@@ -63,6 +63,9 @@ prtTypeMetaMapM f = R.tyBimapM return (R.varMapMetaM f)
 
 prtTypeToMeta :: PrtType lang -> PrtTypeMeta lang meta
 prtTypeToMeta = runIdentity . prtTypeMetaMapM absurd
+
+prtTypeFromMeta :: PrtTypeMeta lang meta -> PrtType lang
+prtTypeFromMeta = runIdentity . prtTypeMetaMapM (const $ error "Type with metavariables")
 
 prtTermMetaMapM :: (Monad m) => (meta -> m meta')
                 -> PrtTermMeta lang meta
