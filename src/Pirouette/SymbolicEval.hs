@@ -170,6 +170,7 @@ evaluate = auxEvaluateInputs []
           return [CstrBranch OutOfFuel t conds]
         else case hd of
           -- TODO: In all those cases, is it interesting to symbolically evaluate the arguments?
+          R.M _ -> error "imp: we're using no meta variables (yet!)"
           R.B (R.Ann _) _ -> return [CstrBranch NaturalEnd t conds]
           R.F (Constant _) -> return [CstrBranch NaturalEnd t conds]
           R.F (Builtin _) -> return [CstrBranch NaturalEnd t conds]
