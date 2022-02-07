@@ -135,7 +135,6 @@ instance Translatable (AnnTerm (AnnType Name (Var Name (TypeBase Name))) Name (V
   translate (App var args) = SmtLib.app (translate var) (translate <$> args)
   translate (Lam ann ty term) = error "Translate term to smtlib: Lambda abstraction in term"
   translate (Abs ann kind term) = error "Translate term to smtlib: Type abstraction in term"
-  translate (Hole h) = error "Translate term to smtlib: Hole"
 
 instance Translatable (Var Name (PIRBase P.DefaultFun Name)) where
   translate (B (Ann name) _) = SmtLib.symbol (toSmtName name)
@@ -146,8 +145,7 @@ instance
   Translatable
     ( Arg
         (AnnType Name (Var Name (TypeBase Name)))
-        ( AnnTermH
-            Void
+        ( AnnTerm
             (AnnType Name (Var Name (TypeBase Name)))
             Name
             (Var Name (PIRBase P.DefaultFun Name))

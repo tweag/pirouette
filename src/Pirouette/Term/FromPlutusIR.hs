@@ -194,12 +194,12 @@ trDataOrTypeBinding
 trDataOrTypeBinding (PIR.TermBind l _ _ _) = throwError $ NoTermBindAllowed l
 trDataOrTypeBinding (PIR.TypeBind l _ _) = throwError $ NotYetImplemented l "type-bind"
 trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons)) =
-  let tyName = toName $ PIR.tyVarDeclName tyvard
-      tyKind = trKind $ PIR.tyVarDeclKind tyvard
-      tyVars = map ((toName . PIR.tyVarDeclName) &&& (trKind . PIR.tyVarDeclKind)) args
-      tyCons = zipWith (\c i -> (toName $ PIR.varDeclName c, DConstructor i tyName)) cons [0..]
+  let tyName = toName $ PIR._tyVarDeclName tyvard
+      tyKind = trKind $ PIR._tyVarDeclKind tyvard
+      tyVars = map ((toName . PIR._tyVarDeclName) &&& (trKind . PIR._tyVarDeclKind)) args
+      tyCons = zipWith (\c i -> (toName $ PIR._varDeclName c, DConstructor i tyName)) cons [0..]
    in do
-     cons' <- mapM (rstr . ((toName . PIR.varDeclName) &&& (trTypeWithArgs tyVars . PIR.varDeclType))) cons
+     cons' <- mapM (rstr . ((toName . PIR._varDeclName) &&& (trTypeWithArgs tyVars . PIR._varDeclType))) cons
      let tyRes = Datatype tyKind tyVars (toName dest) cons'
      return $ M.singleton tyName (DTypeDef tyRes)
            <> M.singleton (toName dest) (DDestructor tyName)
@@ -339,7 +339,7 @@ eitherDataTerm :: (ToName name)
                => PIR.Binding tyname name uni fun loc
                -> Either (Name, (PIR.Term tyname name uni fun loc, PIR.Type tyname uni loc))
                          (PIR.Binding tyname name uni fun loc)
-eitherDataTerm (PIR.TermBind _ _ vard t) = Left (toName (PIR.varDeclName vard), (t, PIR.varDeclType vard))
+eitherDataTerm (PIR.TermBind _ _ vard t) = Left (toName (PIR._varDeclName vard), (t, PIR._varDeclType vard))
 eitherDataTerm binding                   = Right binding
 
 eitherDataTerm' :: (ToName name)

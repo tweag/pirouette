@@ -1,6 +1,6 @@
 cabal-version: 2.4
 
--- This file has been generated from package.yaml by hpack version 0.34.6.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 
@@ -48,8 +48,6 @@ library
       Pirouette.Transformations
   other-modules:
       Paths_pirouette
-  autogen-modules:
-      Paths_pirouette
   hs-source-dirs:
       src
   build-depends:
@@ -60,7 +58,6 @@ library
     , containers
     , deriving-compat
     , flat >=0.4.5
-    , freer-extras
     , gitrev
     , hspec
     , interpolate
@@ -83,8 +80,6 @@ executable pirouette
   main-is: Main.hs
   other-modules:
       Paths_pirouette
-  autogen-modules:
-      Paths_pirouette
   hs-source-dirs:
       executable
   build-depends:
@@ -95,7 +90,6 @@ executable pirouette
     , containers
     , deriving-compat
     , flat >=0.4.5
-    , freer-extras
     , gitrev
     , hspec
     , interpolate
@@ -124,8 +118,6 @@ test-suite spec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Paths_pirouette
-  autogen-modules:
-      Paths_pirouette
   hs-source-dirs:
       tests/unit
   build-depends:
@@ -136,7 +128,6 @@ test-suite spec
     , containers
     , deriving-compat
     , flat >=0.4.5
-    , freer-extras
     , gitrev
     , hspec
     , interpolate

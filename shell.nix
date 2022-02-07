@@ -1,23 +1,7 @@
-{ nixpkgs ? import <nixpkgs> {}
-, enableHaskellProfiling ? false
-, packages ? import ./. { inherit enableHaskellProfiling; }
-}:
+{ pkgs ? import (import ./nix/sources.nix {}).nixpkgs {} }:
 let
-  inherit (packages) pkgs pirouette;
-  inherit (pirouette) haskell;
-
-in
-  haskell.project.shellFor {
-    withHoogle = false;
-
-    nativeBuildInputs = with pirouette; [
-      nixpkgs.hpack
-      hlint
-      cabal-install
-      haskell-language-server
-      stylish-haskell
-      pkgs.niv
-      cardano-repo-tool
-      nixpkgs.cvc4
-    ];
-  }
+  ourpkgs = import ./nix/packages.nix {};
+  runtime-deps = [ ourpkgs.nixPkgsProxy.cvc4 ];
+in pkgs.mkShell {
+    buildInputs = ourpkgs.build-deps ++ ourpkgs.dev-deps ++ runtime-deps;
+}
