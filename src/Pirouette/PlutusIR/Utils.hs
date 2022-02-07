@@ -60,47 +60,6 @@ nameIsITE (Builtin P.IfThenElse) = True
 nameIsITE _ = False
 
 
--- |A destructor application has the following form:
---
--- > [d/Type tyArg0 ... tyArgN X ReturnType case0 ... caseK extra0 ... extraL]
---
--- This function splits it up into:
---
--- > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK], [extra0 .. extraL])
---
--- Moreover, we already remove the 'R.Arg' wrapper for all the predefined argument positions.
--- Only the extra arguments are kept with their 'R.Arg' because they could be types or terms.
---
-unDest :: (PirouetteReadDefs lang m)
-       => PrtTerm lang
-       -> MaybeT m (Name, TyName, [PrtType lang], PrtTerm lang, PrtType lang, [PrtTerm lang], [R.Arg (PrtType lang) (PrtTerm lang)])
-unDest (R.App (R.F (FreeName n)) args) = do
-  tyN <- prtIsDest n
-  Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
-  let nCons = length cons
-  let (tyArgs, args1) = span R.isTyArg args
-  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
-  case args1 of
-    (R.Arg x : R.TyArg retTy : casesrest) -> do
-      let (cases, rest) = splitAt nCons casesrest
-      cases' <- mapM (wrapMaybe . R.fromArg) cases
-      return (n, tyN, tyArgs', x, retTy, cases', rest)
-    _ -> fail "unDest: Destructor arguments has non-cannonical structure"
-unDest _ = fail "unDest: not an R.App"
-
--- |Analogous to 'unDest', but works fro constructors.
-unCons :: (PirouetteReadDefs lang m)
-       => PrtTerm lang
-       -> MaybeT m (TyName, [PrtType lang], Int, [PrtTerm lang])
-unCons (R.App (R.F (FreeName n)) args) = do
-  (idx, tyN) <- prtIsConst n
-  let (tyArgs, args1) = span R.isTyArg args
-  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
-  args1'  <- mapM (wrapMaybe . R.fromArg) args1
-  return (tyN, tyArgs', idx, args1')
-unCons _ = fail "unCons: not an R.App"
-
-
 {-
 
 consIsUnit :: DisambFN P.TyName P.Name -> Bool

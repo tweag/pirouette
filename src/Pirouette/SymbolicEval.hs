@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Pirouette.SymbolicEval where
 
@@ -22,6 +23,54 @@ import Pirouette.Term.FromPlutusIR (PlutusIR, PirTerm, PirType)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
+import Control.Monad.Reader
+import Control.Monad.Except
+import Control.Applicative
+import Data.Data hiding (eqT)
+import Control.Arrow (first)
+
+type SymEvalT m = ReaderT SymEvalEnv (StateT SymEvalSt (ExceptT SymEvalErr m))
+
+data SymEvalEnv = SymEvalEnv
+data SymEvalErr = SymEvalErr
+data SymEvalSt = SymEvalSt
+
+-- |Creates a fresh symbolic variable and register it with a given type.
+freshSymVar :: (Monad m) => Maybe Name -> PrtType lang -> SymEvalT m SymVar
+freshSymVar = undefined
+
+data Path lang
+  = Complete { pathConstrs :: Constraint,
+               pathResult :: PrtTerm lang
+             }
+  | Partial { pathConstrs :: Constraint,
+              pathCurrent :: PrtTermMeta lang SymVar
+            }
+
+newtype SymVar = SymVar { symVar :: Name }
+ deriving (Eq, Show, Data, Typeable)
+
+runEvaluation ::
+  (PirouetteDepOrder lang m, MonadIO m, Alternative t) =>
+  Term lang Name ->
+  SymEvalT m (t (Path lang))
+runEvaluation t = do
+  let (lams, body) = R.getHeadLams t
+  svars <- mapM (uncurry freshSymVar . first Just) lams
+  runEvaluation' (R.appN (prtTermToMeta body) $ map (R.Arg . (`R.App` []) . R.M) svars)
+
+runEvaluation' ::
+  (PirouetteDepOrder lang m, MonadIO m, Alternative t) =>
+  TermMeta lang SymVar Name ->
+  SymEvalT m (t (Path lang))
+runEvaluation' t = _ =<< lift . lift . lift $ normalizeTerm t
+  -- evaluate n =<< normalizeTerm t
+
+normalizeTerm ::
+  (PirouetteReadDefs lang m) =>
+  TermMeta lang SymVar Name ->
+  m (TermMeta lang SymVar Name)
+normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
 -- The result of symbolically executing `f arg1 arg2 arg3`
 -- is a list of branches.
@@ -81,50 +130,6 @@ sendToSMT constr env =
       case smtResult of
         SmtLib.Unsat -> False
         _ -> True
-
--- A very simple unification test.
--- If two terms are constructor-headed with different constructors,
--- then the constraint boils down to false.
--- Otherwise, we replace `C x1 x2 == C y1 y2` by the constraints
--- `x1 ↦ y1` and `x2 ↦ y2`.
-
--- TODO: We could be even more clever and inline the constraint `x ↦ t` in the other constraints
--- (or even in the term we are executing) to do more pruning of inaccessible branches.
--- This raises a question, what is the job of this module, and the one of the SMT solver?
--- I have the feeling that doing it is steping on the feet of the SMT solver.
-eqT ::
-  PirouetteReadDefs PlutusIR m =>
-  Fuel ->
-  PirTerm ->
-  PirTerm ->
-  m Constraint
-eqT OutOfFuel t@((R.App (R.B (R.Ann x) _) [])) u = do
-  uData <- isData u
-  if uData
-  then return $ Assign x u
-  else return $ OutOfFuelEq t u
-eqT NaturalEnd (R.App (R.B (R.Ann x) _) []) u =
-  return $ Assign x u
-eqT remFuel t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
-  defF <- prtDefOf f
-  defG <- prtDefOf g
-  case (defF, defG) of
-    (DConstructor {}, DConstructor {}) ->
-      if f == g
-        then
-          And <$>
-            zipWithM
-              -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
-              -- to the variables which are under the lambda abstractions,
-              -- we know that the symbol we are dealing with is a bound variable which is not applied.
-              -- Hence, we have the guarantee that it is not a type argument.
-              -- This justifies our unsafe matching.
-              (\(R.Arg t) (R.Arg u) -> eqT remFuel t u)
-              argsG
-              (filter R.isArg argsF)
-        else return Bot
-    _ -> return $ NonInlinableSymbolEq t u
-eqT _ t u = return $ NonInlinableSymbolEq t u
 
 -- The main function. It takes a function name and its definition and output a result of symbolic execution.
 -- Since we are doing inlining, we access symbol definition,
@@ -289,20 +294,6 @@ cartesianSet (R.Arg cstrState : tl) =
     )
     cstrState
 
-runEvaluation ::
-  (PirouetteDepOrder PlutusIR m, MonadIO m) =>
-  Name ->
-  PirTerm ->
-  m SymbRes
-runEvaluation n t =
-  evaluate n =<< normalizeTerm t
-
-normalizeTerm ::
-  (PirouetteReadDefs PlutusIR m) =>
-  PirTerm ->
-  m PirTerm
-normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
-
 -- A term `t` verifies the predicate `isData` if it is composed only
 -- of variables and type constructors (no destructors and no defined symbols).
 isData :: (PirouetteReadDefs PlutusIR m) => PirTerm -> m Bool
@@ -327,3 +318,47 @@ isData (R.App hd args) = go hd args
     studyArg (R.TyArg _) = return True
 isData (R.Lam _ _ t) = isData t
 isData (R.Abs _ _ t) = isData t
+
+-- A very simple unification test.
+-- If two terms are constructor-headed with different constructors,
+-- then the constraint boils down to false.
+-- Otherwise, we replace `C x1 x2 == C y1 y2` by the constraints
+-- `x1 ↦ y1` and `x2 ↦ y2`.
+
+-- TODO: We could be even more clever and inline the constraint `x ↦ t` in the other constraints
+-- (or even in the term we are executing) to do more pruning of inaccessible branches.
+-- This raises a question, what is the job of this module, and the one of the SMT solver?
+-- I have the feeling that doing it is steping on the feet of the SMT solver.
+eqT ::
+  PirouetteReadDefs PlutusIR m =>
+  Fuel ->
+  PirTerm ->
+  PirTerm ->
+  m Constraint
+eqT OutOfFuel t@((R.App (R.B (R.Ann x) _) [])) u = do
+  uData <- isData u
+  if uData
+  then return $ Assign x u
+  else return $ OutOfFuelEq t u
+eqT NaturalEnd (R.App (R.B (R.Ann x) _) []) u =
+  return $ Assign x u
+eqT remFuel t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
+  defF <- prtDefOf f
+  defG <- prtDefOf g
+  case (defF, defG) of
+    (DConstructor {}, DConstructor {}) ->
+      if f == g
+        then
+          And <$>
+            zipWithM
+              -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
+              -- to the variables which are under the lambda abstractions,
+              -- we know that the symbol we are dealing with is a bound variable which is not applied.
+              -- Hence, we have the guarantee that it is not a type argument.
+              -- This justifies our unsafe matching.
+              (\(R.Arg t) (R.Arg u) -> eqT remFuel t u)
+              argsG
+              (filter R.isArg argsF)
+        else return Bot
+    _ -> return $ NonInlinableSymbolEq t u
+eqT _ t u = return $ NonInlinableSymbolEq t u

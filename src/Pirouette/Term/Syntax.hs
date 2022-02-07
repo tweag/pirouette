@@ -3,8 +3,12 @@
 module Pirouette.Term.Syntax
   ( module EXPORT
   , PrtTerm, PrtType, PrtDef, PrtTypeDef, PrtArg
+  , PrtTermMeta, PrtTypeMeta, PrtArgMeta
   , PrtVar, PrtTyVar
+  , PrtVarMeta, PrtTyVarMeta
   , Name(..), ToName(..), TyName
+  , prtTypeToMeta
+  , prtTermToMeta
   , separateBoundFrom
   , declsUniqueNames
   , safeIdx
@@ -27,6 +31,8 @@ import           Data.Data
 import           Data.String
 import           Data.Maybe (fromMaybe)
 import Pirouette.Term.Syntax.Pretty.Class
+import Data.Void
+import Control.Monad.Identity
 
 -- * Top Level Terms and Types
 --
@@ -36,14 +42,35 @@ import Pirouette.Term.Syntax.Pretty.Class
 -- instantiated.
 
 type PrtTerm lang = Term lang Name
+type PrtTermMeta lang m = TermMeta lang m Name
 type PrtType lang = Type lang Name
+type PrtTypeMeta lang m = TypeMeta lang m Name
+type PrtArgMeta lang m = R.Arg (PrtTypeMeta lang m) (PrtTermMeta lang m)
 type PrtArg  lang = R.Arg (PrtType lang) (PrtTerm lang)
 
 type PrtDef lang = Definition lang Name
 type PrtTypeDef lang = TypeDef lang Name
 
 type PrtVar lang = R.Var Name (TermBase lang Name)
+type PrtVarMeta lang meta = R.VarMeta meta Name (TermBase lang Name)
 type PrtTyVar lang = R.Var Name (TypeBase lang Name)
+type PrtTyVarMeta lang meta = R.VarMeta meta Name (TypeBase lang Name)
+
+prtTypeMetaMapM :: (Monad m) => (meta -> m meta')
+                -> PrtTypeMeta lang meta
+                -> m (PrtTypeMeta lang meta')
+prtTypeMetaMapM f = R.tyBimapM return (R.varMapMetaM f)
+
+prtTypeToMeta :: PrtType lang -> PrtTypeMeta lang meta
+prtTypeToMeta = runIdentity . prtTypeMetaMapM absurd
+
+prtTermMetaMapM :: (Monad m) => (meta -> m meta')
+                -> PrtTermMeta lang meta
+                -> m (PrtTermMeta lang meta')
+prtTermMetaMapM f = R.termTrimapM (prtTypeMetaMapM f) return (R.varMapMetaM f)
+
+prtTermToMeta :: PrtTerm lang -> PrtTermMeta lang meta
+prtTermToMeta = runIdentity . prtTermMetaMapM absurd
 
 -- * Names
 
