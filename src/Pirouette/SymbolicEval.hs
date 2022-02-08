@@ -120,7 +120,7 @@ instance (Monad m) => Monad (SymEvalT lang m) where
   xs >>= f = SymEvalT $
     ReaderT $ \e -> StateT $ \st -> do
       (x, st') <- runSymEvalT' e st xs
-      (y, st'') <- runSymEvalT' (seeAndConstrs (pathConstraint x) e) st' (f $ pathResult x)
+      (y, st'') <- runSymEvalT' e st' (f $ pathResult x)
       return (y, st'')
 
 instance (Monad m) => Alternative (SymEvalT lang m) where
@@ -174,9 +174,10 @@ newtype SymVar = SymVar {symVar :: Name}
 
 runEvaluation :: (SymEvalConstr lang m) => Term lang Name -> SymEvalT lang m (TermMeta lang SymVar Name)
 runEvaluation t = do
+  liftIO $ putStrLn $ "evaluating: " ++ show (pretty t)
   let (lams, body) = R.getHeadLams t
   withSymVars lams $ \svars ->
-    symeval (R.appN (prtTermToMeta body) $ map (R.Arg . (`R.App` []) . R.M) svars)
+    symeval (R.appN (prtTermToMeta t) $ map (R.Arg . (`R.App` []) . R.M) svars)
 
 withSymVars :: (SymEvalConstr lang m) => [(Name, PrtType lang)] -> ([SymVar] -> SymEvalT lang m a) -> SymEvalT lang m a
 withSymVars vs f = do
@@ -209,8 +210,9 @@ singlePathStatus ps res =
 outOfFuel :: (Monad m) => a -> SymEvalT lang m a
 outOfFuel = singlePathStatus Pruned
 
-completed :: (Monad m) => a -> SymEvalT lang m a
-completed = singlePathStatus Ongoing
+completed :: (Monad m) => Constraint lang -> a -> SymEvalT lang m a
+completed cstr res =
+  SymEvalT $ ReaderT $ \e -> StateT $ \st -> ListT.fromFoldable [(Path cstr Ongoing res, st)]
 
 symeval :: (SymEvalConstr lang m) => TermMeta lang SymVar Name -> SymEvalT lang m (TermMeta lang SymVar Name)
 symeval t = do
@@ -238,7 +240,12 @@ symeval' t@(R.Lam (R.Ann x) ty body) = do
 symeval' t@(R.App hd args) = do
   mDefHead <- lift $ prtMaybeDefOf hd
   case mDefHead of
-    Nothing -> completed t
+    Nothing -> do
+      cs <- asks seeConstraint
+      liftIO $ do
+        putStrLn $ "On branch: " ++ show (pretty cs)
+        putStrLn $ "  result is: " ++ show (pretty t)
+      completed cs t
     Just def -> case def of
       DTypeDef _ -> error "Can't evaluate typedefs"
       -- If hd is a defined function, we inline its definition and symbolically evaluate
