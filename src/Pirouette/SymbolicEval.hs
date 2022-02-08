@@ -1,14 +1,16 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.SymbolicEval where
 
@@ -16,166 +18,360 @@ import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.Except
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Data hiding (eqT)
+import Data.Foldable
 import Data.Functor
 import Data.List (foldl', intersperse)
 import qualified Data.Map as Map
 import qualified Data.Map.Strict as M
-import Data.Text.Prettyprint.Doc hiding (Pretty (..))
+import Prettyprinter hiding (Pretty (..))
 import Data.Void (absurd)
-import ListT
+import ListT (ListT)
+import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import Pirouette.PlutusIR.Utils
 import Pirouette.SMT (smtCheckPathConstraint)
-import Pirouette.SMT.Constraints (Constraint (..))
 import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..))
 import Pirouette.Term.FromPlutusIR (PirTerm, PirType, PlutusIR)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 
-type SymEvalT lang m = ReaderT (SymEvalEnv lang) m
+data Constraint lang
+  = SymVar :== PrtTermMeta lang SymVar
+  | And [Constraint lang]
+  | Bot
 
-data SymEvalEnv lang = SymEvalEnv
-  { seeFuel :: Integer,
-    seeConstraint :: Constraint,
-    seeEnv :: M.Map Name (PrtType lang)
-  }
+instance Semigroup (Constraint lang) where
+  (<>) = andConstr
 
-runSymEvalT :: (Monad m) => Integer -> SymEvalT lang m a -> m a
-runSymEvalT maxFuel = {- toList . -} flip runReaderT env0
-  where
-    env0 :: SymEvalEnv lang
-    env0 = SymEvalEnv maxFuel (And []) M.empty
+instance Monoid (Constraint lang) where
+  mempty = And []
 
-class
-  (PirouetteDepOrder lang m, MonadReader (SymEvalEnv lang) m) =>
-  MonadSymEval lang m
-  where
-  -- | Extends the environment with a number of declared symbolic variables
-  withSymVars :: [(Name, PrtType lang)] -> ([SymVar] -> m a) -> m a
+-- Essentially list concatenation, with the specificity that `Bot` is absorbing.
+andConstr :: Constraint lang -> Constraint lang -> Constraint lang
+andConstr Bot _ = Bot
+andConstr _ Bot = Bot
+andConstr (And l) (And m) = And (l ++ m)
+andConstr (And l) y = And (y : l)
+andConstr x (And m) = And (x : m)
+andConstr x y = And [x, y]
 
-  -- | Runs the computation with one less gas
-  withConsumedGas :: m a -> m a
-
-instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SymEvalT lang m) where
-  prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
-
-instance PirouetteDepOrder lang m => PirouetteDepOrder lang (SymEvalT lang m) where
-  prtDependencyOrder = lift prtDependencyOrder
-
-instance (PirouetteDepOrder lang m) => MonadSymEval lang (SymEvalT lang m) where
-  withSymVars = undefined
-  withConsumedGas = undefined
-
-data Path res = Path
-  { pathConstraint :: Constraint,
+data Path lang res = Path
+  { pathConstraint :: Constraint lang,
     pathStatus :: PathStatus,
     pathResult :: res
   }
+  deriving (Functor, Traversable, Foldable)
 
-data PathStatus = Completed | Stopped
+data PathStatus = Pruned | Ongoing
 
-singlePathStatus :: (MonadSymEval lang m, Alternative t) => PathStatus -> a -> m (t (Path a))
-singlePathStatus ps res = asks (pure . (\c -> Path c ps res) . seeConstraint)
+instance Semigroup PathStatus where
+  Pruned <> _ = Pruned
+  _ <> Pruned = Pruned
+  _ <> _ = Ongoing
 
-outOfFuel :: (MonadSymEval lang m, Alternative t) => a -> m (t (Path a))
-outOfFuel = singlePathStatus Stopped
+instance Applicative (Path lang) where
+  pure = Path mempty Ongoing
+  f <*> x =
+    Path
+      (pathConstraint f <> pathConstraint x)
+      (pathStatus f <> pathStatus x)
+      (pathResult f (pathResult x))
 
-completed :: (MonadSymEval lang m, Alternative t) => a -> m (t (Path a))
-completed = singlePathStatus Completed
+data SymEvalEnv lang = SymEvalEnv
+  { seeFuel :: Integer,
+    seeConstraint :: Constraint lang
+  }
+
+seeAndConstrs :: Constraint lang -> SymEvalEnv lang -> SymEvalEnv lang
+seeAndConstrs c (SymEvalEnv fuel cs) = SymEvalEnv fuel (c <> cs)
+
+data SymEvalSt lang = SymEvalSt
+  { sestEnv :: M.Map Name (PrtType lang)
+  , sestFreshCounter :: Int
+  }
+
+newtype SymEvalT lang m a = SymEvalT {symEvalT :: ReaderT (SymEvalEnv lang) (StateT (SymEvalSt lang) (ListT m)) (Path lang a)}
+  deriving (Functor)
+
+runSymEvalT' :: (Monad m) => SymEvalEnv lang -> SymEvalSt lang -> SymEvalT lang m a -> ListT m (Path lang a, SymEvalSt lang)
+runSymEvalT' e st = flip runStateT st . flip runReaderT e . symEvalT
+
+runSymEvalT :: (Monad m) => SymEvalEnv lang -> SymEvalSt lang -> SymEvalT lang m a -> m [(Path lang a, SymEvalSt lang)]
+runSymEvalT e st = ListT.toList . runSymEvalT' e st
+
+symevalT :: (Monad m) => SymEvalT lang m a -> m [Path lang a]
+symevalT = fmap (map fst) . runSymEvalT e0 st0
+  where
+    e0 = SymEvalEnv 10 mempty
+    st0 = SymEvalSt M.empty 0
+
+instance (Monad m) => Applicative (SymEvalT lang m) where
+  -- TODO: should we get the constraints from the env and put them on the path?
+  pure x = SymEvalT $ ReaderT $ \e -> StateT $ \st -> ListT.fromFoldable [(pure x, st)]
+  (<*>) = ap
+
+instance (Monad m) => Monad (SymEvalT lang m) where
+  xs >>= f = SymEvalT $
+    ReaderT $ \e -> StateT $ \st -> do
+      (x, st') <- runSymEvalT' e st xs
+      (y, st'') <- runSymEvalT' (seeAndConstrs (pathConstraint x) e) st' (f $ pathResult x)
+      return (y, st'')
+
+instance (Monad m) => Alternative (SymEvalT lang m) where
+  empty = SymEvalT $ ReaderT $ \_ -> StateT $ const empty
+
+  xs <|> ys = SymEvalT $
+    ReaderT $ \e -> StateT $ \st ->
+      runSymEvalT' e st xs <|> runSymEvalT' e st ys
+
+instance (Monad m) => MonadState (SymEvalSt lang) (SymEvalT lang m) where
+  state f = SymEvalT $ ReaderT $ \_ -> state (first pure . f)
+
+instance (Monad m) => MonadReader (SymEvalEnv lang) (SymEvalT lang m) where
+  ask = SymEvalT $ ReaderT $ \e -> return (pure e)
+  local f = SymEvalT . local f . symEvalT
+
+instance MonadTrans (SymEvalT lang) where
+  lift x = SymEvalT $ lift $ lift $ lift $ fmap pure x
+
+instance (MonadFail m) => MonadFail (SymEvalT lang m) where
+  fail = lift . fail
+
+type SymEvalConstr lang m = (PirouetteDepOrder lang m)
+
+prune :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+prune xs = SymEvalT $
+  ReaderT $ \e -> StateT $ \st -> do
+    (x, st') <- runSymEvalT' e st xs
+    ok <- lift $ pathIsPlausible x (sestEnv st')
+    guard ok
+    return (x, st')
+  where
+    pathIsPlausible :: (Monad m) => Path lang a -> M.Map name (PrtType lang) -> m Bool
+    pathIsPlausible p env = return True -- TODO: send path constraint to SMT?
+
+learn :: (SymEvalConstr lang m) => Constraint lang -> SymEvalT lang m a -> SymEvalT lang m a
+learn c = local (seeAndConstrs c)
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
 
-runEvaluation ::
-  (MonadSymEval lang m, Alternative t, Traversable t) =>
-  Term lang Name ->
-  m (t (Path (TermMeta lang SymVar Name)))
+runEvaluation :: (SymEvalConstr lang m) => Term lang Name -> SymEvalT lang m (TermMeta lang SymVar Name)
 runEvaluation t = do
   let (lams, body) = R.getHeadLams t
   withSymVars lams $ \svars ->
-    runEvaluation' (R.appN (prtTermToMeta body) $ map (R.Arg . (`R.App` []) . R.M) svars)
+    symeval (R.appN (prtTermToMeta body) $ map (R.Arg . (`R.App` []) . R.M) svars)
 
-runEvaluation' ::
-  (MonadSymEval lang m, Alternative t, Traversable t) =>
-  TermMeta lang SymVar Name ->
-  m (t (Path (TermMeta lang SymVar Name)))
-runEvaluation' t = symeval =<< normalizeTerm t
+withSymVars :: (SymEvalConstr lang m) => [(Name, PrtType lang)] -> ([SymVar] -> SymEvalT lang m a) -> SymEvalT lang m a
+withSymVars vs f = do
+  old <- get
+  modify (\st -> st { sestEnv = M.union (sestEnv st) (M.fromList vs) })
+  f (map (SymVar . fst) vs) <* put old
 
--- evaluate n =<< normalizeTerm t
+withFreshSymVar :: (SymEvalConstr lang m) => PrtType lang -> (SymVar -> SymEvalT lang m a) -> SymEvalT lang m a
+withFreshSymVar ty f = withFreshSymVars [ty] (\[x] -> f x)
 
-normalizeTerm ::
-  (PirouetteReadDefs lang m) =>
-  TermMeta lang SymVar Name ->
-  m (TermMeta lang SymVar Name)
+withFreshSymVars :: (SymEvalConstr lang m) => [PrtType lang] -> ([SymVar] -> SymEvalT lang m a) -> SymEvalT lang m a
+withFreshSymVars [] f = f []
+withFreshSymVars tys f = do
+  let n = length tys
+  ctr <- gets sestFreshCounter
+  modify (\st -> st { sestFreshCounter = sestFreshCounter st + n })
+  let vars = zipWith (\i ty -> (Name "s" (Just i) , ty)) [ctr..] tys
+  withSymVars vars f
+
+consumeGas :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+consumeGas = local (\e -> e { seeFuel = seeFuel e - 1 })
+
+normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar Name -> m (TermMeta lang SymVar Name)
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
-symeval ::
-  (MonadSymEval lang m, Alternative t, Traversable t) =>
-  TermMeta lang SymVar Name ->
-  m (t (Path (TermMeta lang SymVar Name)))
--- We cannot symbolic-evaluate polymorphic terms
-symeval R.Abs {} = error "Can't symbolically evaluate polymorphic things"
--- If we're forced to symbolic evaluate a lambda, we create a new metavariable
--- and evaluate the corresponding application.
-symeval t@(R.Lam (R.Ann x) ty body) = do
-  let ty' = prtTypeFromMeta ty
-  withSymVars [(x, ty')] $ \[svars] ->
-    symeval $ t `R.app` R.Arg (R.App (R.M svars) [])
--- If we're evaluating an applcation, we distinguish between a number
--- of constituent cases:
-symeval t@(R.App hd args) = do
-  -- Next we check if this is a branch that still has fuel to proceed
+singlePathStatus :: (Monad m) => PathStatus -> a -> SymEvalT lang m a
+singlePathStatus ps res =
+  SymEvalT $ ReaderT $ \e -> StateT $ \st -> ListT.fromFoldable [(Path (seeConstraint e) ps res, st)]
+
+outOfFuel :: (Monad m) => a -> SymEvalT lang m a
+outOfFuel = singlePathStatus Pruned
+
+completed :: (Monad m) => a -> SymEvalT lang m a
+completed = singlePathStatus Ongoing
+
+symeval :: (SymEvalConstr lang m) => TermMeta lang SymVar Name -> SymEvalT lang m (TermMeta lang SymVar Name)
+symeval t = do
+  t' <- lift $ normalizeTerm t
   fuelLeft <- asks seeFuel
   if fuelLeft <= 0
-    then outOfFuel t
-    else case hd of
-      R.F (FreeName n) -> prtDefOf n >>= symevalDef n args
-      _ -> completed t
+    then outOfFuel t'
+    else prune $ symeval' t'
 
-symevalDef ::
-  (MonadSymEval lang m, Alternative t, Traversable t) =>
-  Name ->
-  [PrtArgMeta lang SymVar] ->
-  PrtDef lang ->
-  m (t (Path (TermMeta lang SymVar Name)))
-symevalDef n args (DFunction _rec body ty) =
-  withConsumedGas . runEvaluation' $ prtTermToMeta body `R.appN` args
-symevalDef n args (DConstructor ix tyName) = do
-  args' <- distr <$> mapM (R.argMapM return symeval) args
-  forM args' $ \p ->
-    Path
-      -- TODO: Maybe we shouldn't have (t (Path TermMeta)), but define
-      -- a "Paths" monad and this combination of paths we just wrote here
-      -- should be the bind: I'd like to make it explicit that we're building
-      -- a tree of paths
-      <$> asks (andConstr (pathConstraint p) . seeConstraint)
-      <*> pure (pathStatus p)
-      <*> normalizeTerm (R.appN (R.App (R.F (FreeName n)) []) $ pathResult p)
-symevalDef n args (DDestructor tyName) = error "wip"
-symevalDef n args (DTypeDef _) = error "Can't evaluate a typedef"
+prtMaybeDefOf :: (PirouetteReadDefs lang m) => PrtVarMeta lang meta -> m (Maybe (PrtDef lang))
+prtMaybeDefOf (R.F (FreeName n)) = Just <$> prtDefOf n
+prtMaybeDefOf _ = pure Nothing
 
-distr :: [R.Arg a (t (Path b))] -> t (Path [R.Arg a b])
-distr = _
+symeval' :: (SymEvalConstr lang m) => TermMeta lang SymVar Name -> SymEvalT lang m (TermMeta lang SymVar Name)
+-- We cannot symbolic-evaluate polymorphic terms
+symeval' R.Abs {} = error "Can't symbolically evaluate polymorphic things"
+-- If we're forced to symbolic evaluate a lambda, we create a new metavariable
+-- and evaluate the corresponding application.
+symeval' t@(R.Lam (R.Ann x) ty body) = do
+  let ty' = prtTypeFromMeta ty
+  withSymVars [(x, ty')] $ \[svars] ->
+    symeval' $ t `R.app` R.Arg (R.App (R.M svars) [])
+-- If we're evaluating an applcation, we distinguish between a number
+-- of constituent cases:
+symeval' t@(R.App hd args) = do
+  mDefHead <- lift $ prtMaybeDefOf hd
+  case mDefHead of
+    Nothing -> completed t
+    Just def -> case def of
+      DTypeDef _ -> error "Can't evaluate typedefs"
+      -- If hd is a defined function, we inline its definition and symbolically evaluate
+      -- the result consuming one gas.
+      DFunction _rec body ty ->
+        consumeGas . symeval $ prtTermToMeta body `R.appN` args
+      -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term
+      -- by combining the paths with (>>>=), conjuncts all of the constraints. For instance,
+      --
+      -- > symeval (Cons x xs) ==
+      -- >   let x'  = symeval x :: [(Constraint, X)]
+      -- >       xs' = symeval xs :: [(Constraint, XS)]
+      -- >    in [ (cx && cxs , Cons rx rxs)
+      -- >       | (cx, rx) <- x' , (cxs, rxs) <- xs'
+      -- >       , isSAT (cx && cxs) ]
+      --
+      DConstructor ix tyName -> R.App hd <$> mapM (R.argMapM return symeval) args
+      -- If hd is a destructor, we have more work to do: we have to expand the term
+      -- being destructed, then combine it with all possible destructor cases.
+      -- Say we're looking at:
+      --
+      -- > symeval (Nil_match @Int l N (\x xs -> M))
+      --
+      -- Then say that symeval l == [(c1, Cons sv1 sv2)]; we now create a fresh
+      -- symbolic variable S to connect the result of l and each of the branches.
+      -- The overall result should be something like:
+      --
+      -- > [ (c1 && S = Cons sv1 sv2 && S = Nil , N)
+      -- > , (c1 && S = Cons sv1 sv2 && S = Cons sv3 sv4 , M)
+      -- > ]
+      --
+      -- Naturally, the first path is already impossible so we do not need to
+      -- move on to evaluate N.
+      DDestructor tyName -> do
+        Just (UnDestMeta _ _ tyParams term _ cases excess) <- lift $ runMaybeT (unDest t)
+        Datatype _ _ _ consList <- lift $ prtTypeDefOf tyName
+        -- We know what is the type of all the possible term results, its whatever
+        -- type we're destructing applied to its arguments, making sure it contains
+        -- no meta variables.
+        let tyParams' = map prtTypeFromMeta tyParams
+        let ty = R.TyApp (R.F $ TyFree tyName) tyParams'
+        term' <- symeval term
+        withFreshSymVar ty $ \svar -> do
+          learn (svar :== term') $
+            asum (zipWith (symevalAssuming tyParams' svar) consList cases)
+
+symevalAssuming ::
+  (SymEvalConstr lang m) =>
+  [PrtType lang] ->
+  SymVar ->
+  (Name, PrtType lang) ->
+  PrtTermMeta lang SymVar ->
+  SymEvalT lang m (PrtTermMeta lang SymVar)
+symevalAssuming tyParams svar (consName, consTy) term = prune $ do
+  let (args, res) = R.tyFunArgs consTy
+  withFreshSymVars args $ \svars -> do
+    let symbCons =
+          R.App (R.F $ FreeName consName) $
+            map (R.TyArg . prtTypeToMeta) tyParams ++ map (R.Arg . (`R.App` []) . R.M) svars
+    learn (svar :== symbCons) $ consumeGas $ symeval term
+
+--- TMP CODE
+
+instance (PrettyLang lang, Pretty a) => Pretty (Path lang a) where
+  pretty (Path conds Ongoing res) =
+    "If:\n" <> indent 2 (pretty conds)
+      <> "\nthe output is:\n"
+      <> indent 2 (pretty res)
+  pretty (Path conds Pruned res) =
+    "If:\n" <> indent 2 (pretty conds)
+      <> "\nthe computation got stuck on:\n"
+      <> indent 2 (pretty res)
+
+instance Pretty SymVar where
+  pretty (SymVar n) = pretty n
+
+instance (PrettyLang lang) => Pretty (Constraint lang) where
+  pretty (n :== term) =
+    pretty n <+> "↦" <+> pretty term
+  pretty Bot =
+    "⊥"
+  pretty (And []) =
+    "⊤"
+  pretty (And l) =
+    mconcat $ intersperse "\n∧ " (map pretty l)
+
+runFor :: (PrettyLang lang, SymEvalConstr lang m , MonadIO m) => Name -> PrtTerm lang -> m ()
+runFor n t = do
+  paths <- symevalT (runEvaluation t)
+  mapM_ (liftIO . print . pretty) paths
+
+
+--- OLD CODE
+
 
 {-
-cartesianSet [] = [(NaturalEnd, true, [])]
-cartesianSet (R.TyArg ty : tl) =
-  map (\(f,c,l) ->  (f, c, R.TyArg ty :l)) (cartesianSet tl)
-cartesianSet (R.Arg cstrState : tl) =
-  concatMap
-    ( \x@(CstrBranch remFuel t conds) ->
-        map
-          (\(f,c,l) -> (fuelOver remFuel f, andConstr conds c, R.Arg t :l))
-          (cartesianSet tl)
-    )
-    cstrState
+        withConsumedGas (symeval term)
+          >>>>= \term' -> withFreshSymVar ty $ \svar -> do
+            forT consList $ \(cons, _) -> _
 -}
+
+{-
+forT :: (Monad m , Alternative f) => [a] -> (a -> m (f b)) -> m (f b)
+forT as f = asum <$> mapM f as
+
+infixl 1 >>>=
+
+(>>>=) ::
+  (MonadSymEval lang m, Alternative t, Traversable t) =>
+  m (t (Path a)) ->
+  (a -> m b) ->
+  m (t (Path b))
+x >>>= f = x >>= mapM (`combine` f) -- TODO: prune paths?
+
+(>>>>=) ::
+  (MonadSymEval lang m, Alternative t, Traversable t) =>
+  m (t (Path a)) ->
+  (a -> m (t b)) ->
+  m (t (Path b))
+x >>>>= f = x >>= fmap pathJoin . mapM (`combine` f)
+  where
+    pathJoin :: (Applicative t, Traversable t) => t (Path (t a)) -> t (Path a)
+    pathJoin = join . fmap sequenceA
+
+-- TODO: Maybe we shouldn't have (t (Path TermMeta)), but define
+-- a "Paths" monad and this combination of paths we just wrote here
+-- should be the bind: I'd like to make it explicit that we're building
+-- a tree of paths
+combine :: (MonadSymEval lang m) => Path a -> (a -> m b) -> m (Path b)
+combine p f =
+  asks (Path . (pathConstraint p <>) . seeConstraint)
+    <*> pure (pathStatus p)
+    <*> f (pathResult p)
+
+freeName :: Name -> PrtTermMeta lang meta
+freeName = (`R.App` []) . R.F . FreeName
+
+distr :: (Alternative t) => [R.Arg a (t (Path b))] -> t (Path [R.Arg a b])
+distr = fmap (traverse distrArg) . traverse distrArg
+  where
+    distrArg :: (Applicative t) => R.Arg a (t b) -> t (R.Arg a b)
+    distrArg (R.TyArg a) = pure (R.TyArg a)
+    distrArg (R.Arg tb) = fmap R.Arg tb
 
 -- getPathConstraintIfSAT :: (MonadSymEval lang m) => m Constraint
 -- getPathConstraintIfSAT = do
@@ -190,6 +386,8 @@ sendToSMT Bot _ = return False
 sendToSMT (And []) _ = return True
 sendToSMT constr env = return True
 
+-}
+
 -- sendToSMT constr env =
 --   do
 --     smtResult <- smtCheckPathConstraint (Map.fromList env) constr
@@ -197,15 +395,6 @@ sendToSMT constr env = return True
 --       case smtResult of
 --         SmtLib.Unsat -> False
 --         _ -> True
-
--- Essentially list concatenation, with the specificity that `Bot` is absorbing.
-andConstr :: Constraint -> Constraint -> Constraint
-andConstr Bot _ = Bot
-andConstr _ Bot = Bot
-andConstr (And l) (And m) = And (l ++ m)
-andConstr (And l) y = And (y : l)
-andConstr x (And m) = And (x : m)
-andConstr x y = And [x, y]
 
 {-
 

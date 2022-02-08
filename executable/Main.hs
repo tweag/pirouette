@@ -219,10 +219,7 @@ mainOpts opts uDefs = do
       spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
-    symbExec n (DFunction _ t _) = do
-      constrs <- SymbolicEval.runEvaluation n t
-      putStrLn' $ show (pretty constrs)
-      putStrLn' ""
+    symbExec n (DFunction _ t _) = SymbolicEval.runFor n t
 
 processDecls :: (LanguageDef lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do

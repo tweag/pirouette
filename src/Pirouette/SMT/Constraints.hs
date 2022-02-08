@@ -39,6 +39,22 @@ data Constraint
   | And [Constraint]
   | Bot
 
+instance Semigroup Constraint where
+  (<>) = andConstr
+instance Monoid Constraint where
+  mempty = And []
+
+-- Essentially list concatenation, with the specificity that `Bot` is absorbing.
+andConstr :: Constraint -> Constraint -> Constraint
+andConstr Bot _ = Bot
+andConstr _ Bot = Bot
+andConstr (And l) (And m) = And (l ++ m)
+andConstr (And l) y = And (y : l)
+andConstr x (And m) = And (x : m)
+andConstr x y = And [x, y]
+
+
+
 instance Pretty Constraint where
   pretty (Assign n term) =
     pretty n <+> "↦" <+> pretty term
