@@ -113,7 +113,7 @@ symevalT = fmap (map fst) . runSymEvalT e0 st0
 
 instance (Monad m) => Applicative (SymEvalT lang m) where
   -- TODO: should we get the constraints from the env and put them on the path?
-  pure x = SymEvalT $ ReaderT $ \e -> StateT $ \st -> ListT.fromFoldable [(pure x, st)]
+  pure x = SymEvalT $ ReaderT $ \e -> StateT $ \st -> ListT.fromFoldable [(Path (seeConstraint e) Ongoing x, st)]
   (<*>) = ap
 
 instance (Monad m) => Monad (SymEvalT lang m) where
@@ -143,7 +143,10 @@ instance MonadTrans (SymEvalT lang) where
 instance (MonadFail m) => MonadFail (SymEvalT lang m) where
   fail = lift . fail
 
-type SymEvalConstr lang m = (PirouetteDepOrder lang m)
+type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, MonadIO m)
+
+instance (MonadIO m) => MonadIO (SymEvalT lang m) where
+  liftIO = lift . liftIO
 
 prune :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
 prune xs = SymEvalT $
@@ -157,7 +160,14 @@ prune xs = SymEvalT $
     pathIsPlausible p env = return True -- TODO: send path constraint to SMT?
 
 learn :: (SymEvalConstr lang m) => Constraint lang -> SymEvalT lang m a -> SymEvalT lang m a
-learn c = local (seeAndConstrs c)
+learn c f = do
+  cs <- asks seeConstraint
+  liftIO $ do
+    putStrLn ("I knew: " ++ show (pretty cs))
+    putStrLn ("I'm learning: " ++ show (pretty c))
+  r <- local (seeAndConstrs c) f
+  liftIO $ putStrLn "Forgotten"
+  return r
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
