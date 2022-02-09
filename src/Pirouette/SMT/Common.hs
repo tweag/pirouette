@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 module Pirouette.SMT.Common where
 
 import Control.Monad.IO.Class
@@ -21,6 +22,12 @@ prepareSMT =
 toSmtName :: Name -> String
 toSmtName = ("pir_" <>) . show . pretty
 
--- | What can be translated to an smtlib statement
-class Translatable a where
-  translate :: a -> SmtLib.SExpr
+-- | Captures the languages that can be translated to SMTLIB; namelly,
+-- we need to be able to translate each individual base syntactical category.
+--
+-- This class is defined with @-XAllowAmbiguousTypes@ and therefore
+-- should be used with @-XTypeApplications@.
+class (LanguageDef lang) => LanguageSMT lang where
+  translateBuiltinType :: BuiltinTypes lang -> SmtLib.SExpr
+  translateBuiltinTerm :: BuiltinTerms lang -> SmtLib.SExpr
+  translateConstant :: Constants lang -> SmtLib.SExpr
