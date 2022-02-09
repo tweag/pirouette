@@ -12,7 +12,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Pirouette.SymbolicEval where
+module Pirouette.Term.Symbolic.Eval where
 
 import Control.Applicative
 import Control.Arrow (first)
@@ -36,7 +36,6 @@ import Pirouette.Monad.Maybe
 import Pirouette.PlutusIR.Utils
 import Pirouette.SMT (smtCheckPathConstraint)
 import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..))
-import Pirouette.Term.FromPlutusIR (PirTerm, PirType, PlutusIR)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations

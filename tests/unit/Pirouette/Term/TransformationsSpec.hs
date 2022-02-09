@@ -11,7 +11,7 @@ import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax as S
 import           Pirouette.Term.Transformations
 import           Pirouette.Term.DSL
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 import qualified Pirouette.Term.Syntax.SystemF as R
 
 import Data.List (groupBy, transpose, lookup)

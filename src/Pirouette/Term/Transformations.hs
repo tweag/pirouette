@@ -8,7 +8,7 @@ module Pirouette.Term.Transformations where
 import           Pirouette.Monad
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst

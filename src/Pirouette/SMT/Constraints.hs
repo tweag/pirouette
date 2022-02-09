@@ -19,7 +19,7 @@ import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
 import Data.Text.Prettyprint.Doc hiding (Pretty (..))
 import Data.List (intersperse)
-import Pirouette.Term.FromPlutusIR (PlutusIR, PirTerm, PirType, PirTermExpanded, PirTypeExpanded)
+import Pirouette.PlutusIR.ToTerm (PlutusIR, PirTerm, PirType, PirTermExpanded, PirTypeExpanded)
 
 -- | Bindings from names to types (for the assign constraints)
 type Env = Map Name PirType

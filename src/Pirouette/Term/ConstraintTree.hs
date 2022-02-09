@@ -12,7 +12,7 @@ import           Pirouette.Monad.Maybe
 import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Term.Transformations
 import           Pirouette.PlutusIR.Utils
 

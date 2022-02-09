@@ -18,7 +18,7 @@ import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
-import Pirouette.Term.FromPlutusIR
+import Pirouette.PlutusIR.ToTerm
 
 -- | Declare a datatype in the solver
 declareDatatype :: MonadIO m => SmtLib.Solver -> Name -> TypeDef PlutusIR Name -> m ()

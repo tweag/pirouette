@@ -7,7 +7,7 @@ import Pirouette.SMT.Common
 import Pirouette.SMT.Constraints
 import Pirouette.SMT.Datatypes
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
-import Pirouette.Term.FromPlutusIR (PlutusIR)
+import Pirouette.PlutusIR.ToTerm (PlutusIR)
 
 -- | Check satisfiability of a constraint characterizing a symbolic execution
 -- path. Note that

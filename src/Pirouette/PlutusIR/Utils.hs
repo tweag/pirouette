@@ -13,7 +13,7 @@ import           Pirouette.Monad
 import           Pirouette.Monad.Maybe
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 
 import qualified PlutusCore         as P
 

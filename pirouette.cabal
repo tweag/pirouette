@@ -19,6 +19,7 @@ library
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
+      Pirouette.PlutusIR.ToTerm
       Pirouette.PlutusIR.Utils
       Pirouette.SMT
       Pirouette.SMT.Common
@@ -31,10 +32,9 @@ library
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
-      Pirouette.SymbolicEval
       Pirouette.Term.ConstraintTree
       Pirouette.Term.Defunctionalize
-      Pirouette.Term.FromPlutusIR
+      Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
@@ -114,8 +114,8 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Pirouette.PlutusIR.ToTermSpec
       Pirouette.Term.DSL
-      Pirouette.Term.FromPlutusIRSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Paths_pirouette

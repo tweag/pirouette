@@ -46,7 +46,7 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 
 import qualified Language.TLAPlus.Pretty as TLA
-import Pirouette.Term.FromPlutusIR (PIRType(..), PlutusIR, PIRConstant(..))
+import Pirouette.PlutusIR.ToTerm (PIRType(..), PlutusIR, PIRConstant(..))
 
 -- * TLA Splicing
 

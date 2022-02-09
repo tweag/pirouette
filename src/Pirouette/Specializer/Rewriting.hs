@@ -7,7 +7,7 @@ module Pirouette.Specializer.Rewriting where
 
 import Pirouette.Monad
 import Pirouette.Term.Syntax
-import Pirouette.Term.FromPlutusIR
+import Pirouette.PlutusIR.ToTerm
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P

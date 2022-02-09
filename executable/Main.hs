@@ -21,7 +21,7 @@ import Pirouette.Monad.Logger
 import Pirouette.Transformations
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Pirouette.Term.FromPlutusIR
+import Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Transformations
 import Pirouette.Term.ConstraintTree (CTreeOpts(..)) -- , termToCTree)
 import Pirouette.Term.Defunctionalize
@@ -29,7 +29,7 @@ import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
 import Pirouette.Specializer.Rewriting
 import Pirouette.SMT.Datatypes (smtMain)
-import Pirouette.SymbolicEval as SymbolicEval
+import Pirouette.Term.Symbolic.Eval as SymbolicEval
 
 import qualified PlutusIR.Parser    as PIR
 import qualified PlutusCore         as P
