@@ -34,6 +34,7 @@ type LanguageConstrs lang
 
 type PrettyLang lang = (Pretty (BuiltinTypes lang), Pretty (BuiltinTerms lang), Pretty (Constants lang))
 
+-- TODO: Should there be a functional dependency here? check: https://github.com/tweag/pirouette/pull/51/files#r801039508
 class (Data lang, Typeable lang, LanguageConstrs lang) => LanguageDef lang where
   type BuiltinTypes lang :: *
   type BuiltinTerms lang :: *
