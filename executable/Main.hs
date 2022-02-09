@@ -23,7 +23,7 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.FromPlutusIR
 import Pirouette.Term.Transformations
-import Pirouette.Term.ConstraintTree (CTreeOpts(..), termToCTree)
+import Pirouette.Term.ConstraintTree (CTreeOpts(..)) -- , termToCTree)
 import Pirouette.Term.Defunctionalize
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
@@ -104,7 +104,7 @@ optsToCTreeOpts co = CTreeOpts
   , coWithArguments = withArguments co
   }
 
-optsToTlaOpts :: (MonadIO m , PirouetteReadDefs m) => CliOpts -> m TlaOpts
+optsToTlaOpts :: (MonadIO m , PirouetteReadDefs PlutusIR m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0  <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
   skel   <- if asFunction co then return mkEmptySpecWrapper else mkTLASpecWrapper skel0
@@ -142,7 +142,7 @@ main = do
         flushLogs $ logInfo ("Running with opts: " ++ show opts)
         mainOpts cliOpts uDefs
 
-pirouetteSmt :: (MonadIO m) => PrtUnorderedDefs -> PrtT m ()
+pirouetteSmt :: (MonadIO m) => PrtUnorderedDefs PlutusIR -> PrtT m ()
 pirouetteSmt unorderedDefs = do
     orderedDefs <- elimEvenOddMutRec unorderedDefs
     liftIO $ smtMain orderedDefs
@@ -170,7 +170,7 @@ ecTooManyDefs = ExitFailure 16
 -- |Converts a PIR file to a term, displaying the results to the user.
 -- The 'CliOpts' argument controls which transformations should be applied,
 -- which definitions the user is interested into, etc...
-mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m ()
+mainOpts :: forall m . (MonadIO m) => CliOpts -> PrtUnorderedDefs PlutusIR -> PrtT m ()
 mainOpts opts uDefs = do
   decls <- processDecls opts uDefs
   flip runReaderT decls $ do
@@ -209,9 +209,10 @@ mainOpts opts uDefs = do
       putStrLn' ""
 
     printCTree name def = do
-      ct <- termToCTree (optsToCTreeOpts opts) name def
-      putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
-      putStrLn' ""
+      error "printCTree: constraint tree will be replaced; this is a WIP"
+      -- ct <- termToCTree (optsToCTreeOpts opts) name def
+      -- putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
+      -- putStrLn' ""
 
     toTla n t = do
       opts' <- optsToTlaOpts opts
@@ -223,7 +224,7 @@ mainOpts opts uDefs = do
       putStrLn' $ show (pretty constrs)
       putStrLn' ""
 
-processDecls :: (MonadIO m) => CliOpts -> PrtUnorderedDefs -> PrtT m PrtOrderedDefs
+processDecls :: (LanguageDef lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
   -- If the user wishes, we can perform checks on the sanity of the translation
   -- from PlutusIR to PrtDefs
@@ -239,8 +240,8 @@ processDecls opts uDefs = do
   postDs <- runReaderT (sequence $ M.map processOne $ prtDecls oDefs) oDefs
   return $ oDefs { prtDecls = postDs }
  where
-    generalTransformations :: (PirouetteReadDefs m)
-                           => PrtTerm -> m PrtTerm
+    generalTransformations :: (PirouetteReadDefs lang m)
+                           => PrtTerm lang -> m (PrtTerm lang)
     generalTransformations =
           constrDestrId
       -- >=> applyRewRules
@@ -251,7 +252,7 @@ processDecls opts uDefs = do
 -- ** Auxiliar Defs
 
 pirouette :: (MonadIO m) => FilePath -> PrtOpts
-          -> (PrtUnorderedDefs -> PrtT m a) -> m a
+          -> (PrtUnorderedDefs PlutusIR -> PrtT m a) -> m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
   withDecls pirProg $ \toplvl0 decls0 -> do
@@ -265,7 +266,7 @@ pirouette pir opts f =
 
 withDecls :: (MonadIO m, Show l)
           => Program P.TyName P.Name P.DefaultUni P.DefaultFun l
-          -> (PrtTerm -> Decls Name P.DefaultFun -> m a)
+          -> (PrtTerm PlutusIR -> Decls PlutusIR Name -> m a)
           -> m a
 withDecls pir cont = do
   case runExcept $ trProgram pir of

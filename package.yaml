@@ -31,6 +31,8 @@ dependencies:
   - tlaplus-qq
   - flat >= 0.4.5
   - plutus-core
+  - unbound-generics
+  - unification-fd
 
 library:
   source-dirs: src

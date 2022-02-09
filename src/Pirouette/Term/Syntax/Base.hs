@@ -1,23 +1,15 @@
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DeriveDataTypeable   #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Pirouette.Term.Syntax.Base where
 
 import qualified Pirouette.Term.Syntax.SystemF as Raw
-
-import           PlutusCore         ( DefaultUni(..)
-                                    , pattern DefaultUniList
-                                    , pattern DefaultUniString
-                                    , pattern DefaultUniPair )
-import qualified PlutusCore        as P
-import qualified PlutusCore.Data   as P
-import qualified PlutusCore.Pretty as P
+import Pirouette.Term.Syntax.Pretty.Class (Pretty)
 
 import           Control.Arrow ((&&&))
 import           Control.Monad
@@ -31,60 +23,66 @@ import           Data.Typeable
 import qualified Data.Text as T
 import qualified Data.Map as M
 import           Data.Data
+import Data.Void
 
+type EqOrdShowDataTypeable a = (Eq a, Ord a, Show a, Data a, Typeable a)
 
--- * PIR Types
+type LanguageConstrs lang
+  = (EqOrdShowDataTypeable (BuiltinTypes lang)
+    , EqOrdShowDataTypeable (BuiltinTerms lang)
+    , EqOrdShowDataTypeable (Constants lang))
 
--- |Builtin Plutus Types
-data PIRType
-  = PIRTypeInteger
-  | PIRTypeByteString
-  | PIRTypeUnit
-  | PIRTypeBool
-  | PIRTypeString
-  | PIRTypeData
-  | PIRTypeList (Maybe PIRType)
-  | PIRTypePair (Maybe PIRType) (Maybe PIRType)
-  deriving (Eq, Ord, Show, Data, Typeable)
+type PrettyLang lang = (Pretty (BuiltinTypes lang), Pretty (BuiltinTerms lang), Pretty (Constants lang))
 
-defUniToType :: forall k (a :: k) . DefaultUni (P.Esc a) -> PIRType
-defUniToType DefaultUniInteger     = PIRTypeInteger
-defUniToType DefaultUniByteString  = PIRTypeByteString
-defUniToType DefaultUniUnit        = PIRTypeUnit
-defUniToType DefaultUniBool        = PIRTypeBool
-defUniToType DefaultUniString      = PIRTypeString
-defUniToType DefaultUniData        = PIRTypeData
-defUniToType (DefaultUniList a)    = PIRTypeList (Just (defUniToType a))
-defUniToType (DefaultUniPair a b)  = PIRTypePair (Just $ defUniToType a) (Just $ defUniToType b)
-defUniToType DefaultUniProtoList   = PIRTypeList Nothing
-defUniToType DefaultUniProtoPair   = PIRTypePair Nothing Nothing
-defUniToType (DefaultUniApply DefaultUniProtoPair a) = PIRTypePair (Just $ defUniToType a) Nothing
+-- TODO: Should there be a functional dependency here? check: https://github.com/tweag/pirouette/pull/51/files#r801039508
+class (Data lang, Typeable lang, LanguageConstrs lang) => LanguageDef lang where
+  type BuiltinTypes lang :: *
+  type BuiltinTerms lang :: *
+  type Constants lang :: *
 
+-- * Types and Type Definitions
 
 -- |The language of types will consits of the standard polymorphic type-level lambda calculus
 -- where the free variables will be of type 'TypeBase', that is, they are either a builtin type or
 -- a free type.
-data TypeBase tyname
-  = TyBuiltin PIRType
-  | TyFree    tyname
-  deriving (Eq, Ord, Show, Data, Typeable, Functor, Foldable, Traversable)
+data TypeBase lang name
+  = TyBuiltin (BuiltinTypes lang)
+  | TyFree    name
+  deriving (Functor, Foldable, Traversable)
+deriving instance (Eq name, LanguageDef lang) => Eq (TypeBase lang name)
+deriving instance (Ord name, LanguageDef lang) => Ord (TypeBase lang name)
+deriving instance (Show name, LanguageDef lang) => Show (TypeBase lang name)
+deriving instance (Data name, LanguageDef lang) => Data (TypeBase lang name)
+deriving instance (Typeable name, LanguageDef lang) => Typeable (TypeBase lang name)
 
--- |A Pirouette type, then, is a "Raw.Type" whose variables are 'TypeBase'
-type Type name = Raw.Type (Raw.Var name (TypeBase name))
+-- |A Pirouette type is a 'Raw.Type' whose variables are 'TypeBase' and it has metavariables
+-- of type 'meta'. If you're just using this as a library you're likely more interested in
+-- 'Type'.
+type TypeMeta lang meta name = Raw.Type (Raw.VarMeta meta name (TypeBase lang name))
 
--- |Returns all the names used by a type
-typeNames :: (Ord name) => Type name -> S.Set (Raw.Arg name name)
+-- |A 'Type' is a 'TypeMeta' with 'Void' passed to metavariables
+type Type lang name = TypeMeta lang Void name
+
+-- |Returns all the (free) names used by a type
+typeNames :: (Ord name) => TypeMeta lang meta name -> S.Set (Raw.Arg name name)
 typeNames = foldMap go
-  where go :: Raw.Var name (TypeBase name) -> S.Set (Raw.Arg name name)
+  where go :: Raw.VarMeta meta name (TypeBase lang name) -> S.Set (Raw.Arg name name)
         go (Raw.F (TyFree n)) = S.singleton (Raw.TyArg n)
         go _                  = S.empty
 
--- |For now, we only support type declarations.
-data TypeDef n
+-- |Returns all the metavariables used by a type
+typeMetas :: (Ord meta) => TypeMeta lang meta name -> S.Set meta
+typeMetas = foldMap go
+  where go :: Raw.VarMeta meta name (TypeBase lang name) -> S.Set meta
+        go (Raw.M m) = S.singleton m
+        go _         = S.empty
+
+-- |The supported type definitions. At this point, we only support datatype definitions.
+data TypeDef lang n
   = Datatype { kind          :: Raw.Kind
              , typeVariables :: [(n, Raw.Kind)]
              , destructor    :: n
-             , constructors  :: [(n, Type n)]
+             , constructors  :: [(n, Type lang n)]
              }
   deriving (Eq, Show)
 
@@ -102,99 +100,87 @@ data TypeDef n
 --
 -- > TyAll a b . Either a b -> TyAll c -> (a -> c) -> (b -> c) -> c
 --
-destructorTypeFor :: TypeDef n -> Type n
+destructorTypeFor :: TypeDef lang n -> Type lang n
 destructorTypeFor (Datatype k vs n cs) = undefined
 
--- * From PlutusIR to 'Term'
---
--- $plutustotermdoc
---
--- The translation of a 'PIR.Program' into a 'Term' happens in two phases.
--- The first phase translates a 'PIR.Program' into a @Term (Name1 ...)@ by
--- removing the let bindings and translating explicit variable names into
--- De Bruijn indicies. The second part of the translation will expand all
--- non-recursive functions and distintuish between whether a name represents
--- a recursive function, a constructor or a destructor of a datatype,
--- yielding a @Term (Name2 ...)@.
-
-deriving instance Data P.Data
-
--- |Untyped Plutus Constants
-data PIRConstant
-  = PIRConstInteger Integer
-  | PIRConstByteString BS.ByteString
-  | PIRConstUnit
-  | PIRConstBool Bool
-  | PIRConstString T.Text
-  | PIRConstList [PIRConstant]
-  | PIRConstPair PIRConstant PIRConstant
-  | PIRConstData P.Data
-  deriving (Eq, Show, Data, Typeable)
-
-defUniToConstant :: DefaultUni (P.Esc a) -> a -> PIRConstant
-defUniToConstant DefaultUniInteger     x = PIRConstInteger x
-defUniToConstant DefaultUniByteString  x = PIRConstByteString x
-defUniToConstant DefaultUniUnit        x = PIRConstUnit
-defUniToConstant DefaultUniBool        x = PIRConstBool x
-defUniToConstant DefaultUniString      x = PIRConstString x
-defUniToConstant DefaultUniData        x = PIRConstData x
-defUniToConstant (DefaultUniList a)    x = PIRConstList (map (defUniToConstant a) x)
-defUniToConstant (DefaultUniPair a b)  x = PIRConstPair (defUniToConstant a (fst x)) (defUniToConstant b (snd x))
+-- * Terms
 
 -- |This is to 'Term', what 'TypeBase' is to 'Type'.
-data PIRBase fun n
-  = Constant PIRConstant
-  | Builtin fun
+data TermBase lang name
+  = Constant (Constants lang)
+  | Builtin (BuiltinTerms lang)
+  | FreeName name
   | Bottom
-  | FreeName n
-  deriving (Eq, Show, Functor, Data, Typeable)
+  deriving (Functor, Foldable, Traversable)
+deriving instance (Eq name, LanguageDef lang) => Eq (TermBase lang name)
+deriving instance (Ord name, LanguageDef lang) => Ord (TermBase lang name)
+deriving instance (Show name, LanguageDef lang) => Show (TermBase lang name)
+deriving instance (Data name, LanguageDef lang) => Data (TermBase lang name)
+deriving instance (Typeable name, LanguageDef lang) => Typeable (TermBase lang name)
 
--- |A 'Term' represents pirouette terms with disambiguated free names
-type Term name fun = Raw.Term (Type name) (Raw.Var name (PIRBase fun name))
+-- |A 'TermMeta' for a given language is a 'Raw.Term' with types being a 'Type' and
+-- diambiguated free names: we're aware on whether these free names are constants,
+-- builtins or refer to some definition that will require a definition map.
+--
+-- Moreover, there's a possibility to insert meta variables in the tree. If you're
+-- a user of the library, you're most likely going to need only 'Term', which
+-- have no metavariables.
+type TermMeta lang meta name = Raw.Term (TypeMeta lang meta name) (Raw.VarMeta meta name (TermBase lang name))
 
--- |Returns all the names used by a term
-termNames :: (Ord name) => Term name fun -> S.Set (Raw.Arg name name)
+-- |A 'Term' is a 'TermMeta' with 'Void' as the metavariable.
+type Term lang name = TermMeta lang Void name
+
+-- |Returns all the (free) names used by a term
+termNames :: (Ord name) => TermMeta lang meta name -> S.Set (Raw.Arg name name)
 termNames = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeNames)
-  where go :: Raw.Var name (PIRBase fun name) -> S.Set (Raw.Arg name name)
+  where go :: Raw.VarMeta meta name (TermBase lang name) -> S.Set (Raw.Arg name name)
         go (Raw.F (FreeName n)) = S.singleton (Raw.Arg n)
         go _                    = S.empty
+
+-- |Returns all the metavariables used by a term
+termMetas :: (Ord meta) => TermMeta lang meta name -> S.Set meta
+termMetas = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeMetas)
+  where go :: Raw.VarMeta meta name (TermBase lang name) -> S.Set meta
+        go (Raw.M m) = S.singleton m
+        go _         = S.empty
+
+-- * Definitions
 
 data Rec = Rec | NonRec
   deriving (Eq , Show)
 
-data Definition n fun
-  = DFunction Rec (Term n fun) (Type n)
-  | DConstructor  Int n
-  | DDestructor   n
-  | DTypeDef      (TypeDef n)
+data Definition lang name
+  = DFunction Rec (Term lang name) (Type lang name)
+  | DConstructor  Int name
+  | DDestructor   name
+  | DTypeDef      (TypeDef lang name)
   deriving (Eq, Show)
 
 defTermMapM :: (Monad m)
-            => (Term n fun -> m (Term n fun'))
-            -> Definition n fun -> m (Definition n fun')
+            => (Term lang name -> m (Term lang name))
+            -> Definition lang name -> m (Definition lang name)
 defTermMapM f (DFunction r t ty) = flip (DFunction r) ty <$> f t
 defTermMapM _ (DTypeDef td)      = pure $ DTypeDef td
 defTermMapM _ (DConstructor i n) = pure $ DConstructor i n
 defTermMapM _ (DDestructor n)    = pure $ DDestructor n
 
-fromTypeDef :: Definition n fun -> Maybe (TypeDef n)
+fromTypeDef :: Definition lang name -> Maybe (TypeDef lang name)
 fromTypeDef (DTypeDef d) = Just d
 fromTypeDef _            = Nothing
 
-fromTermDef :: Definition n fun -> Maybe (Term n fun)
+fromTermDef :: Definition lang name -> Maybe (Term lang name)
 fromTermDef (DFunction _ d _) = Just d
 fromTermDef _                 = Nothing
 
-fromDestDef :: Definition n fun -> Maybe n
+fromDestDef :: Definition lang name -> Maybe name
 fromDestDef (DDestructor d) = Just d
 fromDestDef _               = Nothing
 
-fromConstDef :: Definition n fun -> Maybe (Int, n)
+fromConstDef :: Definition lang name -> Maybe (Int, name)
 fromConstDef (DConstructor i n) = Just (i , n)
 fromConstDef _                  = Nothing
 
 -- * Declarations
 
--- | A PlutusIR program will be translated into a number of term and type declarations.
--- Because the translation happens in two phases, we also have 'Decls'' and 'Decls'.
-type Decls name fun = M.Map name (Definition name fun)
+-- | A program will be translated into a number of term and type declarations.
+type Decls lang name = M.Map name (Definition lang name)

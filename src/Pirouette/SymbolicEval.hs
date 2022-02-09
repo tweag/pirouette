@@ -18,7 +18,7 @@ import Pirouette.PlutusIR.Utils
 import Pirouette.SMT (smtCheckPathConstraint)
 import Pirouette.SMT.Constraints (Constraint (..))
 import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..))
-import Pirouette.Term.FromPlutusIR ()
+import Pirouette.Term.FromPlutusIR (PlutusIR, PirTerm, PirType)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
@@ -46,7 +46,7 @@ fuelOver NaturalEnd x = x
 -- the constraint to fulfill to reach this branch.
 -- Each branch also contains an indication of the reason leading to the generation of this branch,
 -- either this path is fully evaluated, or the evaluation was interupted due to lack of fuel.
-data CstrBranch = CstrBranch Fuel PrtTerm Constraint
+data CstrBranch = CstrBranch Fuel PirTerm Constraint
 
 instance Pretty CstrBranch where
   pretty (CstrBranch NaturalEnd t conds) =
@@ -70,7 +70,7 @@ andConstr (And l) y = And (y : l)
 andConstr x (And m) = And (x : m)
 andConstr x y = And [x, y]
 
-sendToSMT :: (MonadIO m, PirouetteDepOrder m) => Constraint -> [(Name, PrtType)] -> m Bool
+sendToSMT :: (MonadIO m, PirouetteDepOrder PlutusIR m) => Constraint -> [(Name, PirType)] -> m Bool
 sendToSMT Bot _ = return False
 sendToSMT (And []) _ = return True
 -- sendToSMT constr env = return True
@@ -93,10 +93,10 @@ sendToSMT constr env =
 -- This raises a question, what is the job of this module, and the one of the SMT solver?
 -- I have the feeling that doing it is steping on the feet of the SMT solver.
 eqT ::
-  PirouetteReadDefs m =>
+  PirouetteReadDefs PlutusIR m =>
   Fuel ->
-  PrtTerm ->
-  PrtTerm ->
+  PirTerm ->
+  PirTerm ->
   m Constraint
 eqT OutOfFuel t@((R.App (R.B (R.Ann x) _) [])) u = do
   uData <- isData u
@@ -131,7 +131,7 @@ eqT _ t u = return $ NonInlinableSymbolEq t u
 -- so this output is in a `PirouetteReadDefs` monad.
 -- Since we are using the SMT solver, which requires types to be declared
 -- to respect the dependency order, we even use `PirouetteDepOrder`.
-evaluate :: (PirouetteDepOrder m, MonadIO m) => Name -> PrtTerm -> m SymbRes
+evaluate :: (PirouetteDepOrder PlutusIR m, MonadIO m) => Name -> PirTerm -> m SymbRes
 evaluate = auxEvaluateInputs []
   where
     -- We try to inline everything
@@ -142,10 +142,10 @@ evaluate = auxEvaluateInputs []
 
     -- The first step is to collect the arguments of the function in a list of name.
     auxEvaluateInputs ::
-      (PirouetteDepOrder m, MonadIO m) =>
-      [(Name, PrtType)] ->
+      (PirouetteDepOrder PlutusIR m, MonadIO m) =>
+      [(Name, PirType)] ->
       Name ->
-      PrtTerm ->
+      PirTerm ->
       m SymbRes
     auxEvaluateInputs vars mainFun t@(R.App _ _) =
       let vars' = reverse vars
@@ -158,11 +158,11 @@ evaluate = auxEvaluateInputs []
     -- Once all the names of the argument variables have been collected, we start the symbolic execution part.
     -- This is in a `State` monad, since the fuel for inlining and the names of already met variables should be shared between the symbolic evaluation of the different arguments of a function.
     auxEvaluate ::
-      (PirouetteDepOrder m, MonadIO m) =>
+      (PirouetteDepOrder PlutusIR m, MonadIO m) =>
       Int ->
       Constraint ->
-      PrtTerm ->
-      StateT [(Name, PrtType)] m [CstrBranch]
+      PirTerm ->
+      StateT [(Name, PirType)] m [CstrBranch]
     auxEvaluate _ Bot _ = return []
     auxEvaluate remainingFuel conds t@(R.App hd args) = do
       vars <- get
@@ -171,6 +171,7 @@ evaluate = auxEvaluateInputs []
           return [CstrBranch OutOfFuel t conds]
         else case hd of
           -- TODO: In all those cases, is it interesting to symbolically evaluate the arguments?
+          R.M _ -> error "imp: we're using no meta variables (yet!)"
           R.B (R.Ann _) _ -> return [CstrBranch NaturalEnd t conds]
           R.F (Constant _) -> return [CstrBranch NaturalEnd t conds]
           R.F (Builtin _) -> return [CstrBranch NaturalEnd t conds]
@@ -276,7 +277,7 @@ evaluate = auxEvaluateInputs []
     auxEvaluate remainingFuel conds (R.Abs ann _ t) =
       auxEvaluate remainingFuel conds t
 
-cartesianSet :: [R.Arg a [CstrBranch]] -> [(Fuel, Constraint, [R.Arg a PrtTerm])]
+cartesianSet :: [R.Arg a [CstrBranch]] -> [(Fuel, Constraint, [R.Arg a PirTerm])]
 cartesianSet [] = [(NaturalEnd, true, [])]
 cartesianSet (R.TyArg ty : tl) =
   map (\(f,c,l) ->  (f, c, R.TyArg ty :l)) (cartesianSet tl)
@@ -290,28 +291,28 @@ cartesianSet (R.Arg cstrState : tl) =
     cstrState
 
 runEvaluation ::
-  (PirouetteDepOrder m, MonadIO m) =>
+  (PirouetteDepOrder PlutusIR m, MonadIO m) =>
   Name ->
-  PrtTerm ->
+  PirTerm ->
   m SymbRes
 runEvaluation n t =
   evaluate n =<< normalizeTerm t
 
 normalizeTerm ::
-  (PirouetteReadDefs m) =>
-  PrtTerm ->
-  m PrtTerm
+  (PirouetteReadDefs PlutusIR m) =>
+  PirTerm ->
+  m PirTerm
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
 -- A term `t` verifies the predicate `isData` if it is composed only
 -- of variables and type constructors (no destructors and no defined symbols).
-isData :: (PirouetteReadDefs m) => PrtTerm -> m Bool
+isData :: (PirouetteReadDefs PlutusIR m) => PirTerm -> m Bool
 isData (R.App hd args) = go hd args
   where
     go ::
-      (PirouetteReadDefs m) =>
-      R.Var Name (PIRBase fun Name) ->
-      [R.Arg PrtType PrtTerm] ->
+      (PirouetteReadDefs PlutusIR m) =>
+      R.Var Name (TermBase PlutusIR Name) ->
+      [R.Arg PirType PirTerm] ->
       m Bool
     go (R.F (FreeName f)) args = do
       def <- prtDefOf f
@@ -320,8 +321,8 @@ isData (R.App hd args) = go hd args
         _ -> return False
     go _ args = foldl' (\b t -> (&&) <$> b <*> studyArg t) (return True) args
     studyArg ::
-      (PirouetteReadDefs m) =>
-      R.Arg PrtType PrtTerm ->
+      (PirouetteReadDefs PlutusIR m) =>
+      R.Arg PirType PirTerm ->
       m Bool
     studyArg (R.Arg t) = isData t
     studyArg (R.TyArg _) = return True

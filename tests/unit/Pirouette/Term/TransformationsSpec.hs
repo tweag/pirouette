@@ -11,6 +11,7 @@ import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax as S
 import           Pirouette.Term.Transformations
 import           Pirouette.Term.DSL
+import           Pirouette.Term.FromPlutusIR
 import qualified Pirouette.Term.Syntax.SystemF as R
 
 import Data.List (groupBy, transpose, lookup)
@@ -30,7 +31,7 @@ import qualified Data.Text as T
 
 -- * Mocking a number of definitions for the PrtT monad
 
-testingDefs :: [S.Name] -> [(S.Name, S.PrtDef)]
+testingDefs :: [S.Name] -> [(S.Name, S.PrtDef PlutusIR)]
 testingDefs extras =
   [("destMaybe", S.DDestructor "Maybe")
   ,("destEither", S.DDestructor "Either")
@@ -46,7 +47,7 @@ testingDefs extras =
  where
    stubsFor n = (n , S.DConstructor 0 n)
 
-withDummyFunc :: S.Name -> (S.Name, S.PrtDef)
+withDummyFunc :: S.Name -> (S.Name, S.PrtDef PlutusIR)
 withDummyFunc s = (s, dummyFun)
   where
     dummyFun = S.DFunction S.Rec dummyTerm dummyType
@@ -57,7 +58,7 @@ testState extras = PrtUnorderedDefs (M.fromList $ testingDefs extras) undefined
 
 testOpts = PrtOpts DEBUG []
 
-runPrtTest :: [S.Name] -> ReaderT PrtUnorderedDefs (PrtT Identity) a -> a
+runPrtTest :: [S.Name] -> ReaderT (PrtUnorderedDefs PlutusIR) (PrtT Identity) a -> a
 runPrtTest extras =
   either (error . show) id . fst . runIdentity . runPrtT testOpts . flip runReaderT (testState extras)
 

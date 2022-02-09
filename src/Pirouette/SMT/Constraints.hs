@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -18,22 +19,23 @@ import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
 import Data.Text.Prettyprint.Doc hiding (Pretty (..))
 import Data.List (intersperse)
+import Pirouette.Term.FromPlutusIR (PlutusIR, PirTerm, PirType, PirTermExpanded, PirTypeExpanded)
 
 -- | Bindings from names to types (for the assign constraints)
-type Env = Map Name PrtType
+type Env = Map Name PirType
 
 -- | Constraints of a path during symbolic execution
 -- We would like to have
--- type Constraint = Bot | And (Map Name [PrtTerm]) [(Fuel, PrtTerm, PrtTerm))]
+-- type Constraint = Bot | And (Map Name [PirTerm]) [(Fuel, PirTerm, PirTerm))]
 -- It is isomorphic to our current type, but with better access time to the variable assignements.
 -- The 2 kinds of equalities are quite different,
 -- one represents the complete execution of a branch, which leads to an application which cannot be further inlined
 -- (Because it is a builtin or a constant),
 -- whereas the other one represents an ongoing computation killed by lack of fuel.
 data Constraint
-  = Assign Name PrtTerm
-  | NonInlinableSymbolEq PrtTerm PrtTerm
-  | OutOfFuelEq PrtTerm PrtTerm
+  = Assign Name PirTerm
+  | NonInlinableSymbolEq PirTerm PirTerm
+  | OutOfFuelEq PirTerm PirTerm
   | And [Constraint]
   | Bot
 
@@ -118,7 +120,7 @@ declareVariables s env =
 -- `as` term in smtlib). Besides, this function removes applications of types
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
-translateData :: PrtType -> PrtTerm -> SmtLib.SExpr
+translateData :: PirType -> PirTerm -> SmtLib.SExpr
 translateData ty (App var@(B (Ann name) _) []) = translate var
 translateData ty (App (F (FreeName name)) args) =
   SmtLib.app
@@ -131,27 +133,18 @@ translateData ty _ = error "Illegal term in translate data"
 -- and it contains application of term to types,
 -- A frequent situation in system F, but not allowed in the logic of SMT solvers.
 
-instance Translatable (AnnTerm (AnnType Name (Var Name (TypeBase Name))) Name (Var Name (PIRBase P.DefaultFun Name))) where
+instance Translatable PirTermExpanded where
   translate (App var args) = SmtLib.app (translate var) (translate <$> args)
   translate (Lam ann ty term) = error "Translate term to smtlib: Lambda abstraction in term"
   translate (Abs ann kind term) = error "Translate term to smtlib: Type abstraction in term"
 
-instance Translatable (Var Name (PIRBase P.DefaultFun Name)) where
+instance Translatable (Var Name (TermBase PlutusIR Name)) where
   translate (B (Ann name) _) = SmtLib.symbol (toSmtName name)
   translate (F (FreeName name)) = SmtLib.symbol (toSmtName name)
   translate (F _) = error "Free variable translation not yet implemented."
+  translate (M h) = absurd h
 
-instance
-  Translatable
-    ( Arg
-        (AnnType Name (Var Name (TypeBase Name)))
-        ( AnnTerm
-            (AnnType Name (Var Name (TypeBase Name)))
-            Name
-            (Var Name (PIRBase P.DefaultFun Name))
-        )
-    )
-  where
+instance Translatable (Arg PirTypeExpanded PirTermExpanded) where
   translate (Arg term) = translate term
 -- TODO: This case is known to create invalid SMT terms,
 -- since in SMT solver, application of a term to a type is not allowed.

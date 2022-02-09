@@ -9,6 +9,7 @@ module Pirouette.Term.DSL where
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified Pirouette.Term.Syntax as S
+import           Pirouette.Term.FromPlutusIR
 import           Pirouette.Monad
 
 import qualified PlutusCore        as P
@@ -34,15 +35,14 @@ mkNewName c = do
       | n `elem` env = Nothing
       | otherwise    = Just n
 
-stubTy :: String -> PrtType
+stubTy :: String -> PirType
 stubTy s = R.tyPure (R.F $ S.TyFree $ Name (T.pack s) Nothing)
 
-type TestTerm = R.AnnTerm (R.AnnType Name (R.Var Name (TypeBase Name)))
-                                Name
-                                (R.Var Name (PIRBase P.DefaultFun Name))
+type TestTerm = PirTermExpanded
+
 type TermM = TermGenM TestTerm
 
-term :: TermM -> PrtTerm
+term :: TermM -> PirTerm
 term gent = runReader gent []
 
 class Abs t where

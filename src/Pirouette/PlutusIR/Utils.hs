@@ -6,6 +6,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Pirouette.PlutusIR.Utils where
 
 import           Pirouette.Monad
@@ -24,38 +25,37 @@ import qualified Data.Text as T
 deriving instance Data P.Unique
 deriving instance Data P.Name
 deriving instance Data P.TyName
-deriving instance Data P.DefaultFun
 
 
 -- TODO: actually check that the given name is a constructor of
 -- a declared 'Bool' datatype.
-termIsBoolVal :: (PirouetteReadDefs m) => Bool -> PrtTerm -> m Bool
+termIsBoolVal :: (PirouetteReadDefs PlutusIR m) => Bool -> PirTerm -> m Bool
 termIsBoolVal b (R.Free (FreeName n)) = consIsBoolVal b n
 termIsBoolVal _ _                     = return False
 
-consIsBoolVal :: (PirouetteReadDefs m) => Bool -> Name -> m Bool
+consIsBoolVal :: (PirouetteReadDefs PlutusIR m) => Bool -> Name -> m Bool
 consIsBoolVal b n = return $ nameString n == T.pack (show b)
 
-consIsMaybeVal :: (PirouetteReadDefs m) => Name -> MaybeT m (Maybe ())
+consIsMaybeVal :: (PirouetteReadDefs PlutusIR m) => Name -> MaybeT m (Maybe ())
 consIsMaybeVal n
   | nameString n == "Just"    = return (Just ())
   | nameString n == "Nothing" = return Nothing
   | otherwise                 = fail "Not a constructor from Maybe"
 
 -- TODO: Similarly to 'termIsBoolVal', check this is really a unit type
-typeIsUnit :: (PirouetteReadDefs m) => PrtType -> m Bool
+typeIsUnit :: (PirouetteReadDefs PlutusIR m) => PirType -> m Bool
 typeIsUnit (R.TyApp (R.F (TyFree n)) []) = return $ nameString n == "Unit"
 typeIsUnit _                             = return False
 
-tynameIsBool :: (PirouetteReadDefs m) => Name -> m Bool
+tynameIsBool :: (PirouetteReadDefs PlutusIR m) => Name -> m Bool
 tynameIsBool n = return $ nameString n == "Bool"
 
-typeIsBool :: (PirouetteReadDefs m) => PrtType -> m Bool
+typeIsBool :: (PirouetteReadDefs PlutusIR m) => PirType -> m Bool
 typeIsBool (R.TyApp (R.F (TyFree n)) []) = tynameIsBool n
 typeIsBool _ = return False
 
 
-nameIsITE :: PIRBase P.DefaultFun n -> Bool
+nameIsITE :: TermBase PlutusIR name -> Bool
 nameIsITE (Builtin P.IfThenElse) = True
 nameIsITE _ = False
 
@@ -71,9 +71,9 @@ nameIsITE _ = False
 -- Moreover, we already remove the 'R.Arg' wrapper for all the predefined argument positions.
 -- Only the extra arguments are kept with their 'R.Arg' because they could be types or terms.
 --
-unDest :: (PirouetteReadDefs m)
-       => PrtTerm
-       -> MaybeT m (Name, TyName, [PrtType], PrtTerm, PrtType, [PrtTerm], [R.Arg PrtType PrtTerm])
+unDest :: (PirouetteReadDefs lang m)
+       => PrtTerm lang
+       -> MaybeT m (Name, TyName, [PrtType lang], PrtTerm lang, PrtType lang, [PrtTerm lang], [R.Arg (PrtType lang) (PrtTerm lang)])
 unDest (R.App (R.F (FreeName n)) args) = do
   tyN <- prtIsDest n
   Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
@@ -89,9 +89,9 @@ unDest (R.App (R.F (FreeName n)) args) = do
 unDest _ = fail "unDest: not an R.App"
 
 -- |Analogous to 'unDest', but works fro constructors.
-unCons :: (PirouetteReadDefs m)
-       => PrtTerm
-       -> MaybeT m (TyName, [PrtType], Int, [PrtTerm])
+unCons :: (PirouetteReadDefs lang m)
+       => PrtTerm lang
+       -> MaybeT m (TyName, [PrtType lang], Int, [PrtTerm lang])
 unCons (R.App (R.F (FreeName n)) args) = do
   (idx, tyN) <- prtIsConst n
   let (tyArgs, args1) = span R.isTyArg args
