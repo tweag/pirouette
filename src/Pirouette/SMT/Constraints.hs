@@ -138,7 +138,7 @@ declareVariables s env =
 -- term.
 translateData :: (LanguageSMT lang, ToSMT meta)
   => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> SmtLib.SExpr
-translateData ty (App var@(B (Ann name) _) []) = translateVar var
+translateData ty (App var []) = translateVar var
 translateData ty (App (F (FreeName name)) args) =
   SmtLib.app
     (SmtLib.as (SmtLib.symbol (toSmtName name)) (translateType ty))
@@ -155,6 +155,7 @@ translateTerm (Lam ann ty term) = error "Translate term to smtlib: Lambda abstra
 translateTerm (Abs ann kind term) = error "Translate term to smtlib: Type abstraction in term"
 
 translateVar :: (LanguageSMT lang, ToSMT meta) => PrtVarMeta lang meta -> SmtLib.SExpr
+-- VCM: I actually think we shouldn't ever find a bound variable to be translated...
 translateVar (B (Ann name) _) = SmtLib.symbol (toSmtName name)
 translateVar (F (FreeName name)) = SmtLib.symbol (toSmtName name)
 translateVar (F _) = error "Free variable translation not yet implemented."
