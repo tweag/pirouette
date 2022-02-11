@@ -7,8 +7,8 @@ import qualified Pirouette.SMT.SimpleSMT as SmtLib
 
 instance LanguageSMT PlutusIR where
   translateBuiltinType = trPIRType
-  translateBuiltinTerm = _
-  translateConstant = _
+  translateBuiltinTerm = error "translateBuiltinTerm (t :: BuiltinTerms PlutusIR): not yet impl"
+  translateConstant = error "translateConstant (t :: Constants PlutusIR): not yet impl"
 
 trPIRType :: PIRType -> SmtLib.SExpr
 trPIRType PIRTypeInteger = SmtLib.tInt

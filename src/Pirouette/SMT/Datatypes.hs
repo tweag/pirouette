@@ -21,7 +21,7 @@ import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 
 -- | Declare a datatype in the solver
-declareDatatype :: MonadIO m => SmtLib.Solver -> Name -> TypeDef lang Name -> m ()
+declareDatatype :: (LanguageSMT lang, MonadIO m) => SmtLib.Solver -> Name -> TypeDef lang Name -> m ()
 declareDatatype solver typeName typeDef@(Datatype _ typeVariabes _ constructors) =
   liftIO $
     SmtLib.declareDatatype
@@ -34,9 +34,9 @@ declareDatatype solver typeName typeDef@(Datatype _ typeVariabes _ constructors)
 -- function translates constructor types in PlutusIR to this layout and
 -- provides required names for the fields of product types.
 constructorFromPIR ::
-  forall lang .
-  LanguageSMT lang =>
-  (Name, PrtType lang) ->
+  forall lang meta .
+  (LanguageSMT lang, ToSMT meta) =>
+  (Name, PrtTypeMeta lang meta) ->
   (String, [(String, SmtLib.SExpr)])
 constructorFromPIR (name, constructorType) =
   ( toSmtName name,
@@ -47,13 +47,13 @@ constructorFromPIR (name, constructorType) =
       (aux constructorType)
   )
   where
-    aux :: PrtType lang -> [SmtLib.SExpr]
+    aux :: PrtTypeMeta lang meta -> [SmtLib.SExpr]
     aux x = let (args, _) = tyFunArgs x in map translateType args
 
 -- Declare all the datatypes in the solver from an ordered set of Pirouette
 -- definitions
 declareDatatypes ::
-  MonadIO m => SmtLib.Solver -> Map Name (PrtDef lang) -> [Arg Name Name] -> m ()
+  (LanguageSMT lang, MonadIO m) => SmtLib.Solver -> Map Name (PrtDef lang) -> [Arg Name Name] -> m ()
 declareDatatypes solver decls orderedNames =
   let typeNames =
         mapMaybe
@@ -77,14 +77,14 @@ translateTypeBase :: forall lang . (LanguageSMT lang) => TypeBase lang Name -> S
 translateTypeBase (TyBuiltin pirType) = translateBuiltinType @lang pirType
 translateTypeBase (TyFree name) = SmtLib.symbol (toSmtName name)
 
-translateType :: forall lang . (LanguageSMT lang) => PrtType lang -> SmtLib.SExpr
+translateType :: (LanguageSMT lang, ToSMT meta) => PrtTypeMeta lang meta -> SmtLib.SExpr
 translateType (TyApp (F ty) args) = SmtLib.app (translateTypeBase ty) (map translateType args)
 translateType (TyApp (B (Ann ann) index) args) =
   SmtLib.app (SmtLib.symbol (toSmtName ann)) (map translateType args)
 translateType x = error $ "Translate type to smtlib: cannot handle " <> show x
 
 -- | Initialize a solver and declare datatypes from Pirouette definitions
-smtMain :: PrtOrderedDefs lang -> IO ()
+smtMain :: (LanguageSMT lang) => PrtOrderedDefs lang -> IO ()
 smtMain PrtOrderedDefs {prtDecls = decls, prtDepOrder = orderedNames} = do
   s <- prepareSMT
   declareDatatypes s decls orderedNames

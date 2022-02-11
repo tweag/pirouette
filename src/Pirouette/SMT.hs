@@ -12,7 +12,8 @@ import Pirouette.PlutusIR.ToTerm (PlutusIR)
 -- | Check satisfiability of a constraint characterizing a symbolic execution
 -- path. Note that
 smtCheckPathConstraint ::
-  (MonadIO m, PirouetteDepOrder PlutusIR m) => Env -> Constraint -> m SmtLib.Result
+  (MonadIO m, LanguageSMT lang, ToSMT meta, PirouetteDepOrder lang m) =>
+  Env lang -> Constraint lang meta -> m SmtLib.Result
 smtCheckPathConstraint env constraint = do
   solver <- prepareSMT
   decls <- prtAllDefs

@@ -4,6 +4,7 @@ module Pirouette.SMT.Common where
 import Control.Monad.IO.Class
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
+import Data.Void
 
 -- | Prepare a CVC4 solver with all the debug messages and required theories
 -- (in particular for datatypes)
@@ -31,3 +32,9 @@ class (LanguageDef lang) => LanguageSMT lang where
   translateBuiltinType :: BuiltinTypes lang -> SmtLib.SExpr
   translateBuiltinTerm :: BuiltinTerms lang -> SmtLib.SExpr
   translateConstant :: Constants lang -> SmtLib.SExpr
+
+class (Show t) => ToSMT t where
+  translate :: t -> SmtLib.SExpr
+
+instance ToSMT Void where
+  translate = absurd

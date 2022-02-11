@@ -27,6 +27,7 @@ import Pirouette.Term.ConstraintTree (CTreeOpts(..)) -- , termToCTree)
 import Pirouette.Term.Defunctionalize
 import Pirouette.Term.ToTla
 import Pirouette.PlutusIR.Utils
+import Pirouette.PlutusIR.SMT
 import Pirouette.Specializer.Rewriting
 import Pirouette.SMT.Datatypes (smtMain)
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
@@ -72,10 +73,11 @@ import           System.Exit
 import           Text.Megaparsec       (ParseErrorBundle)
 import           Text.Megaparsec.Error (errorBundlePretty)
 
-import           Data.Text.Prettyprint.Doc hiding (Pretty(..))
+import           Prettyprinter hiding (Pretty(..))
 
 import Debug.Trace (trace)
 import GHC.IO.Encoding
+
 ---------------------
 -- * CLI Options * --
 ---------------------
