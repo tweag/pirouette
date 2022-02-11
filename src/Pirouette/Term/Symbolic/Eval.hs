@@ -34,19 +34,29 @@ import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import Pirouette.PlutusIR.Utils
-import Pirouette.SMT (smtCheckPathConstraint)
-import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..))
+import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..), symbol)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
+import Pirouette.SMT (smtCheckPathConstraint)
+import qualified Pirouette.SMT.Common as SMT
+import qualified Pirouette.SMT.Constraints as SMT
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
+
+instance SMT.ToSMT SymVar where
+  translate = SmtLib.symbol . SMT.toSmtName . symVar
 
 data Constraint lang
   = SymVar :== PrtTermMeta lang SymVar
   | And [Constraint lang]
   | Bot
+
+toSmtConstraint :: Constraint lang -> SMT.Constraint lang SymVar
+toSmtConstraint (v :== t) = SMT.Assign (symVar v) t
+toSmtConstraint (And xs) = SMT.And (map toSmtConstraint xs)
+toSmtConstraint Bot = SMT.Bot
 
 instance Semigroup (Constraint lang) where
   (<>) = andConstr
@@ -114,21 +124,25 @@ instance MonadTrans (SymEvalT lang) where
 instance (MonadFail m) => MonadFail (SymEvalT lang m) where
   fail = lift . fail
 
-type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, MonadIO m)
+type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.LanguageSMT lang, MonadIO m)
 
 instance (MonadIO m) => MonadIO (SymEvalT lang m) where
   liftIO = lift . liftIO
 
 -- |Prune the set of paths in the current set.
-prune :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+prune :: forall lang m a . (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
 prune xs = SymEvalT $ StateT $ \st -> do
     (x, st') <- runSymEvalTRaw st xs
     ok <- lift $ pathIsPlausible x st'
     guard ok
     return (x, st')
   where
-    pathIsPlausible :: (Monad m) => a -> SymEvalSt lang -> m Bool
-    pathIsPlausible p env = return True -- TODO: send path constraint to SMT?
+    pathIsPlausible :: a -> SymEvalSt lang -> m Bool
+    pathIsPlausible p env = do
+      res <- smtCheckPathConstraint (sestGamma env) (toSmtConstraint $ sestConstraint env)
+      return $ case res of
+        SmtLib.Unsat -> False
+        _ -> True
 
 -- |Learn a new constraint and add it as a conjunct to the set of constraints of
 -- the current path.
