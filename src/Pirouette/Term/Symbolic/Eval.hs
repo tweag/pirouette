@@ -50,11 +50,15 @@ instance SMT.ToSMT SymVar where
 
 data Constraint lang
   = SymVar :== PrtTermMeta lang SymVar
+  | SymVarEq SymVar SymVar
+  | Eq (PrtTermMeta lang SymVar) (PrtTermMeta lang SymVar)
   | And [Constraint lang]
   | Bot
 
 toSmtConstraint :: Constraint lang -> SMT.Constraint lang SymVar
 toSmtConstraint (v :== t) = SMT.Assign (symVar v) t
+toSmtConstraint (SymVarEq t u) = SMT.NonInlinableSymbolEq (R.App (R.M t) []) (R.App (R.M u) [])
+toSmtConstraint (Eq t u) = SMT.NonInlinableSymbolEq t u
 toSmtConstraint (And xs) = SMT.And (map toSmtConstraint xs)
 toSmtConstraint Bot = SMT.Bot
 
@@ -252,19 +256,46 @@ symeval' t@(R.App hd args) = do
         let tyParams' = map prtTypeFromMeta tyParams
         let ty = R.TyApp (R.F $ TyFree tyName) tyParams'
         term' <- symeval term
-        svar <- freshSymVar ty
-        learn (svar :== term') -- TODO: instead of this learn, we can try unifying with symbCons below:
-        asum $ for2 consList cases $ \(consName, consTy) term -> do
+        asum $ for2 consList cases $ \(consName, consTy) caseTerm -> do
           let (consArgs, res) = R.tyFunArgs consTy
           svars <- freshSymVars consArgs
-          let symbCons =
-                R.App (R.F $ FreeName consName) $
-                  map (R.TyArg . prtTypeToMeta) tyParams' ++ map (R.Arg . (`R.App` []) . R.M) svars
-          learn (svar :== symbCons)
-          consumeGas $ symeval term
+          let symbArgs = map (R.TyArg . prtTypeToMeta) tyParams' ++ map (R.Arg . (`R.App` []) . R.M) svars
+          let symbCons = R.App (R.F $ FreeName consName) symbArgs
+          let mconstr = unify term' symbCons
+          case mconstr of
+            Nothing -> empty
+            Just constr -> learn constr >> consumeGas (symeval $ caseTerm `R.appN` symbArgs)
+
+unify :: (LanguageDef lang) => PrtTermMeta lang SymVar -> PrtTermMeta lang SymVar -> Maybe (Constraint lang)
+unify (R.App (R.M s) []) t = Just (s :== t)
+unify u (R.App (R.M s) []) = Just (s :== u)
+unify (R.App hdT argsT) (R.App hdU argsU) = do
+  uTU <- unifyVar hdT hdU
+  uArgs <- zipWithMPlus unifyArg argsT argsU
+  return $ uTU <> mconcat uArgs
+unify t u = Just (Eq t u)
+
+unifyVar :: (LanguageDef lang) => PrtVarMeta lang SymVar -> PrtVarMeta lang SymVar -> Maybe (Constraint lang)
+unifyVar (R.M s) (R.M r) = Just (SymVarEq s r)
+unifyVar (R.M s) t = Just (s :== R.App t [])
+unifyVar t (R.M s) = Just (s :== R.App t [])
+unifyVar t u = guard (t == u) >> Just (And [])
+
+unifyArg :: (LanguageDef lang) => PrtArgMeta lang SymVar -> PrtArgMeta lang SymVar -> Maybe (Constraint lang)
+unifyArg (R.Arg x) (R.Arg y) = unify x y
+unifyArg (R.TyArg _) (R.TyArg _) = Just (And []) -- TODO: unify types too?
+unifyArg _ _ = Nothing
+
 
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
+
+zipWithMPlus :: (MonadPlus m) => (a -> b -> m c) -> [a] -> [b] -> m [c]
+zipWithMPlus f [] [] = return []
+zipWithMPlus f _ [] = mzero
+zipWithMPlus f [] _ = mzero
+zipWithMPlus f (x:xs) (y:ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
+
 
 --- TMP CODE
 
