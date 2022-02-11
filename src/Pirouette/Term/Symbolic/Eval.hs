@@ -315,6 +315,8 @@ instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
 instance (PrettyLang lang) => Pretty (Constraint lang) where
+  pretty (SymVarEq s r) = pretty s <+> "==" <+> pretty r
+  pretty (Eq s r) = pretty s <+> "==" <+> pretty r
   pretty (n :== term) =
     pretty n <+> "↦" <+> pretty term
   pretty Bot =
@@ -328,78 +330,3 @@ runFor :: (PrettyLang lang, SymEvalConstr lang m , MonadIO m) => Name -> PrtTerm
 runFor n t = do
   paths <- symevalT (runEvaluation t)
   mapM_ (liftIO . print . pretty) paths
-
--- OLD CODE:
-
-{-
-
--- A term `t` verifies the predicate `isData` if it is composed only
--- of variables and type constructors (no destructors and no defined symbols).
-isData :: (PirouetteReadDefs PlutusIR m) => PirTerm -> m Bool
-isData (R.App hd args) = go hd args
-  where
-    go ::
-      (PirouetteReadDefs PlutusIR m) =>
-      R.Var Name (TermBase PlutusIR Name) ->
-      [R.Arg PirType PirTerm] ->
-      m Bool
-    go (R.F (FreeName f)) args = do
-      def <- prtDefOf f
-      case def of
-        DConstructor {} -> foldl' (\b t -> (&&) <$> b <*> studyArg t) (return True) args
-        _ -> return False
-    go _ args = foldl' (\b t -> (&&) <$> b <*> studyArg t) (return True) args
-    studyArg ::
-      (PirouetteReadDefs PlutusIR m) =>
-      R.Arg PirType PirTerm ->
-      m Bool
-    studyArg (R.Arg t) = isData t
-    studyArg (R.TyArg _) = return True
-isData (R.Lam _ _ t) = isData t
-isData (R.Abs _ _ t) = isData t
-
--- A very simple unification test.
--- If two terms are constructor-headed with different constructors,
--- then the constraint boils down to false.
--- Otherwise, we replace `C x1 x2 == C y1 y2` by the constraints
--- `x1 |-> y1` and `x2 |-> y2`.
-
--- TODO: We could be even more clever and inline the constraint `x |-> t` in the other constraints
--- (or even in the term we are executing) to do more pruning of inaccessible branches.
--- This raises a question, what is the job of this module, and the one of the SMT solver?
--- I have the feeling that doing it is steping on the feet of the SMT solver.
-eqT ::
-  PirouetteReadDefs PlutusIR m =>
-  Fuel ->
-  PirTerm ->
-  PirTerm ->
-  m Constraint
-eqT OutOfFuel t@((R.App (R.B (R.Ann x) _) [])) u = do
-  uData <- isData u
-  if uData
-  then return $ Assign x u
-  else return $ OutOfFuelEq t u
-eqT NaturalEnd (R.App (R.B (R.Ann x) _) []) u =
-  return $ Assign x u
-eqT remFuel t@(R.App (R.F (FreeName f)) argsF) u@(R.App (R.F (FreeName g)) argsG) = do
-  defF <- prtDefOf f
-  defG <- prtDefOf g
-  case (defF, defG) of
-    (DConstructor {}, DConstructor {}) ->
-      if f == g
-        then
-          And <$>
-            zipWithM
-              -- Since argsG is constructed by applying the nth constructor of the datatype we are destructing,
-              -- to the variables which are under the lambda abstractions,
-              -- we know that the symbol we are dealing with is a bound variable which is not applied.
-              -- Hence, we have the guarantee that it is not a type argument.
-              -- This justifies our unsafe matching.
-              (\(R.Arg t) (R.Arg u) -> eqT remFuel t u)
-              argsG
-              (filter R.isArg argsF)
-        else return Bot
-    _ -> return $ NonInlinableSymbolEq t u
-eqT _ t u = return $ NonInlinableSymbolEq t u
-
--}
