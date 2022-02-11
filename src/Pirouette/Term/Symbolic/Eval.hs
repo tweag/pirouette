@@ -290,6 +290,8 @@ unifyArg _ _ = Nothing
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
 
+-- | Variation on zipwith that forces arguments to be of the same length,
+-- returning 'mzero' whenever that does not hold.
 zipWithMPlus :: (MonadPlus m) => (a -> b -> m c) -> [a] -> [b] -> m [c]
 zipWithMPlus f [] [] = return []
 zipWithMPlus f _ [] = mzero
