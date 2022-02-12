@@ -1,0 +1,51 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+module Pirouette.SMT.Base where
+
+import Control.Monad.IO.Class
+import qualified Pirouette.SMT.SimpleSMT as SmtLib
+import Pirouette.Term.Syntax
+import Data.Void
+
+-- | Captures the languages that can be translated to SMTLIB; namelly,
+-- we need to be able to translate each individual base syntactical category.
+--
+-- This class is defined with @-XAllowAmbiguousTypes@ and therefore
+-- should be used with @-XTypeApplications@ whenever necessary.
+class (LanguageDef lang) => LanguageSMT lang where
+  translateBuiltinType :: BuiltinTypes lang -> SmtLib.SExpr
+  translateBuiltinTerm :: BuiltinTerms lang -> SmtLib.SExpr
+  translateConstant :: Constants lang -> SmtLib.SExpr
+
+-- | Captures arbitrary types that can be translated to SMTLIB.
+class (Show t) => ToSMT t where
+  translate :: t -> SmtLib.SExpr
+
+instance ToSMT Void where
+  translate = absurd
+
+-- | Class for capturing solver specific functionality, enabling users to easily extend the
+--  set of supported solvers.
+class IsSolver s where
+  launchSolver :: (MonadIO m) => m SmtLib.Solver
+
+data CVC4_DBG
+
+instance IsSolver CVC4_DBG where
+  launchSolver = cvc4_ALL_SUPPORTED True
+
+data CVC4
+
+instance IsSolver CVC4 where
+  launchSolver = cvc4_ALL_SUPPORTED False
+
+-- | Prepare a CVC4 solver with all supported theories, which is necessary
+-- to handle datatypes. The boolean parameter controls debug messages.
+cvc4_ALL_SUPPORTED :: MonadIO m => Bool -> m SmtLib.Solver
+cvc4_ALL_SUPPORTED dbg = do
+  -- This generates a "Solver" which logs every interaction it has.
+  -- To suppress this logging, replace the 2 next lines by
+  -- s <- liiftIO $ SmtLib.newSolver "cvc4" ["--lang=smt2"] Nothing
+  ml <- if dbg then Just <$> liftIO (SmtLib.newLogger 0) else return Nothing
+  s <- liftIO $ SmtLib.newSolver "cvc4" ["--lang=smt2"] ml
+  liftIO $ SmtLib.setLogic s "ALL_SUPPORTED"
+  return s

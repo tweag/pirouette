@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- |Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
 import Control.Monad.IO.Class
@@ -118,18 +119,6 @@ assertConstraint s env (And constraints) =
   sequence_ (assertConstraint s env <$> constraints)
 assertConstraint s _ Bot = liftIO $ SmtLib.assert s (SmtLib.bool False)
 
--- | Declare (name and type) all the variables of the environment in the SMT
--- solver. This step is required before asserting constraints on these
--- variables.
-declareVariables :: (LanguageSMT lang, MonadIO m) => SmtLib.Solver -> Env lang -> m ()
-declareVariables s env =
-  liftIO $
-    sequence_
-      ( uncurry (SmtLib.declare s)
-          . bimap toSmtName translateType
-          <$> Map.toList env
-      )
-
 -- | In `Assign` constraints, the assigned terms are always fully-applied
 -- constructors. This dedicated translation function provides required type
 -- annotation for the SMT. For example Nil may have a List Int annotation (the
@@ -144,35 +133,3 @@ translateData ty (App (F (FreeName name)) args) =
     (SmtLib.as (SmtLib.symbol (toSmtName name)) (translateType ty))
     (translateData ty <$> mapMaybe fromArg args)
 translateData ty _ = error "Illegal term in translate data"
-
--- TODO: The translation of term is still to be worked on,
--- since it does not allow to use builtins or defined functions,
--- and it contains application of term to types,
--- A frequent situation in system F, but not allowed in the logic of SMT solvers.
-translateTerm :: (LanguageSMT lang, ToSMT meta) => PrtTermMeta lang meta -> SmtLib.SExpr
-translateTerm (App var args) = SmtLib.app (translateVar var) (translateArg <$> args)
-translateTerm (Lam ann ty term) = error "Translate term to smtlib: Lambda abstraction in term"
-translateTerm (Abs ann kind term) = error "Translate term to smtlib: Type abstraction in term"
-
-translateVar :: (LanguageSMT lang, ToSMT meta) => PrtVarMeta lang meta -> SmtLib.SExpr
--- VCM: I actually think we shouldn't ever find a bound variable to be translated...
-translateVar (B (Ann name) _) = SmtLib.symbol (toSmtName name)
-translateVar (F (FreeName name)) = SmtLib.symbol (toSmtName name)
-translateVar (F _) = error "Free variable translation not yet implemented."
-translateVar (M h) = translate h
-
-translateArg :: (LanguageSMT lang, ToSMT meta) => PrtArgMeta lang meta -> SmtLib.SExpr
-translateArg (Arg term) = translateTerm term
--- TODO: This case is known to create invalid SMT terms,
--- since in SMT solver, application of a term to a type is not allowed.
-translateArg (TyArg ty) = translateType ty
-
-{-
-instance Translatable (Var Name (TermBase PlutusIR Name)) where
-
-instance Translatable (Arg PirTypeExpanded PirTermExpanded) where
-  translate (Arg term) = translate term
--- TODO: This case is known to create invalid SMT terms,
--- since in SMT solver, application of a term to a type is not allowed.
-  translate (TyArg ty) = translate ty
--}

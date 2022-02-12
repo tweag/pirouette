@@ -23,11 +23,12 @@ library
       Pirouette.PlutusIR.ToTerm
       Pirouette.PlutusIR.Utils
       Pirouette.SMT
-      Pirouette.SMT.Common
+      Pirouette.SMT.Base
       Pirouette.SMT.Constraints
-      Pirouette.SMT.Datatypes
+      Pirouette.SMT.Monad
       Pirouette.SMT.Playground
       Pirouette.SMT.SimpleSMT
+      Pirouette.SMT.Translation
       Pirouette.Specializer
       Pirouette.Specializer.Basics
       Pirouette.Specializer.PIRTransformations
