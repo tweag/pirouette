@@ -13,15 +13,22 @@ import Data.Bifunctor (bimap)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Void
-import Pirouette.SMT.Common
-import Pirouette.SMT.Datatypes
-import qualified Pirouette.SMT.SimpleSMT as SmtLib
+import Pirouette.SMT.Base
+import Pirouette.SMT.Translation
+import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
 import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
 import Prettyprinter hiding (Pretty (..))
 import Data.List (intersperse)
+
+-- TODO: this module should probably be refactored somewhere;
+-- I'm not entirely onboard with the 'translateData' funct as it is;
+--   a) maybe we should pass the env when translating arbitrary expressions
+--   b) maybe we should even keep the env in another reader layer on SolverT...
+--
+-- Its somthing to think about later, but for now this will do.
 
 -- | Bindings from names to types (for the assign constraints)
 type Env lang = Map Name (PrtType lang)
@@ -103,21 +110,21 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 -- which can then be used in further constraints.
 --
 -- Hence, we chose solution #2
-assertConstraint :: (LanguageSMT lang, ToSMT meta, MonadIO m)
-  => SmtLib.Solver -> Env lang -> Constraint lang meta -> m ()
-assertConstraint s env (Assign name term) =
+assertConstraintRaw :: (LanguageSMT lang, ToSMT meta, MonadIO m)
+  => SimpleSMT.Solver -> Env lang -> Constraint lang meta -> m ()
+assertConstraintRaw s env (Assign name term) =
   do
     let smtName = toSmtName name
     let (Just ty) = Map.lookup name env
     liftIO $
-      SmtLib.assert s (SmtLib.symbol smtName `SmtLib.eq` translateData (prtTypeToMeta ty) term)
-assertConstraint s _ (NonInlinableSymbolEq term1 term2) =
-  liftIO $ SmtLib.assert s (translateTerm term1 `SmtLib.eq` translateTerm term2)
-assertConstraint s _ (OutOfFuelEq term1 term2) =
-  liftIO $ SmtLib.assert s (translateTerm term1 `SmtLib.eq` translateTerm term2)
-assertConstraint s env (And constraints) =
-  sequence_ (assertConstraint s env <$> constraints)
-assertConstraint s _ Bot = liftIO $ SmtLib.assert s (SmtLib.bool False)
+      SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` translateData (prtTypeToMeta ty) term)
+assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) =
+  liftIO $ SimpleSMT.assert s (translateTerm term1 `SimpleSMT.eq` translateTerm term2)
+assertConstraintRaw s _ (OutOfFuelEq term1 term2) =
+  liftIO $ SimpleSMT.assert s (translateTerm term1 `SimpleSMT.eq` translateTerm term2)
+assertConstraintRaw s env (And constraints) =
+  sequence_ (assertConstraintRaw s env <$> constraints)
+assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 
 -- | In `Assign` constraints, the assigned terms are always fully-applied
 -- constructors. This dedicated translation function provides required type
@@ -126,10 +133,10 @@ assertConstraint s _ Bot = liftIO $ SmtLib.assert s (SmtLib.bool False)
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
 translateData :: (LanguageSMT lang, ToSMT meta)
-  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> SmtLib.SExpr
+  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> SimpleSMT.SExpr
 translateData ty (App var []) = translateVar var
 translateData ty (App (F (FreeName name)) args) =
-  SmtLib.app
-    (SmtLib.as (SmtLib.symbol (toSmtName name)) (translateType ty))
+  SimpleSMT.app
+    (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) (translateType ty))
     (translateData ty <$> mapMaybe fromArg args)
 translateData ty _ = error "Illegal term in translate data"

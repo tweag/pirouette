@@ -34,19 +34,16 @@ import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import Pirouette.PlutusIR.Utils
-import qualified Pirouette.SMT.SimpleSMT as SmtLib (Result (..), symbol)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
-import Pirouette.SMT (smtCheckPathConstraint)
-import qualified Pirouette.SMT.Common as SMT
-import qualified Pirouette.SMT.Constraints as SMT
+import qualified Pirouette.SMT as SMT
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
 
 instance SMT.ToSMT SymVar where
-  translate = SmtLib.symbol . SMT.toSmtName . symVar
+  translate = SMT.translate . symVar
 
 data Constraint lang
   = SymVar :== PrtTermMeta lang SymVar
@@ -103,32 +100,47 @@ path x st = Path
   , pathResult = x
   }
 
-newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (ListT m) a}
+-- | Our default solver; maybe this should become a type-level parm too...
+type Sol = SMT.CVC4_DBG
+
+-- | A 'SymEvalT' is equivalent to a function with type:
+--
+-- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
+newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT Sol (ListT m)) a}
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
-symevalT :: (Monad m) => SymEvalT lang m a -> m [Path lang a]
+type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.LanguageSMT lang, MonadIO m)
+
+symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
 symevalT = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 10
 
-runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> ListT m (a, SymEvalSt lang)
+runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT Sol (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
-runSymEvalT :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
-runSymEvalT st = ListT.toList . fmap (uncurry path) . runSymEvalTRaw st
+-- |Running a symbolic execution will prepare the solver only once, then use a persistent session
+-- to make all the necessary queries.
+runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
+runSymEvalT st = ListT.toList . fmap (uncurry path) . SMT.runSolverT . prepSolver . runSymEvalTRaw st
+  where
+    prepSolver :: (SymEvalConstr lang k) => SMT.SolverT Sol (ListT k) a -> SMT.SolverT Sol (ListT k) a
+    prepSolver m = do
+      decls <- lift $ lift prtAllDefs
+      dependencyOrder <- lift $ lift prtDependencyOrder
+      SMT.declareDatatypes decls dependencyOrder
+      m
 
 instance (Monad m) => Alternative (SymEvalT lang m) where
   empty = SymEvalT $ StateT $ const empty
   xs <|> ys = SymEvalT $ StateT $ \st -> runSymEvalTRaw st xs <|> runSymEvalTRaw st ys
 
 instance MonadTrans (SymEvalT lang) where
-  lift = SymEvalT . lift . lift
+  lift = SymEvalT . lift . lift . lift
 
 instance (MonadFail m) => MonadFail (SymEvalT lang m) where
   fail = lift . fail
-
-type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.LanguageSMT lang, MonadIO m)
 
 instance (MonadIO m) => MonadIO (SymEvalT lang m) where
   liftIO = lift . liftIO
@@ -137,15 +149,19 @@ instance (MonadIO m) => MonadIO (SymEvalT lang m) where
 prune :: forall lang m a . (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
 prune xs = SymEvalT $ StateT $ \st -> do
     (x, st') <- runSymEvalTRaw st xs
-    ok <- lift $ pathIsPlausible x st'
+    ok <- pathIsPlausible st'
     guard ok
     return (x, st')
   where
-    pathIsPlausible :: a -> SymEvalSt lang -> m Bool
-    pathIsPlausible p env = do
-      res <- smtCheckPathConstraint (sestGamma env) (toSmtConstraint $ sestConstraint env)
+    pathIsPlausible :: (MonadIO n) => SymEvalSt lang -> SMT.SolverT Sol n Bool
+    pathIsPlausible env = do
+      SMT.solverPush
+      SMT.declareVariables (sestGamma env)
+      SMT.assert (sestGamma env) (toSmtConstraint $ sestConstraint env)
+      res <- SMT.checkSat
+      SMT.solverPop
       return $ case res of
-        SmtLib.Unsat -> False
+        SMT.Unsat -> False
         _ -> True
 
 -- |Learn a new constraint and add it as a conjunct to the set of constraints of

@@ -25,8 +25,6 @@ library
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
-      Pirouette.SMT.Monad
-      Pirouette.SMT.Playground
       Pirouette.SMT.SimpleSMT
       Pirouette.SMT.Translation
       Pirouette.Specializer

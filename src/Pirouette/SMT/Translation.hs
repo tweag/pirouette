@@ -1,6 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -14,17 +13,13 @@ import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Debug.Trace
 import Pirouette.Monad
-import Pirouette.SMT.Common
+import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 
--- | Prefix Pirouette names with "pir" to avoid name clashes with SMT builtins
-toSmtName :: Name -> String
-toSmtName = ("pir_" <>) . show . pretty
-
-translateTypeBase :: forall lang . (LanguageSMT lang) => TypeBase lang Name -> SmtLib.SExpr
+translateTypeBase :: forall lang. (LanguageSMT lang) => TypeBase lang Name -> SmtLib.SExpr
 translateTypeBase (TyBuiltin pirType) = translateBuiltinType @lang pirType
 translateTypeBase (TyFree name) = SmtLib.symbol (toSmtName name)
 
@@ -60,7 +55,7 @@ translateArg (TyArg ty) = translateType ty
 -- function translates constructor types in PlutusIR to this layout and
 -- provides required names for the fields of product types.
 constructorFromPIR ::
-  forall lang meta .
+  forall lang meta.
   (LanguageSMT lang, ToSMT meta) =>
   (Name, PrtTypeMeta lang meta) ->
   (String, [(String, SmtLib.SExpr)])
