@@ -88,7 +88,9 @@ data SymEvalSt lang = SymEvalSt
   { sestConstraint :: Constraint lang,
     sestGamma :: M.Map Name (PrtType lang),
     sestFreshCounter :: Int,
-    sestFuel :: Int
+    sestFuel :: Int,
+    -- |A branch that has been validated before is never validated again /unless/ we 'learn' something new.
+    sestValidated :: Bool
   }
 
 -- |Given a result and a resulting state, returns a 'Path' representing it.
@@ -115,7 +117,7 @@ type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.Lang
 symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
 symevalT = runSymEvalT st0
   where
-    st0 = SymEvalSt mempty M.empty 0 10
+    st0 = SymEvalSt mempty M.empty 0 10 False
 
 runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT Sol (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
@@ -154,20 +156,23 @@ prune xs = SymEvalT $ StateT $ \st -> do
     return (x, st')
   where
     pathIsPlausible :: (MonadIO n) => SymEvalSt lang -> SMT.SolverT Sol n Bool
-    pathIsPlausible env = do
-      SMT.solverPush
-      SMT.declareVariables (sestGamma env)
-      SMT.assert (sestGamma env) (toSmtConstraint $ sestConstraint env)
-      res <- SMT.checkSat
-      SMT.solverPop
-      return $ case res of
-        SMT.Unsat -> False
-        _ -> True
+    pathIsPlausible env
+      | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
+      | otherwise = do
+        SMT.solverPush
+        SMT.declareVariables (sestGamma env)
+        SMT.assert (sestGamma env) (toSmtConstraint $ sestConstraint env)
+        res <- SMT.checkSat
+        SMT.solverPop
+        return $ case res of
+          SMT.Unsat -> False
+          _ -> True
 
 -- |Learn a new constraint and add it as a conjunct to the set of constraints of
--- the current path.
+-- the current path. Make sure that this branch gets marked as /not/ validated, regardless
+-- of whether or not we had already validated it before.
 learn :: (SymEvalConstr lang m) => Constraint lang -> SymEvalT lang m ()
-learn c = modify (\st -> st { sestConstraint = c <> sestConstraint st })
+learn c = modify (\st -> st { sestConstraint = c <> sestConstraint st, sestValidated = False })
 
 declSymVars :: (SymEvalConstr lang m) => [(Name, PrtType lang)] -> SymEvalT lang m [SymVar]
 declSymVars vs = do
