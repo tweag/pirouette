@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -110,18 +109,23 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 -- which can then be used in further constraints.
 --
 -- Hence, we chose solution #2
-assertConstraintRaw :: (LanguageSMT lang, ToSMT meta, MonadIO m)
+assertConstraintRaw :: (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m)
   => SimpleSMT.Solver -> Env lang -> Constraint lang meta -> m ()
 assertConstraintRaw s env (Assign name term) =
   do
     let smtName = toSmtName name
     let (Just ty) = Map.lookup name env
+    d <- translateData (prtTypeToMeta ty) term
     liftIO $
-      SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` translateData (prtTypeToMeta ty) term)
-assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) =
-  liftIO $ SimpleSMT.assert s (translateTerm term1 `SimpleSMT.eq` translateTerm term2)
-assertConstraintRaw s _ (OutOfFuelEq term1 term2) =
-  liftIO $ SimpleSMT.assert s (translateTerm term1 `SimpleSMT.eq` translateTerm term2)
+      SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` d)
+assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) = do
+  t1 <- translateTerm term1
+  t2 <- translateTerm term2
+  liftIO $ SimpleSMT.assert s (t1 `SimpleSMT.eq` t2)
+assertConstraintRaw s _ (OutOfFuelEq term1 term2) = do
+  t1 <- translateTerm term1
+  t2 <- translateTerm term2
+  liftIO $ SimpleSMT.assert s (t1 `SimpleSMT.eq` t2)
 assertConstraintRaw s env (And constraints) =
   sequence_ (assertConstraintRaw s env <$> constraints)
 assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
@@ -132,11 +136,13 @@ assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 -- `as` term in smtlib). Besides, this function removes applications of types
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
-translateData :: (LanguageSMT lang, ToSMT meta)
-  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> SimpleSMT.SExpr
+translateData :: (LanguageSMT lang, ToSMT meta, MonadFail m)
+  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> m SimpleSMT.SExpr
 translateData ty (App var []) = translateVar var
 translateData ty (App (F (FreeName name)) args) =
   SimpleSMT.app
-    (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) (translateType ty))
-    (translateData ty <$> mapMaybe fromArg args)
-translateData ty _ = error "Illegal term in translate data"
+    <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
+    -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
+    -- translating the overall term.
+    <*> mapM (translateData ty) (mapMaybe fromArg args)
+translateData ty _ = fail "Illegal term in translate data"

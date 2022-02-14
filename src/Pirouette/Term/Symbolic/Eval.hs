@@ -155,7 +155,7 @@ prune xs = SymEvalT $ StateT $ \st -> do
     guard ok
     return (x, st')
   where
-    pathIsPlausible :: (MonadIO n) => SymEvalSt lang -> SMT.SolverT Sol n Bool
+    pathIsPlausible :: (MonadIO n, MonadFail n) => SymEvalSt lang -> SMT.SolverT Sol n Bool
     pathIsPlausible env
       | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
       | otherwise = do
