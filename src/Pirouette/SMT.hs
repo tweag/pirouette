@@ -55,26 +55,24 @@ import Control.Applicative
 -- | Solver monad for a specific solver, passed as a phantom type variable @s@ (refer to 'IsSolver' for more)
 --  to know the supported solvers. That's a phantom type variable used only to distinguish
 --  solver-specific operations, such as initialization
-newtype SolverT s m a = SolverT {unSolverT :: ReaderT SimpleSMT.Solver m a}
+newtype SolverT m a = SolverT {unSolverT :: ReaderT SimpleSMT.Solver m a}
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO)
 
-instance MonadTrans (SolverT s) where
+instance MonadTrans (SolverT) where
   lift = SolverT . lift
 
-deriving instance MonadState s m => MonadState s (SolverT sol m)
-deriving instance MonadError e m => MonadError e (SolverT sol m)
-deriving instance Alternative m => Alternative (SolverT sol m)
+deriving instance MonadState s m => MonadState s (SolverT m)
+deriving instance MonadError e m => MonadError e (SolverT m)
+deriving instance Alternative m => Alternative (SolverT m)
 
--- | Runs a computation that requires a session with a solver. You can specify
---  which solver you want through a type application:
---
---  > runSolverT @CVC4 ...
-runSolverT :: forall s m a. (MonadIO m, IsSolver s) => SolverT s m a -> m a
-runSolverT (SolverT comp) = launchSolver @s >>= runReaderT comp
+-- | Runs a computation that requires a session with a solver. The first parameter is
+-- an action that launches a solver. Check 'cvc4_ALL_SUPPORTED' for an example.
+runSolverT :: forall m a. (MonadIO m) => IO SimpleSMT.Solver -> SolverT m a -> m a
+runSolverT s (SolverT comp) = liftIO s >>= runReaderT comp
 
 -- | Returns 'Sat', 'Unsat' or 'Unknown' for the current solver session.
-checkSat :: (MonadIO m) => SolverT s m SimpleSMT.Result
+checkSat :: (MonadIO m) => SolverT m SimpleSMT.Result
 checkSat = ask >>= liftIO . SimpleSMT.check
 
 -- | Pushes the solver context, creating a checkpoint. This is useful if you plan to execute
@@ -88,15 +86,15 @@ checkSat = ask >>= liftIO . SimpleSMT.check
 --  >   r <- checkSat
 --  >   solverPop
 --  >   return r
-solverPush :: (MonadIO m) => SolverT s m ()
+solverPush :: (MonadIO m) => SolverT m ()
 solverPush = ask >>= liftIO . SimpleSMT.push
 
 -- | Pops the current checkpoint, check 'solverPush' for an example.
-solverPop :: (MonadIO m) => SolverT s m ()
+solverPop :: (MonadIO m) => SolverT m ()
 solverPop = ask >>= liftIO . SimpleSMT.pop
 
 -- | Declare a single datatype in the current solver session.
-declareDatatype :: (LanguageSMT lang, MonadFail m, MonadIO m) => Name -> TypeDef lang Name -> SolverT s m ()
+declareDatatype :: (LanguageSMT lang, MonadFail m, MonadIO m) => Name -> TypeDef lang Name -> SolverT m ()
 declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
   solver <- ask
   liftIO $ do
@@ -111,7 +109,7 @@ declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
 -- the dependency order passed as the second argument. You can generally get its value
 -- from a 'PirouetteDepOrder' monad.
 declareDatatypes ::
-  (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (PrtDef lang) -> [R.Arg Name Name] -> SolverT s m ()
+  (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (PrtDef lang) -> [R.Arg Name Name] -> SolverT m ()
 declareDatatypes decls orderedNames =
   forM_ typeNames $ \tyname ->
     case M.lookup tyname decls of
@@ -122,11 +120,11 @@ declareDatatypes decls orderedNames =
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.
-declareVariables :: (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (PrtType lang) -> SolverT s m ()
+declareVariables :: (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (PrtType lang) -> SolverT m ()
 declareVariables = mapM_ (uncurry declareVariable) . M.toList
 
 -- | Declares a single variable in the current solver session.
-declareVariable :: (LanguageSMT lang, MonadIO m, MonadFail m) => Name -> PrtType lang -> SolverT s m ()
+declareVariable :: (LanguageSMT lang, MonadIO m, MonadFail m) => Name -> PrtType lang -> SolverT m ()
 declareVariable varName varTy = do
   solver <- ask
   liftIO $ translateType varTy >>= void . SimpleSMT.declare solver (toSmtName varName)
@@ -136,5 +134,5 @@ assert ::
   (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m) =>
   M.Map Name (PrtType lang) ->
   Constraint lang meta ->
-  SolverT s m ()
+  SolverT m ()
 assert gamma c = SolverT $ ReaderT $ \solver -> assertConstraintRaw solver gamma c

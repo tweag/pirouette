@@ -30,24 +30,11 @@ toSmtName = ("pir_" <>) . show . pretty
 instance ToSMT Name where
   translate = SimpleSMT.symbol . toSmtName
 
--- | Class for capturing solver specific functionality, enabling users to easily extend the
---  set of supported solvers.
-class IsSolver s where
-  launchSolver :: (MonadIO m) => m SimpleSMT.Solver
-
-data CVC4_DBG
-
-instance IsSolver CVC4_DBG where
-  launchSolver = cvc4_ALL_SUPPORTED True
-
-data CVC4
-
-instance IsSolver CVC4 where
-  launchSolver = cvc4_ALL_SUPPORTED False
+type WithDebugMessages = Bool
 
 -- | Prepare a CVC4 solver with all supported theories, which is necessary
 -- to handle datatypes. The boolean parameter controls debug messages.
-cvc4_ALL_SUPPORTED :: MonadIO m => Bool -> m SimpleSMT.Solver
+cvc4_ALL_SUPPORTED :: MonadIO m => WithDebugMessages -> m SimpleSMT.Solver
 cvc4_ALL_SUPPORTED dbg = do
   -- This generates a "Solver" which logs every interaction it has.
   -- To suppress this logging, replace the 2 next lines by

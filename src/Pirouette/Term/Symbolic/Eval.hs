@@ -102,13 +102,10 @@ path x st = Path
   , pathResult = x
   }
 
--- | Our default solver; maybe this should become a type-level parm too...
-type Sol = SMT.CVC4_DBG
-
 -- | A 'SymEvalT' is equivalent to a function with type:
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
-newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT Sol (ListT m)) a}
+newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (ListT m)) a}
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
@@ -119,15 +116,18 @@ symevalT = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 10 False
 
-runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT Sol (ListT m) (a, SymEvalSt lang)
+runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
 -- |Running a symbolic execution will prepare the solver only once, then use a persistent session
 -- to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
-runSymEvalT st = ListT.toList . fmap (uncurry path) . SMT.runSolverT . prepSolver . runSymEvalTRaw st
+runSymEvalT st = ListT.toList . fmap (uncurry path) . SMT.runSolverT s . prepSolver . runSymEvalTRaw st
   where
-    prepSolver :: (SymEvalConstr lang k) => SMT.SolverT Sol (ListT k) a -> SMT.SolverT Sol (ListT k) a
+    -- we'll rely on cvc4 without dbg messages
+    s = SMT.cvc4_ALL_SUPPORTED False
+
+    prepSolver :: (SymEvalConstr lang k) => SMT.SolverT (ListT k) a -> SMT.SolverT (ListT k) a
     prepSolver m = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
@@ -155,7 +155,7 @@ prune xs = SymEvalT $ StateT $ \st -> do
     guard ok
     return (x, st')
   where
-    pathIsPlausible :: (MonadIO n, MonadFail n) => SymEvalSt lang -> SMT.SolverT Sol n Bool
+    pathIsPlausible :: (MonadIO n, MonadFail n) => SymEvalSt lang -> SMT.SolverT n Bool
     pathIsPlausible env
       | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
       | otherwise = do

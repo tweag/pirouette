@@ -313,6 +313,9 @@ unDest (R.App (R.F (FreeName n)) args) = do
       let (cases, rest) = splitAt nCons casesrest
       cases' <- mapM (wrapMaybe . R.fromArg) cases
       return $ UnDestMeta n tyN tyArgs' x retTy cases' rest
+    -- The fail string is being ignored by the 'MaybeT'; that's alright, they serve
+    -- as programmer documentation or they can be plumbed through a 'trace' by
+    -- overloading the MonadFail instance, which was helpful for debugging in the past.
     _ -> fail "unDest: Destructor arguments has non-cannonical structure"
 unDest _ = fail "unDest: not an R.App"
 
@@ -331,4 +334,5 @@ unCons (R.App (R.F (FreeName n)) args) = do
   tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
   args1'  <- mapM (wrapMaybe . R.fromArg) args1
   return $ UnConsMeta tyN tyArgs' idx args1'
+-- The fail is meant for the 'MaybeT', check the comment in 'unDest' for rationale
 unCons _ = fail "unCons: not an R.App"
