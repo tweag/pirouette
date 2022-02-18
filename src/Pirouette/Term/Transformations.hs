@@ -8,7 +8,7 @@ module Pirouette.Term.Transformations where
 import           Pirouette.Monad
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
@@ -76,26 +76,27 @@ import Debug.Trace (trace)
 -- > v = [d/Bool x T[thunk := Unit] F[thunk := Unit]]
 -- Generally v = [d/Bool T F] since `thunk` has no reason to appear in `T` and `F`.
 --
-removeExcessiveDestArgs :: (PirouetteReadDefs lang m) => PrtTerm lang -> m (PrtTerm lang)
+removeExcessiveDestArgs :: (Data meta, Typeable meta, PirouetteReadDefs lang m) => PrtTermMeta lang meta -> m (PrtTermMeta lang meta)
 removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs lang m) => PrtTerm lang -> MaybeT m (PrtTerm lang)
+    go :: (PirouetteReadDefs lang m) => PrtTermMeta lang meta -> MaybeT m (PrtTermMeta lang meta)
     go t = do
-      (n, tyN, tyArgs, x, tyReturn, cases, excess) <- unDest t
+      UnDestMeta n tyN tyArgs x tyReturn cases excess <- unDest t
       if null excess
       then fail "No excessive destr arguments"
       else do
         logTrace $ show n
         Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
+        let cons' = map (second prtTypeToMeta) cons
         return $
           R.App (R.F $ FreeName n) $
             map R.TyArg tyArgs
               ++ [R.Arg x, R.TyArg $ tyDrop (length excess) tyReturn]
-              ++ zipWith (\(_,cty) t -> R.Arg $ appExcessive excess cty t) cons cases
+              ++ zipWith (\(_,cty) t -> R.Arg $ appExcessive excess cty t) cons' cases
 
     -- Receives the excessive arguments, the type of the constructor whose case we're on and
     -- the term defining the value at this constructor's case.
-    appExcessive :: [PrtArg lang] -> PrtType lang -> PrtTerm lang -> PrtTerm lang
+    appExcessive :: [PrtArgMeta lang meta] -> PrtTypeMeta lang meta -> PrtTermMeta lang meta -> PrtTermMeta lang meta
     appExcessive l (R.TyFun a b) (R.Lam n ty t) =
       R.Lam n ty (appExcessive (map (R.argMap id (shift 1)) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
     appExcessive l (R.TyFun a b) _              =
@@ -103,7 +104,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
     appExcessive l _             t              =
        R.appN t l
 
-    tyDrop :: Int -> PrtType lang -> PrtType lang
+    tyDrop :: Int -> PrtTypeMeta lang meta -> PrtTypeMeta lang meta
     tyDrop 0 t               = t
     tyDrop n (R.TyFun a b)   = tyDrop (n-1) b
     tyDrop n (R.TyAll _ _ t) = tyDrop (n-1) t
@@ -186,13 +187,13 @@ expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
 --
 -- > [d/Maybe [c/Just X] N (\ J)] == [J X]
 --
-constrDestrId :: (PirouetteReadDefs lang m) => PrtTerm lang -> m (PrtTerm lang)
+constrDestrId :: (Data meta, Typeable meta, PirouetteReadDefs lang m) => PrtTermMeta lang meta -> m (PrtTermMeta lang meta)
 constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs lang m) => PrtTerm lang -> MaybeT m (PrtTerm lang)
+    go :: (PirouetteReadDefs lang m) => PrtTermMeta lang meta -> MaybeT m (PrtTermMeta lang meta)
     go t = do
-      (_, tyN, tyArgs, x, ret, cases, excess) <- unDest t
-      (tyN', xTyArgs, xIdx, xArgs) <- unCons x
+      UnDestMeta _ tyN tyArgs x ret cases excess <- unDest t
+      UnConsMeta tyN' xTyArgs xIdx xArgs <- unCons x
       guard (tyN == tyN')
       let xCase          = unsafeIdx "constrDestrId" cases xIdx
       logTrace $ show tyN
@@ -452,27 +453,26 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
 --
 -- that is, we push the application of f down to the branches of the "case" statement.
 
-destrNF :: forall lang m . (PirouetteReadDefs lang m) => PrtTerm lang -> m (PrtTerm lang)
+destrNF :: forall lang m meta . (Data meta, Typeable meta, PirouetteReadDefs lang m) => PrtTermMeta lang meta -> m (PrtTermMeta lang meta)
 destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
   where
-    onApp :: (R.Var Name (TermBase lang Name)
-               -> [R.Arg (PrtType lang) (PrtTerm lang)] -> MaybeT m (PrtTerm lang))
-          -> PrtTerm lang -> m (PrtTerm lang)
+    onApp :: (PrtVarMeta lang meta -> [PrtArgMeta lang meta] -> MaybeT m (PrtTermMeta lang meta))
+          -> PrtTermMeta lang meta -> m (PrtTermMeta lang meta)
     onApp f t@(R.App n args) = fromMaybe t <$> runMaybeT (f n args)
     onApp _ t                = return t
 
     -- Returns a term that is a destructor from a list of terms respecting
     -- the invariant that if @splitDest t == Just (xs , d , ys)@, then @t == xs ++ [d] ++ ys@
-    splitDest :: [PrtArg lang]
-              -> MaybeT m ( PrtTerm lang
-                          , ListZipper (PrtArg lang))
+    splitDest :: [PrtArgMeta lang meta]
+              -> MaybeT m ( PrtTermMeta lang meta
+                          , ListZipper (PrtArgMeta lang meta))
     splitDest [] = fail "splitDest: can't split empty list"
     splitDest (a@(R.Arg a2@(R.App (R.F (FreeName n)) args)) : ds) =
           (prtIsDest n >> return (a2, ListZipper ([], ds)))
       <|> (splitDest ds <&> second (zipperCons a))
     splitDest (a : ds) = splitDest ds <&> second (zipperCons a)
 
-    go :: PrtTerm lang -> MaybeT m (PrtTerm lang)
+    go :: PrtTermMeta lang meta -> MaybeT m (PrtTermMeta lang meta)
     go (R.App (R.B _ _)           fargs) = fail "destrNF.go: bound name"
     go (R.App (R.F (FreeName fn)) fargs) = do
       -- Try to see if there's at least one destructor in the arguments.
@@ -494,7 +494,7 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
         isTermArg (R.TyArg _) = False
 
         continue dest fargsZ= do
-          (dn, tyN, tyArgs, x, ret, cases, excess) <- unDest dest
+          UnDestMeta dn tyN tyArgs x ret cases excess <- unDest dest
           -- Now, we need to push `fn` down the arguments of the destructor, but in doing
           -- so, we need to shift the bound variables depending on how many arguments each
           -- constructor has. Finally, there might be more destructors in fargsZ, which we need to handle,

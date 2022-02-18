@@ -33,6 +33,14 @@ import           Data.Generics.Uniplate.Data
 data VarMeta meta ann f = B (Ann ann) Integer | F f | M meta
   deriving (Eq, Ord, Functor, Show, Data, Typeable, Foldable, Traversable)
 
+varMapMetaM :: (Monad m) => (meta -> m meta') -> VarMeta meta ann f -> m (VarMeta meta' ann f)
+varMapMetaM f (M x) = M <$> f x
+varMapMetaM _ (B ann i) = return $ B ann i
+varMapMetaM _ (F x) = return $ F x
+
+varMapMeta :: (meta -> meta') -> VarMeta meta ann f -> VarMeta meta' ann f
+varMapMeta f = runIdentity . varMapMetaM (return . f)
+
 -- |Simple variables can't be metavariables. If we want to implement
 -- things like unification algorithms, though, having meta variables
 -- becomes interesting.

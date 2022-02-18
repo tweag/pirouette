@@ -19,6 +19,7 @@ import           Control.Monad.Except
 import           Data.List (intercalate)
 import           Data.Foldable (toList)
 import           Data.Sequence hiding (null)
+import qualified ListT
 
 data LogLevel = TRACE | DEBUG | INFO | WARN | ERROR | CRIT
   deriving (Eq, Show, Ord)
@@ -118,3 +119,8 @@ instance (MonadLogger m) => MonadLogger (Strict.StateT s m) where
   logMsg lvl m = lift $ logMsg lvl m
   pushCtx ctx  = Strict.mapStateT (pushCtx ctx)
   context      = lift context
+
+instance (MonadLogger m) => MonadLogger (ListT.ListT m) where
+  logMsg lvl m = lift $ logMsg lvl m
+  pushCtx ctx (ListT.ListT m) = ListT.ListT $ pushCtx ctx m
+  context = lift context

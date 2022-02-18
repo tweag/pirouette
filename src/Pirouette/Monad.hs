@@ -278,3 +278,61 @@ mockPrt = fst . runIdentity . mockPrtT
 -- code with unecesary IO.
 flushLogs :: (MonadIO m) => PrtT m a -> PrtT m a
 flushLogs = PrtT . mapReaderT (mapExceptT flushLogger) . unPirouette
+
+-- * Some useful syntactical utilities
+
+-- |A destructor application has the following form:
+--
+-- > [d/Type tyArg0 ... tyArgN X ReturnType case0 ... caseK extra0 ... extraL]
+--
+-- The 'unDest' function splits it up into:
+--
+-- > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK], [extra0 .. extraL])
+--
+-- Moreover, we already remove the 'R.Arg' wrapper for all the predefined argument positions.
+-- Only the extra arguments are kept with their 'R.Arg' because they could be types or terms.
+data UnDestMeta lang meta = UnDestMeta
+  { undestName :: Name
+  , undestTypeName :: TyName
+  , undestTypeArgs :: [PrtTypeMeta lang meta]
+  , undestDestructed :: PrtTermMeta lang meta
+  , undestReturnType :: PrtTypeMeta lang meta
+  , undestCases :: [PrtTermMeta lang meta]
+  , undestCasesExtra :: [PrtArgMeta lang meta]
+  }
+
+unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta Name -> MaybeT m (UnDestMeta lang meta)
+unDest (R.App (R.F (FreeName n)) args) = do
+  tyN <- prtIsDest n
+  Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
+  let nCons = length cons
+  let (tyArgs, args1) = span R.isTyArg args
+  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
+  case args1 of
+    (R.Arg x : R.TyArg retTy : casesrest) -> do
+      let (cases, rest) = splitAt nCons casesrest
+      cases' <- mapM (wrapMaybe . R.fromArg) cases
+      return $ UnDestMeta n tyN tyArgs' x retTy cases' rest
+    -- The fail string is being ignored by the 'MaybeT'; that's alright, they serve
+    -- as programmer documentation or they can be plumbed through a 'trace' by
+    -- overloading the MonadFail instance, which was helpful for debugging in the past.
+    _ -> fail "unDest: Destructor arguments has non-cannonical structure"
+unDest _ = fail "unDest: not an R.App"
+
+data UnConsMeta lang meta = UnConsMeta
+  { unconsTypeName :: TyName
+  , unconsTypeArgs :: [PrtTypeMeta lang meta]
+  , unconsIndex :: Int
+  , unconsTermArgs :: [PrtTermMeta lang meta]
+  }
+
+-- |Analogous to 'unDest', but works for constructors.
+unCons :: (PirouetteReadDefs lang m) => PrtTermMeta lang meta -> MaybeT m (UnConsMeta lang meta)
+unCons (R.App (R.F (FreeName n)) args) = do
+  (idx, tyN) <- prtIsConst n
+  let (tyArgs, args1) = span R.isTyArg args
+  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
+  args1'  <- mapM (wrapMaybe . R.fromArg) args1
+  return $ UnConsMeta tyN tyArgs' idx args1'
+-- The fail is meant for the 'MaybeT', check the comment in 'unDest' for rationale
+unCons _ = fail "unCons: not an R.App"

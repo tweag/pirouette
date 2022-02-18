@@ -4,7 +4,7 @@ module Pirouette.TLA.Type where
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
 import Pirouette.Term.Syntax
-import Pirouette.Term.FromPlutusIR
+import Pirouette.PlutusIR.ToTerm
 
 import qualified PlutusCore as P
 

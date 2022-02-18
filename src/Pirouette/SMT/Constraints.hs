@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
+-- |Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
 import Control.Monad.IO.Class
@@ -10,19 +12,25 @@ import Data.Bifunctor (bimap)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Void
-import Pirouette.SMT.Common
-import Pirouette.SMT.Datatypes
-import qualified Pirouette.SMT.SimpleSMT as SmtLib
+import Pirouette.SMT.Base
+import Pirouette.SMT.Translation
+import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
 import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
-import Data.Text.Prettyprint.Doc hiding (Pretty (..))
+import Prettyprinter hiding (Pretty (..))
 import Data.List (intersperse)
-import Pirouette.Term.FromPlutusIR (PlutusIR, PirTerm, PirType, PirTermExpanded, PirTypeExpanded)
+
+-- TODO: this module should probably be refactored somewhere;
+-- I'm not entirely onboard with the 'translateData' funct as it is;
+--   a) maybe we should pass the env when translating arbitrary expressions
+--   b) maybe we should even keep the env in another reader layer on SolverT...
+--
+-- Its somthing to think about later, but for now this will do.
 
 -- | Bindings from names to types (for the assign constraints)
-type Env = Map Name PirType
+type Env lang = Map Name (PrtType lang)
 
 -- | Constraints of a path during symbolic execution
 -- We would like to have
@@ -32,14 +40,28 @@ type Env = Map Name PirType
 -- one represents the complete execution of a branch, which leads to an application which cannot be further inlined
 -- (Because it is a builtin or a constant),
 -- whereas the other one represents an ongoing computation killed by lack of fuel.
-data Constraint
-  = Assign Name PirTerm
-  | NonInlinableSymbolEq PirTerm PirTerm
-  | OutOfFuelEq PirTerm PirTerm
-  | And [Constraint]
+data Constraint lang meta
+  = Assign Name (PrtTermMeta lang meta)
+  | NonInlinableSymbolEq (PrtTermMeta lang meta) (PrtTermMeta lang meta)
+  | OutOfFuelEq (PrtTermMeta lang meta) (PrtTermMeta lang meta)
+  | And [Constraint lang meta]
   | Bot
 
-instance Pretty Constraint where
+instance Semigroup (Constraint lang meta) where
+  (<>) = andConstr
+instance Monoid (Constraint lang meta) where
+  mempty = And []
+
+-- Essentially list concatenation, with the specificity that `Bot` is absorbing.
+andConstr :: Constraint lang meta -> Constraint lang meta -> Constraint lang meta
+andConstr Bot _ = Bot
+andConstr _ Bot = Bot
+andConstr (And l) (And m) = And (l ++ m)
+andConstr (And l) y = And (y : l)
+andConstr x (And m) = And (x : m)
+andConstr x y = And [x, y]
+
+instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
   pretty (Assign n term) =
     pretty n <+> "↦" <+> pretty term
   pretty (NonInlinableSymbolEq t u) =
@@ -87,32 +109,26 @@ instance Pretty Constraint where
 -- which can then be used in further constraints.
 --
 -- Hence, we chose solution #2
-assertConstraint :: MonadIO m => SmtLib.Solver -> Env -> Constraint -> m ()
-assertConstraint s env (Assign name term) =
+assertConstraintRaw :: (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m)
+  => SimpleSMT.Solver -> Env lang -> Constraint lang meta -> m ()
+assertConstraintRaw s env (Assign name term) =
   do
     let smtName = toSmtName name
     let (Just ty) = Map.lookup name env
+    d <- translateData (prtTypeToMeta ty) term
     liftIO $
-      SmtLib.assert s (SmtLib.symbol smtName `SmtLib.eq` translateData ty term)
-assertConstraint s _ (NonInlinableSymbolEq term1 term2) =
-  liftIO $ SmtLib.assert s (translate term1 `SmtLib.eq` translate term2)
-assertConstraint s _ (OutOfFuelEq term1 term2) =
-  liftIO $ SmtLib.assert s (translate term1 `SmtLib.eq` translate term2)
-assertConstraint s env (And constraints) =
-  sequence_ (assertConstraint s env <$> constraints)
-assertConstraint s _ Bot = liftIO $ SmtLib.assert s (SmtLib.bool False)
-
--- | Declare (name and type) all the variables of the environment in the SMT
--- solver. This step is required before asserting constraints on these
--- variables.
-declareVariables :: MonadIO m => SmtLib.Solver -> Env -> m ()
-declareVariables s env =
-  liftIO $
-    sequence_
-      ( uncurry (SmtLib.declare s)
-          . bimap toSmtName translate
-          <$> Map.toList env
-      )
+      SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` d)
+assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) = do
+  t1 <- translateTerm term1
+  t2 <- translateTerm term2
+  liftIO $ SimpleSMT.assert s (t1 `SimpleSMT.eq` t2)
+assertConstraintRaw s _ (OutOfFuelEq term1 term2) = do
+  t1 <- translateTerm term1
+  t2 <- translateTerm term2
+  liftIO $ SimpleSMT.assert s (t1 `SimpleSMT.eq` t2)
+assertConstraintRaw s env (And constraints) =
+  sequence_ (assertConstraintRaw s env <$> constraints)
+assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 
 -- | In `Assign` constraints, the assigned terms are always fully-applied
 -- constructors. This dedicated translation function provides required type
@@ -120,32 +136,13 @@ declareVariables s env =
 -- `as` term in smtlib). Besides, this function removes applications of types
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
-translateData :: PirType -> PirTerm -> SmtLib.SExpr
-translateData ty (App var@(B (Ann name) _) []) = translate var
+translateData :: (LanguageSMT lang, ToSMT meta, MonadFail m)
+  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> m SimpleSMT.SExpr
+translateData ty (App var []) = translateVar var
 translateData ty (App (F (FreeName name)) args) =
-  SmtLib.app
-    (SmtLib.as (SmtLib.symbol (toSmtName name)) (translate ty))
-    (translateData ty <$> mapMaybe fromArg args)
-translateData ty _ = error "Illegal term in translate data"
-
--- TODO: The translation of term is still to be worked on,
--- since it does not allow to use builtins or defined functions,
--- and it contains application of term to types,
--- A frequent situation in system F, but not allowed in the logic of SMT solvers.
-
-instance Translatable PirTermExpanded where
-  translate (App var args) = SmtLib.app (translate var) (translate <$> args)
-  translate (Lam ann ty term) = error "Translate term to smtlib: Lambda abstraction in term"
-  translate (Abs ann kind term) = error "Translate term to smtlib: Type abstraction in term"
-
-instance Translatable (Var Name (TermBase PlutusIR Name)) where
-  translate (B (Ann name) _) = SmtLib.symbol (toSmtName name)
-  translate (F (FreeName name)) = SmtLib.symbol (toSmtName name)
-  translate (F _) = error "Free variable translation not yet implemented."
-  translate (M h) = absurd h
-
-instance Translatable (Arg PirTypeExpanded PirTermExpanded) where
-  translate (Arg term) = translate term
--- TODO: This case is known to create invalid SMT terms,
--- since in SMT solver, application of a term to a type is not allowed.
-  translate (TyArg ty) = translate ty
+  SimpleSMT.app
+    <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
+    -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
+    -- translating the overall term.
+    <*> mapM (translateData ty) (mapMaybe fromArg args)
+translateData ty _ = fail "Illegal term in translate data"

@@ -15,7 +15,7 @@
 -- necessary bits for using the facilities from "Pirouette.Term.Syntax" and provides
 -- a translation function 'trProgram' to translate a plutusIR program into a 'PrtTerm'
 -- and a map of definitions.
-module Pirouette.Term.FromPlutusIR where
+module Pirouette.PlutusIR.ToTerm where
 
 import           Pirouette.Term.Syntax
 import           Pirouette.Term.Syntax.Pretty.Class

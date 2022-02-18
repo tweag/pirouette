@@ -1,8 +1,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Pirouette.Term.FromPlutusIRSpec where
+module Pirouette.PlutusIR.ToTermSpec where
 
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Term.Syntax
 import           Pirouette.Term.Transformations
 import           Pirouette.Monad

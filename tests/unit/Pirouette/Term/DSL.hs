@@ -9,7 +9,7 @@ module Pirouette.Term.DSL where
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified Pirouette.Term.Syntax as S
-import           Pirouette.Term.FromPlutusIR
+import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Monad
 
 import qualified PlutusCore        as P
