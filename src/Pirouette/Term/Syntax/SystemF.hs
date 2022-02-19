@@ -74,6 +74,8 @@ data AnnType ann ty
   | TyAll (Ann ann) Kind (AnnType ann ty)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
 
+type Type v = AnnType (VarAnn v) v
+
 tyFlatten :: (IsVar v) => AnnType ann (AnnType ann v) -> AnnType ann v
 tyFlatten (TyApp x args) = appN x $ map tyFlatten args
 tyFlatten (TyFun t u)    = TyFun (tyFlatten t) (tyFlatten u)
@@ -86,8 +88,6 @@ tyBimapM f g (TyApp n args) = TyApp <$> g n <*> mapM (tyBimapM f g) args
 tyBimapM f g (TyFun t u)    = TyFun <$> tyBimapM f g t <*> tyBimapM f g u
 tyBimapM f g (TyLam a k u)  = TyLam <$> mapM f a <*> return k <*> tyBimapM f g u
 tyBimapM f g (TyAll a k u)  = TyAll <$> mapM f a <*> return k <*> tyBimapM f g u
-
-type Type v = AnnType (VarAnn v) v
 
 tyFunArgs :: AnnType ann ty -> ([AnnType ann ty], AnnType ann ty)
 tyFunArgs (TyFun u t) = first (u :) $ tyFunArgs t
@@ -139,6 +139,8 @@ data AnnTerm ty ann v
   | Lam   (Ann ann) ty   (AnnTerm ty ann v)
   | Abs   (Ann ann) Kind (AnnTerm ty ann v)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
+
+type Term ty v = AnnTerm ty (VarAnn v) v
 
 termTyFoldMap :: (Monoid m) => (ty -> m) -> AnnTerm ty ann v -> m
 termTyFoldMap f (App _ args) = mconcat $ mapMaybe (fmap f . fromTyArg) args
@@ -225,8 +227,6 @@ isTyArg = argElim (const True) (const False)
 
 pattern Free :: v -> AnnTerm ty ann' (Var ann v)
 pattern Free f = App (F f) []
-
-type Term ty v = AnnTerm ty (VarAnn v) v
 
 argMapM :: (Monad m) => (ty -> m ty') -> (v -> m v') -> Arg ty v -> m (Arg ty' v')
 argMapM f g (TyArg x) = TyArg <$> f x

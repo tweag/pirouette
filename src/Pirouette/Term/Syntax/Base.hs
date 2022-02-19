@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PatternSynonyms #-}
 module Pirouette.Term.Syntax.Base where
 
 import qualified Pirouette.Term.Syntax.SystemF as Raw
@@ -83,7 +84,7 @@ data TypeDef lang n
              , destructor    :: n
              , constructors  :: [(n, Type lang n)]
              }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show, Data)
 
 -- |Computes the type of the destructor from a 'TypeDef'. For example, let:
 --
@@ -146,14 +147,26 @@ termMetas = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeMetas)
 -- * Definitions
 
 data Rec = Rec | NonRec
-  deriving (Eq , Show)
+  deriving (Eq, Ord, Show, Data)
+
+data FunDef lang name = FunDef
+  { funIsRec :: Rec
+  , funBody :: Term lang name
+  , funTy :: Type lang name
+  }
+  deriving (Eq, Ord, Show, Data)
 
 data Definition lang name
-  = DFunction Rec (Term lang name) (Type lang name)
+  = DFunDef       (FunDef lang name)
   | DConstructor  Int name
   | DDestructor   name
   | DTypeDef      (TypeDef lang name)
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show, Data)
+
+pattern DFunction :: Rec -> Term lang name -> Type lang name -> Definition lang name
+pattern DFunction r t ty = DFunDef (FunDef r t ty)
+{-# COMPLETE DFunction, DConstructor, DDestructor, DTypeDef #-}
+-- TODO investigate whether this COMPLETE pragma will be still needed when we upgrade to ghc 9.0/9.2
 
 defTermMapM :: (Monad m)
             => (Term lang name -> m (Term lang name))
