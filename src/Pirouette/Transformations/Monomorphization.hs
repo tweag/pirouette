@@ -34,6 +34,61 @@ import Pirouette.Term.Syntax.Pretty
 import Pirouette.Term.Syntax.Subst
 import Pirouette.Term.Syntax.SystemF
 
+-- * Monomorphization
+--
+-- tl;dr: `monomorphize` exported from this module turns (in Haskell syntax)
+--
+-- > foldl :: (b -> a -> b) -> b -> [a] -> b
+-- > foldl f z []     = z
+-- > foldl f z (x:xs) = foldl f (f z x) xs
+-- >
+-- > any :: [Bool] -> Bool
+-- > any xs = foldl or False xs
+--
+-- into, imagining '@' is a valid part of a name:
+--
+-- > foldl@Bool@Bool :: (Bool -> Bool -> Bool) -> Bool -> [Bool] -> Bool
+-- > foldl@Bool@Bool f z []     = z
+-- > foldl@Bool@Bool f z (x:xs) = foldl@Bool@Bool f (f z x) xs
+-- >
+-- > any :: [Bool] -> Bool
+-- > any xs = foldl@Bool@Bool or False xs
+--
+-- This module implements a _partial_ monomorphization,
+-- substituting type variables appearing in higher-order functional contexts with the specific types.
+-- That is,
+--
+-- > foo :: (a -> a -> a) -> b -> b
+-- > bar :: _
+-- > bar = foo (\(l :: Bool) (r :: Bool) -> l `or` r) "test"
+--
+-- results in
+--
+-- > foo@Bool :: (Bool -> Bool -> Bool) -> b -> b
+-- > bar :: _
+-- > bar = foo@Bool ...
+--
+-- and _not_ in `foo@Bool@String`: we don't specialize `b` since it doesn't appear in a higher-order context.
+--
+-- Polymorphic data types like `Maybe` or
+--
+-- > data Monoid a where
+-- >   MkMonoid :: (a -> a -> a) -> a -> Monoid a
+--
+-- are handled similarly.
+--
+--
+-- -- * Motivation
+--
+-- This is just about as much as needed to prepare a System Fω program for symbolic evaluation with an SMT solver.
+-- Indeed, current SMTLIB doesn't support higher-order functions, hence we need to defunctionalize.
+--
+-- It seemingly isn't possible to defunctionalize polymoprhic higher-order functions in System Fω
+-- (as the imaginary polymorphic `apply` function is not typeable),
+-- so we need to monomorphize everything higher-order before defunctionalization.
+-- And, since SMTLIB does support polymorphism, we can leave type variables not occuring in a higher-order context,
+-- potentially reducing the number of extra specialized terms.
+
 traceDefsId :: (PrettyLang lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
 
