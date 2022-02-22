@@ -17,32 +17,32 @@ import           Data.String
 -- a given TLA type.
 data TlaType
   -- |Represents polymorphism and is mostly ignored, its there just to make sure
-  -- we can reuse bound variables from PirType
+  -- we can reuse bound variables from (Type BuiltinsOfPIR)
   = TlaAll (R.Ann Name) R.Kind TlaType
   -- |A term with type 'TlaOp' will be translated to a TLA operator that
-  -- receives a number of arguments and returns a /value/ of the given 'PirType'
-  | TlaOp   [TlaType] PirType
+  -- receives a number of arguments and returns a /value/ of the given '(Type BuiltinsOfPIR)'
+  | TlaOp   [TlaType] (Type BuiltinsOfPIR)
   -- |A term with type 'TlaTyOp' will be translated to a TLA operator that
-  -- receives a number of arguments and returns a /set/ of values of the given 'PirType'
-  | TlaTyOp [TlaType] PirType
+  -- receives a number of arguments and returns a /set/ of values of the given '(Type BuiltinsOfPIR)'
+  | TlaTyOp [TlaType] (Type BuiltinsOfPIR)
     -- |Represents a TLA value of the given type
-  | TlaVal PirType
+  | TlaVal (Type BuiltinsOfPIR)
   -- |Represents a TLA set of the given type
-  | TlaSet PirType
+  | TlaSet (Type BuiltinsOfPIR)
   deriving (Eq, Show)
 
-tlaTySubst :: Sub PirType -> TlaType -> TlaType
+tlaTySubst :: Sub (Type BuiltinsOfPIR) -> TlaType -> TlaType
 tlaTySubst s (TlaAll t k body) = TlaAll t k (tlaTySubst (liftSub s) body)
 tlaTySubst s (TlaOp ts res)    = TlaOp   (map (tlaTySubst s) ts) (subst s res)
 tlaTySubst s (TlaTyOp ts res)  = TlaTyOp (map (tlaTySubst s) ts) (subst s res)
 tlaTySubst s (TlaVal v)        = TlaVal (subst s v)
 tlaTySubst s (TlaSet v)        = TlaSet (subst s v)
 
-tlaTyApp :: TlaType -> PirType -> TlaType
+tlaTyApp :: TlaType -> Type BuiltinsOfPIR -> TlaType
 tlaTyApp (TlaAll _ _ t) m = tlaTySubst (singleSub m) t
 tlaTyApp _ _              = error "tlaTyApp: Can't apply to monomorphic types"
 
-tlaTyAppN :: TlaType -> [PirType] -> TlaType
+tlaTyAppN :: TlaType -> [Type BuiltinsOfPIR] -> TlaType
 tlaTyAppN = foldl' tlaTyApp
 
 tlaTyRet :: TlaType -> TlaType
@@ -59,7 +59,7 @@ tlaTyDropAll (TlaAll _ _ t) = tlaTyDropAll t
 tlaTyDropAll t = t
 
 -- |Applies a free name to a number of ordered bound variables.
-tyApp :: Name -> [(Name, R.Kind)] -> PirType
+tyApp :: Name -> [(Name, R.Kind)] -> Type BuiltinsOfPIR
 tyApp n vs = R.TyApp (R.Free $ TypeFromSignature n)
            $ zipWith (\i (n, _) -> R.tyPure (R.Bound (R.Ann n) $ fromIntegral i)) (reverse [0 .. length vs - 1]) vs
 
@@ -79,28 +79,28 @@ tlaTyData = TlaVal pirTyData
 tlaTyUnit :: TlaType
 tlaTyUnit = TlaVal pirTyUnit
 
-pirTyNat :: PirType
+pirTyNat :: (Type BuiltinsOfPIR)
 pirTyNat = R.tyPure $ R.Free $ TyBuiltin PIRTypeInteger
 
-pirTyBool :: PirType
+pirTyBool :: (Type BuiltinsOfPIR)
 pirTyBool = R.tyPure $ R.Free $ TyBuiltin PIRTypeBool
 
-pirTyData :: PirType
+pirTyData :: (Type BuiltinsOfPIR)
 pirTyData = R.tyPure $ R.Free $ TyBuiltin PIRTypeData
 
-pirTyBS :: PirType
+pirTyBS :: (Type BuiltinsOfPIR)
 pirTyBS = R.tyPure $ R.Free $ TyBuiltin PIRTypeByteString
 
-pirTyUnit :: PirType
+pirTyUnit :: (Type BuiltinsOfPIR)
 pirTyUnit = R.tyPure $ R.Free $ TyBuiltin PIRTypeUnit
 
-pirTyList :: PIRType -> PirType
+pirTyList :: PIRBuiltinType -> Type BuiltinsOfPIR
 pirTyList a = R.tyPure $ R.Free $ TyBuiltin (PIRTypeList $ Just a)
 
 tlaAll :: [(Name, R.Kind)] -> TlaType -> TlaType
 tlaAll = flip (foldr (\(n, k) t -> TlaAll (R.Ann n) k t))
 
-returnType :: TlaType -> PirType
+returnType :: TlaType -> Type BuiltinsOfPIR
 returnType (TlaAll _ _ t) = returnType t
 returnType (TlaOp _ t) = t
 returnType (TlaVal t) = t
@@ -110,15 +110,15 @@ arity :: TlaType -> Int
 arity (TlaOp  xs _) = length xs
 arity _             = 0
 
-tlaOp :: [TlaType] -> PirType -> TlaType
+tlaOp :: [TlaType] -> Type BuiltinsOfPIR -> TlaType
 tlaOp [] = TlaVal
 tlaOp xs = TlaOp xs
 
-toTlaOpType :: PirType -> TlaType
+toTlaOpType :: Type BuiltinsOfPIR -> TlaType
 toTlaOpType (R.TyAll v k t) = TlaAll v k (toTlaOpType t)
 toTlaOpType t               = uncurry tlaOp . first (map toTlaOpType) . R.tyFunArgs $ t
 
-toTlaHdOpType :: PirType -> TlaType
+toTlaHdOpType :: Type BuiltinsOfPIR -> TlaType
 toTlaHdOpType (R.TyAll v k t) = TlaAll v k (toTlaHdOpType t)
 toTlaHdOpType t               = uncurry tlaOp . first (map TlaVal) . R.tyFunArgs $ t
 

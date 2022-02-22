@@ -4,12 +4,12 @@ import Pirouette.SMT.Base
 import Pirouette.PlutusIR.ToTerm
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 
-instance LanguageSMT PlutusIR where
+instance LanguageSMT BuiltinsOfPIR where
   translateBuiltinType = trPIRType
   translateBuiltinTerm = error "translateBuiltinTerm (t :: BuiltinTerms PlutusIR): not yet impl"
   translateConstant = error "translateConstant (t :: Constants PlutusIR): not yet impl"
 
-trPIRType :: PIRType -> SimpleSMT.SExpr
+trPIRType :: PIRBuiltinType -> SimpleSMT.SExpr
 trPIRType PIRTypeInteger = SimpleSMT.tInt
 trPIRType PIRTypeBool = SimpleSMT.tBool
 trPIRType PIRTypeString = SimpleSMT.tString

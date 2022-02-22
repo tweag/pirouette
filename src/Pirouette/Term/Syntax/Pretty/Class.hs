@@ -5,7 +5,7 @@
 module Pirouette.Term.Syntax.Pretty.Class where
 
 import qualified Data.Text                 as T
-import qualified Prettyprinter as Prettyprint (Pretty, pretty)
+import qualified Prettyprinter as Prettyprint (pretty)
 import           Prettyprinter hiding (Pretty, pretty)
 import           Prettyprinter.Render.Text
 import Control.Arrow (first)
@@ -43,7 +43,7 @@ class Pretty x where
   prettyPrec _ = pretty
 
 prettyPrecApp :: (Pretty n , Pretty arg) => Int -> n -> [arg] -> (Doc ann -> Doc ann) -> Doc ann
-prettyPrecApp _ n []   al = pretty n
+prettyPrecApp _ n []   _ = pretty n
 prettyPrecApp d n args al = parensIf (d > 10) $ pretty n <+> al (sep $ map (prettyPrec 11) args)
 
 assoclBinder :: forall dann ann ty body
@@ -93,10 +93,10 @@ instance Pretty BS.ByteString where
   pretty = prettyList . BS.unpack
 
 instance (Pretty a, Pretty b) => Pretty (a , b) where
-  prettyPrec d (x , y) = parens $ prettyPrec 10 x <+> comma <+> prettyPrec 10 y
+  prettyPrec _ (x , y) = parens $ prettyPrec 10 x <+> comma <+> prettyPrec 10 y
 
 instance {-# OVERLAPPING #-} Pretty String where
   pretty = Prettyprint.pretty
 
 instance {-# OVERLAPPABLE #-} (Pretty a) => Pretty [a] where
-  prettyPrec d = brackets . align . sep . punctuate comma . map pretty
+  prettyPrec _ = brackets . align . sep . punctuate comma . map pretty

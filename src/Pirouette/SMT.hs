@@ -40,7 +40,7 @@ import Data.Bifunctor (bimap)
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
 import Pirouette.Monad
-import Pirouette.PlutusIR.ToTerm (PlutusIR)
+import Pirouette.PlutusIR.ToTerm (BuiltinsOfPIR)
 import Pirouette.SMT.Base as Base
 import Pirouette.SMT.Constraints
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT

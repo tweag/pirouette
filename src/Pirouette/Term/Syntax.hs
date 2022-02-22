@@ -31,7 +31,7 @@ import Control.Monad.Identity
 -- are renamed to avoid name clashes when outputting code that relies on user given names
 -- while still being able to use something close to the programmer-given names for the
 -- generated code.
-separateBoundFrom :: Term lang -> Term lang -> Term lang
+separateBoundFrom :: Term builtins -> Term builtins -> Term builtins
 separateBoundFrom u t =
   let boundOf = Raw.termAnnFold Set.singleton in
   let inter = Set.intersection (boundOf u) (boundOf t) in
@@ -86,13 +86,13 @@ separateBoundFrom u t =
 -- https://github.com/input-output-hk/plutus/issues/3445
 
 -- |Exported interface function to uniquely naming declarations.
-declsUniqueNames :: Decls lang -> Term lang -> (Decls lang, Term lang)
+declsUniqueNames :: Decls builtins -> Term builtins -> (Decls builtins, Term builtins)
 declsUniqueNames decls mainFun = first Map.fromList (go (Map.toList decls) mainFun)
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
-    go :: [(Name, Definition lang)] -> Term lang
-       -> ([(Name, Definition lang)], Term lang)
+    go :: [(Name, Definition builtins)] -> Term builtins
+       -> ([(Name, Definition builtins)], Term builtins)
     go ds mainFun =
       let (_, ks) =
             flip runState Map.empty $ mapM (onPairM unNameCollect defUNCollect) ds
@@ -119,13 +119,13 @@ type UNSubstM   = Reader (Map.Map Text.Text [Name])
 unNameCollect :: Name -> UNCollectM Name
 unNameCollect n = modify (Map.insertWith (flip Set.union) (nameString n) (Set.singleton n)) >> return n
 
-defUNCollect :: Definition lang -> UNCollectM (Definition lang)
+defUNCollect :: Definition builtins -> UNCollectM (Definition builtins)
 defUNCollect (DFunction r t ty) = DFunction r <$> termUNCollect t <*> typeUNCollect ty
 defUNCollect (DConstructor i n) = DConstructor i <$> unNameCollect n
 defUNCollect (DDestructor n)    = DDestructor <$> unNameCollect n
 defUNCollect (DTypeDef n)       = DTypeDef <$> unTypeDefCollect n
 
-unTypeDefCollect :: TypeDef lang -> UNCollectM (TypeDef lang)
+unTypeDefCollect :: TypeDef builtins -> UNCollectM (TypeDef builtins)
 unTypeDefCollect d@(Datatype _ _ dest cons) = do
   void $ unNameCollect dest
   let (consNames, types) = unzip cons
@@ -133,33 +133,33 @@ unTypeDefCollect d@(Datatype _ _ dest cons) = do
   mapM_ typeUNCollect types
   return d
 
-termUNCollect :: Term lang -> UNCollectM (Term lang)
+termUNCollect :: Term builtins -> UNCollectM (Term builtins)
 termUNCollect = Raw.termTrimapM typeUNCollect return collectVar
   where
-    collectVar :: Raw.Var Name (TermFree lang) -> UNCollectM (Raw.Var Name (TermFree lang))
+    collectVar :: Raw.Var Name (TermBase builtins) -> UNCollectM (Raw.Var Name (TermBase builtins))
     collectVar v = do
       case v of
         Raw.Free (TermFromSignature n) -> void $ unNameCollect n
         _                -> return ()
       return v
 
-typeUNCollect :: Type lang -> UNCollectM (Type lang)
+typeUNCollect :: Type builtins -> UNCollectM (Type builtins)
 typeUNCollect = mapM collectVar
   where
-    collectVar :: Raw.Var Name (TypeFree lang) -> UNCollectM (Raw.Var Name (TypeFree lang))
+    collectVar :: Raw.Var Name (TypeBase builtins) -> UNCollectM (Raw.Var Name (TypeBase builtins))
     collectVar v = do
       case v of
         Raw.Free (TypeFromSignature n) -> void $ unNameCollect n
         _              -> return ()
       return v
 
-defUNSubst :: Definition lang -> UNSubstM (Definition lang)
+defUNSubst :: Definition builtins -> UNSubstM (Definition builtins)
 defUNSubst (DFunction r t ty) = DFunction r <$> termUNSubst t <*> typeUNSubst ty
 defUNSubst (DConstructor i n) = DConstructor i <$> unNameSubst n
 defUNSubst (DDestructor n)    = DDestructor <$> unNameSubst n
 defUNSubst (DTypeDef n)       = DTypeDef <$> unTypeDefSubst n
 
-unTypeDefSubst :: TypeDef lang -> UNSubstM (TypeDef lang)
+unTypeDefSubst :: TypeDef builtins -> UNSubstM (TypeDef builtins)
 unTypeDefSubst (Datatype k vs dest cons) =
   Datatype k <$> mapM (\(n, k) -> (,k) <$> unNameSubst n) vs
              <*> unNameSubst dest
@@ -174,14 +174,14 @@ unNameSubst n = do
     Just xs  -> return $ n { nameUnique = List.elemIndex n xs }
     Nothing  -> return n
 
-termUNSubst :: Term lang -> UNSubstM (Term lang)
+termUNSubst :: Term builtins -> UNSubstM (Term builtins)
 termUNSubst = Raw.termTrimapM typeUNSubst return subst
   where
-    subst :: Raw.Var Name (TermFree lang) -> UNSubstM (Raw.Var Name (TermFree lang))
+    subst :: Raw.Var Name (TermBase builtins) -> UNSubstM (Raw.Var Name (TermBase builtins))
     subst (Raw.Free (TermFromSignature n)) = Raw.Free . TermFromSignature <$> unNameSubst n
     subst x                  = return x
 
-typeUNSubst :: Type lang -> UNSubstM (Type lang)
+typeUNSubst :: Type builtins -> UNSubstM (Type builtins)
 typeUNSubst = Raw.tyBimapM return subst
   where
     subst (Raw.Free (TypeFromSignature n))  = Raw.Free . TypeFromSignature <$> unNameSubst n

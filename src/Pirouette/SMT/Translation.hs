@@ -29,7 +29,7 @@ import qualified Pirouette.Term.Syntax.SystemF as Raw
 -- the type of each term is amenable to translation. We won't try translating the terms
 -- because these will contain bound variables that will need to be substituted by
 -- the symbolic execution engine.
-checkDefsToSMT :: (PirouetteReadDefs lang m, PrettyLang lang, LanguageSMT lang) => m ()
+checkDefsToSMT :: (PirouetteReadDefs builtins m, PrettyLang builtins, LanguageSMT builtins) => m ()
 checkDefsToSMT = do
   allDefs <- prtAllDefs
   forM_ (M.toList allDefs) $ \(n, def) -> do
@@ -39,16 +39,16 @@ checkDefsToSMT = do
       _ -> return ()
 
 translateTypeBase ::
-  forall lang m.
-  (LanguageSMT lang, MonadFail m) =>
-  TypeFree lang ->
+  forall builtins m.
+  (LanguageSMT builtins, MonadFail m) =>
+  TypeBase builtins ->
   m SmtLib.SExpr
-translateTypeBase (TyBuiltin pirType) = return $ translateBuiltinType @lang pirType
+translateTypeBase (TyBuiltin pirType) = return $ translateBuiltinType @builtins pirType
 translateTypeBase (TypeFromSignature name) = return $ SmtLib.symbol (toSmtName name)
 
 translateType ::
-  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  TypeMeta lang meta ->
+  (LanguageSMT builtins, ToSMT meta, MonadFail m) =>
+  TypeMeta builtins meta ->
   m SmtLib.SExpr
 translateType (Raw.TyApp (Raw.Free ty) args) = SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
 translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) index) args) =
@@ -60,28 +60,28 @@ translateType x = fail $ "Translate type to smtlib: cannot handle " <> show x
 -- and it contains application of term to types,
 -- A frequent situation in system F, but not allowed in the logic of SMT solvers.
 translateTerm ::
-  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  TermMeta lang meta ->
+  (LanguageSMT builtins, ToSMT meta, MonadFail m) =>
+  TermMeta builtins meta ->
   m SmtLib.SExpr
 translateTerm (Raw.App var args) = SmtLib.app <$> translateVar var <*> mapM translateArg args
 translateTerm (Raw.Lam ann ty term) = fail "Translate term to smtlib: Lambda abstraction in term"
 translateTerm (Raw.Abs ann kind term) = fail "Translate term to smtlib: Type abstraction in term"
 
 translateVar ::
-  forall lang meta m.
-  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  VarMeta lang meta ->
+  forall builtins meta m.
+  (LanguageSMT builtins, ToSMT meta, MonadFail m) =>
+  VarMeta builtins meta ->
   m SmtLib.SExpr
 translateVar (Raw.Meta h) = return $ translate h
 translateVar (Raw.Free (TermFromSignature name)) = return $ SmtLib.symbol (toSmtName name)
-translateVar (Raw.Free (Constant c)) = return $ translateConstant @lang c
-translateVar (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @lang b
+translateVar (Raw.Free (Constant c)) = return $ translateConstant @builtins c
+translateVar (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @builtins b
 translateVar (Raw.Bound (Raw.Ann name) _) = fail "translateVar: Bound variable; did you forget to apply something?"
 translateVar (Raw.Free Bottom) = fail "translateVar: Bottom; unclear how to translate that. WIP"
 
 translateArg ::
-  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  ArgMeta lang meta ->
+  (LanguageSMT builtins, ToSMT meta, MonadFail m) =>
+  ArgMeta builtins meta ->
   m SmtLib.SExpr
 translateArg (Raw.TermArg term) = translateTerm term
 -- TODO: This case is known to create invalid SMT terms,
@@ -92,9 +92,9 @@ translateArg (Raw.TyArg ty) = translateType ty
 -- function translates constructor types in PlutusIR to this layout and
 -- provides required names for the fields of product types.
 constructorFromPIR ::
-  forall lang meta m.
-  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  (Name, TypeMeta lang meta) ->
+  forall builtins meta m.
+  (LanguageSMT builtins, ToSMT meta, MonadFail m) =>
+  (Name, TypeMeta builtins meta) ->
   m (String, [(String, SmtLib.SExpr)])
 constructorFromPIR (name, constructorType) =
   (toSmtName name,)
@@ -104,5 +104,5 @@ constructorFromPIR (name, constructorType) =
       ((toSmtName name ++) . ("_" ++) . show <$> [1 ..])
     <$> aux constructorType
   where
-    aux :: TypeMeta lang meta -> m [SmtLib.SExpr]
+    aux :: TypeMeta builtins meta -> m [SmtLib.SExpr]
     aux x = let (args, _) = Raw.tyFunArgs x in mapM translateType args

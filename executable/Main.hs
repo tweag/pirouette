@@ -3,7 +3,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -17,45 +16,26 @@ module Main where
 
 -- , termToCTree)
 
-import Control.Arrow (first, second, (***))
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Identity
 import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer.Strict
-import Data.Bifunctor (bimap)
 import qualified Data.ByteString as BS
-import Data.Data
 import Data.Foldable (asum)
-import Data.Functor
-import Data.List (groupBy, isSuffixOf, partition)
-import qualified Data.List as L
-import qualified Data.List.NonEmpty as NE
+import Data.List (groupBy, isSuffixOf)
 import qualified Data.Map as M
-import Data.Maybe (isJust)
-import Data.Semigroup ((<>))
-import qualified Data.Set as S
 import Data.String
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Debug.Trace (trace)
 import Development.GitRev
 import qualified Flat
-import Flat.Decoder.Types
 import GHC.IO.Encoding
 import qualified Language.TLAPlus.Pretty as TLA
-import qualified Language.TLAPlus.Syntax as TLA
 import Options.Applicative ((<**>))
 import qualified Options.Applicative as Opt
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.Monad.Maybe
-import Pirouette.PlutusIR.SMT
+import Pirouette.PlutusIR.SMT ()
 import Pirouette.PlutusIR.ToTerm
-import Pirouette.PlutusIR.Utils
-import Pirouette.Specializer.Rewriting
-import Pirouette.Term.ConstraintTree (CTreeOpts (..))
 import Pirouette.Term.Defunctionalize
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Syntax
@@ -64,15 +44,10 @@ import Pirouette.Term.ToTla
 import Pirouette.Term.Transformations
 import Pirouette.Transformations
 import qualified PlutusCore as P
-import qualified PlutusCore.Flat as P
-import qualified PlutusCore.Pretty as P
 import PlutusIR.Core.Type (Program)
 import qualified PlutusIR.Parser as PIR
 import Prettyprinter hiding (Pretty (..))
-import System.Environment (getArgs)
 import System.Exit
-import Text.Megaparsec (ParseErrorBundle)
-import Text.Megaparsec.Error (errorBundlePretty)
 
 ---------------------
 
@@ -105,7 +80,7 @@ optsToCTreeOpts co =
       coWithArguments = withArguments co
     }
 
-optsToTlaOpts :: (MonadIO m, PirouetteReadDefs PlutusIR m) => CliOpts -> m TlaOpts
+optsToTlaOpts :: (MonadIO m, PirouetteReadDefs BuiltinsOfPIR m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
   skel <- if asFunction co then return mkEmptySpecWrapper else mkTLASpecWrapper skel0
@@ -167,7 +142,7 @@ ecTooManyDefs = ExitFailure 16
 -- | Converts a PIR file to a term, displaying the results to the user.
 --  The 'CliOpts' argument controls which transformations should be applied,
 --  which definitions the user is interested into, etc...
-mainOpts :: forall m. (MonadIO m) => CliOpts -> PrtUnorderedDefs PlutusIR -> PrtT m ()
+mainOpts :: forall m. (MonadIO m) => CliOpts -> PrtUnorderedDefs BuiltinsOfPIR -> PrtT m ()
 mainOpts opts uDefs = do
   decls <- processDecls opts uDefs
   flip runReaderT decls $ do
@@ -250,7 +225,7 @@ pirouette ::
   (MonadIO m) =>
   FilePath ->
   PrtOpts ->
-  (PrtUnorderedDefs PlutusIR -> PrtT m a) ->
+  (PrtUnorderedDefs BuiltinsOfPIR -> PrtT m a) ->
   m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
@@ -266,7 +241,7 @@ pirouette pir opts f =
 withDecls ::
   (MonadIO m, Show l) =>
   Program P.TyName P.Name P.DefaultUni P.DefaultFun l ->
-  (Term PlutusIR -> Decls PlutusIR -> m a) ->
+  (Term BuiltinsOfPIR -> Decls BuiltinsOfPIR -> m a) ->
   m a
 withDecls pir cont = do
   case runExcept $ trProgram pir of

@@ -17,7 +17,6 @@ import           Pirouette.PlutusIR.ToTerm
 
 import qualified PlutusCore         as P
 
-import           Control.Monad.Trans
 import           Data.Data
 import qualified Data.Text as T
 
@@ -29,33 +28,33 @@ deriving instance Data P.TyName
 
 -- TODO: actually check that the given name is a constructor of
 -- a declared 'Bool' datatype.
-termIsBoolVal :: (PirouetteReadDefs PlutusIR m) => Bool -> PirTerm -> m Bool
+termIsBoolVal :: (PirouetteReadDefs BuiltinsOfPIR m) => Bool -> Term BuiltinsOfPIR -> m Bool
 termIsBoolVal b (R.App (R.Free (TermFromSignature n)) []) = consIsBoolVal b n
 termIsBoolVal _ _                     = return False
 
-consIsBoolVal :: (PirouetteReadDefs PlutusIR m) => Bool -> Name -> m Bool
+consIsBoolVal :: (PirouetteReadDefs BuiltinsOfPIR m) => Bool -> Name -> m Bool
 consIsBoolVal b n = return $ nameString n == T.pack (show b)
 
-consIsMaybeVal :: (PirouetteReadDefs PlutusIR m) => Name -> MaybeT m (Maybe ())
+consIsMaybeVal :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> MaybeT m (Maybe ())
 consIsMaybeVal n
   | nameString n == "Just"    = return (Just ())
   | nameString n == "Nothing" = return Nothing
   | otherwise                 = fail "Not a constructor from Maybe"
 
 -- TODO: Similarly to 'termIsBoolVal', check this is really a unit type
-typeIsUnit :: (PirouetteReadDefs PlutusIR m) => PirType -> m Bool
+typeIsUnit :: (PirouetteReadDefs BuiltinsOfPIR m) => Type BuiltinsOfPIR -> m Bool
 typeIsUnit (R.TyApp (R.Free (TypeFromSignature n)) []) = return $ nameString n == "Unit"
 typeIsUnit _                             = return False
 
-tynameIsBool :: (PirouetteReadDefs PlutusIR m) => Name -> m Bool
+tynameIsBool :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> m Bool
 tynameIsBool n = return $ nameString n == "Bool"
 
-typeIsBool :: (PirouetteReadDefs PlutusIR m) => PirType -> m Bool
+typeIsBool :: (PirouetteReadDefs BuiltinsOfPIR m) => Type BuiltinsOfPIR -> m Bool
 typeIsBool (R.TyApp (R.Free (TypeFromSignature n)) []) = tynameIsBool n
 typeIsBool _ = return False
 
 
-nameIsITE :: TermFree PlutusIR -> Bool
+nameIsITE :: TermBase BuiltinsOfPIR -> Bool
 nameIsITE (Builtin P.IfThenElse) = True
 nameIsITE _ = False
 

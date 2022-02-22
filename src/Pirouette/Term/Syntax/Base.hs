@@ -1,6 +1,5 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -12,11 +11,7 @@ import qualified Pirouette.Term.Syntax.SystemF as Raw
 import Pirouette.Term.Syntax.Pretty.Class
 
 import           Control.Arrow ((&&&))
-import           Control.Monad
-import           Control.Monad.State
-import qualified Data.ByteString           as BS
 import qualified Data.Set   as S
-import           Data.List  (foldl')
 import           Data.Foldable ()
 import           Data.Traversable ()
 import           Data.Typeable
@@ -73,22 +68,22 @@ class ToName v where
 
 -- * Types and Type Definitions
 
--- |The builtinsuage of types will consits of the standard polymorphic type-level lambda calculus
+-- |The type system we are interested in is standard polymorphic type-level lambda calculus
 -- where the free variables will be of type 'TypeBase', that is, they are either a builtin type or
--- a free type.
-data TypeFree builtins
+-- a type declared previously and currently in the signature.
+data TypeBase builtins
   = TyBuiltin (BuiltinTypes builtins)
   | TypeFromSignature Name
-deriving instance (LanguageBuiltins builtins) => Eq (TypeFree builtins)
-deriving instance (LanguageBuiltins builtins) => Ord (TypeFree builtins)
-deriving instance (LanguageBuiltins builtins) => Show (TypeFree builtins)
-deriving instance (LanguageBuiltins builtins) => Data (TypeFree builtins)
-deriving instance (LanguageBuiltins builtins) => Typeable (TypeFree builtins)
+deriving instance (LanguageBuiltins builtins) => Eq (TypeBase builtins)
+deriving instance (LanguageBuiltins builtins) => Ord (TypeBase builtins)
+deriving instance (LanguageBuiltins builtins) => Show (TypeBase builtins)
+deriving instance (LanguageBuiltins builtins) => Data (TypeBase builtins)
+deriving instance (LanguageBuiltins builtins) => Typeable (TypeBase builtins)
 
 -- |A Pirouette type is a 'Raw.Type' whose variables are 'TypeBase' and it has metavariables
 -- of type 'meta'. If you're just using this as a library you're likely more interested in
 -- 'Type'.
-type TypeMeta builtins meta = Raw.AnnType Name (Raw.VarMeta meta Name (TypeFree builtins))
+type TypeMeta builtins meta = Raw.AnnType Name (Raw.VarMeta meta Name (TypeBase builtins))
 
 -- |A 'Type' is a 'TypeMeta' with 'Void' passed to metavariables
 type Type builtins = TypeMeta builtins Void
@@ -107,14 +102,14 @@ typeFromMeta = runIdentity . typeMetaMapM (const $ error "Type with metavariable
 -- |Returns all the (free) names used by a type
 typeNames :: TypeMeta builtins meta -> S.Set (Raw.Arg Name Name)
 typeNames = foldMap go
-  where go :: Raw.VarMeta meta Name (TypeFree builtins) -> S.Set (Raw.Arg Name Name)
+  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> S.Set (Raw.Arg Name Name)
         go (Raw.Free (TypeFromSignature n)) = S.singleton (Raw.TyArg n)
         go _                  = S.empty
 
 -- |Returns all the metavariables used by a type
 typeMetas :: (Ord meta) => TypeMeta builtins meta -> S.Set meta
 typeMetas = foldMap go
-  where go :: Raw.VarMeta meta Name (TypeFree builtins) -> S.Set meta
+  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> S.Set meta
         go (Raw.Meta m) = S.singleton m
         go _         = S.empty
 
@@ -142,21 +137,21 @@ data TypeDef builtins
 -- > TyAll a b . Either a b -> TyAll c -> (a -> c) -> (b -> c) -> c
 --
 destructorTypeFor :: TypeDef builtins -> Type builtins
-destructorTypeFor (Datatype k vs n cs) = undefined
+destructorTypeFor Datatype{} = undefined
 
 -- * Terms
 
--- |This is to 'Term', what 'TypeFree' is to 'Type'.
-data TermFree builtins
+-- |This is to 'Term', what 'TypeBase' is to 'Type'.
+data TermBase builtins
   = Constant (Constants builtins)
   | Builtin (BuiltinTerms builtins)
   | TermFromSignature Name
   | Bottom
-deriving instance (LanguageBuiltins builtins) => Eq (TermFree builtins)
-deriving instance (LanguageBuiltins builtins) => Ord (TermFree builtins)
-deriving instance (LanguageBuiltins builtins) => Show (TermFree builtins)
-deriving instance (LanguageBuiltins builtins) => Data (TermFree builtins)
-deriving instance (LanguageBuiltins builtins) => Typeable (TermFree builtins)
+deriving instance (LanguageBuiltins builtins) => Eq (TermBase builtins)
+deriving instance (LanguageBuiltins builtins) => Ord (TermBase builtins)
+deriving instance (LanguageBuiltins builtins) => Show (TermBase builtins)
+deriving instance (LanguageBuiltins builtins) => Data (TermBase builtins)
+deriving instance (LanguageBuiltins builtins) => Typeable (TermBase builtins)
 
 -- |A 'TermMeta' for a given builtins uage is a 'Raw.Term' with types being a 'Type' and
 -- diambiguated free names: we're aware on whether these free names are constants,
@@ -165,7 +160,7 @@ deriving instance (LanguageBuiltins builtins) => Typeable (TermFree builtins)
 -- Moreover, there's a possibility to insert meta variables in the tree. If you're
 -- a user of the library, you're most likely going to need only 'Term', which
 -- have no metavariables.
-type TermMeta builtins meta = Raw.AnnTerm (TypeMeta builtins meta) Name (Raw.VarMeta meta Name (TermFree builtins))
+type TermMeta builtins meta = Raw.AnnTerm (TypeMeta builtins meta) Name (Raw.VarMeta meta Name (TermBase builtins))
 
 -- |A 'Term' is a 'TermMeta' with 'Void' as the metavariable.
 type Term builtins = TermMeta builtins Void
@@ -181,14 +176,14 @@ termToMeta = runIdentity . termMetaMapM absurd
 -- |Returns all the (free) names used by a term
 termNames :: TermMeta builtins meta -> S.Set (Raw.Arg Name Name)
 termNames = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeNames)
-  where go :: Raw.VarMeta meta Name (TermFree builtins) -> S.Set (Raw.Arg Name Name)
+  where go :: Raw.VarMeta meta Name (TermBase builtins) -> S.Set (Raw.Arg Name Name)
         go (Raw.Free (TermFromSignature n)) = S.singleton (Raw.TermArg n)
         go _                    = S.empty
 
 -- |Returns all the metavariables used by a term
 termMetas :: (Ord meta) => TermMeta builtins meta -> S.Set meta
 termMetas = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeMetas)
-  where go :: Raw.VarMeta meta Name (TermFree builtins) -> S.Set meta
+  where go :: Raw.VarMeta meta Name (TermBase builtins) -> S.Set meta
         go (Raw.Meta m) = S.singleton m
         go _         = S.empty
 
@@ -198,11 +193,11 @@ termMetas = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeMetas)
 type ArgMeta builtins meta = Raw.Arg (TypeMeta builtins meta) (TermMeta builtins meta)
 type Arg builtins = Raw.Arg (Type builtins) (Term builtins)
 
-type Var builtins = Raw.Var Name (TermFree builtins)
-type VarMeta builtins meta = Raw.VarMeta meta Name (TermFree builtins)
+type Var builtins = Raw.Var Name (TermBase builtins)
+type VarMeta builtins meta = Raw.VarMeta meta Name (TermBase builtins)
 
-type TyVar builtins = Raw.Var Name (TypeFree builtins)
-type TyVarMeta builtins meta = Raw.VarMeta meta Name (TypeFree builtins)
+type TyVar builtins = Raw.Var Name (TypeBase builtins)
+type TyVarMeta builtins meta = Raw.VarMeta meta Name (TypeBase builtins)
 
 -- * Definitions
 

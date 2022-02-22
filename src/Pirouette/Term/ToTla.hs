@@ -9,7 +9,6 @@ import           Pirouette.Monad
 import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax
-import           Pirouette.Term.ConstraintTree
 import           Pirouette.TLA.Syntax
 import           Pirouette.TLA.Type
 import           Pirouette.Specializer
@@ -31,7 +30,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Text as T
 
-import Pirouette.PlutusIR.ToTerm (PIRType(..), PlutusIR, PIRConstant(..))
+import Pirouette.PlutusIR.ToTerm (BuiltinsOfPIR, PIRBuiltinType(..), PIRConstant(..))
 
 -- * TLA Splicing
 
@@ -40,7 +39,7 @@ newtype TLAExprWrapper = TLAExprWrapper { wrapExp :: TLA.AS_Expression -> TLA.AS
 
 -- |Given a string which parses as a TLA expression @E@, produces a wrapper that
 -- given another expression @x@, substitutes @tlaIdent "___"@ for @x@ in @E@.
-mkTLAExprWrapper :: (PirouetteReadDefs PlutusIR m) => String -> m TLAExprWrapper
+mkTLAExprWrapper :: (PirouetteReadDefs BuiltinsOfPIR m) => String -> m TLAExprWrapper
 mkTLAExprWrapper exp =
   case P.runParser TLA.expression TLA.mkState "mkTLAExprWrapper" exp of
     Left err   -> pushCtx "mkTLAExprWrapper" $
@@ -57,7 +56,7 @@ newtype TLASpecWrapper = TLASpecWrapper { wrapSpec :: [TLA.AS_UnitDef] -> TLA.AS
 -- |Given a TLA Spec, creates a 'TLASpecWrapper' that will inject its provided definitions
 -- after the first 'TLA.AS_Separator' it sees. A separator is a line containing only, but at
 -- least four, '-' characters.
-mkTLASpecWrapper :: (PirouetteReadDefs PlutusIR m) => String -> m TLASpecWrapper
+mkTLASpecWrapper :: (PirouetteReadDefs BuiltinsOfPIR m) => String -> m TLASpecWrapper
 mkTLASpecWrapper exp =
   case P.runParser TLA.tlaspec TLA.mkState "mkTLASpecWrapper" exp of
     Left err   -> pushCtx "mkTLASpecWrapper" $ fail $ show err
@@ -152,6 +151,11 @@ tlaPure = lift . lift
 tlaPushCtx :: (MonadLogger m) => String -> TlaT m a -> TlaT m a
 tlaPushCtx ctx = mapReaderT (mapStateT $ pushCtx ctx)
 
+data CTreeOpts = CTreeOpts
+  { coPruneMaybe    :: Bool
+  , coWithArguments :: [String]
+  }
+
 data TlaOpts = TlaOpts
   { toSymbExecOpts  :: CTreeOpts
   , toActionWrapper :: TLAExprWrapper
@@ -183,14 +187,14 @@ tlaFreshNameStr = do
 tlaFreshName :: (Monad m) => TlaT m TLA.AS_Expression
 tlaFreshName = tlaIdent <$> tlaFreshNameStr
 
-tlaDeclTypeOf :: (PirouetteReadDefs PlutusIR m) => TLA.AS_Expression -> TlaType -> TlaT m ()
+tlaDeclTypeOf :: (PirouetteReadDefs BuiltinsOfPIR m) => TLA.AS_Expression -> TlaType -> TlaT m ()
 tlaDeclTypeOf n ty = tlaPushCtx "tlaDeclTypeOf" $ do
   tlaPure $ logTrace $ showId n ++ ": " ++ renderSingleLineStr (pretty ty)
   modify (\st -> st { tsTypeOf = M.insert n ty (tsTypeOf st) })
   where
     showId (TLA.AS_Ident _ _ x) = x
 
-tlaWithDeclTypeOf :: (PirouetteReadDefs PlutusIR m) => [(TLA.AS_Expression, TlaType)] -> TlaT m a -> TlaT m a
+tlaWithDeclTypeOf :: (PirouetteReadDefs BuiltinsOfPIR m) => [(TLA.AS_Expression, TlaType)] -> TlaT m a -> TlaT m a
 tlaWithDeclTypeOf ntys f = do
   pre <- gets tsTypeOf
   modify (\st -> st { tsTypeOf = M.fromList ntys `M.union` pre })
@@ -212,8 +216,8 @@ tlaWithTyVars tyvs f = do
 -- |Translates a term to a TLA specification by first symbolically executing the term
 -- then translating the necessary parts. We also receive a list of names that specify the
 -- order in which they must be defined. This list can be obtained from 'elimEvenOddMutRec'
-termToSpec :: (PirouetteDepOrder PlutusIR m)
-           => TlaOpts -> Name -> Definition PlutusIR
+termToSpec :: (PirouetteDepOrder BuiltinsOfPIR m)
+           => TlaOpts -> Name -> Definition BuiltinsOfPIR
            -> m TLA.AS_Spec
 termToSpec opts mainFun t = undefined -- we should replace the older constraint tree module with the new symbolic execution; but we will also need to invert arbitrary scripts. There is no point in maintaining bacward compatibility since this code will all be rewritten anyway
 {-
@@ -253,7 +257,7 @@ termToSpec opts mainFun t = undefined -- we should replace the older constraint 
     p2l (x, y) = [x, y]
 -}
 
-trTypeName :: (PirouetteReadDefs PlutusIR m) => TlaOpts -> Name -> TlaT m [TLA.AS_UnitDef]
+trTypeName :: (PirouetteReadDefs BuiltinsOfPIR m) => TlaOpts -> Name -> TlaT m [TLA.AS_UnitDef]
 trTypeName opts n = do
   tyDef <- tlaPure (prtTypeDefOf n)
   decl <- trTypeDecl n tyDef
@@ -263,7 +267,7 @@ trTypeName opts n = do
       return $ set : dest : c
 
 
-trTermName :: (PirouetteReadDefs PlutusIR m) => Name -> TlaT m [TLA.AS_UnitDef]
+trTermName :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> TlaT m [TLA.AS_UnitDef]
 trTermName n = tlaPushCtx (show n) $ tlaPushCtx "trTermName" $ do
   defN <- tlaPure $ prtDefOf n
   case defN of
@@ -273,7 +277,7 @@ trTermName n = tlaPushCtx (show n) $ tlaPushCtx "trTermName" $ do
       concatMap (\(x,y) -> [x,y]) <$> trTermNameRec n
     _ -> return []
 
-trTermNameRec :: (PirouetteReadDefs PlutusIR m) => Name -> TlaT m [(TLA.AS_UnitDef, TLA.AS_UnitDef)]
+trTermNameRec :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> TlaT m [(TLA.AS_UnitDef, TLA.AS_UnitDef)]
 trTermNameRec n = do
   defN <- tlaPure $ prtDefOf n
   case defN of
@@ -282,7 +286,7 @@ trTermNameRec n = do
       (:[]) <$> trTermDecl n t tlaTy
     _ -> return []
 
-trTermDecl :: (PirouetteReadDefs PlutusIR m) => Name -> Term PlutusIR -> TlaType -> TlaT m (TLA.AS_UnitDef, TLA.AS_UnitDef)
+trTermDecl :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> Term BuiltinsOfPIR -> TlaType -> TlaT m (TLA.AS_UnitDef, TLA.AS_UnitDef)
 trTermDecl n term tlaTy = do
   let (tyargs, term') = R.getHeadAbs term
   let (args,   body)  = R.getHeadLams term'
@@ -294,10 +298,10 @@ trTermDecl n term tlaTy = do
        $ TLA.AS_OperatorDef diu False hd <$> trTerm body (TlaVal $ returnType tlaTy)
   return (dec, def)
   where
-    declArgs :: Name -> Type PlutusIR -> (TLA.AS_Expression, TlaType)
+    declArgs :: Name -> Type BuiltinsOfPIR -> (TLA.AS_Expression, TlaType)
     declArgs n ty = (tlaIdent n, toTlaOpType ty)
 
-    extractVars :: Name -> Type PlutusIR -> TLA.AS_Expression
+    extractVars :: Name -> Type BuiltinsOfPIR -> TLA.AS_Expression
     extractVars n ty =
       let i = R.tyMonoArity ty in
       if i == 0
@@ -305,7 +309,7 @@ trTermDecl n term tlaTy = do
       else
         tlaOpApp (tlaIdent n) (replicate i (tlaIdent "_"))
 
-declareTermNameMutRec :: (PirouetteReadDefs PlutusIR m) => Name -> TlaT m ()
+declareTermNameMutRec :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> TlaT m ()
 declareTermNameMutRec n = do
   defN <- tlaPure $ prtDefOf n
   case defN of
@@ -348,8 +352,8 @@ matchToAction val ty (Match cons args) rest =
 
 -- *** Translating Types
 
-trTypeDecl :: (PirouetteReadDefs PlutusIR m)
-            => Name -> TypeDef PlutusIR -> TlaT m [TLA.AS_UnitDef]
+trTypeDecl :: (PirouetteReadDefs BuiltinsOfPIR m)
+            => Name -> TypeDef BuiltinsOfPIR -> TlaT m [TLA.AS_UnitDef]
 trTypeDecl tyName (Datatype _ tyVars destr constr) = do
   constr' <- mapM (uncurry (trConstrDecl tyVars)) constr
   destr'  <- trDestrDecl tyVars destr constr tyName
@@ -366,7 +370,7 @@ trTypeDecl tyName (Datatype _ tyVars destr constr) = do
 -- >
 -- > SetOfXXX(a,b) == UNION { BoundedSetOfXXX(n,a,b) : n \in 0 .. MAXDEPTH }
 --
-trBoundedSetDef :: (PirouetteReadDefs PlutusIR m) => Name -> [(Name, R.Kind)] -> [(Name, Type PlutusIR)] -> TlaT m [TLA.AS_UnitDef]
+trBoundedSetDef :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> [(Name, R.Kind)] -> [(Name, Type BuiltinsOfPIR)] -> TlaT m [TLA.AS_UnitDef]
 trBoundedSetDef tyName tyVars cons = do
   let tyArgs    = zipWith (\i (n, _) -> R.tyPure $ R.Bound (R.Ann n) $ fromIntegral i) (reverse [0 .. length tyVars - 1]) tyVars
   let tlaTyRes  = R.TyApp (R.Free $ TypeFromSignature tyName) tyArgs
@@ -405,14 +409,14 @@ trBoundedSetDef tyName tyVars cons = do
     bsetOfBody b [] = tlaUnions $ map bsetOfCase b
     bsetOfBody b r  = tlaIf (tlaEq n (tlaNum 1)) (tlaUnions $ map bsetOfCase b) (tlaUnions $ map bsetOfCase r)
 
-    bsetOfCase :: (TyName, Type PlutusIR) -> TLA.AS_Expression
+    bsetOfCase :: (TyName, Type BuiltinsOfPIR) -> TLA.AS_Expression
     bsetOfCase (conName, conTy) =
       let args = fst $ R.tyFunArgs conTy
        in tlaRecordType $ ("cons", tlaSingleton (tlaString conName))
                         -- : ("type", tlaSingleton (tlaString v))
                         : L.zipWith (\ty i -> (argField i, trSimpleType (reverse $ map fst tyVars) ty)) args [0..]
 
-    trSimpleType :: [Name] -> Type PlutusIR -> TLA.AS_Expression
+    trSimpleType :: [Name] -> Type BuiltinsOfPIR -> TLA.AS_Expression
     trSimpleType env (R.TyFun t u) = TLA.AS_FunctionType di (trSimpleType env t) (trSimpleType env u)
     trSimpleType env (R.TyApp (R.Free (TypeFromSignature tn)) args)
       | tn == tyName = tlaOpApp (tlaIdentPrefixed "BoundedSetOf" tn) . (nMinus1:) $ map (trSimpleType env) args
@@ -420,14 +424,14 @@ trBoundedSetDef tyName tyVars cons = do
     trSimpleType env (R.TyApp (R.Free (TyBuiltin n)) args) = tlaOpApp (trBuiltinType n) (map (trSimpleType env) args)
     trSimpleType env (R.TyApp (R.Bound _ i) args) = tlaOpApp (tlaIdent $ unsafeIdx "trSimpleType" env (fromInteger i)) $ map (trSimpleType env) args
 
-trType :: (PirouetteReadDefs PlutusIR m) => Type PlutusIR -> TlaT m TLA.AS_Expression
+trType :: (PirouetteReadDefs BuiltinsOfPIR m) => Type BuiltinsOfPIR -> TlaT m TLA.AS_Expression
 trType (R.TyApp n args)  = tlaOpApp <$> trTypeVar n <*> mapM trType args
 trType (R.TyFun t u)     = TLA.AS_FunctionType di <$> trType t <*> trType u
 trType (R.TyAll _ _ _)   = throwError' $ PEOther "NotYetImplemented TyAll"
 trType (R.TyLam _ _ _)   = throwError' $ PEOther "NotYetImplemented TyLam"
 
-trTypeVar :: (PirouetteReadDefs PlutusIR m) => R.Var Name (TypeFree PlutusIR) -> TlaT m TLA.AS_Expression
-trTypeVar (R.Bound (R.Ann n) i) = do
+trTypeVar :: (PirouetteReadDefs BuiltinsOfPIR m) => R.Var Name (TypeBase BuiltinsOfPIR) -> TlaT m TLA.AS_Expression
+trTypeVar (R.Bound (R.Ann n) _) = do
   logWarn "NotYetImplemented Bound type-variable"
   return $ tlaIdentPrefixed "tv" n
 trTypeVar (R.Free (TypeFromSignature n)) = return $ tlaIdentPrefixed "SetOf" n
@@ -445,7 +449,7 @@ trTypeVar (R.Free (TyBuiltin ty)) = return $ trBuiltinType ty
 --
 -- > Left(x) == [cons |-> "Left", arg0 |-> x]
 --
-trConstrDecl :: (PirouetteReadDefs PlutusIR m) => [(Name, R.Kind)] -> Name -> Type PlutusIR -> TlaT m TLA.AS_UnitDef
+trConstrDecl :: (PirouetteReadDefs BuiltinsOfPIR m) => [(Name, R.Kind)] -> Name -> Type BuiltinsOfPIR -> TlaT m TLA.AS_UnitDef
 trConstrDecl tyVars conName conType = do
   let conArity = R.tyArity conType
   let opArgs   = take conArity $ map (TLA.AS_Ident di [] . ('x':) . show) [0..]
@@ -468,7 +472,7 @@ trConstrDecl tyVars conName conType = do
 -- >    $ TlaOp [TlaVal (Either 1 0), TlaOp [1] 2 , TlaOp [0] 2] 2
 --
 -- The definition for Either_match is a case statement on the cons field on the first argument.
-trDestrDecl :: (PirouetteReadDefs PlutusIR m) => [(Name, R.Kind)] -> Name -> [(Name, Type PlutusIR)] -> Name -> TlaT m TLA.AS_UnitDef
+trDestrDecl :: (PirouetteReadDefs BuiltinsOfPIR m) => [(Name, R.Kind)] -> Name -> [(Name, Type BuiltinsOfPIR)] -> Name -> TlaT m TLA.AS_UnitDef
 trDestrDecl tyVars destrName tyCons tyName = do
   -- Start by constructing the TlaType of the destructor:
   let tyRes  = R.tyPure (R.Bound (fromString "res") (fromIntegral $ length tyVars))
@@ -503,7 +507,7 @@ trDestrDecl tyVars destrName tyCons tyName = do
                        (tlaProj x onCons)
                        (TLA.AS_StringLiteral di (toString cons))
 
-trBuiltinType :: PIRType -> TLA.AS_Expression
+trBuiltinType :: PIRBuiltinType -> TLA.AS_Expression
 trBuiltinType PIRTypeInteger    = tlaIdentPrefixed "Plutus" "Integer"
 trBuiltinType PIRTypeByteString = tlaIdentPrefixed "Plutus" "ByteString"
 trBuiltinType PIRTypeUnit       = tlaIdentPrefixed "Plutus" "Unit"
@@ -520,7 +524,7 @@ trBuiltinType (PIRTypePair (Just t) (Just u)) =
 -- > \E x \in $(trType tyX) : SomeAct(x)
 --      ^^^^^^^^^^^^^^^^^^^
 --
-trQBoundN :: (PirouetteReadDefs PlutusIR m) => Name -> Type PlutusIR -> TlaT m TLA.AS_QBoundN
+trQBoundN :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> Type BuiltinsOfPIR -> TlaT m TLA.AS_QBoundN
 trQBoundN n ty = TLA.AS_QBoundN [tlaIdent n] <$> trType ty
 
 -- *** Translating Terms
@@ -624,7 +628,7 @@ trConstrainedExp nx ty (Match c args) mexp = do
 -- Hence, when translating the @(\x -> x + 1)@ in this context, we know re're translating
 -- it as a 'TlaOp'
 --
-trTerm :: forall m . (PirouetteReadDefs PlutusIR m) => Term PlutusIR -> TlaType -> TlaT m TLA.AS_Expression
+trTerm :: forall m . (PirouetteReadDefs BuiltinsOfPIR m) => Term BuiltinsOfPIR -> TlaType -> TlaT m TLA.AS_Expression
 trTerm = go
   where
     lamOrFun (TlaVal _)   x ty body = tlaFun x ty body
@@ -745,7 +749,7 @@ trTerm = go
               "Ctx wants: " ++ renderSingleLineStr (pretty ctxTy)
                 ++  "; x is: " ++ renderSingleLineStr (pretty xTy)
 
-mkFun :: (PirouetteReadDefs PlutusIR m)
+mkFun :: (PirouetteReadDefs BuiltinsOfPIR m)
       => [TLA.AS_Expression] -> [TlaType] -> TLA.AS_Expression
       -> TlaT m TLA.AS_Expression
 mkFun []   _   res = return res
@@ -785,18 +789,18 @@ functionalize n t = tlaPushCtx "functionalize" $ do
     _ -> throwError' $ PEOther "trying to functionalize non-operator type"
 -}
 
-tlaTypeOf :: (PirouetteReadDefs PlutusIR m) => R.Var Name (TermFree PlutusIR) -> TlaT m TlaType
+tlaTypeOf :: (PirouetteReadDefs BuiltinsOfPIR m) => R.Var Name (TermBase BuiltinsOfPIR) -> TlaT m TlaType
 tlaTypeOf (R.Free f)           = tlaTypeOfFreeName f
 tlaTypeOf (R.Bound (R.Ann n) _) = tlaTypeOfName n
 
-tlaTypeOfName :: (PirouetteReadDefs PlutusIR m) => Name -> TlaT m TlaType
+tlaTypeOfName :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> TlaT m TlaType
 tlaTypeOfName n = tlaPushCtx ("tlaTypeOfName " ++ show n) $ do
   mty <- gets (M.lookup (tlaIdent n) . tsTypeOf)
   case mty of
     Just ty -> return ty
     Nothing -> return $ TlaVal (error $ "Using type of undeclared name: " ++ show n)
 
-tlaTypeOfFreeName :: (PirouetteReadDefs PlutusIR m) => TermFree PlutusIR -> TlaT m TlaType
+tlaTypeOfFreeName :: (PirouetteReadDefs BuiltinsOfPIR m) => TermBase BuiltinsOfPIR -> TlaT m TlaType
 tlaTypeOfFreeName (TermFromSignature n) = tlaTypeOfName n
 tlaTypeOfFreeName (Builtin b)  = return $ tlaTyBuiltin b
 tlaTypeOfFreeName (Constant c) = return $ tlaTyConstant c
@@ -805,17 +809,17 @@ tlaTypeOfFreeName Bottom       = return tlaTyBool
 -- TODO: We registered substitutions when producing the actions,
 -- where to we need to apply them? I think it is here, on the bound variable
 -- case.
-trTermVar :: (PirouetteReadDefs PlutusIR m)
-          => R.Var Name (TermFree PlutusIR)
+trTermVar :: (PirouetteReadDefs BuiltinsOfPIR m)
+          => R.Var Name (TermBase BuiltinsOfPIR)
           -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 trTermVar (R.Bound (R.Ann n) _)  args = tlaAppName n args
 trTermVar (R.Free Bottom)       []   = return $ TLA.AS_Bool di False
 trTermVar (R.Free (Constant c)) []   = trTermConstant c
 trTermVar (R.Free (Builtin b))  args = trBuiltin b args
 trTermVar (R.Free (TermFromSignature n)) args = trFreeName n args
-trTermVar (R.Free t) args            = throwError' $ PEOther "InvalidTermVar"
+trTermVar (R.Free _) _            = throwError' $ PEOther "InvalidTermVar"
 
-trFreeName :: (PirouetteReadDefs PlutusIR m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+trFreeName :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 trFreeName n args = do
   nDef <- tlaPure (prtDefOf n)
   case nDef of
@@ -826,14 +830,14 @@ trFreeName n args = do
     DTypeDef _        -> throwError' $ PEOther $ "trFreeName: Found TypeDef where a term was expected: " ++ show n
 
 -- |Constructs a value of a datatype as a TLA expression.
-trConstrApp :: (PirouetteReadDefs PlutusIR m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+trConstrApp :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 trConstrApp = tlaAppName
 
 -- |Constructs a value of a datatype as a TLA expression.
-trDestrApp :: (PirouetteReadDefs PlutusIR m) => Name -> TyName -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+trDestrApp :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> TyName -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 trDestrApp n _ = tlaAppName n
 
-trTermConstant :: (PirouetteReadDefs PlutusIR m) => PIRConstant -> TlaT m TLA.AS_Expression
+trTermConstant :: (PirouetteReadDefs BuiltinsOfPIR m) => PIRConstant -> TlaT m TLA.AS_Expression
 trTermConstant (PIRConstInteger i) = return $ TLA.AS_Num di i
 trTermConstant (PIRConstBool b)    = return $ TLA.AS_Bool di b
 trTermConstant (PIRConstString s)  = return $ TLA.AS_StringLiteral di (T.unpack s)
@@ -844,12 +848,12 @@ trTermConstant c = throwError' $ PEOther $ "NotYetImplemented trTermConstant " +
 -- |Application of a defined name as a TLA expression. This is tricky because
 -- the TLA Operator definition corresponding to n will expect the same number of
 -- term arguments as n. Any further arguments have to be passed as a TLA function application.
-tlaAppName :: (PirouetteReadDefs PlutusIR m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+tlaAppName :: (PirouetteReadDefs BuiltinsOfPIR m) => Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 tlaAppName = tlaAppNamePref ""
 
 -- |It might be the case that we want and application of term named @n@, but we want
 -- the resulting tla application to refer to `hd` instead.
-tlaAppNamePref :: (PirouetteReadDefs PlutusIR m) => String -> Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+tlaAppNamePref :: (PirouetteReadDefs BuiltinsOfPIR m) => String -> Name -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 tlaAppNamePref pref n args = do
   mty   <- gets (M.lookup (tlaIdentPrefixed pref n) . tsTypeOf)
   arity <- case mty of
@@ -858,7 +862,7 @@ tlaAppNamePref pref n args = do
   let (tas, das) = L.splitAt arity args
   return $ tlaFunApp (tlaOpApp (tlaIdentPrefixed pref n) tas) das
 
-trBuiltin :: (PirouetteReadDefs PlutusIR m) => P.DefaultFun -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
+trBuiltin :: (PirouetteReadDefs BuiltinsOfPIR m) => P.DefaultFun -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 trBuiltin P.AddInteger args            = tlaPartialApp2 (tlaInfix TLA.AS_Plus) args
 trBuiltin P.SubtractInteger args       = tlaPartialApp2 (tlaInfix TLA.AS_Minus) args
 trBuiltin P.MultiplyInteger args       = tlaPartialApp2 (tlaInfix TLA.AS_Mult) args
@@ -890,7 +894,7 @@ trBuiltin P.BData  args         = tlaPartialApp  (tlaApp1 "BData") args
 trBuiltin bin _ = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
 
 tlaPartialApp
-  :: (PirouetteReadDefs PlutusIR m)
+  :: (PirouetteReadDefs BuiltinsOfPIR m)
   => (TLA.AS_Expression -> TLA.AS_Expression)
   -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 tlaPartialApp f [] = do
@@ -900,7 +904,7 @@ tlaPartialApp f [x] = return $ f x
 tlaPartialApp _ _   = throwError' $ PEOther "tlaPartialApp: Overapplied f"
 
 tlaPartialApp2
-  :: (PirouetteReadDefs PlutusIR m)
+  :: (PirouetteReadDefs BuiltinsOfPIR m)
   => (TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression)
   -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 tlaPartialApp2 f [] = do
@@ -914,7 +918,7 @@ tlaPartialApp2 f [x,y] = return $ f x y
 tlaPartialApp2 _ _     = throwError' $ PEOther "tlaPartialApp2: Overapplied f"
 
 tlaPartialApp3
-  :: (PirouetteReadDefs PlutusIR m)
+  :: (PirouetteReadDefs BuiltinsOfPIR m)
   => (TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression ->TLA.AS_Expression)
   -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 tlaPartialApp3 f [] = do
@@ -933,7 +937,7 @@ tlaPartialApp3 f [x1, x2, x3] = return $ f x1 x2 x3
 tlaPartialApp3 _ _     = throwError' $ PEOther "tlaPartialApp3: Overapplied f"
 
 tlaPartialApp6
-  :: (PirouetteReadDefs PlutusIR m)
+  :: (PirouetteReadDefs BuiltinsOfPIR m)
   => (TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression ->TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression -> TLA.AS_Expression)
   -> [TLA.AS_Expression] -> TlaT m TLA.AS_Expression
 tlaPartialApp6 f [] = do

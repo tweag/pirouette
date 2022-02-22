@@ -10,22 +10,16 @@ module Pirouette.Term.Syntax.SystemF where
 
 import           Pirouette.Term.Syntax.Subst
 
-import           Control.Arrow (first, second)
-import           Control.Monad
-import           Control.Monad.Except
+import           Control.Arrow (first)
 import           Control.Monad.Identity
 import           Data.Void
-import           Data.Maybe (mapMaybe, fromJust)
-import           Data.Either (fromRight)
+import           Data.Maybe (mapMaybe)
 import           Data.Foldable
-import qualified Data.Set   as S
-import           Data.List  (foldl')
 import           Data.Typeable
-import qualified Data.Text as T
 import           Data.String
 import           Data.Data
-import           Data.Generics.Uniplate.Operations
-import           Data.Generics.Uniplate.Data
+import Data.Generics.Uniplate.Operations ( transform )
+import Data.Generics.Uniplate.Data ()
 
 -- * System F
 

@@ -8,16 +8,13 @@
 module Pirouette.SMT.Constraints where
 
 import Control.Monad.IO.Class
-import Data.Bifunctor (bimap)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Void
 import Pirouette.SMT.Base
 import Pirouette.SMT.Translation
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
-import qualified PlutusCore as P
 import Data.Maybe (mapMaybe)
 import Prettyprinter hiding (Pretty (..))
 import Data.List (intersperse)
@@ -138,11 +135,11 @@ assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 -- term.
 translateData :: (LanguageSMT lang, ToSMT meta, MonadFail m)
   => TypeMeta lang meta -> TermMeta lang meta -> m SimpleSMT.SExpr
-translateData ty (App var []) = translateVar var
+translateData _ (App var []) = translateVar var
 translateData ty (App (Free (TermFromSignature name)) args) =
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
     -- translating the overall term.
     <*> mapM (translateData ty) (mapMaybe fromArg args)
-translateData ty _ = fail "Illegal term in translate data"
+translateData _ _ = fail "Illegal term in translate data"

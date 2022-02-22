@@ -12,13 +12,7 @@ import qualified Pirouette.Term.Syntax.SystemF as SF
 import           Pirouette.Term.Syntax.Base
 import           Pirouette.Term.Syntax.Pretty.Class
 
-import           Control.Arrow(first)
-import qualified Data.ByteString           as BS
-import qualified Data.Text                 as T
-import qualified Prettyprinter as Prettyprint (Pretty, pretty)
 import           Prettyprinter hiding (Pretty, pretty)
-import           Prettyprinter.Render.Text
-import Data.Void
 
 -- * SystemF Instances
 
@@ -64,12 +58,12 @@ instance (Pretty (BuiltinTypes lang), Pretty (BuiltinTerms lang), Pretty (Consta
   pretty (DDestructor ty)    = "Destructor" <+> pretty ty
   pretty (DTypeDef ty)       = "Type" <+> pretty ty
 
-instance (Pretty (BuiltinTypes lang)) => Pretty (TypeFree lang) where
+instance (Pretty (BuiltinTypes lang)) => Pretty (TypeBase lang) where
   pretty (TyBuiltin x)   = pretty x
   pretty (TypeFromSignature n)      = pretty n
 
 instance (Pretty (BuiltinTerms lang), Pretty (Constants lang))
-    => Pretty (TermFree lang) where
+    => Pretty (TermBase lang) where
   pretty (Constant x)   = pretty x
   pretty (Builtin x)    = "b/" <> pretty x
   pretty (TermFromSignature x)   = pretty x

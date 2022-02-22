@@ -35,14 +35,14 @@ mkNewName c = do
       | n `elem` env = Nothing
       | otherwise    = Just n
 
-stubTy :: String -> PirType
+stubTy :: String -> Type BuiltinsOfPIR
 stubTy s = R.tyPure (R.Free $ S.TypeFromSignature $ Name (T.pack s) Nothing)
 
 type TestTerm = PirTermExpanded
 
 type TermM = TermGenM TestTerm
 
-term :: TermM -> PirTerm
+term :: TermM -> Term BuiltinsOfPIR
 term gent = runReader gent []
 
 class Abs t where

@@ -15,29 +15,23 @@
 module Pirouette.Term.Symbolic.Eval where
 
 import Control.Applicative
-import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Identity
-import Control.Monad.Reader
 import Control.Monad.State
 import Data.Data hiding (eqT)
 import Data.Foldable
-import Data.Functor
-import Data.List (foldl', intersperse)
-import qualified Data.Map as Map
+import Data.List (intersperse)
 import qualified Data.Map.Strict as M
 import Prettyprinter hiding (Pretty (..))
-import Data.Void (absurd)
 import ListT (ListT)
 import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
-import Pirouette.PlutusIR.Utils
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 import qualified Pirouette.SMT as SMT
+import Control.Lens.Combinators (_18')
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
@@ -176,7 +170,6 @@ learn c = modify (\st -> st { sestConstraint = c <> sestConstraint st, sestValid
 
 declSymVars :: (SymEvalConstr lang m) => [(Name, Type lang)] -> SymEvalT lang m [SymVar]
 declSymVars vs = do
-  old <- get
   modify (\st -> st { sestGamma = M.union (sestGamma st) (M.fromList vs) })
   return $ map (SymVar . fst) vs
 
@@ -195,7 +188,7 @@ freshSymVars tys = do
 runEvaluation :: (SymEvalConstr lang m) => Term lang -> SymEvalT lang m (TermMeta lang SymVar)
 runEvaluation t = do
   liftIO $ putStrLn $ "evaluating: " ++ show (pretty t)
-  let (lams, body) = R.getHeadLams t
+  let (lams, _) = R.getHeadLams t
   svars <- declSymVars lams
   symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
 
@@ -225,7 +218,7 @@ symeval' :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (T
 symeval' R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
 -- and evaluate the corresponding application.
-symeval' t@(R.Lam (R.Ann x) ty body) = do
+symeval' t@(R.Lam (R.Ann x) ty _) = do
   let ty' = typeFromMeta ty
   [svars] <- declSymVars [(x, ty')]
   symeval' $ t `R.app` R.TermArg (R.App (R.Meta svars) [])
@@ -239,7 +232,7 @@ symeval' t@(R.App hd args) = do
       DTypeDef _ -> error "Can't evaluate typedefs"
       -- If hd is a defined function, we inline its definition and symbolically evaluate
       -- the result consuming one gas.
-      DFunction _rec body ty ->
+      DFunction _rec body _ ->
         consumeGas . symeval $ termToMeta body `R.appN` args
       -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term
       -- by combining the paths with (>>>=), conjuncts all of the constraints. For instance,
@@ -251,7 +244,7 @@ symeval' t@(R.App hd args) = do
       -- >       | (cx, rx) <- x' , (cxs, rxs) <- xs'
       -- >       , isSAT (cx && cxs) ]
       --
-      DConstructor ix tyName -> R.App hd <$> mapM (R.argMapM return symeval) args
+      DConstructor _ _18' -> R.App hd <$> mapM (R.argMapM return symeval) args
       -- If hd is a destructor, we have more work to do: we have to expand the term
       -- being destructed, then combine it with all possible destructor cases.
       -- Say we're looking at:
@@ -269,16 +262,15 @@ symeval' t@(R.App hd args) = do
       -- Naturally, the first path is already impossible so we do not need to
       -- move on to evaluate N.
       DDestructor tyName -> do
-        Just (UnDestMeta _ _ tyParams term _ cases excess) <- lift $ runMaybeT (unDest t)
+        Just (UnDestMeta _ _ tyParams term _ cases _) <- lift $ runMaybeT (unDest t)
         Datatype _ _ _ consList <- lift $ prtTypeDefOf tyName
         -- We know what is the type of all the possible term results, its whatever
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
         let tyParams' = map typeFromMeta tyParams
-        let ty = R.TyApp (R.Free $ TypeFromSignature tyName) tyParams'
         term' <- symeval term
         asum $ for2 consList cases $ \(consName, consTy) caseTerm -> do
-          let (consArgs, res) = R.tyFunArgs consTy
+          let (consArgs, _) = R.tyFunArgs consTy
           svars <- freshSymVars consArgs
           let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
           let symbCons = R.App (R.Free $ TermFromSignature consName) symbArgs
@@ -314,9 +306,9 @@ for2 as bs f = zipWith f as bs
 -- | Variation on zipwith that forces arguments to be of the same length,
 -- returning 'mzero' whenever that does not hold.
 zipWithMPlus :: (MonadPlus m) => (a -> b -> m c) -> [a] -> [b] -> m [c]
-zipWithMPlus f [] [] = return []
-zipWithMPlus f _ [] = mzero
-zipWithMPlus f [] _ = mzero
+zipWithMPlus _ [] [] = return []
+zipWithMPlus _ _ [] = mzero
+zipWithMPlus _ [] _ = mzero
 zipWithMPlus f (x:xs) (y:ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 
@@ -350,6 +342,6 @@ instance (PrettyLang lang) => Pretty (Constraint lang) where
     mconcat $ intersperse "\n∧ " (map pretty l)
 
 runFor :: (PrettyLang lang, SymEvalConstr lang m , MonadIO m) => Name -> Term lang -> m ()
-runFor n t = do
+runFor _ t = do
   paths <- symevalT (runEvaluation t)
   mapM_ (liftIO . print . pretty) paths

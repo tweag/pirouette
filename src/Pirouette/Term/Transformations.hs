@@ -14,29 +14,19 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax.Subst
 import           Pirouette.Specializer.Rewriting
 import           Pirouette.Specializer.PIRTransformations
-import           Pirouette.PlutusIR.Utils
 
-import qualified PlutusIR.Parser    as PIR
-import qualified PlutusCore as P
 import           Control.Applicative
-import           Control.Arrow (first, second, (&&&))
-import           Control.Monad
+import           Control.Arrow (second)
 import           Control.Monad.Except
-import           Control.Monad.State
-import           Control.Monad.Reader
 import           Data.Data
 import           Data.Functor
 import           Data.Generics.Uniplate.Data
-import           Data.Generics.Uniplate.Operations
-import           Data.List (elemIndex, groupBy, transpose, foldl', span, lookup)
+import           Data.List (elemIndex, foldl')
 import           Data.String (fromString)
-import           Data.Maybe (fromMaybe, isJust, fromJust)
-import           Prettyprinter hiding (Pretty, pretty)
+import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import qualified Data.Map as M
 
-import Debug.Trace (trace)
 
 -- |Put excessive arguments of a a destructor in the branches.
 -- Because we have n-ary applications, whenever we translate something like:
@@ -97,16 +87,16 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
     -- Receives the excessive arguments, the type of the constructor whose case we're on and
     -- the term defining the value at this constructor's case.
     appExcessive :: [ArgMeta lang meta] -> TypeMeta lang meta -> TermMeta lang meta -> TermMeta lang meta
-    appExcessive l (R.TyFun a b) (R.Lam n ty t) =
+    appExcessive l (R.TyFun _ b) (R.Lam n ty t) =
       R.Lam n ty (appExcessive (map (R.argMap id (shift 1)) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
-    appExcessive l (R.TyFun a b) _              =
+    appExcessive _ (R.TyFun _ _) _              =
        error "Ill-typed program! Number of lambdas in case-branch must be bigger than constructor arity"
     appExcessive l _             t              =
        R.appN t l
 
     tyDrop :: Int -> TypeMeta lang meta -> TypeMeta lang meta
     tyDrop 0 t               = t
-    tyDrop n (R.TyFun a b)   = tyDrop (n-1) b
+    tyDrop n (R.TyFun _ b)   = tyDrop (n-1) b
     tyDrop n (R.TyAll _ _ t) = tyDrop (n-1) t
     tyDrop n t               = error "Ill-typed program: not enough type parameters to drop"
 
@@ -290,22 +280,22 @@ chooseHeadCase t ty args fstArg =
 -- For instance, one would like to write something like:
 -- BetaRule : [(lam x T a1_[x]) 0] ==> a1_[0]
 
-applyRewRules :: (PirouetteReadDefs PlutusIR m)
-              => PirTerm -> m PirTerm
+applyRewRules :: (PirouetteReadDefs BuiltinsOfPIR m)
+              => Term BuiltinsOfPIR -> m (Term BuiltinsOfPIR)
 applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
 
   where
 
-    applyOneRule :: (PirouetteReadDefs PlutusIR m)
-                 => RewritingRule PirTerm PirTerm -> PirTerm -> m PirTerm
-    applyOneRule (RewritingRule name lhs rhs) t =
+    applyOneRule :: (PirouetteReadDefs BuiltinsOfPIR m)
+                 => RewritingRule (Term BuiltinsOfPIR) (Term BuiltinsOfPIR) -> Term BuiltinsOfPIR -> m (Term BuiltinsOfPIR)
+    applyOneRule (RewritingRule _ lhs rhs) t =
       deshadowBoundNames <$> rewriteM (traverse (`instantiate` rhs) . isInstance lhs) t
 
-    isInstance :: PirTerm  -> PirTerm -> Maybe (M.Map String (Arg PlutusIR))
+    isInstance :: Term BuiltinsOfPIR  -> Term BuiltinsOfPIR -> Maybe (M.Map String (Arg BuiltinsOfPIR))
     isInstance = isInstanceUnder 0 0
 
-    isInstanceUnder :: Int -> Int -> PirTerm  -> PirTerm -> Maybe (M.Map String (Arg PlutusIR))
-    isInstanceUnder nTe nTy (R.App vL@(R.Free (TermFromSignature x)) []) t =
+    isInstanceUnder :: Int -> Int -> Term BuiltinsOfPIR  -> Term BuiltinsOfPIR -> Maybe (M.Map String (Arg BuiltinsOfPIR))
+    isInstanceUnder nTe _ (R.App vL@(R.Free (TermFromSignature x)) []) t =
       case isHole x of
         Nothing ->
           case t of
@@ -320,8 +310,8 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       isInstanceUnder nTe (nTy + 1) tL tT
     isInstanceUnder nTe nTy _ _ = Nothing
 
-    isVarInstance :: Var PlutusIR -> Var PlutusIR -> Maybe (M.Map String (Arg PlutusIR))
-    isVarInstance vL@(R.Free (TermFromSignature x)) vT =
+    isVarInstance :: Var BuiltinsOfPIR -> Var BuiltinsOfPIR -> Maybe (M.Map String (Arg BuiltinsOfPIR))
+    isVarInstance (R.Free (TermFromSignature x)) vT =
       case isHole x of
         Nothing ->
           case vT of
@@ -333,12 +323,12 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
         Just i -> Just $ M.singleton i (R.TermArg $ R.termPure vT)
     isVarInstance (R.Free nL) (R.Free nT) =
       if haveSameString nL nT then Just M.empty else Nothing
-    isVarInstance (R.Bound _ i) (R.Free _) = Nothing
+    isVarInstance R.Bound{} (R.Free _) = Nothing
     isVarInstance (R.Bound _ i) (R.Bound _ j) =
       if i == j then Just M.empty else Nothing
     isVarInstance _ _ = Nothing
 
-    isTyInstance :: Int -> PirType -> PirType -> Maybe (M.Map String (Arg PlutusIR))
+    isTyInstance :: Int -> Type BuiltinsOfPIR -> Type BuiltinsOfPIR -> Maybe (M.Map String (Arg BuiltinsOfPIR))
     isTyInstance nTy (R.TyApp vL@(R.Free (TypeFromSignature x)) []) ty =
       case isHole x of
         Nothing ->
@@ -354,8 +344,8 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       M.union <$> isTyInstance nTy aL aT <*> isTyInstance nTy bL bT
     isTyInstance nTy _ _ = Nothing
 
-    isTyVarInstance :: TyVar PlutusIR -> TyVar PlutusIR -> Maybe (M.Map String (Arg PlutusIR))
-    isTyVarInstance vL@(R.Free (TypeFromSignature x)) vT =
+    isTyVarInstance :: TyVar BuiltinsOfPIR -> TyVar BuiltinsOfPIR -> Maybe (M.Map String (Arg BuiltinsOfPIR))
+    isTyVarInstance (R.Free (TypeFromSignature x)) vT =
       case isHole x of
         Nothing ->
           case vT of
@@ -367,22 +357,22 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
         Just i -> Just $ M.singleton i (R.TyArg $ R.tyPure vT)
     isTyVarInstance (R.Free nL) (R.Free nT) =
       if tyHaveSameString nL nT then Just M.empty else Nothing
-    isTyVarInstance (R.Bound _ i) (R.Free _) = Nothing
+    isTyVarInstance R.Bound{} (R.Free _) = Nothing
     isTyVarInstance (R.Bound _ i) (R.Bound _ j) =
       if i == j  then Just M.empty else Nothing
     isTyVarInstance _ _ = Nothing
 
-    isArgInstance :: Int -> Int -> Arg PlutusIR -> Arg PlutusIR -> Maybe (M.Map String (Arg PlutusIR))
+    isArgInstance :: Int -> Int -> Arg BuiltinsOfPIR -> Arg BuiltinsOfPIR -> Maybe (M.Map String (Arg BuiltinsOfPIR))
     isArgInstance nTe nTy (R.TermArg tL) (R.TermArg tT) = isInstanceUnder nTe nTy tL tT
-    isArgInstance nTe nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
+    isArgInstance _ nTy (R.TyArg tyL) (R.TyArg tyT) = isTyInstance nTy tyL tyT
     isArgInstance nTe nTy _ _ = Nothing
 
-    instantiate :: (PirouetteReadDefs PlutusIR m)
-                => M.Map String (Arg PlutusIR) -> Term PlutusIR -> m (Term PlutusIR)
+    instantiate :: (PirouetteReadDefs BuiltinsOfPIR m)
+                => M.Map String (Arg BuiltinsOfPIR) -> Term BuiltinsOfPIR -> m (Term BuiltinsOfPIR)
     instantiate = instantiateUnder 0 0
 
-    instantiateUnder :: (PirouetteReadDefs PlutusIR m)
-                => Int -> Int -> M.Map String (Arg PlutusIR) -> Term PlutusIR -> m (Term PlutusIR)
+    instantiateUnder :: (PirouetteReadDefs BuiltinsOfPIR m)
+                => Int -> Int -> M.Map String (Arg BuiltinsOfPIR) -> Term BuiltinsOfPIR -> m (Term BuiltinsOfPIR)
     instantiateUnder nTe nTy m tt@(R.App v@(R.Free (TermFromSignature x)) args) =do
       case isHole x of
         Nothing -> R.App v <$> mapM (instantiateArg nTe nTy m) args
@@ -391,7 +381,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
             Just (R.TermArg t) ->
               R.appN (shift (toInteger nTe) t) <$> mapM (instantiateArg nTe nTy m) args
-            Just (R.TyArg ty) -> throwError' $ PEOther $ "Variable x" ++ show i ++ " is at a term position on the right hand side, but was a type on the left-hand side."
+            Just (R.TyArg _) -> throwError' $ PEOther $ "Variable x" ++ show i ++ " is at a term position on the right hand side, but was a type on the left-hand side."
     instantiateUnder nTe nTy m (R.App v args) =
       R.App v <$> mapM (instantiateArg nTe nTy m) args
     instantiateUnder nTe nTy m (R.Lam ann ty t) =
@@ -399,8 +389,8 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     instantiateUnder nTe nTy m (R.Abs ann k t) =
       R.Abs ann k <$> instantiateUnder nTe (nTy + 1) m t
 
-    instantiateTy :: (PirouetteReadDefs PlutusIR m)
-                  => Int -> M.Map String (Arg PlutusIR) -> Type PlutusIR -> m (Type PlutusIR)
+    instantiateTy :: (PirouetteReadDefs BuiltinsOfPIR m)
+                  => Int -> M.Map String (Arg BuiltinsOfPIR) -> Type BuiltinsOfPIR -> m (Type BuiltinsOfPIR)
     instantiateTy nTy m (R.TyApp v@(R.Free (TypeFromSignature x)) args) =
       case isHole x of
         Nothing -> R.TyApp v <$> mapM (instantiateTy nTy m) args
@@ -409,7 +399,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
             Just (R.TyArg t) ->
               R.appN (shift (toInteger nTy) t) <$> mapM (instantiateTy nTy m) args
-            Just (R.TermArg ty) -> throwError' $ PEOther $ "Variable " ++ show i ++ " is at a type position on the right hand side, but was a term on the left-hand side."
+            Just (R.TermArg _) -> throwError' $ PEOther $ "Variable " ++ show i ++ " is at a type position on the right hand side, but was a term on the left-hand side."
     instantiateTy nTy m (R.TyApp v args) =
       R.TyApp v <$> mapM (instantiateTy nTy m) args
     instantiateTy nTy m (R.TyLam ann k ty) =
@@ -419,24 +409,24 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     instantiateTy nTy m (R.TyFun a b) =
       R.TyFun <$> instantiateTy nTy m a <*> instantiateTy nTy m b
 
-    instantiateArg :: (PirouetteReadDefs PlutusIR m)
-                   => Int -> Int -> M.Map String (Arg PlutusIR) -> Arg PlutusIR -> m (Arg PlutusIR)
+    instantiateArg :: (PirouetteReadDefs BuiltinsOfPIR m)
+                   => Int -> Int -> M.Map String (Arg BuiltinsOfPIR) -> Arg BuiltinsOfPIR -> m (Arg BuiltinsOfPIR)
     instantiateArg nTe nTy m (R.TermArg t) = R.TermArg <$> instantiateUnder nTe nTy m t
-    instantiateArg nTe nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
+    instantiateArg _ nTy m (R.TyArg ty) = R.TyArg <$> instantiateTy nTy m ty
 
     isHole :: Name -> Maybe String
     isHole n =
       let x = T.unpack $ nameString n in
       if length x > 1 && last x == '_' then Just x else Nothing
 
-    haveSameString :: TermFree PlutusIR -> TermFree PlutusIR -> Bool
+    haveSameString :: TermBase BuiltinsOfPIR -> TermBase BuiltinsOfPIR -> Bool
     haveSameString (Constant a) (Constant b) = a == b
     haveSameString (Builtin f) (Builtin g) = f == g
     haveSameString Bottom Bottom = True
     haveSameString (TermFromSignature x) (TermFromSignature y) = nameString x == nameString y
     haveSameString _ _ = False
 
-    tyHaveSameString :: TypeFree PlutusIR -> TypeFree PlutusIR -> Bool
+    tyHaveSameString :: TypeBase BuiltinsOfPIR -> TypeBase BuiltinsOfPIR -> Bool
     tyHaveSameString (TyBuiltin f) (TyBuiltin g) = f == g
     tyHaveSameString (TypeFromSignature x) (TypeFromSignature y) = nameString x == nameString y
     tyHaveSameString _ _ = False
@@ -456,24 +446,19 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
 destrNF :: forall lang m meta . (Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
 destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
   where
-    onApp :: (VarMeta lang meta -> [ArgMeta lang meta] -> MaybeT m (TermMeta lang meta))
-          -> TermMeta lang meta -> m (TermMeta lang meta)
-    onApp f t@(R.App n args) = fromMaybe t <$> runMaybeT (f n args)
-    onApp _ t                = return t
-
     -- Returns a term that is a destructor from a list of terms respecting
     -- the invariant that if @splitDest t == Just (xs , d , ys)@, then @t == xs ++ [d] ++ ys@
     splitDest :: [ArgMeta lang meta]
               -> MaybeT m ( TermMeta lang meta
                           , ListZipper (ArgMeta lang meta))
     splitDest [] = fail "splitDest: can't split empty list"
-    splitDest (a@(R.TermArg a2@(R.App (R.Free (TermFromSignature n)) args)) : ds) =
+    splitDest (a@(R.TermArg a2@(R.App (R.Free (TermFromSignature n)) _)) : ds) =
           (prtIsDest n >> return (a2, ListZipper ([], ds)))
       <|> (splitDest ds <&> second (zipperCons a))
     splitDest (a : ds) = splitDest ds <&> second (zipperCons a)
 
     go :: TermMeta lang meta -> MaybeT m (TermMeta lang meta)
-    go (R.App (R.Bound _ _)           fargs) = fail "destrNF.go: bound name"
+    go (R.App (R.Bound _ _)           _) = fail "destrNF.go: bound name"
     go (R.App (R.Free (TermFromSignature fn)) fargs) = do
       -- Try to see if there's at least one destructor in the arguments.
       -- If we find a destructor within the arguments, we can make sure it
@@ -494,7 +479,7 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
         isTermArg (R.TyArg _) = False
 
         continue dest fargsZ= do
-          UnDestMeta dn tyN tyArgs x ret cases excess <- unDest dest
+          UnDestMeta dn _ tyArgs x ret cases _ <- unDest dest
           -- Now, we need to push `fn` down the arguments of the destructor, but in doing
           -- so, we need to shift the bound variables depending on how many arguments each
           -- constructor has. Finally, there might be more destructors in fargsZ, which we need to handle,

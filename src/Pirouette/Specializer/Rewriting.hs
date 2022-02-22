@@ -5,8 +5,7 @@
 
 module Pirouette.Specializer.Rewriting where
 
-import Pirouette.Monad
-import Pirouette.Term.Syntax
+import Pirouette.Term.Syntax.Base (Term)
 import Pirouette.PlutusIR.ToTerm
 
 import qualified PlutusIR.Parser    as PIR
@@ -27,13 +26,13 @@ instance Bifunctor RewritingRule where
   bimap f g (RewritingRule name l r) = RewritingRule name (f l) (g r)
 
 
-parseRewRule :: RewritingRule T.Text T.Text -> RewritingRule PirTerm PirTerm
+parseRewRule :: RewritingRule T.Text T.Text -> RewritingRule (Term BuiltinsOfPIR) (Term BuiltinsOfPIR)
 parseRewRule r@(RewritingRule n _ _) =
   bimap (parse (T.unpack n ++ "-LEFT")) (parse (T.unpack n ++ "-RIGHT")) r
 
   where
 
-    parse :: String -> T.Text -> PirTerm
+    parse :: String -> T.Text -> Term BuiltinsOfPIR
     parse err t =
       let tPIR =
             either (error . show) id $
