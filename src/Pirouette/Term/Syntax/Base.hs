@@ -7,13 +7,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Pirouette.Term.Syntax.Base where
 
-import qualified Pirouette.Term.Syntax.SystemF as Raw
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.Syntax.Pretty.Class
 
 import           Control.Arrow ((&&&))
 import qualified Data.Set   as Set
-import           Data.Foldable ()
-import           Data.Traversable ()
 import           Data.Typeable
 import qualified Data.Text as Text
 import Data.Map (Map)
@@ -80,10 +78,10 @@ deriving instance (LanguageBuiltins builtins) => Show (TypeBase builtins)
 deriving instance (LanguageBuiltins builtins) => Data (TypeBase builtins)
 deriving instance (LanguageBuiltins builtins) => Typeable (TypeBase builtins)
 
--- |A Pirouette type is a 'Raw.Type' whose variables are 'TypeBase' and it has metavariables
+-- |A Pirouette type is a 'SystF.Type' whose variables are 'TypeBase' and it has metavariables
 -- of type 'meta'. If you're just using this as a library you're likely more interested in
 -- 'Type'.
-type TypeMeta builtins meta = Raw.AnnType Name (Raw.VarMeta meta Name (TypeBase builtins))
+type TypeMeta builtins meta = SystF.AnnType Name (SystF.VarMeta meta Name (TypeBase builtins))
 
 -- |A 'Type' is a 'TypeMeta' with 'Void' passed to metavariables
 type Type builtins = TypeMeta builtins Void
@@ -91,7 +89,7 @@ type Type builtins = TypeMeta builtins Void
 typeMetaMapM :: (Monad m) => (meta -> m meta')
                 -> TypeMeta lang meta
                 -> m (TypeMeta lang meta')
-typeMetaMapM f = Raw.tyBimapM return (Raw.varMapMetaM f)
+typeMetaMapM f = SystF.tyBimapM return (SystF.varMapMetaM f)
 
 typeToMeta :: Type lang -> TypeMeta lang meta
 typeToMeta = runIdentity . typeMetaMapM absurd
@@ -100,23 +98,23 @@ typeFromMeta :: TypeMeta lang meta -> Type lang
 typeFromMeta = runIdentity . typeMetaMapM (const $ error "Type with metavariables")
 
 -- |Returns all the (free) names used by a type
-typeNames :: TypeMeta builtins meta -> Set.Set (Raw.Arg Name Name)
+typeNames :: TypeMeta builtins meta -> Set.Set (SystF.Arg Name Name)
 typeNames = foldMap go
-  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> Set.Set (Raw.Arg Name Name)
-        go (Raw.Free (TypeFromSignature n)) = Set.singleton (Raw.TyArg n)
+  where go :: SystF.VarMeta meta Name (TypeBase builtins) -> Set.Set (SystF.Arg Name Name)
+        go (SystF.Free (TypeFromSignature n)) = Set.singleton (SystF.TyArg n)
         go _                  = Set.empty
 
 -- |Returns all the metavariables used by a type
 typeMetas :: (Ord meta) => TypeMeta builtins meta -> Set.Set meta
 typeMetas = foldMap go
-  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> Set.Set meta
-        go (Raw.Meta m) = Set.singleton m
+  where go :: SystF.VarMeta meta Name (TypeBase builtins) -> Set.Set meta
+        go (SystF.Meta m) = Set.singleton m
         go _         = Set.empty
 
 -- |The supported type definitions. At this point, we only support datatype definitions.
 data TypeDef builtins
-  = Datatype { kind          :: Raw.Kind
-             , typeVariables :: [(Name, Raw.Kind)]
+  = Datatype { kind          :: SystF.Kind
+             , typeVariables :: [(Name, SystF.Kind)]
              , destructor    :: Name
              , constructors  :: [(Name, Type builtins)]
              }
@@ -153,14 +151,14 @@ deriving instance (LanguageBuiltins builtins) => Show (TermBase builtins)
 deriving instance (LanguageBuiltins builtins) => Data (TermBase builtins)
 deriving instance (LanguageBuiltins builtins) => Typeable (TermBase builtins)
 
--- |A 'TermMeta' for a given builtins uage is a 'Raw.Term' with types being a 'Type' and
+-- |A 'TermMeta' for a given builtins uage is a 'SystF.Term' with types being a 'Type' and
 -- diambiguated free names: we're aware on whether these free names are constants,
 -- builtins or refer to some definition that will require a definition map.
 --
 -- Moreover, there's a possibility to insert meta variables in the tree. If you're
 -- a user of the library, you're most likely going to need only 'Term', which
 -- have no metavariables.
-type TermMeta builtins meta = Raw.AnnTerm (TypeMeta builtins meta) Name (Raw.VarMeta meta Name (TermBase builtins))
+type TermMeta builtins meta = SystF.AnnTerm (TypeMeta builtins meta) Name (SystF.VarMeta meta Name (TermBase builtins))
 
 -- |A 'Term' is a 'TermMeta' with 'Void' as the metavariable.
 type Term builtins = TermMeta builtins Void
@@ -168,36 +166,36 @@ type Term builtins = TermMeta builtins Void
 termMetaMapM :: (Monad m) => (meta -> m meta')
                 -> TermMeta lang meta
                 -> m (TermMeta lang meta')
-termMetaMapM f = Raw.termTrimapM (typeMetaMapM f) return (Raw.varMapMetaM f)
+termMetaMapM f = SystF.termTrimapM (typeMetaMapM f) return (SystF.varMapMetaM f)
 
 termToMeta :: Term builtins -> TermMeta builtins meta
 termToMeta = runIdentity . termMetaMapM absurd
 
 -- |Returns all the (free) names used by a term
-termNames :: TermMeta builtins meta -> Set.Set (Raw.Arg Name Name)
-termNames = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeNames)
-  where go :: Raw.VarMeta meta Name (TermBase builtins) -> Set.Set (Raw.Arg Name Name)
-        go (Raw.Free (TermFromSignature n)) = Set.singleton (Raw.TermArg n)
+termNames :: TermMeta builtins meta -> Set.Set (SystF.Arg Name Name)
+termNames = uncurry (<>) . (foldMap go &&& SystF.termTyFoldMap typeNames)
+  where go :: SystF.VarMeta meta Name (TermBase builtins) -> Set.Set (SystF.Arg Name Name)
+        go (SystF.Free (TermFromSignature n)) = Set.singleton (SystF.TermArg n)
         go _                    = Set.empty
 
 -- |Returns all the metavariables used by a term
 termMetas :: (Ord meta) => TermMeta builtins meta -> Set.Set meta
-termMetas = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeMetas)
-  where go :: Raw.VarMeta meta Name (TermBase builtins) -> Set.Set meta
-        go (Raw.Meta m) = Set.singleton m
+termMetas = uncurry (<>) . (foldMap go &&& SystF.termTyFoldMap typeMetas)
+  where go :: SystF.VarMeta meta Name (TermBase builtins) -> Set.Set meta
+        go (SystF.Meta m) = Set.singleton m
         go _         = Set.empty
 
 -- * Arguments and variables
 
 
-type ArgMeta builtins meta = Raw.Arg (TypeMeta builtins meta) (TermMeta builtins meta)
-type Arg builtins = Raw.Arg (Type builtins) (Term builtins)
+type ArgMeta builtins meta = SystF.Arg (TypeMeta builtins meta) (TermMeta builtins meta)
+type Arg builtins = SystF.Arg (Type builtins) (Term builtins)
 
-type Var builtins = Raw.Var Name (TermBase builtins)
-type VarMeta builtins meta = Raw.VarMeta meta Name (TermBase builtins)
+type Var builtins = SystF.Var Name (TermBase builtins)
+type VarMeta builtins meta = SystF.VarMeta meta Name (TermBase builtins)
 
-type TyVar builtins = Raw.Var Name (TypeBase builtins)
-type TyVarMeta builtins meta = Raw.VarMeta meta Name (TypeBase builtins)
+type TyVar builtins = SystF.Var Name (TypeBase builtins)
+type TyVarMeta builtins meta = SystF.VarMeta meta Name (TypeBase builtins)
 
 -- * Definitions
 
