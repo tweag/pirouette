@@ -4,24 +4,24 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Pirouette.Term.Syntax.Pretty.Class where
 
-import qualified Data.Text                 as T
+import Data.Text as Text (Text, unpack)
 import qualified Prettyprinter as Prettyprint (pretty)
 import           Prettyprinter hiding (Pretty, pretty)
 import           Prettyprinter.Render.Text
 import Control.Arrow (first)
-import qualified Data.ByteString           as BS
+import Data.ByteString as ByteString (ByteString, unpack)
 import Data.Void
 
 -- |Renders a doc in a single line.
-renderSingleLine :: Doc ann -> T.Text
+renderSingleLine :: Doc ann -> Text
 renderSingleLine = renderStrict . layoutPretty (LayoutOptions Unbounded)
 
 -- |Rendes a doc in a smart fashion in a large line.
-renderSmart :: Doc ann -> T.Text
+renderSmart :: Doc ann -> Text
 renderSmart = renderStrict . layoutSmart (LayoutOptions (AvailablePerLine 100 1))
 
 renderSingleLineStr :: Doc ann -> String
-renderSingleLineStr = T.unpack . renderSingleLine
+renderSingleLineStr = Text.unpack . renderSingleLine
 
 
 class Pretty x where
@@ -83,14 +83,14 @@ instance Pretty Int where
 instance Pretty Char where
   pretty = Prettyprint.pretty
 
-instance Pretty T.Text where
+instance Pretty Text.Text where
   pretty = Prettyprint.pretty
 
 instance Pretty Bool where
   pretty = Prettyprint.pretty
 
-instance Pretty BS.ByteString where
-  pretty = prettyList . BS.unpack
+instance Pretty ByteString where
+  pretty = prettyList . ByteString.unpack
 
 instance (Pretty a, Pretty b) => Pretty (a , b) where
   prettyPrec _ (x , y) = parens $ prettyPrec 10 x <+> comma <+> prettyPrec 10 y

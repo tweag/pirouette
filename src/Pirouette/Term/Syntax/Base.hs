@@ -11,12 +11,12 @@ import qualified Pirouette.Term.Syntax.SystemF as Raw
 import Pirouette.Term.Syntax.Pretty.Class
 
 import           Control.Arrow ((&&&))
-import qualified Data.Set   as S
+import qualified Data.Set   as Set
 import           Data.Foldable ()
 import           Data.Traversable ()
 import           Data.Typeable
-import qualified Data.Text as T
-import qualified Data.Map as M
+import qualified Data.Text as Text
+import Data.Map (Map)
 import           Data.Data
 import Data.Void
 import Data.String
@@ -47,7 +47,7 @@ class (Data builtins, Typeable builtins, LanguageConstrs builtins) => LanguageBu
 -- |Our own name type. This is useful because since we're producing code that
 -- is supposed to be humanly readable, we might want to remove the 'nameUnique'
 -- part of non-ambiguous names.
-data Name = Name { nameString :: T.Text, nameUnique :: Maybe Int }
+data Name = Name { nameString :: Text.Text, nameUnique :: Maybe Int }
   deriving (Eq , Ord, Data, Typeable)
 
 -- |We'll just define a 'TyName' synonym to keep our Haskell type-signatures
@@ -55,10 +55,10 @@ data Name = Name { nameString :: T.Text, nameUnique :: Maybe Int }
 type TyName = Name
 
 instance Show Name where
-  show (Name str i) = T.unpack str <> maybe mempty show i
+  show (Name str i) = Text.unpack str <> maybe mempty show i
 
 instance IsString Name where
-  fromString = flip Name Nothing . T.pack
+  fromString = flip Name Nothing . Text.pack
 
 instance Pretty Name where
   pretty (Name str i) = pretty str <> maybe mempty pretty i
@@ -100,18 +100,18 @@ typeFromMeta :: TypeMeta lang meta -> Type lang
 typeFromMeta = runIdentity . typeMetaMapM (const $ error "Type with metavariables")
 
 -- |Returns all the (free) names used by a type
-typeNames :: TypeMeta builtins meta -> S.Set (Raw.Arg Name Name)
+typeNames :: TypeMeta builtins meta -> Set.Set (Raw.Arg Name Name)
 typeNames = foldMap go
-  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> S.Set (Raw.Arg Name Name)
-        go (Raw.Free (TypeFromSignature n)) = S.singleton (Raw.TyArg n)
-        go _                  = S.empty
+  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> Set.Set (Raw.Arg Name Name)
+        go (Raw.Free (TypeFromSignature n)) = Set.singleton (Raw.TyArg n)
+        go _                  = Set.empty
 
 -- |Returns all the metavariables used by a type
-typeMetas :: (Ord meta) => TypeMeta builtins meta -> S.Set meta
+typeMetas :: (Ord meta) => TypeMeta builtins meta -> Set.Set meta
 typeMetas = foldMap go
-  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> S.Set meta
-        go (Raw.Meta m) = S.singleton m
-        go _         = S.empty
+  where go :: Raw.VarMeta meta Name (TypeBase builtins) -> Set.Set meta
+        go (Raw.Meta m) = Set.singleton m
+        go _         = Set.empty
 
 -- |The supported type definitions. At this point, we only support datatype definitions.
 data TypeDef builtins
@@ -174,18 +174,18 @@ termToMeta :: Term builtins -> TermMeta builtins meta
 termToMeta = runIdentity . termMetaMapM absurd
 
 -- |Returns all the (free) names used by a term
-termNames :: TermMeta builtins meta -> S.Set (Raw.Arg Name Name)
+termNames :: TermMeta builtins meta -> Set.Set (Raw.Arg Name Name)
 termNames = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeNames)
-  where go :: Raw.VarMeta meta Name (TermBase builtins) -> S.Set (Raw.Arg Name Name)
-        go (Raw.Free (TermFromSignature n)) = S.singleton (Raw.TermArg n)
-        go _                    = S.empty
+  where go :: Raw.VarMeta meta Name (TermBase builtins) -> Set.Set (Raw.Arg Name Name)
+        go (Raw.Free (TermFromSignature n)) = Set.singleton (Raw.TermArg n)
+        go _                    = Set.empty
 
 -- |Returns all the metavariables used by a term
-termMetas :: (Ord meta) => TermMeta builtins meta -> S.Set meta
+termMetas :: (Ord meta) => TermMeta builtins meta -> Set.Set meta
 termMetas = uncurry (<>) . (foldMap go &&& Raw.termTyFoldMap typeMetas)
-  where go :: Raw.VarMeta meta Name (TermBase builtins) -> S.Set meta
-        go (Raw.Meta m) = S.singleton m
-        go _         = S.empty
+  where go :: Raw.VarMeta meta Name (TermBase builtins) -> Set.Set meta
+        go (Raw.Meta m) = Set.singleton m
+        go _         = Set.empty
 
 -- * Arguments and variables
 
@@ -238,4 +238,4 @@ fromConstDef _                  = Nothing
 -- * Declarations
 
 -- | A program will be translated into a number of term and type declarations.
-type Decls builtins = M.Map Name (Definition builtins)
+type Decls builtins = Map Name (Definition builtins)
