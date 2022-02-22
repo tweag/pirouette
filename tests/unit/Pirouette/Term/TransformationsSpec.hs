@@ -9,6 +9,7 @@ import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax as S
 import           Pirouette.Term.Transformations
 import           Pirouette.Term.DSL
+import           Pirouette.PlutusIR.Builtins
 import           Pirouette.PlutusIR.ToTerm
 import qualified Pirouette.Term.Syntax.SystemF as R
 
@@ -20,7 +21,7 @@ import           Control.Monad.Identity
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Except
-import           Data.Text.Prettyprint.Doc
+import           Prettyprinter
 import           Test.Hspec
 import           Data.Maybe
 import qualified Data.Set  as Set

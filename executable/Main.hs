@@ -35,6 +35,7 @@ import qualified Options.Applicative as Opt
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.PlutusIR.SMT ()
+import Pirouette.PlutusIR.Builtins
 import Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Defunctionalize
 import Pirouette.Term.Symbolic.Eval as SymbolicEval

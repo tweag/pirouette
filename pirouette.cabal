@@ -19,6 +19,7 @@ library
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
+      Pirouette.PlutusIR.Builtins
       Pirouette.PlutusIR.SMT
       Pirouette.PlutusIR.ToTerm
       Pirouette.PlutusIR.Utils

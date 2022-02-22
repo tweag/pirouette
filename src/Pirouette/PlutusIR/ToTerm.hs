@@ -18,7 +18,8 @@
 module Pirouette.PlutusIR.ToTerm where
 
 import           Pirouette.Term.Syntax
-import qualified Pirouette.Term.Syntax.SystemF as R
+import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.PlutusIR.Builtins
 
 import           PlutusCore         ( DefaultUni(..)
                                     , pattern DefaultUniList
@@ -45,75 +46,7 @@ import           Control.Monad.State
 import           Control.Monad.Reader
 import qualified PlutusCore.Data as P
 
--- * Declaring the builtins of PlutusIR.
 
--- And two expanded syonyms to get rid of the annoying "type synonym family application" error
--- on the SMT.Common.Translatable instances; these should ideally go away once we start properly
--- packaging SMT translation to be independent of "builtins"
-type PirTypeExpanded = R.AnnType Name (R.Var Name (TypeBase BuiltinsOfPIR))
-type PirTermExpanded = R.AnnTerm PirTypeExpanded Name (R.Var Name (TermBase BuiltinsOfPIR))
-
--- | Defining the 'PlutusIR' as a language, which contains a set of builtin (types and terms)
--- and constants.
-data BuiltinsOfPIR
-  deriving (Data, Typeable)
-
-deriving instance Data P.DefaultFun
-deriving instance Data P.Data
-
-instance LanguageBuiltins BuiltinsOfPIR where
-  type BuiltinTypes BuiltinsOfPIR = PIRBuiltinType
-  type BuiltinTerms BuiltinsOfPIR = P.DefaultFun
-  type Constants BuiltinsOfPIR = PIRConstant
-
--- |Builtin Plutus Types
-data PIRBuiltinType
-  = PIRTypeInteger
-  | PIRTypeByteString
-  | PIRTypeUnit
-  | PIRTypeBool
-  | PIRTypeString
-  | PIRTypeData
-  | PIRTypeList (Maybe PIRBuiltinType)
-  | PIRTypePair (Maybe PIRBuiltinType) (Maybe PIRBuiltinType)
-  deriving (Eq, Ord, Show, Data, Typeable)
-
-defUniToType :: forall k (a :: k) . DefaultUni (P.Esc a) -> PIRBuiltinType
-defUniToType DefaultUniInteger     = PIRTypeInteger
-defUniToType DefaultUniByteString  = PIRTypeByteString
-defUniToType DefaultUniUnit        = PIRTypeUnit
-defUniToType DefaultUniBool        = PIRTypeBool
-defUniToType DefaultUniString      = PIRTypeString
-defUniToType DefaultUniData        = PIRTypeData
-defUniToType (DefaultUniList a)    = PIRTypeList (Just (defUniToType a))
-defUniToType (DefaultUniPair a b)  = PIRTypePair (Just $ defUniToType a) (Just $ defUniToType b)
-defUniToType DefaultUniProtoList   = PIRTypeList Nothing
-defUniToType DefaultUniProtoPair   = PIRTypePair Nothing Nothing
-defUniToType (DefaultUniApply DefaultUniProtoPair a) = PIRTypePair (Just $ defUniToType a) Nothing
-defUniToType x = error $ "defUniToType impossible: " ++ show x
-
--- |Untyped Plutus Constants
-data PIRConstant
-  = PIRConstInteger Integer
-  | PIRConstByteString BS.ByteString
-  | PIRConstUnit
-  | PIRConstBool Bool
-  | PIRConstString T.Text
-  | PIRConstList [PIRConstant]
-  | PIRConstPair PIRConstant PIRConstant
-  | PIRConstData P.Data
-  deriving (Eq, Ord, Show, Data, Typeable)
-
-defUniToConstant :: DefaultUni (P.Esc a) -> a -> PIRConstant
-defUniToConstant DefaultUniInteger     x = PIRConstInteger x
-defUniToConstant DefaultUniByteString  x = PIRConstByteString x
-defUniToConstant DefaultUniUnit        _ = PIRConstUnit
-defUniToConstant DefaultUniBool        x = PIRConstBool x
-defUniToConstant DefaultUniString      x = PIRConstString x
-defUniToConstant DefaultUniData        x = PIRConstData x
-defUniToConstant (DefaultUniList a)    x = PIRConstList (map (defUniToConstant a) x)
-defUniToConstant (DefaultUniPair a b)  x = PIRConstPair (defUniToConstant a (fst x)) (defUniToConstant b (snd x))
-defUniToConstant uni _ = error $ "defUniToConstant impossible: " ++ show uni
 
 -- * Translating 'PIR.Type's and 'PIR.Term's
 
@@ -286,29 +219,29 @@ trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons)) 
            <> M.singleton (toName dest) (DDestructor tyName)
            <> M.fromList tyCons
 
-trKind :: PIR.Kind loc -> R.Kind
-trKind (PIR.Type _)          = R.KStar
-trKind (PIR.KindArrow _ t u) = R.KTo (trKind t) (trKind u)
+trKind :: PIR.Kind loc -> SystF.Kind
+trKind (PIR.Type _)          = SystF.KStar
+trKind (PIR.KindArrow _ t u) = SystF.KTo (trKind t) (trKind u)
 
 trTypeWithArgs :: (ToName tyname)
-               => [(Name, R.Kind)] -> PIR.Type tyname DefaultUni loc -> TrM loc (Type BuiltinsOfPIR)
+               => [(Name, SystF.Kind)] -> PIR.Type tyname DefaultUni loc -> TrM loc (Type BuiltinsOfPIR)
 trTypeWithArgs env = local (pushTypes $ reverse $ map fst env) . trType
 
 trType :: (ToName tyname)
        => PIR.Type tyname DefaultUni loc -> TrM loc (Type BuiltinsOfPIR)
 trType (PIR.TyLam _ v k body)    =
-  R.TyLam (R.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
+  SystF.TyLam (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyForall _ v k body) =
-  R.TyAll (R.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
+  SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyVar _ tyn) =
-  asks ( R.tyPure
-       . maybe (R.Free $ TypeFromSignature $ toName tyn) (R.Bound (R.Ann $ toName tyn) . fromIntegral)
+  asks ( SystF.tyPure
+       . maybe (SystF.Free $ TypeFromSignature $ toName tyn) (SystF.Bound (SystF.Ann $ toName tyn) . fromIntegral)
        . L.elemIndex (toName tyn)
        . typeStack)
-trType (PIR.TyFun _ t u)      = R.TyFun <$> trType t <*> trType u
-trType (PIR.TyApp _ t u)      = R.tyApp <$> trType t <*> trType u
+trType (PIR.TyFun _ t u)      = SystF.TyFun <$> trType t <*> trType u
+trType (PIR.TyApp _ t u)      = SystF.tyApp <$> trType t <*> trType u
 trType (PIR.TyBuiltin _ (P.SomeTypeIn uni))
-  = return $ R.tyPure (R.Free $ TyBuiltin $ defUniToType uni)
+  = return $ SystF.tyPure (SystF.Free $ TyBuiltin $ defUniToType uni)
 trType (PIR.TyIFix l _ _)     = throwError $ NotYetImplemented l "TyIFix"
 
 trTermType :: forall tyname name loc
@@ -346,8 +279,8 @@ trTerm mn t = do
   deps <- get
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
   t' <- local (pushNames $ reverse vs) (go t)
-  let adjustType = flip (foldr (\(_, t) r -> R.TyFun t r)) vs
-  return ( foldr (\(n, t) r -> R.Lam (R.Ann n) t r) t' vs
+  let adjustType = flip (foldr (\(_, t) r -> SystF.TyFun t r)) vs
+  return ( foldr (\(n, t) r -> SystF.Lam (SystF.Ann n) t r) t' vs
          , adjustType
          )
  where
@@ -356,21 +289,21 @@ trTerm mn t = do
     go (PIR.Var _ n) = do
       vs <- asks termStack
       case L.elemIndex (toName n) (map fst vs) of
-        Just i  -> return $ R.termPure (R.Bound (R.Ann $ toName n) $ fromIntegral i)
+        Just i  -> return $ SystF.termPure (SystF.Bound (SystF.Ann $ toName n) $ fromIntegral i)
         Nothing -> lift . checkIfDep (toName n) $ map fst vs
     go (PIR.Constant _ (P.Some (P.ValueOf tx x))) =
-        return $ R.termPure $ R.Free $ Constant $ defUniToConstant tx x
-    go (PIR.Builtin _ f)         = return $ R.termPure $ R.Free $ Builtin f
-    go (PIR.Error _ _)           = return $ R.termPure $ R.Free Bottom
+        return $ SystF.termPure $ SystF.Free $ Constant $ defUniToConstant tx x
+    go (PIR.Builtin _ f)         = return $ SystF.termPure $ SystF.Free $ Builtin f
+    go (PIR.Error _ _)           = return $ SystF.termPure $ SystF.Free Bottom
     go (PIR.IWrap _ _ _ t)       = go t -- VCM: are we sure we don't neet to
     go (PIR.Unwrap _ t)          = go t --      preserve the wrap/unwraps?
-    go (PIR.TyInst _ t ty)       = R.app <$> go t <*> lift (R.TyArg <$> trType ty)
+    go (PIR.TyInst _ t ty)       = SystF.app <$> go t <*> lift (SystF.TyArg <$> trType ty)
     go (PIR.TyAbs _ ty k t)      = do
-      R.Abs (R.Ann $ toName ty) (trKind k) <$> local (pushType $ toName ty) (go t)
+      SystF.Abs (SystF.Ann $ toName ty) (trKind k) <$> local (pushType $ toName ty) (go t)
     go (PIR.LamAbs _ n tyd t)    = do
       ty <- lift $ trType tyd
-      R.Lam (R.Ann $ toName n) ty <$> local (pushName (toName n) ty) (go t)
-    go (PIR.Apply _ tfun targ)   = R.app <$> go tfun <*> (R.TermArg <$> go targ)
+      SystF.Lam (SystF.Ann $ toName n) ty <$> local (pushName (toName n) ty) (go t)
+    go (PIR.Apply _ tfun targ)   = SystF.app <$> go tfun <*> (SystF.TermArg <$> go targ)
 
     -- For let-statements, we will push the (translated) definitions to the top level;
     -- we must be careful and push the variables we've seen so far as a local context
@@ -384,12 +317,12 @@ trTerm mn t = do
     checkIfDep n vs = do
       mDepsOn <- gets (M.lookup n)
       case mDepsOn of
-        Nothing -> return $ R.termPure $ R.Free $ TermFromSignature n
+        Nothing -> return $ SystF.termPure $ SystF.Free $ TermFromSignature n
         Just ns -> do
-          let args = map (R.TermArg . R.termPure . uncurry R.Bound
-                          . (\x -> (R.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs)) . fst)
+          let args = map (SystF.TermArg . SystF.termPure . uncurry SystF.Bound
+                          . (\x -> (SystF.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs)) . fst)
                    $ S.toList ns
-          return $ R.App (R.Free $ TermFromSignature n) args
+          return $ SystF.App (SystF.Free $ TermFromSignature n) args
 
 -- A straightforward translation of a PIRTerm to the Pirouette representation of term.
 -- This function is not used by `trProgram` which is the main function to translate
@@ -442,37 +375,6 @@ uncurry2 :: (a -> b -> c -> d) -> (a, (b, c)) -> d
 uncurry2 f (a , (b , c)) = f a b c
 
 -- * Pretty instances for Plutus-specific goodies
-
-instance Pretty PIRBuiltinType where
-  pretty PIRTypeInteger    = "Integer"
-  pretty PIRTypeByteString = "ByteString"
-  pretty PIRTypeUnit       = "Unit"
-  pretty PIRTypeBool       = "Bool"
-  pretty PIRTypeString     = "String"
-  pretty PIRTypeData       = "Data"
-  pretty (PIRTypeList a)   = brackets (sep ["List", pretty a])
-  pretty (PIRTypePair a b) = brackets (sep ["Pair", pretty a, pretty b])
-
-instance Pretty (Maybe PIRBuiltinType) where
-  pretty Nothing  = "-"
-  pretty (Just t) = pretty t
-
-instance Pretty PIRConstant where
-  pretty (PIRConstInteger x) = pretty x
-  pretty (PIRConstByteString x) = "b" <> pretty x
-  pretty PIRConstUnit = "unit"
-  pretty (PIRConstBool x) = pretty x
-  pretty (PIRConstString x) = dquotes (pretty x)
-  pretty (PIRConstData d)  = "d" <> braces (pretty d)
-  pretty (PIRConstList xs) = "l" <> brackets (sep $ punctuate comma $ map pretty xs)
-  pretty (PIRConstPair x y) = "p" <> brackets (sep $ punctuate comma $ map pretty [x, y])
-
-instance Pretty P.Data where
-  pretty (P.Constr cN fields) = pretty cN <+> pretty fields
-  pretty (P.Map kvs)          = pretty kvs
-  pretty (P.List xs)          = pretty xs
-  pretty (P.I i)              = pretty i
-  pretty (P.B bs)             = pretty bs
 
 instance ToName P.Name where
   toName pn = Name (P.nameString pn) (Just $ P.unUnique $ P.nameUnique pn)

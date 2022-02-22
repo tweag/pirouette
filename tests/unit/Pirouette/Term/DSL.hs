@@ -9,6 +9,7 @@ module Pirouette.Term.DSL where
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified Pirouette.Term.Syntax as S
+import           Pirouette.PlutusIR.Builtins
 import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Monad
 
@@ -38,7 +39,7 @@ mkNewName c = do
 stubTy :: String -> Type BuiltinsOfPIR
 stubTy s = R.tyPure (R.Free $ S.TypeFromSignature $ Name (T.pack s) Nothing)
 
-type TestTerm = PirTermExpanded
+type TestTerm = Term BuiltinsOfPIR
 
 type TermM = TermGenM TestTerm
 

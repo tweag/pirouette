@@ -1,7 +1,7 @@
 module Pirouette.PlutusIR.SMT where
 
 import Pirouette.SMT.Base
-import Pirouette.PlutusIR.ToTerm
+import Pirouette.PlutusIR.Builtins
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 
 instance LanguageSMT BuiltinsOfPIR where

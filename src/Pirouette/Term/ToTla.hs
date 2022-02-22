@@ -30,7 +30,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Text as T
 
-import Pirouette.PlutusIR.ToTerm (BuiltinsOfPIR, PIRBuiltinType(..), PIRConstant(..))
+import Pirouette.PlutusIR.Builtins (BuiltinsOfPIR, PIRBuiltinType(..), PIRConstant(..))
 
 -- * TLA Splicing
 

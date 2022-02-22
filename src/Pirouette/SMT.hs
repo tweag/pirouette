@@ -33,20 +33,15 @@ module Pirouette.SMT
   )
 where
 
-import Control.Arrow ((***))
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.Bifunctor (bimap)
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
-import Pirouette.Monad
-import Pirouette.PlutusIR.ToTerm (BuiltinsOfPIR)
 import Pirouette.SMT.Base as Base
 import Pirouette.SMT.Constraints
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Control.Monad.State.Class
 import Control.Monad.Error.Class
