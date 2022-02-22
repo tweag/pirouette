@@ -94,7 +94,7 @@ solverPop :: (MonadIO m) => SolverT m ()
 solverPop = ask >>= liftIO . SimpleSMT.pop
 
 -- | Declare a single datatype in the current solver session.
-declareDatatype :: (LanguageSMT lang, MonadFail m, MonadIO m) => Name -> TypeDef lang Name -> SolverT m ()
+declareDatatype :: (LanguageSMT lang, MonadFail m, MonadIO m) => Name -> TypeDef lang -> SolverT m ()
 declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
   solver <- ask
   liftIO $ do
@@ -109,7 +109,7 @@ declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
 -- the dependency order passed as the second argument. You can generally get its value
 -- from a 'PirouetteDepOrder' monad.
 declareDatatypes ::
-  (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (PrtDef lang) -> [R.Arg Name Name] -> SolverT m ()
+  (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> SolverT m ()
 declareDatatypes decls orderedNames =
   forM_ typeNames $ \tyname ->
     case M.lookup tyname decls of
@@ -120,11 +120,11 @@ declareDatatypes decls orderedNames =
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.
-declareVariables :: (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (PrtType lang) -> SolverT m ()
+declareVariables :: (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (Type lang) -> SolverT m ()
 declareVariables = mapM_ (uncurry declareVariable) . M.toList
 
 -- | Declares a single variable in the current solver session.
-declareVariable :: (LanguageSMT lang, MonadIO m, MonadFail m) => Name -> PrtType lang -> SolverT m ()
+declareVariable :: (LanguageSMT lang, MonadIO m, MonadFail m) => Name -> Type lang -> SolverT m ()
 declareVariable varName varTy = do
   solver <- ask
   liftIO $ translateType varTy >>= void . SimpleSMT.declare solver (toSmtName varName)
@@ -132,7 +132,7 @@ declareVariable varName varTy = do
 -- | Asserts a constraint; check 'Constraint' for more information
 assert ::
   (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m) =>
-  M.Map Name (PrtType lang) ->
+  M.Map Name (Type lang) ->
   Constraint lang meta ->
   SolverT m ()
 assert gamma c = SolverT $ ReaderT $ \solver -> assertConstraintRaw solver gamma c

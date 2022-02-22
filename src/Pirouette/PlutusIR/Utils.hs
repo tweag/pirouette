@@ -30,7 +30,7 @@ deriving instance Data P.TyName
 -- TODO: actually check that the given name is a constructor of
 -- a declared 'Bool' datatype.
 termIsBoolVal :: (PirouetteReadDefs PlutusIR m) => Bool -> PirTerm -> m Bool
-termIsBoolVal b (R.Free (FreeName n)) = consIsBoolVal b n
+termIsBoolVal b (R.App (R.Free (TermFromSignature n)) []) = consIsBoolVal b n
 termIsBoolVal _ _                     = return False
 
 consIsBoolVal :: (PirouetteReadDefs PlutusIR m) => Bool -> Name -> m Bool
@@ -44,18 +44,18 @@ consIsMaybeVal n
 
 -- TODO: Similarly to 'termIsBoolVal', check this is really a unit type
 typeIsUnit :: (PirouetteReadDefs PlutusIR m) => PirType -> m Bool
-typeIsUnit (R.TyApp (R.F (TyFree n)) []) = return $ nameString n == "Unit"
+typeIsUnit (R.TyApp (R.Free (TypeFromSignature n)) []) = return $ nameString n == "Unit"
 typeIsUnit _                             = return False
 
 tynameIsBool :: (PirouetteReadDefs PlutusIR m) => Name -> m Bool
 tynameIsBool n = return $ nameString n == "Bool"
 
 typeIsBool :: (PirouetteReadDefs PlutusIR m) => PirType -> m Bool
-typeIsBool (R.TyApp (R.F (TyFree n)) []) = tynameIsBool n
+typeIsBool (R.TyApp (R.Free (TypeFromSignature n)) []) = tynameIsBool n
 typeIsBool _ = return False
 
 
-nameIsITE :: TermBase PlutusIR name -> Bool
+nameIsITE :: TermFree PlutusIR -> Bool
 nameIsITE (Builtin P.IfThenElse) = True
 nameIsITE _ = False
 

@@ -30,7 +30,7 @@ import Data.List (intersperse)
 -- Its somthing to think about later, but for now this will do.
 
 -- | Bindings from names to types (for the assign constraints)
-type Env lang = Map Name (PrtType lang)
+type Env lang = Map Name (Type lang)
 
 -- | Constraints of a path during symbolic execution
 -- We would like to have
@@ -41,9 +41,9 @@ type Env lang = Map Name (PrtType lang)
 -- (Because it is a builtin or a constant),
 -- whereas the other one represents an ongoing computation killed by lack of fuel.
 data Constraint lang meta
-  = Assign Name (PrtTermMeta lang meta)
-  | NonInlinableSymbolEq (PrtTermMeta lang meta) (PrtTermMeta lang meta)
-  | OutOfFuelEq (PrtTermMeta lang meta) (PrtTermMeta lang meta)
+  = Assign Name (TermMeta lang meta)
+  | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
+  | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
   | And [Constraint lang meta]
   | Bot
 
@@ -115,7 +115,7 @@ assertConstraintRaw s env (Assign name term) =
   do
     let smtName = toSmtName name
     let (Just ty) = Map.lookup name env
-    d <- translateData (prtTypeToMeta ty) term
+    d <- translateData (typeToMeta ty) term
     liftIO $
       SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` d)
 assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) = do
@@ -137,9 +137,9 @@ assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
 translateData :: (LanguageSMT lang, ToSMT meta, MonadFail m)
-  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> m SimpleSMT.SExpr
+  => TypeMeta lang meta -> TermMeta lang meta -> m SimpleSMT.SExpr
 translateData ty (App var []) = translateVar var
-translateData ty (App (F (FreeName name)) args) =
+translateData ty (App (Free (TermFromSignature name)) args) =
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're

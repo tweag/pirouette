@@ -1,9 +1,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ConstrainedClassMethods #-}
 
 module Pirouette.Term.Syntax.SystemF where
 
@@ -30,13 +31,18 @@ import           Data.Generics.Uniplate.Data
 
 -- ** Annotated Variables
 
-data VarMeta meta ann f = B (Ann ann) Integer | F f | M meta
+data VarMeta meta ann f
+  = Bound (Ann ann) Integer
+  | Free f
+  | Meta meta -- Meta variables are holes.
+  -- Their type is unrelated to the other ones in the term,
+  -- allowing to construct heterogeneous terms.
   deriving (Eq, Ord, Functor, Show, Data, Typeable, Foldable, Traversable)
 
 varMapMetaM :: (Monad m) => (meta -> m meta') -> VarMeta meta ann f -> m (VarMeta meta' ann f)
-varMapMetaM f (M x) = M <$> f x
-varMapMetaM _ (B ann i) = return $ B ann i
-varMapMetaM _ (F x) = return $ F x
+varMapMetaM f (Meta x) = Meta <$> f x
+varMapMetaM _ (Bound ann i) = return $ Bound ann i
+varMapMetaM _ (Free x) = return $ Free x
 
 varMapMeta :: (meta -> meta') -> VarMeta meta ann f -> VarMeta meta' ann f
 varMapMeta f = runIdentity . varMapMetaM (return . f)
@@ -51,13 +57,13 @@ type Var = VarMeta Void
 instance IsVar (VarMeta meta ann f) where
   type VarAnn (VarMeta meta ann f) = ann
 
-  isBound (B _ i) = Just i
+  isBound (Bound _ i) = Just i
   isBound _       = Nothing
 
-  varMapM f (B ann i) = B ann <$> f i
+  varMapM f (Bound ann i) = Bound ann <$> f i
   varMapM _ v         = return v
 
-  annMap f (B (Ann a) i) = B (Ann (f a)) i
+  annMap f (Bound (Ann a) i) = Bound (Ann (f a)) i
   annMap _ v       = v
 
 -- ** Kinds
@@ -67,49 +73,41 @@ data Kind = KStar | KTo Kind Kind
 
 -- ** Types
 
-data AnnType ann ty
-  = TyApp ty [AnnType ann ty]
-  | TyFun (AnnType ann ty) (AnnType ann ty)
-  | TyLam (Ann ann) Kind (AnnType ann ty)
-  | TyAll (Ann ann) Kind (AnnType ann ty)
+data AnnType ann tyVar
+  = TyApp tyVar [AnnType ann tyVar]
+  | TyFun (AnnType ann tyVar) (AnnType ann tyVar)
+  | TyLam (Ann ann) Kind (AnnType ann tyVar)
+  | TyAll (Ann ann) Kind (AnnType ann tyVar)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
 
-tyFlatten :: (IsVar v) => AnnType ann (AnnType ann v) -> AnnType ann v
-tyFlatten (TyApp x args) = appN x $ map tyFlatten args
-tyFlatten (TyFun t u)    = TyFun (tyFlatten t) (tyFlatten u)
-tyFlatten (TyLam v k t)  = TyLam v k $ tyFlatten t
-tyFlatten (TyAll v k t)  = TyAll v k $ tyFlatten t
-
-tyBimapM :: (Monad m) => (ann -> m ann') -> (ty -> m ty')
-         -> AnnType ann ty -> m (AnnType ann' ty')
+tyBimapM :: (Monad m) => (ann -> m ann') -> (tyVar -> m tyVar')
+         -> AnnType ann tyVar -> m (AnnType ann' tyVar')
 tyBimapM f g (TyApp n args) = TyApp <$> g n <*> mapM (tyBimapM f g) args
 tyBimapM f g (TyFun t u)    = TyFun <$> tyBimapM f g t <*> tyBimapM f g u
 tyBimapM f g (TyLam a k u)  = TyLam <$> mapM f a <*> return k <*> tyBimapM f g u
 tyBimapM f g (TyAll a k u)  = TyAll <$> mapM f a <*> return k <*> tyBimapM f g u
 
-type Type v = AnnType (VarAnn v) v
-
-tyFunArgs :: AnnType ann ty -> ([AnnType ann ty], AnnType ann ty)
+tyFunArgs :: AnnType ann tyVar -> ([AnnType ann tyVar], AnnType ann tyVar)
 tyFunArgs (TyFun u t) = first (u :) $ tyFunArgs t
 tyFunArgs t           = ([], t)
 
 -- |Given a @t : AnnType ann ty@, returns how many arguments would we
 -- have to provide a @AnnTerm@ of type @t@ to fully saturate it. This includes
 -- type arguments!
-tyArity :: AnnType ann ty -> Int
+tyArity :: AnnType ann tyVar -> Int
 tyArity (TyAll _ _ t) = 1 + tyArity t
 tyArity t             = tyMonoArity t
 
 -- |Unlike 'tyArity', we only compute how many term arguments a term of
 -- the given type has to receive
-tyMonoArity :: AnnType ann ty -> Int
+tyMonoArity :: AnnType ann tyVar -> Int
 tyMonoArity = length . fst . tyFunArgs
 
-tyPure :: ty -> AnnType ann ty
-tyPure = flip TyApp []
+tyPure :: tyVar -> AnnType ann tyVar
+tyPure v = TyApp v []
 
-instance (IsVar v) => HasSubst (AnnType ann v) where
-  type SubstVar (AnnType ann v) = v
+instance (IsVar tyVar) => HasSubst (AnnType ann tyVar) where
+  type SubstVar (AnnType ann tyVar) = tyVar
   var = tyPure
 
   subst s (TyApp n xs)  = appN (applySub s n) $ map (subst s) xs
@@ -120,24 +118,34 @@ instance (IsVar v) => HasSubst (AnnType ann v) where
 tyApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
 tyApp (TyApp n args) u = TyApp n (args ++ [u])
 tyApp (TyLam _ _ t)  u = subst (singleSub u) t
-tyApp (TyAll _ _ t)  u = subst (singleSub u) t
+tyApp (TyAll _ _ _)  u = error "Can't apply TyAll"
 tyApp (TyFun _ _)    _ = error "Can't apply TyFun"
 
+tyAfterTermApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
+tyAfterTermApp (TyApp n args) u = error "Terms of type TyApp are not supposed to be applied."
+tyAfterTermApp (TyLam _ _ t)  u = error "Terms of type TyLam cannot be applied."
+tyAfterTermApp (TyAll _ _ t)  u = subst (singleSub u) t
+tyAfterTermApp (TyFun _ t)    _ = t -- Here we do not check that the term of the provided argument is the one expected by the function.
+
 -- TODO: write an efficient appN that substitutes multiple variables in one go
-instance HasApp (AnnType ann) where
-  type AppArg (AnnType ann) v = AnnType ann v
+instance (IsVar tyVar) => HasApp (AnnType ann tyVar) where
+  type AppArg (AnnType ann tyVar) = AnnType ann tyVar
   appN = foldl' tyApp
 
 -- ** Terms
 
--- |Named de Bruijn System-F terms in normal form, augmented with holes
--- and types annotations. The @ann@ variable represents the type of
+-- |Named de Bruijn System-F terms in normal form with types annotations.
+-- The de Bruijn indices for term and type variables are strongly separated.
+-- So both the first `Lam` and the first `Abs` introduce a variable with index 0.
+-- The @ann@ variable represents the type of
 -- names we're using for explicit variable names. It's important to do so
 -- to preserve user-given names throughout the transformations.
 data AnnTerm ty ann v
   = App   v              [Arg ty (AnnTerm ty ann v)]
-  | Lam   (Ann ann) ty   (AnnTerm ty ann v)
-  | Abs   (Ann ann) Kind (AnnTerm ty ann v)
+  | Lam   (Ann ann) ty   (AnnTerm ty ann v) -- Term level lambda (abstract over term to construct term).
+  -- It is the one usually denoted λ.
+  | Abs   (Ann ann) Kind (AnnTerm ty ann v) -- Term level type lambda (abstract over type to construct term).
+  -- It is the one usually denoted Λ.
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
 
 termTyFoldMap :: (Monoid m) => (ty -> m) -> AnnTerm ty ann v -> m
@@ -145,16 +153,13 @@ termTyFoldMap f (App _ args) = mconcat $ mapMaybe (fmap f . fromTyArg) args
 termTyFoldMap f (Lam _ ty u) = f ty <> termTyFoldMap f u
 termTyFoldMap f (Abs _ _  u) = termTyFoldMap f u
 
+-- Gathers all the variable names.
+-- Both the term and the type ones.
+-- But do not consider the ones introduces by a type level abstraction.
 termAnnFold :: (Monoid m) => (ann -> m) -> AnnTerm ty ann v -> m
 termAnnFold f (App _ args) = mconcat $ mapMaybe (fmap (termAnnFold f) . fromArg) args
 termAnnFold f (Lam (Ann x) _ u) = f x <> termAnnFold f u
 termAnnFold f (Abs (Ann x) _ _) = f x
-
-termTriMap :: (ty -> ty') -> (ann -> ann') -> (v -> v')
-            -> AnnTerm ty ann v -> AnnTerm ty' ann' v'
-termTriMap f g h (App n args) = App (h n) $ map (argMap f (termTriMap f g h)) args
-termTriMap f g h (Lam a ty u) = Lam (fmap g a) (f ty) (termTriMap f g h u)
-termTriMap f g h (Abs a k  u) = Abs (fmap g a) k (termTriMap f g h u)
 
 termTrimapM :: (Monad m) => (ty -> m ty') -> (ann -> m ann') -> (v -> m v')
             -> AnnTerm ty ann v -> m (AnnTerm ty' ann' v')
@@ -162,53 +167,60 @@ termTrimapM f g h (App n args) = App <$> h n <*> mapM (argMapM f (termTrimapM f 
 termTrimapM f g h (Lam a ty u) = Lam <$> mapM g a <*> f ty <*> termTrimapM f g h u
 termTrimapM f g h (Abs a k  u) = Abs <$> mapM g a <*> return k <*> termTrimapM f g h u
 
+termTrimap :: (ty -> ty') -> (ann -> ann') -> (v -> v')
+            -> AnnTerm ty ann v -> AnnTerm ty' ann' v'
+termTrimap f g h = runIdentity . termTrimapM (return . f) (return . g) (return . h)
+
 termTyMapM :: (Monad m) => (ty -> m ty') -> AnnTerm ty ann v -> m (AnnTerm ty' ann v)
 termTyMapM f = termTrimapM f return return
 
 termTyMap :: (ty -> ty') -> AnnTerm ty ann v -> AnnTerm ty' ann v
 termTyMap f = runIdentity . termTyMapM (return . f)
 
--- |Applies a transformation to the fist application we find while
+termPure :: v -> AnnTerm ty ann v
+termPure = flip App []
+
+-- |Applies a transformation to the fist application or abstraction over a type we find while
 -- descending down a chain of lambda abstractions. The abstractions
 -- are preserved.
 preserveLamsM :: (Monad m)
-              => (Integer -> AnnTerm ty ann f -> m (AnnTerm ty ann f))
-              -> AnnTerm ty ann f -> m (AnnTerm ty ann f)
+              => (Integer -> AnnTerm ty ann v -> m (AnnTerm ty ann v))
+              -> AnnTerm ty ann v -> m (AnnTerm ty ann v)
 preserveLamsM f (Lam ann ty t) = Lam ann ty <$> preserveLamsM (\n -> f (n+1)) t
 preserveLamsM f t                = f 0 t
 
-preserveLams :: (Integer -> AnnTerm ty ann f -> AnnTerm ty ann f)
-              -> AnnTerm ty ann f -> AnnTerm ty ann f
+preserveLams :: (Integer -> AnnTerm ty ann v -> AnnTerm ty ann v)
+              -> AnnTerm ty ann v -> AnnTerm ty ann v
 preserveLams f = runIdentity . preserveLamsM (\i -> return . f i)
 
-getHeadAbs :: AnnTerm ty ann f -> ([(ann, Kind)], AnnTerm ty ann f)
+getHeadAbs :: AnnTerm ty ann v -> ([(ann, Kind)], AnnTerm ty ann v)
 getHeadAbs (Abs (Ann v) k t) = first ((v, k):) $ getHeadAbs t
 getHeadAbs t                 = ([], t)
 
-getNHeadAbs :: Int -> AnnTerm ty ann f -> ([(ann, Kind)], AnnTerm ty ann f)
+getNHeadAbs :: Int -> AnnTerm ty ann v -> ([(ann, Kind)], AnnTerm ty ann v)
 getNHeadAbs 0 t                 = ([] , t)
 getNHeadAbs n (Abs (Ann v) k t) = first ((v, k):) $ getNHeadAbs (n-1) t
 getNHeadAbs _ _                 = error "getNHeadAbs: Not enough type-abstractions"
 
-getHeadLams :: AnnTerm ty ann f -> ([(ann, ty)], AnnTerm ty ann f)
+getHeadLams :: AnnTerm ty ann v -> ([(ann, ty)], AnnTerm ty ann v)
 getHeadLams (Lam (Ann v) ty t) = first ((v, ty):) $ getHeadLams t
 getHeadLams t                  = ([], t)
 
-getNHeadLams :: Int -> AnnTerm ty ann f -> ([(ann, ty)], AnnTerm ty ann f)
+getNHeadLams :: Int -> AnnTerm ty ann v -> ([(ann, ty)], AnnTerm ty ann v)
 getNHeadLams 0 t                  = ([], t)
 getNHeadLams n (Lam (Ann v) ty t) = first ((v, ty):) $ getNHeadLams (n-1) t
 getNHeadLams _ _                  = error "getNHeadLams: Not enough lambdas"
 
-withLams :: [(ann, ty)] -> AnnTerm ty ann f -> AnnTerm ty ann f
+withLams :: [(ann, ty)] -> AnnTerm ty ann v -> AnnTerm ty ann v
 withLams = foldr (\bv t -> uncurry Lam (first Ann bv) . t) id
 
 data Arg ty v
   = TyArg ty
-  | Arg v
+  | TermArg v
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
 
 argElim :: (ty -> a) -> (v -> a) -> Arg ty v -> a
-argElim f g (Arg x)   = g x
+argElim f g (TermArg x)   = g x
 argElim f g (TyArg x) = f x
 
 fromArg :: Arg ty v -> Maybe v
@@ -223,25 +235,12 @@ isArg = argElim (const False) (const True)
 isTyArg :: Arg ty v -> Bool
 isTyArg = argElim (const True) (const False)
 
-pattern Free :: v -> AnnTerm ty ann' (Var ann v)
-pattern Free f = App (F f) []
-
-type Term ty v = AnnTerm ty (VarAnn v) v
-
 argMapM :: (Monad m) => (ty -> m ty') -> (v -> m v') -> Arg ty v -> m (Arg ty' v')
 argMapM f g (TyArg x) = TyArg <$> f x
-argMapM f g (Arg x)   = Arg <$> g x
+argMapM f g (TermArg x)   = TermArg <$> g x
 
 argMap :: (ty -> ty') -> (v -> v') -> Arg ty v -> Arg ty' v'
 argMap f g = runIdentity . argMapM (return . f) (return . g)
-
-termFlatten :: (HasSubst ty, IsVar v) => AnnTerm ty ann (AnnTerm ty ann v) -> AnnTerm ty ann v
-termFlatten (App x args) = appN x $ map (argMap id termFlatten) args
-termFlatten (Lam v k t)  = Lam v k $ termFlatten t
-termFlatten (Abs v k t)  = Abs v k $ termFlatten t
-
-termPure :: v -> AnnTerm ty ann v
-termPure = flip App []
 
 instance (HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
   type SubstVar (AnnTerm ty ann v) = v
@@ -249,7 +248,8 @@ instance (HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
 
   subst s (App n xs)  = appN (applySub s n) $ map (argMap id (subst s)) xs
   subst s (Lam v k t) = Lam v k (subst (liftSub s) t)
-  subst s (Abs v k t) = Abs v k (subst s t)
+  subst s (Abs v k t) = Abs v k (subst s t) -- Here the substitution is not lifted,
+  -- since de Bruijn indices for term and type variables do not live in the same world.
 
 substTy :: (HasSubst ty)
         => Sub ty -> AnnTerm ty ann v -> AnnTerm ty ann v
@@ -261,56 +261,54 @@ termApp :: (HasSubst ty, IsVar v)
         => AnnTerm ty ann v -> Arg ty (AnnTerm ty ann v)
         -> AnnTerm ty ann v
 termApp (App n args)        u  = App n (args ++ [u])
-termApp (Lam _ _ t)  (Arg   u) = subst   (singleSub u) t
+termApp (Lam _ _ t)  (TermArg   u) = subst   (singleSub u) t
 termApp (Abs _ _ t)  (TyArg u) = substTy (singleSub u) t
 termApp _            _         = error "Mismatched Term/Type application"
 
 -- |Expands a single definition within another term.
---
--- WARNING: When calling @expandvar (n, defn) m@, ensure that @defn@ does /not/
--- depend on @n@, i.e., @n@ can't be recursive. 'expandVar' will /not/
--- perform this check and will happily loop.
 --
 -- WARNING: Although we're using De Bruijn indices, some code generation targets
 -- such as TLA+ are very unhappy about name shadowing, so you might want to map
 -- over the result and deshadow bound names.
 expandVar :: (HasSubst ty, Eq v, IsVar v, Data ty, Data ann, Data v)
           => (v, AnnTerm ty ann v) -> AnnTerm ty ann v -> AnnTerm ty ann v
-expandVar (n, defn) = rewrite go
+expandVar (n, defn) = transform go
   where
-    go (App v args)
-      | n /= v    = Nothing
-      | otherwise = Just $ appN defn args
-    go _ = Nothing
+    go t@(App v args)
+      | n /= v    = t
+      | otherwise = appN defn args
+    go t = t
 
-instance (HasSubst ty) => HasApp (AnnTerm ty ann) where
-  type AppArg (AnnTerm ty ann) v = Arg ty (AnnTerm ty ann v)
+instance (IsVar v, HasSubst ty) => HasApp (AnnTerm ty ann v) where
+  type AppArg (AnnTerm ty ann v) = Arg ty (AnnTerm ty ann v)
 
   -- Single pass substitution;
+  -- This function does not work for "hetereogeneous" list of arguments.
+  -- All the arguments must be either terms or types.
   appN t            []     = t
   appN (App n args) us     = App n (args ++ us)
-  appN t            (u:us) =
+  appN t            us@(u:_) =
     case (t, u) of
-      (Lam {}, Arg   _) -> goTerm t (u:us)
-      (Abs {}, TyArg _) -> goType t (u:us)
+      (Lam {}, TermArg   _) -> goTerm t us
+      (Abs {}, TyArg _) -> goType t us
       (_     , _      ) -> error "Mismatched Term/Type application"
     where
-      go getHead getNHead from s t us =
+      go getHead getNHead from sub t us =
         -- first we decide whether we have more lambdas or more arguments;
-        let (ar, _)    = first length $ getHead t
-            n          = min ar (length us)
+        let (arity, _)    = first length $ getHead t
+            n          = min arity (length us)
             -- Now we know we'll be applying n arguments at once.
-            (_, tgt)   = getNHead n t
-            (args,bs)  = splitAt n us
+            (_, body)   = getNHead n t
+            (args,excess)  = splitAt n us
             sigma xs   = foldl' (\s t -> Just t :< s) (Inc 0) xs
          in case mapM from args of
-              Just as -> appN (s (sigma as) tgt) bs
+              Just as -> appN (sub (sigma as) body) excess
               Nothing -> error "Mismatched Term/Type application"
 
       goTerm = go getHeadLams getNHeadLams fromArg   subst
       goType = go getHeadAbs  getNHeadAbs  fromTyArg substTy
 
--- |Maps a function over names, keeping track of how the scope by counting
+-- |Maps a function over names, keeping track of the scope by counting
 -- how many lambdas have we traversed
 mapNameScoped :: (Integer -> v -> v) -> AnnTerm ty ann v -> AnnTerm ty ann v
 mapNameScoped f = go 0
@@ -319,22 +317,16 @@ mapNameScoped f = go 0
     go c (Lam v t body) = Lam v t $ go (c+1) body
     go c (App n args)   = App (f c n) $ map (argMap id (go c)) args
 
--- |Permute the free variables of a term according to a function f
-permute :: (IsVar v) => (Integer -> Integer) -> AnnTerm ty ann v -> AnnTerm ty ann v
-permute f = mapNameScoped (varMap . permName)
-  where
-    permName c i = if i >= c then c + f (i - c) else i
-
 -- * Auxiliary Defs
 
 -- ** N-ary Reducing Applications
 
-class HasApp term where
-  type AppArg term v :: *
-  appN :: (IsVar v) => term v -> [AppArg term v] -> term v
+class (HasSubst term) => HasApp term where
+  type AppArg term :: *
+  appN :: (IsVar (SubstVar term)) => term -> [AppArg term] -> term
 
-app :: (IsVar v, HasApp term) => term v -> AppArg term v -> term v
-app t = appN t . (:[])
+app :: (HasApp term) => term -> AppArg term -> term
+app t arg = appN t [arg]
 
 -- ** Proof-Irrelevant Annotations
 

@@ -23,15 +23,19 @@ class IsVar v where
   varDec :: v -> v
   varDec = varMap (\x -> x - 1)
 
--- A substitution (represented by a datatype)
+-- A substitution (represented by a datatype).
 data Sub term
-  = Inc Integer            -- increment by an index amount
-  | Maybe term :< Sub term -- extend a substitution (like cons); Nothing means Identity
-  | Sub term :<> Sub term  -- compose substitutions
+  = Inc Integer            -- increment by an index amount.
+  | Maybe term :< Sub term -- Explicitely define the image of the variable of index 0,
+  -- followed by the substitution to applied to the other variables.
+  -- This defines substitution as list of image, so `:<` is like cons. Nothing means Identity.
+  | Sub term :<> Sub term  -- compose substitutions.
+  -- It must be noted that the chosen convention is the converse of the standard composition one.
+  -- `s1 :<> s2` means "`s2` applied after `s1`"
   deriving (Eq, Show, Functor)
 
 infixr :<     -- like usual cons operator (:)
-infixr :<>    -- like usual composition  (.)
+infixr :<>    -- like usual composition (;)
 
 --  Value of the index x in the substitution
 applySub :: (HasSubst term) => Sub term -> SubstVar term -> term

@@ -1,14 +1,7 @@
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+
 module Pirouette.Term.Syntax
   ( module EXPORT
-  , PrtTerm, PrtType, PrtDef, PrtTypeDef, PrtArg
-  , PrtTermMeta, PrtTypeMeta, PrtArgMeta
-  , PrtVar, PrtTyVar
-  , PrtVarMeta, PrtTyVarMeta
-  , Name(..), ToName(..), TyName
-  , prtTypeToMeta , prtTypeFromMeta
-  , prtTermToMeta
   , separateBoundFrom
   , declsUniqueNames
   , safeIdx
@@ -17,7 +10,7 @@ module Pirouette.Term.Syntax
 
 import           Pirouette.Term.Syntax.Base    as EXPORT
 import           Pirouette.Term.Syntax.Pretty  as EXPORT
-import qualified Pirouette.Term.Syntax.SystemF as R
+import qualified Pirouette.Term.Syntax.SystemF as Raw
 import  Pirouette.Term.Syntax.Subst
 
 import           Control.Monad.State
@@ -34,81 +27,13 @@ import Pirouette.Term.Syntax.Pretty.Class
 import Data.Void
 import Control.Monad.Identity
 
--- * Top Level Terms and Types
---
--- $toplvlterms
---
--- Pirouette terms and types are simply 'Term' and 'Type' with their type variables
--- instantiated.
-
-type PrtTerm lang = Term lang Name
-type PrtTermMeta lang m = TermMeta lang m Name
-
-type PrtType lang = Type lang Name
-type PrtTypeMeta lang m = TypeMeta lang m Name
-
-type PrtArgMeta lang m = R.Arg (PrtTypeMeta lang m) (PrtTermMeta lang m)
-type PrtArg  lang = R.Arg (PrtType lang) (PrtTerm lang)
-
-type PrtDef lang = Definition lang Name
-type PrtTypeDef lang = TypeDef lang Name
-
-type PrtVar lang = R.Var Name (TermBase lang Name)
-type PrtVarMeta lang meta = R.VarMeta meta Name (TermBase lang Name)
-
-type PrtTyVar lang = R.Var Name (TypeBase lang Name)
-type PrtTyVarMeta lang meta = R.VarMeta meta Name (TypeBase lang Name)
-
-prtTypeMetaMapM :: (Monad m) => (meta -> m meta')
-                -> PrtTypeMeta lang meta
-                -> m (PrtTypeMeta lang meta')
-prtTypeMetaMapM f = R.tyBimapM return (R.varMapMetaM f)
-
-prtTypeToMeta :: PrtType lang -> PrtTypeMeta lang meta
-prtTypeToMeta = runIdentity . prtTypeMetaMapM absurd
-
-prtTypeFromMeta :: PrtTypeMeta lang meta -> PrtType lang
-prtTypeFromMeta = runIdentity . prtTypeMetaMapM (const $ error "Type with metavariables")
-
-prtTermMetaMapM :: (Monad m) => (meta -> m meta')
-                -> PrtTermMeta lang meta
-                -> m (PrtTermMeta lang meta')
-prtTermMetaMapM f = R.termTrimapM (prtTypeMetaMapM f) return (R.varMapMetaM f)
-
-prtTermToMeta :: PrtTerm lang -> PrtTermMeta lang meta
-prtTermToMeta = runIdentity . prtTermMetaMapM absurd
-
--- * Names
-
--- |Our own name type. This is useful because since we're producing code that
--- is supposed to be humanly readable, we might want to remove the 'nameUnique'
--- part of non-ambiguous names.
-data Name = Name { nameString :: T.Text, nameUnique :: Maybe Int }
-  deriving (Eq , Ord, Data, Typeable)
-
--- |We'll just define a 'TyName' synonym to keep our Haskell type-signatures
--- more organized.
-type TyName = Name
-
-instance Show Name where
-  show (Name str i) = T.unpack str <> maybe mempty show i
-
-instance IsString Name where
-  fromString = flip Name Nothing . T.pack
-
-instance Pretty Name where
-  pretty (Name str i) = pretty str <> maybe mempty pretty i
-
-class ToName v where
-  toName :: v -> Name
-
 -- | @separateBoundFrom u t@ outputs @t@ where all the bound variables occuring in both terms
 -- are renamed to avoid name clashes when outputting code that relies on user given names
 -- while still being able to use something close to the programmer-given names for the
 -- generated code.
-separateBoundFrom :: Term lang Name -> Term lang Name -> Term lang Name
+separateBoundFrom :: Term lang -> Term lang -> Term lang
 separateBoundFrom u t =
-  let boundOf = R.termAnnFold S.singleton in
+  let boundOf = Raw.termAnnFold S.singleton in
   let inter = S.intersection (boundOf u) (boundOf t) in
   if null inter
   then t
@@ -143,7 +68,7 @@ separateBoundFrom u t =
                 Just i -> nextFresh s txt i 0
     in
     let f = rename structuredInter (S.union (boundOf u) (boundOf t)) in
-    R.termTriMap id f (annMap f) t
+    Raw.termTrimap id f (annMap f) t
 
 
 -- ** Uniquely Naming
@@ -161,13 +86,13 @@ separateBoundFrom u t =
 -- https://github.com/input-output-hk/plutus/issues/3445
 
 -- |Exported interface function to uniquely naming declarations.
-declsUniqueNames :: Decls lang Name -> PrtTerm lang -> (Decls lang Name, PrtTerm lang)
+declsUniqueNames :: Decls lang -> Term lang -> (Decls lang, Term lang)
 declsUniqueNames decls mainFun = first M.fromList (go (M.toList decls) mainFun)
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
-    go :: [(Name, Definition lang Name)] -> PrtTerm lang
-       -> ([(Name , Definition lang Name)], PrtTerm lang)
+    go :: [(Name, Definition lang)] -> Term lang
+       -> ([(Name, Definition lang)], Term lang)
     go ds mainFun =
       let (_, ks) =
             flip runState M.empty $ mapM (onPairM unNameCollect defUNCollect) ds
@@ -194,13 +119,13 @@ type UNSubstM   = Reader (M.Map T.Text [Name])
 unNameCollect :: Name -> UNCollectM Name
 unNameCollect n = modify (M.insertWith (flip S.union) (nameString n) (S.singleton n)) >> return n
 
-defUNCollect :: Definition lang Name -> UNCollectM (Definition lang Name)
+defUNCollect :: Definition lang -> UNCollectM (Definition lang)
 defUNCollect (DFunction r t ty) = DFunction r <$> termUNCollect t <*> typeUNCollect ty
 defUNCollect (DConstructor i n) = DConstructor i <$> unNameCollect n
 defUNCollect (DDestructor n)    = DDestructor <$> unNameCollect n
 defUNCollect (DTypeDef n)       = DTypeDef <$> unTypeDefCollect n
 
-unTypeDefCollect :: TypeDef lang Name -> UNCollectM (TypeDef lang Name)
+unTypeDefCollect :: TypeDef lang -> UNCollectM (TypeDef lang)
 unTypeDefCollect d@(Datatype _ _ dest cons) = do
   void $ unNameCollect dest
   let (consNames, types) = unzip cons
@@ -208,33 +133,33 @@ unTypeDefCollect d@(Datatype _ _ dest cons) = do
   mapM_ typeUNCollect types
   return d
 
-termUNCollect :: Term lang Name -> UNCollectM (Term lang Name)
-termUNCollect = R.termTrimapM typeUNCollect return collectVar
+termUNCollect :: Term lang -> UNCollectM (Term lang)
+termUNCollect = Raw.termTrimapM typeUNCollect return collectVar
   where
-    collectVar :: R.Var Name (TermBase lang Name) -> UNCollectM (R.Var Name (TermBase lang Name))
+    collectVar :: Raw.Var Name (TermFree lang) -> UNCollectM (Raw.Var Name (TermFree lang))
     collectVar v = do
       case v of
-        R.F (FreeName n) -> void $ unNameCollect n
+        Raw.Free (TermFromSignature n) -> void $ unNameCollect n
         _                -> return ()
       return v
 
-typeUNCollect :: PrtType lang -> UNCollectM (PrtType lang)
+typeUNCollect :: Type lang -> UNCollectM (Type lang)
 typeUNCollect = mapM collectVar
   where
-    collectVar :: R.Var Name (TypeBase lang Name) -> UNCollectM (R.Var Name (TypeBase lang Name))
+    collectVar :: Raw.Var Name (TypeFree lang) -> UNCollectM (Raw.Var Name (TypeFree lang))
     collectVar v = do
       case v of
-        R.F (TyFree n) -> void $ unNameCollect n
+        Raw.Free (TypeFromSignature n) -> void $ unNameCollect n
         _              -> return ()
       return v
 
-defUNSubst :: Definition lang Name -> UNSubstM (Definition lang Name)
+defUNSubst :: Definition lang -> UNSubstM (Definition lang)
 defUNSubst (DFunction r t ty) = DFunction r <$> termUNSubst t <*> typeUNSubst ty
 defUNSubst (DConstructor i n) = DConstructor i <$> unNameSubst n
 defUNSubst (DDestructor n)    = DDestructor <$> unNameSubst n
 defUNSubst (DTypeDef n)       = DTypeDef <$> unTypeDefSubst n
 
-unTypeDefSubst :: TypeDef lang Name -> UNSubstM (TypeDef lang Name)
+unTypeDefSubst :: TypeDef lang -> UNSubstM (TypeDef lang)
 unTypeDefSubst (Datatype k vs dest cons) =
   Datatype k <$> mapM (\(n, k) -> (,k) <$> unNameSubst n) vs
              <*> unNameSubst dest
@@ -249,17 +174,17 @@ unNameSubst n = do
     Just xs  -> return $ n { nameUnique = L.elemIndex n xs }
     Nothing  -> return n
 
-termUNSubst :: Term lang Name -> UNSubstM (Term lang Name)
-termUNSubst = R.termTrimapM typeUNSubst return subst
+termUNSubst :: Term lang -> UNSubstM (Term lang)
+termUNSubst = Raw.termTrimapM typeUNSubst return subst
   where
-    subst :: R.Var Name (TermBase lang Name) -> UNSubstM (R.Var Name (TermBase lang Name))
-    subst (R.F (FreeName n)) = R.F . FreeName <$> unNameSubst n
+    subst :: Raw.Var Name (TermFree lang) -> UNSubstM (Raw.Var Name (TermFree lang))
+    subst (Raw.Free (TermFromSignature n)) = Raw.Free . TermFromSignature <$> unNameSubst n
     subst x                  = return x
 
-typeUNSubst :: PrtType lang -> UNSubstM (PrtType lang)
-typeUNSubst = R.tyBimapM return subst
+typeUNSubst :: Type lang -> UNSubstM (Type lang)
+typeUNSubst = Raw.tyBimapM return subst
   where
-    subst (R.F (TyFree n))  = R.F . TyFree <$> unNameSubst n
+    subst (Raw.Free (TypeFromSignature n))  = Raw.Free . TypeFromSignature <$> unNameSubst n
     subst x                 = return x
 
 -- ** Utility Functions

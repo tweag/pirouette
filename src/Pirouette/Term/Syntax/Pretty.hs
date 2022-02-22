@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 module Pirouette.Term.Syntax.Pretty
   (module Pirouette.Term.Syntax.Pretty.Class) where
 
@@ -19,36 +20,6 @@ import           Prettyprinter hiding (Pretty, pretty)
 import           Prettyprinter.Render.Text
 import Data.Void
 
-instance Pretty Void where
-  pretty = absurd
-
-instance Pretty Integer where
-  pretty = Prettyprint.pretty
-
-instance Pretty Int where
-  pretty = Prettyprint.pretty
-
-instance Pretty Char where
-  pretty = Prettyprint.pretty
-
-instance Pretty T.Text where
-  pretty = Prettyprint.pretty
-
-instance Pretty Bool where
-  pretty = Prettyprint.pretty
-
-instance Pretty BS.ByteString where
-  pretty = prettyList . BS.unpack
-
-instance (Pretty a, Pretty b) => Pretty (a , b) where
-  prettyPrec d (x , y) = parens $ prettyPrec 10 x <+> comma <+> prettyPrec 10 y
-
-instance {-# OVERLAPPING #-} Pretty String where
-  pretty = Prettyprint.pretty
-
-instance {-# OVERLAPPABLE #-} (Pretty a) => Pretty [a] where
-  prettyPrec d = brackets . align . sep . punctuate comma . map pretty
-
 -- * SystemF Instances
 
 instance Pretty SF.Kind where
@@ -56,9 +27,9 @@ instance Pretty SF.Kind where
   prettyPrec d (SF.KTo t u) = parensIf (d > 10) (pp 11 t <+> "=>" <+> pp 10 u )
 
 instance (Pretty meta, Pretty ann, Pretty f) => Pretty (SF.VarMeta meta ann f) where
-  pretty (SF.B ann i) = pretty i <> "#" <> pretty ann
-  pretty (SF.F f)     = pretty f
-  pretty (SF.M m)     = "$" <> pretty m
+  pretty (SF.Bound ann i) = pretty i <> "#" <> pretty ann
+  pretty (SF.Free f)     = pretty f
+  pretty (SF.Meta m)     = "$" <> pretty m
 
 instance (Pretty ann, Pretty f) => Pretty (SF.AnnType ann f) where
   prettyPrec d (SF.TyApp n args) = prettyPrecApp d n args align
@@ -74,7 +45,7 @@ instance (Pretty x) => Pretty (SF.Ann x) where
   prettyPrec _ (SF.Ann x) = pretty x
 
 instance (Pretty ty, Pretty f) => Pretty (SF.Arg ty f) where
-  prettyPrec d (SF.Arg   x) = prettyPrec d x
+  prettyPrec d (SF.TermArg   x) = prettyPrec d x
   prettyPrec d (SF.TyArg x) = "@" <> prettyPrec 12 x
 
 instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SF.AnnTerm ann ty f) where
@@ -86,25 +57,24 @@ instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SF.AnnTerm ann ty f) where
     where isTyLam (SF.Abs ann tx body) = Just (ann, tx, body)
           isTyLam _                    = Nothing
 
-instance (Pretty name, Pretty (BuiltinTypes lang), Pretty (BuiltinTerms lang), Pretty (Constants lang))
-    => Pretty (Definition lang name) where
+instance (Pretty (BuiltinTypes lang), Pretty (BuiltinTerms lang), Pretty (Constants lang))
+    => Pretty (Definition lang) where
   pretty (DFunction _ t ty)  = align $ vsep [pretty ty, pretty t]
   pretty (DConstructor i ty) = "Constructor" <+> pretty i <+> pretty ty
   pretty (DDestructor ty)    = "Destructor" <+> pretty ty
   pretty (DTypeDef ty)       = "Type" <+> pretty ty
 
-instance (Pretty name, Pretty (BuiltinTypes lang)) => Pretty (TypeBase lang name) where
+instance (Pretty (BuiltinTypes lang)) => Pretty (TypeFree lang) where
   pretty (TyBuiltin x)   = pretty x
-  pretty (TyFree n)      = pretty n
+  pretty (TypeFromSignature n)      = pretty n
 
-instance (Pretty name, Pretty (BuiltinTerms lang), Pretty (Constants lang))
-    => Pretty (TermBase lang name) where
+instance (Pretty (BuiltinTerms lang), Pretty (Constants lang))
+    => Pretty (TermFree lang) where
   pretty (Constant x)   = pretty x
   pretty (Builtin x)    = "b/" <> pretty x
-  pretty (FreeName x)   = pretty x
-  pretty Bottom         = "error"
+  pretty (TermFromSignature x)   = pretty x
 
-instance (Pretty name, Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang name) where
+instance (Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang) where
   pretty (Datatype k vars dest cs) =
     let pvars = sep (map (\(n, k) -> pretty n <> ":" <> pretty k) vars)
      in "data" <+> align (vsep $ [pvars, pretty dest]

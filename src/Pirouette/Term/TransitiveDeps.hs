@@ -25,7 +25,7 @@ sortAllDeps = do
    let funOrTyDefs = mapMaybe (uncurry funOrType) . M.toList $ allDefs
    evalStateT (sortDepsCached funOrTyDefs) (TranDepsCache M.empty)
  where
-  funOrType n (DFunction {}) = Just $ R.Arg n
+  funOrType n (DFunction {}) = Just $ R.TermArg n
   funOrType n (DTypeDef {})  = Just $ R.TyArg n
   funOrType _ _              = Nothing
 

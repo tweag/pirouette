@@ -29,7 +29,7 @@ import           Data.Generics.Uniplate.Operations
 -- |Removes all Even-Odd mutually recursive functions from the program.
 -- When successfull, sets the 'tord' state field with a list of names indicating the order in which
 -- they should be defined so that the dependencies of a term @T@ are defined before @T@.
-elimEvenOddMutRec :: forall lang m . (LanguageDef lang, PirouetteBase m) => PrtUnorderedDefs lang -> m (PrtOrderedDefs lang)
+elimEvenOddMutRec :: forall lang m . (LanguageBuiltins lang, PirouetteBase m) => PrtUnorderedDefs lang -> m (PrtOrderedDefs lang)
 elimEvenOddMutRec udefs = do
   ordWithCycles <- runReaderT sortAllDeps udefs
   (ord, udefs') <- runStateT (foldM (\res c -> (++ res) <$> elimDepCycles c) [] ordWithCycles) udefs
@@ -51,7 +51,7 @@ elimEvenOddMutRec udefs = do
   -- > h x = f (x - 3)
   -- > g x = h x + 2
   --
-  elimDepCycles :: (LanguageDef lang, PirouetteBase m)
+  elimDepCycles :: (LanguageBuiltins lang, PirouetteBase m)
                 => NE.NonEmpty (R.Arg Name Name) -> StateT (PrtUnorderedDefs lang) m [R.Arg Name Name]
   elimDepCycles (e NE.:| []) = return [e]
   elimDepCycles (e NE.:| es) = pushCtx ("elimDepCycles " ++ show (e:es)) $ go (e:es)
@@ -66,10 +66,10 @@ elimEvenOddMutRec udefs = do
         unless (all R.isTyArg ts) $ throwError' $ PEOther "Mixed dependencies"
         logWarn "MutRec Types: TLA+ will error if BoundedSetOf is needed for any of these types."
         return d
-      go d@(R.Arg n : ns) =
+      go d@(R.TermArg n : ns) =
         case mapM R.fromArg d of
           Nothing -> throwError' $ PEOther "Mixed dependencies"
-          Just as -> map R.Arg <$> solveTermDeps 0 as
+          Just as -> map R.TermArg <$> solveTermDeps 0 as
 
       -- In order to break the cycle for a class of mutually dependend terms ds, we'll
       -- try to find a non-recursive term d and expand it in all terms in ds \ {d},
@@ -94,7 +94,7 @@ elimEvenOddMutRec udefs = do
 
 -- |Expand all non-recursive definitions in our state, keeping only the
 -- recursive definitions or those satisfying the @keep@ predicate.
-expandAllNonRec :: forall lang . (LanguageDef lang) => (Name -> Bool) -> PrtOrderedDefs lang -> PrtOrderedDefs lang
+expandAllNonRec :: forall lang . (LanguageBuiltins lang) => (Name -> Bool) -> PrtOrderedDefs lang -> PrtOrderedDefs lang
 expandAllNonRec keep prtDefs =
   let ds  = prtDecls prtDefs
       ord = prtDepOrder prtDefs
@@ -115,21 +115,21 @@ expandAllNonRec keep prtDefs =
   -- > && S.fromList rNs == S.fromList (M.keys ds')
   -- > && reverse rNs `isSubListOf` ord
   --
-  go :: ([R.Arg Name Name], Decls lang Name, M.Map Name (PrtTerm lang))
+  go :: ([R.Arg Name Name], Decls lang, M.Map Name (Term lang))
      -> R.Arg Name Name
-     -> ([R.Arg Name Name], Decls lang Name, M.Map Name (PrtTerm lang))
+     -> ([R.Arg Name Name], Decls lang, M.Map Name (Term lang))
   go (names, currDecls, inlinableDecls) (R.TyArg ty) = (R.TyArg ty : names, currDecls, inlinableDecls)
-  go (names, currDecls, inlinableDecls) (R.Arg k) =
+  go (names, currDecls, inlinableDecls) (R.TermArg k) =
     let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
-     in if R.Arg k `S.member` termNames kDef || keep k
-        then (R.Arg k : names , decls'            , inlinableDecls)
+     in if R.TermArg k `S.member` termNames kDef || keep k
+        then (R.TermArg k : names , decls'            , inlinableDecls)
         else (names           , M.delete k decls' , M.insert k kDef inlinableDecls)
 
-expandDefsIn :: (LanguageDef lang)
-             => M.Map Name (PrtTerm lang)
-             -> Decls lang Name
+expandDefsIn :: (LanguageBuiltins lang)
+             => M.Map Name (Term lang)
+             -> Decls lang
              -> Name
-             -> (Decls lang Name, PrtTerm lang)
+             -> (Decls lang, Term lang)
 expandDefsIn inlinables decls k =
   case M.lookup k decls of
     Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
@@ -138,8 +138,8 @@ expandDefsIn inlinables decls k =
        in (M.insert k (DFunction r t' ty) decls, t')
     Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
 
-inlineAll :: M.Map Name (PrtTerm lang) -> PrtTerm lang -> Maybe (PrtTerm lang)
-inlineAll inlinables (R.App (R.F (FreeName n)) args) = do
+inlineAll :: M.Map Name (Term lang) -> Term lang -> Maybe (Term lang)
+inlineAll inlinables (R.App (R.Free (TermFromSignature n)) args) = do
   nDef <- M.lookup n inlinables
   Just $ R.appN nDef args
 inlineAll _ _ = Nothing
@@ -158,7 +158,7 @@ checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
                >> throwError' (PEOther "Invalid de Bruijn index")
       Right _  -> return ()
   where
-    go :: Integer -> Integer -> PrtTerm lang -> Either String ()
+    go :: Integer -> Integer -> Term lang -> Either String ()
     go ty term (R.Lam (R.Ann ann) _ t)
         = go ty (term + 1) t
     go ty term (R.Abs (R.Ann ann) _ t)
@@ -166,6 +166,6 @@ checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
     go ty term (R.App n args) = do
       mapM_ (R.argElim (const $ return ()) (go ty term)) args
       case n of
-        R.B _ i -> when (i >= term) $
+        R.Bound _ i -> when (i >= term) $
                      Left $ "Referencing var " ++ show i ++ " with only " ++ show term ++ " lams"
         _       -> return ()

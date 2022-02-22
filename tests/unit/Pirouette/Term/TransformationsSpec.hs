@@ -31,7 +31,7 @@ import qualified Data.Text as T
 
 -- * Mocking a number of definitions for the PrtT monad
 
-testingDefs :: [S.Name] -> [(S.Name, S.PrtDef PlutusIR)]
+testingDefs :: [S.Name] -> [(S.Name, S.Definition PlutusIR)]
 testingDefs extras =
   [("destMaybe", S.DDestructor "Maybe")
   ,("destEither", S.DDestructor "Either")
@@ -47,12 +47,12 @@ testingDefs extras =
  where
    stubsFor n = (n , S.DConstructor 0 n)
 
-withDummyFunc :: S.Name -> (S.Name, S.PrtDef PlutusIR)
+withDummyFunc :: S.Name -> (S.Name, S.Definition PlutusIR)
 withDummyFunc s = (s, dummyFun)
   where
     dummyFun = S.DFunction S.Rec dummyTerm dummyType
-    dummyTerm = R.termPure (R.F (S.FreeName "_"))
-    dummyType = R.tyPure (R.F (S.TyFree "_"))
+    dummyTerm = R.termPure (R.Free (S.TermFromSignature "_"))
+    dummyType = R.tyPure (R.Free (S.TypeFromSignature "_"))
 
 testState extras = PrtUnorderedDefs (M.fromList $ testingDefs extras) undefined
 

@@ -11,7 +11,7 @@ import Data.Void
 --
 -- This class is defined with @-XAllowAmbiguousTypes@ and therefore
 -- should be used with @-XTypeApplications@ whenever necessary.
-class (LanguageDef lang) => LanguageSMT lang where
+class (LanguageBuiltins lang) => LanguageSMT lang where
   translateBuiltinType :: BuiltinTypes lang -> SimpleSMT.SExpr
   translateBuiltinTerm :: BuiltinTerms lang -> SimpleSMT.SExpr
   translateConstant :: Constants lang -> SimpleSMT.SExpr

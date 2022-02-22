@@ -21,7 +21,7 @@ import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.SystemF
+import qualified Pirouette.Term.Syntax.SystemF as Raw
 
 -- * Translating Terms and Types to SMTLIB
 
@@ -41,17 +41,17 @@ checkDefsToSMT = do
 translateTypeBase ::
   forall lang m.
   (LanguageSMT lang, MonadFail m) =>
-  TypeBase lang Name ->
+  TypeFree lang ->
   m SmtLib.SExpr
 translateTypeBase (TyBuiltin pirType) = return $ translateBuiltinType @lang pirType
-translateTypeBase (TyFree name) = return $ SmtLib.symbol (toSmtName name)
+translateTypeBase (TypeFromSignature name) = return $ SmtLib.symbol (toSmtName name)
 
 translateType ::
   (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  PrtTypeMeta lang meta ->
+  TypeMeta lang meta ->
   m SmtLib.SExpr
-translateType (TyApp (F ty) args) = SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
-translateType (TyApp (B (Ann ann) index) args) =
+translateType (Raw.TyApp (Raw.Free ty) args) = SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
+translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) index) args) =
   SmtLib.app (SmtLib.symbol (toSmtName ann)) <$> mapM translateType args
 translateType x = fail $ "Translate type to smtlib: cannot handle " <> show x
 
@@ -61,32 +61,32 @@ translateType x = fail $ "Translate type to smtlib: cannot handle " <> show x
 -- A frequent situation in system F, but not allowed in the logic of SMT solvers.
 translateTerm ::
   (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  PrtTermMeta lang meta ->
+  TermMeta lang meta ->
   m SmtLib.SExpr
-translateTerm (App var args) = SmtLib.app <$> translateVar var <*> mapM translateArg args
-translateTerm (Lam ann ty term) = fail "Translate term to smtlib: Lambda abstraction in term"
-translateTerm (Abs ann kind term) = fail "Translate term to smtlib: Type abstraction in term"
+translateTerm (Raw.App var args) = SmtLib.app <$> translateVar var <*> mapM translateArg args
+translateTerm (Raw.Lam ann ty term) = fail "Translate term to smtlib: Lambda abstraction in term"
+translateTerm (Raw.Abs ann kind term) = fail "Translate term to smtlib: Type abstraction in term"
 
 translateVar ::
   forall lang meta m.
   (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  PrtVarMeta lang meta ->
+  VarMeta lang meta ->
   m SmtLib.SExpr
-translateVar (M h) = return $ translate h
-translateVar (F (FreeName name)) = return $ SmtLib.symbol (toSmtName name)
-translateVar (F (Constant c)) = return $ translateConstant @lang c
-translateVar (F (Builtin b)) = return $ translateBuiltinTerm @lang b
-translateVar (B (Ann name) _) = fail "translateVar: Bound variable; did you forget to apply something?"
-translateVar (F Bottom) = fail "translateVar: Bottom; unclear how to translate that. WIP"
+translateVar (Raw.Meta h) = return $ translate h
+translateVar (Raw.Free (TermFromSignature name)) = return $ SmtLib.symbol (toSmtName name)
+translateVar (Raw.Free (Constant c)) = return $ translateConstant @lang c
+translateVar (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @lang b
+translateVar (Raw.Bound (Raw.Ann name) _) = fail "translateVar: Bound variable; did you forget to apply something?"
+translateVar (Raw.Free Bottom) = fail "translateVar: Bottom; unclear how to translate that. WIP"
 
 translateArg ::
   (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  PrtArgMeta lang meta ->
+  ArgMeta lang meta ->
   m SmtLib.SExpr
-translateArg (Arg term) = translateTerm term
+translateArg (Raw.TermArg term) = translateTerm term
 -- TODO: This case is known to create invalid SMT terms,
 -- since in SMT solver, application of a term to a type is not allowed.
-translateArg (TyArg ty) = translateType ty
+translateArg (Raw.TyArg ty) = translateType ty
 
 -- | The definition of constructors in SMTlib follows a fixed layout. This
 -- function translates constructor types in PlutusIR to this layout and
@@ -94,7 +94,7 @@ translateArg (TyArg ty) = translateType ty
 constructorFromPIR ::
   forall lang meta m.
   (LanguageSMT lang, ToSMT meta, MonadFail m) =>
-  (Name, PrtTypeMeta lang meta) ->
+  (Name, TypeMeta lang meta) ->
   m (String, [(String, SmtLib.SExpr)])
 constructorFromPIR (name, constructorType) =
   (toSmtName name,)
@@ -104,5 +104,5 @@ constructorFromPIR (name, constructorType) =
       ((toSmtName name ++) . ("_" ++) . show <$> [1 ..])
     <$> aux constructorType
   where
-    aux :: PrtTypeMeta lang meta -> m [SmtLib.SExpr]
-    aux x = let (args, _) = tyFunArgs x in mapM translateType args
+    aux :: TypeMeta lang meta -> m [SmtLib.SExpr]
+    aux x = let (args, _) = Raw.tyFunArgs x in mapM translateType args

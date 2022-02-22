@@ -49,14 +49,14 @@ import qualified PlutusCore.Data as P
 
 -- * Declaring 'PlutusIR' as a language
 
-type PirTerm = PrtTerm PlutusIR
-type PirType = PrtType PlutusIR
+type PirTerm = Term PlutusIR
+type PirType = Type PlutusIR
 
 -- And two expanded syonyms to get rid of the annoying "type synonym family application" error
 -- on the SMT.Common.Translatable instances; these should ideally go away once we start properly
 -- packaging SMT translation to be independent of "lang"
-type PirTypeExpanded = R.AnnType Name (R.Var Name (TypeBase PlutusIR Name))
-type PirTermExpanded = R.AnnTerm PirTypeExpanded Name (R.Var Name (TermBase PlutusIR Name))
+type PirTypeExpanded = R.AnnType Name (R.Var Name (TypeFree PlutusIR))
+type PirTermExpanded = R.AnnTerm PirTypeExpanded Name (R.Var Name (TermFree PlutusIR))
 
 -- | Defining the 'PlutusIR' as a language, which contains a set of builtin (types and terms)
 -- and constants.
@@ -66,7 +66,7 @@ data PlutusIR
 deriving instance Data P.DefaultFun
 deriving instance Data P.Data
 
-instance LanguageDef PlutusIR where
+instance LanguageBuiltins PlutusIR where
   type BuiltinTypes PlutusIR = PIRType
   type BuiltinTerms PlutusIR = P.DefaultFun
   type Constants PlutusIR = PIRConstant
@@ -147,21 +147,21 @@ data Err loc
 type TrM loc = StateT (DepsOf Name) (ReaderT (Env Name) (Except (Err loc)))
 
 -- |Dependencies are a map from a name to a set of names.
-type DepsOf name = M.Map name (S.Set (name, Type PlutusIR name))
+type DepsOf name = M.Map name (S.Set (name, Type PlutusIR))
 
 -- |The translation environment consists of the stack of bound variables.
 data Env name = Env
-  { termStack :: [(name, Type PlutusIR name)]
+  { termStack :: [(name, Type PlutusIR)]
   , typeStack :: [name]
   }
 
 envEmpty :: Env name
 envEmpty = Env [] []
 
-pushNames :: [(name, Type PlutusIR name)] -> Env name -> Env name
+pushNames :: [(name, Type PlutusIR)] -> Env name -> Env name
 pushNames ns env = env { termStack = ns ++ termStack env }
 
-pushName :: name -> Type PlutusIR name -> Env name -> Env name
+pushName :: name -> Type PlutusIR -> Env name -> Env name
 pushName n ty env = env { termStack = (n, ty) : termStack env }
 
 pushType :: name -> Env name -> Env name
@@ -174,14 +174,14 @@ pushTypes ty env = env { typeStack = ty ++ typeStack env }
 trProgram :: forall tyname name fun loc
            . (PIRConstraint tyname name P.DefaultFun)
           => PIR.Program tyname name DefaultUni P.DefaultFun loc
-          -> Except (Err loc) (Term PlutusIR Name, Decls PlutusIR Name)
+          -> Except (Err loc) (Term PlutusIR, Decls PlutusIR)
 trProgram (PIR.Program _ t) = runReaderT (evalStateT (runWriterT (fst <$> trTerm Nothing t)) M.empty) envEmpty
 
 -- |Translates a program into a list of declarations, ignoring the body.
 trProgramDecls :: forall tyname name fun loc
                 . (PIRConstraint tyname name P.DefaultFun)
                => PIR.Program tyname name DefaultUni P.DefaultFun loc
-               -> Except (Err loc) (Decls PlutusIR Name)
+               -> Except (Err loc) (Decls PlutusIR)
 trProgramDecls = fmap snd . trProgram
 
 -- |Translates a list of bindings into declarations. The recursivity is important since it
@@ -189,7 +189,7 @@ trProgramDecls = fmap snd . trProgram
 trBindings :: forall tyname name loc
                . (PIRConstraint tyname name P.DefaultFun)
               => [(PIR.Recursivity, PIR.Binding tyname name DefaultUni P.DefaultFun loc)]
-              -> TrM loc (Decls PlutusIR Name)
+              -> TrM loc (Decls PlutusIR)
 trBindings bs = do
   -- split the term and the data/type binds; we'll handle the data/type bindings first as
   -- those are simple.
@@ -249,10 +249,10 @@ bindingCtxDeps termBinds = do
 -- these will be free variables.
 termCtxDeps :: forall tyname name uni loc
              . (PIRConstraint tyname name P.DefaultFun)
-            => [(Name, Type PlutusIR Name)]
+            => [(Name, Type PlutusIR)]
             -> DepsOf Name
             -> PIR.Term tyname name uni P.DefaultFun loc
-            -> S.Set (Name, Type PlutusIR Name)
+            -> S.Set (Name, Type PlutusIR)
 termCtxDeps vs deps (PIR.Var l n) =
   -- The vs represent the stack of bound variables that were bound OUTSIDE the term we're
   -- looking at. note how we do NOT change vs on the PIR.LamAbs case!
@@ -276,7 +276,7 @@ trDataOrTypeBinding
   :: forall tyname name loc
    . (PIRConstraint tyname name P.DefaultFun)
   => PIR.Binding tyname name DefaultUni P.DefaultFun loc
-  -> TrM loc (Decls PlutusIR Name)
+  -> TrM loc (Decls PlutusIR)
 trDataOrTypeBinding (PIR.TermBind l _ _ _) = throwError $ NoTermBindAllowed l
 trDataOrTypeBinding (PIR.TypeBind l _ _) = throwError $ NotYetImplemented l "type-bind"
 trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons)) =
@@ -300,24 +300,24 @@ trKind (PIR.Type _)          = R.KStar
 trKind (PIR.KindArrow _ t u) = R.KTo (trKind t) (trKind u)
 
 trTypeWithArgs :: (ToName tyname)
-               => [(Name, R.Kind)] -> PIR.Type tyname DefaultUni loc -> TrM loc (Type PlutusIR Name)
+               => [(Name, R.Kind)] -> PIR.Type tyname DefaultUni loc -> TrM loc (Type PlutusIR)
 trTypeWithArgs env = local (pushTypes $ reverse $ map fst env) . trType
 
 trType :: (ToName tyname)
-       => PIR.Type tyname DefaultUni loc -> TrM loc (Type PlutusIR Name)
+       => PIR.Type tyname DefaultUni loc -> TrM loc (Type PlutusIR)
 trType (PIR.TyLam l v k body)    =
   R.TyLam (R.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyForall l v k body) =
   R.TyAll (R.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyVar _ tyn) =
   asks ( R.tyPure
-       . maybe (R.F $ TyFree $ toName tyn) (R.B (R.Ann $ toName tyn) . fromIntegral)
+       . maybe (R.Free $ TypeFromSignature $ toName tyn) (R.Bound (R.Ann $ toName tyn) . fromIntegral)
        . L.elemIndex (toName tyn)
        . typeStack)
 trType (PIR.TyFun _ t u)      = R.TyFun <$> trType t <*> trType u
 trType (PIR.TyApp _ t u)      = R.tyApp <$> trType t <*> trType u
 trType (PIR.TyBuiltin _ (P.SomeTypeIn uni))
-  = return $ R.tyPure (R.F $ TyBuiltin $ defUniToType uni)
+  = return $ R.tyPure (R.Free $ TyBuiltin $ defUniToType uni)
 trType (PIR.TyIFix l _ _)     = throwError $ NotYetImplemented l "TyIFix"
 
 trTermType :: forall tyname name loc
@@ -325,9 +325,9 @@ trTermType :: forall tyname name loc
            => Name
            -> PIR.Term tyname name DefaultUni P.DefaultFun loc
            -> PIR.Type tyname DefaultUni loc
-           -> WriterT (Decls PlutusIR Name)
+           -> WriterT (Decls PlutusIR)
                       (TrM loc)
-                      (Term PlutusIR Name, Type PlutusIR Name)
+                      (Term PlutusIR, Type PlutusIR)
 trTermType n t ty = do
   (t', f) <- trTerm (Just n) t
   (t',) . f <$> lift (trType ty)
@@ -348,9 +348,9 @@ trTerm :: forall tyname name loc
         . (PIRConstraint tyname name P.DefaultFun, Ord name)
        => Maybe Name
        -> PIR.Term tyname name DefaultUni P.DefaultFun loc
-       -> WriterT (Decls PlutusIR Name)
+       -> WriterT (Decls PlutusIR)
                   (TrM loc)
-                  (Term PlutusIR Name, Type PlutusIR Name -> Type PlutusIR Name)
+                  (Term PlutusIR, Type PlutusIR -> Type PlutusIR)
 trTerm mn t = do
   deps <- get
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
@@ -361,16 +361,16 @@ trTerm mn t = do
          )
  where
     go :: PIR.Term tyname name DefaultUni P.DefaultFun loc
-       -> WriterT (Decls PlutusIR Name) (TrM loc) (Term PlutusIR Name)
+       -> WriterT (Decls PlutusIR) (TrM loc) (Term PlutusIR)
     go (PIR.Var l n) = do
       vs <- asks termStack
       case L.elemIndex (toName n) (map fst vs) of
-        Just i  -> return $ R.termPure (R.B (R.Ann $ toName n) $ fromIntegral i)
+        Just i  -> return $ R.termPure (R.Bound (R.Ann $ toName n) $ fromIntegral i)
         Nothing -> lift . checkIfDep (toName n) $ map fst vs
     go (PIR.Constant _ (P.Some (P.ValueOf tx x))) =
-        return $ R.termPure $ R.F $ Constant $ defUniToConstant tx x
-    go (PIR.Builtin _ f)         = return $ R.termPure $ R.F $ Builtin f
-    go (PIR.Error _ _)           = return $ R.termPure $ R.F Bottom
+        return $ R.termPure $ R.Free $ Constant $ defUniToConstant tx x
+    go (PIR.Builtin _ f)         = return $ R.termPure $ R.Free $ Builtin f
+    go (PIR.Error _ _)           = return $ R.termPure $ R.Free Bottom
     go (PIR.IWrap _ ty_a ty_b t) = go t -- VCM: are we sure we don't neet to
     go (PIR.Unwrap _ t)          = go t --      preserve the wrap/unwraps?
     go (PIR.TyInst _ t ty)       = R.app <$> go t <*> lift (R.TyArg <$> trType ty)
@@ -379,7 +379,7 @@ trTerm mn t = do
     go (PIR.LamAbs _ n tyd t)    = do
       ty <- lift $ trType tyd
       R.Lam (R.Ann $ toName n) ty <$> local (pushName (toName n) ty) (go t)
-    go (PIR.Apply _ tfun targ)   = R.app <$> go tfun <*> (R.Arg <$> go targ)
+    go (PIR.Apply _ tfun targ)   = R.app <$> go tfun <*> (R.TermArg <$> go targ)
 
     -- For let-statements, we will push the (translated) definitions to the top level;
     -- we must be careful and push the variables we've seen so far as a local context
@@ -389,16 +389,16 @@ trTerm mn t = do
       tell bs'
       go t
 
-    checkIfDep :: Name -> [Name] -> TrM loc (Term PlutusIR Name)
+    checkIfDep :: Name -> [Name] -> TrM loc (Term PlutusIR)
     checkIfDep n vs = do
       mDepsOn <- gets (M.lookup n)
       case mDepsOn of
-        Nothing -> return $ R.termPure $ R.F $ FreeName n
+        Nothing -> return $ R.termPure $ R.Free $ TermFromSignature n
         Just ns -> do
-          let args = map (R.Arg . R.termPure . uncurry R.B
+          let args = map (R.TermArg . R.termPure . uncurry R.Bound
                           . (\x -> (R.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs)) . fst)
                    $ S.toList ns
-          return $ R.App (R.F $ FreeName n) args
+          return $ R.App (R.Free $ TermFromSignature n) args
 
 -- A straightforward translation of a PIRTerm to the Pirouette representation of term.
 -- This function is not used by `trProgram` which is the main function to translate
@@ -406,7 +406,7 @@ trTerm mn t = do
 -- It remains useful however, especially to define transformations using the PIR syntax.
 trPIRTerm :: PIRConstraint tyname name P.DefaultFun
           => PIR.Term tyname name DefaultUni P.DefaultFun loc
-          -> Except (Err loc) (Term PlutusIR Name)
+          -> Except (Err loc) (Term PlutusIR)
 trPIRTerm t = runReaderT (evalStateT (fst <$> runWriterT (fst <$> trTerm Nothing t)) M.empty) envEmpty
 
 -- * Some Auxiliary Functions
@@ -415,7 +415,7 @@ isRec :: PIR.Recursivity -> Bool
 isRec PIR.Rec = True
 isRec _       = False
 
-termToDef :: PIR.Recursivity -> Term PlutusIR Name -> Type PlutusIR Name -> Definition PlutusIR Name
+termToDef :: PIR.Recursivity -> Term PlutusIR -> Type PlutusIR -> Definition PlutusIR
 termToDef PIR.Rec    = DFunction Rec
 termToDef PIR.NonRec = DFunction NonRec
 

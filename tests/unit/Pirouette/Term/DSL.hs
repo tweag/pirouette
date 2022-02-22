@@ -36,7 +36,7 @@ mkNewName c = do
       | otherwise    = Just n
 
 stubTy :: String -> PirType
-stubTy s = R.tyPure (R.F $ S.TyFree $ Name (T.pack s) Nothing)
+stubTy s = R.tyPure (R.Free $ S.TypeFromSignature $ Name (T.pack s) Nothing)
 
 type TestTerm = PirTermExpanded
 
@@ -78,26 +78,26 @@ var :: Name -> TermM
 var n = do
   stack <- ask
   case n `elemIndex` stack of
-    Just i  -> return (R.termPure (R.B (R.Ann n) $ toInteger i))
+    Just i  -> return (R.termPure (R.Bound (R.Ann n) $ toInteger i))
     Nothing -> error $ "Undeclared variable " ++ show n
 
 def :: Name -> TermM
-def n = return $ R.App (R.F $ S.FreeName $ Name "def" Nothing)
-               [R.Arg (R.termPure (R.F $ S.FreeName n))]
+def n = return $ R.App (R.Free $ S.TermFromSignature $ Name "def" Nothing)
+               [R.TermArg (R.termPure (R.Free $ S.TermFromSignature n))]
 
 func :: Name -> TermM
-func n = return $ R.termPure (R.F $ S.FreeName n)
+func n = return $ R.termPure (R.Free $ S.TermFromSignature n)
 
 infix 4 .$
 (.$) :: TermM -> TermM -> TermM
-f .$ x = R.termApp <$> f <*> (R.Arg <$> x)
+f .$ x = R.termApp <$> f <*> (R.TermArg <$> x)
 
 infix 4 .$$
 (.$$) :: TermM -> [TermM] -> TermM
-f .$$ xs = R.appN <$> f <*> (map R.Arg <$> sequence xs)
+f .$$ xs = R.appN <$> f <*> (map R.TermArg <$> sequence xs)
 
 tyApp :: TermM -> Name -> TermM
-tyApp t n = (`R.app` R.TyArg (R.tyPure $ R.F (S.TyFree n))) <$> t
+tyApp t n = (`R.app` R.TyArg (R.tyPure $ R.Free (S.TypeFromSignature n))) <$> t
 
 infix 3 :->:
 data PatternM where
@@ -107,8 +107,8 @@ caseofAnn :: String ->  String -> String -> TermM -> [PatternM] -> TermM
 caseofAnn destr tyRes ty x pats = do
   cases <- mapM mklams pats
   x'    <- x
-  return $ R.App (R.F $ S.FreeName $ Name (T.pack destr) Nothing)
-                 (R.Arg x' : R.TyArg (stubTy tyRes) : map R.Arg cases)
+  return $ R.App (R.Free $ S.TermFromSignature $ Name (T.pack destr) Nothing)
+                 (R.TermArg x' : R.TyArg (stubTy tyRes) : map R.TermArg cases)
   where
     mkHint ty constr = [head ty, head constr]
     mklams (constr :->: t) = lam (mkHint ty constr) t

@@ -77,26 +77,26 @@ throwError' msg = do
 
 -- |Whenever we need access to the list of definitions in the current PIR program
 -- being compiled, we probably want to use 'PirouetteReadDefs' instead of 'PirouetteBase'
-class (LanguageDef lang, PirouetteBase m) => PirouetteReadDefs lang m | m -> lang where
+class (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang m | m -> lang where
   -- |Returns all declarations in scope
-  prtAllDefs :: m (M.Map Name (PrtDef lang))
+  prtAllDefs :: m (M.Map Name (Definition lang))
 
   -- |Returns the main program
-  prtMain :: m (PrtTerm lang)
+  prtMain :: m (Term lang)
 
   -- |Returns the definition associated with a given name. Raises a 'PEUndefined'
   -- if the name doesn't exist.
-  prtDefOf :: Name -> m (PrtDef lang)
+  prtDefOf :: Name -> m (Definition lang)
   prtDefOf n = do
     defs <- prtAllDefs
     case M.lookup n defs of
       Nothing -> throwError' $ PEUndefined n
       Just x  -> return x
 
-  prtTypeDefOf :: Name -> m (PrtTypeDef lang)
+  prtTypeDefOf :: Name -> m (TypeDef lang)
   prtTypeDefOf n = prtDefOf n >>= maybe (throwError' $ PENotAType n) return . fromTypeDef
 
-  prtTermDefOf :: Name -> m (PrtTerm lang)
+  prtTermDefOf :: Name -> m (Term lang)
   prtTermDefOf n = prtDefOf n >>= maybe (throwError' $ PENotATerm n) return . fromTermDef
 
   prtIsDest :: Name -> MaybeT m TyName
@@ -128,7 +128,7 @@ nameForPrefix pref = pushCtx "nameForPrefix" $ do
       return $ fst $ head d
 
 -- |Returns the type of an identifier
-typeOfIdent :: (PirouetteReadDefs lang m) => Name -> m (PrtType lang)
+typeOfIdent :: (PirouetteReadDefs lang m) => Name -> m (Type lang)
 typeOfIdent n = do
   dn <- prtDefOf n
   case dn of
@@ -177,22 +177,22 @@ consIsRecursive ty con = do
 -- calling @termIsRecursive "f"@ would return @False@. See 'transitiveDepsOf' if
 -- you want to know whether a term is depends on itself transitively.
 termIsRecursive :: (PirouetteReadDefs lang m) => Name -> m Bool
-termIsRecursive n = S.member (R.Arg n) <$> directDepsOf n
+termIsRecursive n = S.member (R.TermArg n) <$> directDepsOf n
 
 -- *** Implementations for 'PirouetteReadDefs'
 
 -- |Unordered definitions consist in a map of 'Name' to 'PrtDef' and
 -- a /main/ term.
 data PrtUnorderedDefs lang = PrtUnorderedDefs
-  { prtUODecls    :: Decls lang Name
-  , prtUOMainTerm :: PrtTerm lang
+  { prtUODecls    :: Decls lang
+  , prtUOMainTerm :: Term lang
   }
 
-instance (LanguageDef lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
+instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
   prtAllDefs = asks prtUODecls
   prtMain    = asks prtUOMainTerm
 
-instance {-# OVERLAPPING #-} (LanguageDef lang, PirouetteBase m)
+instance {-# OVERLAPPING #-} (LanguageBuiltins lang, PirouetteBase m)
     => PirouetteReadDefs lang (Strict.StateT (PrtUnorderedDefs lang) m) where
   prtAllDefs = Strict.gets prtUODecls
   prtMain    = Strict.gets prtUOMainTerm
@@ -202,15 +202,15 @@ instance {-# OVERLAPPING #-} (LanguageDef lang, PirouetteBase m)
 -- terms @f@ and @g@, @f@ depends on @g@ if @elemIndex f prtDepOrder > elemIndex g prtDepOrder@,
 -- that is, @f@ appears before @g@ in @prtDepOrder@.
 data PrtOrderedDefs lang = PrtOrderedDefs
-  { prtDecls    :: Decls lang Name
+  { prtDecls    :: Decls lang
   , prtDepOrder :: [R.Arg Name Name]
-  , prtMainTerm :: PrtTerm lang
+  , prtMainTerm :: Term lang
   }
 
 prtOrderedDefs :: PrtUnorderedDefs lang -> [R.Arg Name Name] -> PrtOrderedDefs lang
 prtOrderedDefs uod ord = PrtOrderedDefs (prtUODecls uod) ord (prtUOMainTerm uod)
 
-instance (LanguageDef lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
+instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
   prtAllDefs = asks prtDecls
   prtMain    = asks prtMainTerm
 
@@ -218,7 +218,7 @@ class (PirouetteReadDefs lang m) => PirouetteDepOrder lang m where
   -- |Returns the dependency ordering of the currently declared terms.
   prtDependencyOrder :: m [R.Arg Name Name]
 
-instance (LanguageDef lang, PirouetteBase m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
+instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
   prtDependencyOrder = asks prtDepOrder
 
 -- ** A 'PirouetteBase' Implementation:
@@ -294,22 +294,22 @@ flushLogs = PrtT . mapReaderT (mapExceptT flushLogger) . unPirouette
 data UnDestMeta lang meta = UnDestMeta
   { undestName :: Name
   , undestTypeName :: TyName
-  , undestTypeArgs :: [PrtTypeMeta lang meta]
-  , undestDestructed :: PrtTermMeta lang meta
-  , undestReturnType :: PrtTypeMeta lang meta
-  , undestCases :: [PrtTermMeta lang meta]
-  , undestCasesExtra :: [PrtArgMeta lang meta]
+  , undestTypeArgs :: [TypeMeta lang meta]
+  , undestDestructed :: TermMeta lang meta
+  , undestReturnType :: TypeMeta lang meta
+  , undestCases :: [TermMeta lang meta]
+  , undestCasesExtra :: [ArgMeta lang meta]
   }
 
-unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta Name -> MaybeT m (UnDestMeta lang meta)
-unDest (R.App (R.F (FreeName n)) args) = do
+unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnDestMeta lang meta)
+unDest (R.App (R.Free (TermFromSignature n)) args) = do
   tyN <- prtIsDest n
   Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
   let nCons = length cons
   let (tyArgs, args1) = span R.isTyArg args
   tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
   case args1 of
-    (R.Arg x : R.TyArg retTy : casesrest) -> do
+    (R.TermArg x : R.TyArg retTy : casesrest) -> do
       let (cases, rest) = splitAt nCons casesrest
       cases' <- mapM (wrapMaybe . R.fromArg) cases
       return $ UnDestMeta n tyN tyArgs' x retTy cases' rest
@@ -321,14 +321,14 @@ unDest _ = fail "unDest: not an R.App"
 
 data UnConsMeta lang meta = UnConsMeta
   { unconsTypeName :: TyName
-  , unconsTypeArgs :: [PrtTypeMeta lang meta]
+  , unconsTypeArgs :: [TypeMeta lang meta]
   , unconsIndex :: Int
-  , unconsTermArgs :: [PrtTermMeta lang meta]
+  , unconsTermArgs :: [TermMeta lang meta]
   }
 
 -- |Analogous to 'unDest', but works for constructors.
-unCons :: (PirouetteReadDefs lang m) => PrtTermMeta lang meta -> MaybeT m (UnConsMeta lang meta)
-unCons (R.App (R.F (FreeName n)) args) = do
+unCons :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnConsMeta lang meta)
+unCons (R.App (R.Free (TermFromSignature n)) args) = do
   (idx, tyN) <- prtIsConst n
   let (tyArgs, args1) = span R.isTyArg args
   tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs

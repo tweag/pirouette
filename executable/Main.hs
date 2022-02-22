@@ -184,7 +184,7 @@ mainOpts opts uDefs = do
                         then "DEFAULT_FUN_NAME"
                         else funNamePrefix opts
                in let mainDef =
-                        DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) []
+                        DFunction NonRec mainTerm $ R.TyApp (R.Free $ TypeFromSignature (fromString "Bool")) []
                    in (mainFunName, mainDef) : relDecls
             else relDecls
     case stage opts of
@@ -217,7 +217,7 @@ mainOpts opts uDefs = do
 
     symbExec n (DFunction _ t _) = SymbolicEval.runFor n t
 
-processDecls :: (LanguageDef lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
+processDecls :: (LanguageBuiltins lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
   -- If the user wishes, we can perform checks on the sanity of the translation
   -- from PlutusIR to PrtDefs
@@ -235,8 +235,8 @@ processDecls opts uDefs = do
   where
     generalTransformations ::
       (PirouetteReadDefs lang m) =>
-      PrtTerm lang ->
-      m (PrtTerm lang)
+      Term lang ->
+      m (Term lang)
     generalTransformations =
       constrDestrId
         -- >=> applyRewRules
@@ -266,7 +266,7 @@ pirouette pir opts f =
 withDecls ::
   (MonadIO m, Show l) =>
   Program P.TyName P.Name P.DefaultUni P.DefaultFun l ->
-  (PrtTerm PlutusIR -> Decls PlutusIR Name -> m a) ->
+  (Term PlutusIR -> Decls PlutusIR -> m a) ->
   m a
 withDecls pir cont = do
   case runExcept $ trProgram pir of
