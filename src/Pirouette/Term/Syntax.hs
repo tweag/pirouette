@@ -16,10 +16,10 @@ import  Pirouette.Term.Syntax.Subst
 import           Control.Monad.State
 import           Control.Monad.Reader
 import Data.Bifunctor (first)
-import qualified Data.List                 as L
-import qualified Data.Text                 as T
-import qualified Data.Map.Strict           as M
-import qualified Data.Set                  as S
+import qualified Data.List                 as List
+import qualified Data.Text                 as Text
+import qualified Data.Map.Strict           as Map
+import qualified Data.Set                  as Set
 import           Data.Data
 import           Data.String
 import           Data.Maybe (fromMaybe)
@@ -33,17 +33,17 @@ import Control.Monad.Identity
 -- generated code.
 separateBoundFrom :: Term lang -> Term lang -> Term lang
 separateBoundFrom u t =
-  let boundOf = Raw.termAnnFold S.singleton in
-  let inter = S.intersection (boundOf u) (boundOf t) in
+  let boundOf = Raw.termAnnFold Set.singleton in
+  let inter = Set.intersection (boundOf u) (boundOf t) in
   if null inter
   then t
   else
     -- `structuredInter` transforms the set of name clashes into a map
     -- from nameString to the list of nameUnique associated.
     let structuredInter =
-          S.fold
-            (\n m -> M.insertWith (++) (nameString n) [nameUnique n] m)
-            M.empty
+          Set.fold
+            (\n m -> Map.insertWith (++) (nameString n) [nameUnique n] m)
+            Map.empty
             inter
     in
     -- `nextFresh s txt i n` takes a set `s` of names and a `nameString` `txt` and outputs
@@ -52,22 +52,22 @@ separateBoundFrom u t =
     -- whereas `i` counts how much new number must be met.
     -- The purpose of `i` is to avoid to rename identically `x0` and `x1`
     -- if both are subject to name clash.
-    let nextFresh :: S.Set Name -> T.Text -> Int -> Int -> Name
+    let nextFresh :: Set.Set Name -> Text.Text -> Int -> Int -> Name
         nextFresh s txt i n
-          | S.member (Name txt (Just n)) s = nextFresh s txt i (n + 1)
+          | Set.member (Name txt (Just n)) s = nextFresh s txt i (n + 1)
           | i == 0 = Name txt (Just n)
           | otherwise = nextFresh s txt (i - 1) (n + 1)
     in
-    let rename :: M.Map T.Text [Maybe Int] -> S.Set Name -> Name -> Name
+    let rename :: Map.Map Text.Text [Maybe Int] -> Set.Set Name -> Name -> Name
         rename m s n@(Name txt u) =
-          case M.lookup txt m of
+          case Map.lookup txt m of
             Nothing -> n
             Just x ->
-              case L.elemIndex u x of
+              case List.elemIndex u x of
                 Nothing -> n
                 Just i -> nextFresh s txt i 0
     in
-    let f = rename structuredInter (S.union (boundOf u) (boundOf t)) in
+    let f = rename structuredInter (Set.union (boundOf u) (boundOf t)) in
     Raw.termTrimap id f (annMap f) t
 
 
@@ -76,7 +76,7 @@ separateBoundFrom u t =
 -- $uniquenames
 --
 -- Defines a number of functions for removing all the unnecessary 'nameUnique' parts.
--- This not only enables us to ignore De Bruijn indicies in future steps, but produces
+-- This not only enables us to ignore De Bruijn indices in future steps, but produces
 -- far more readable TLA+ code.
 --
 -- Worth noting that even though PlutusIR is guaranteed to have unique names as of now,
@@ -87,7 +87,7 @@ separateBoundFrom u t =
 
 -- |Exported interface function to uniquely naming declarations.
 declsUniqueNames :: Decls lang -> Term lang -> (Decls lang, Term lang)
-declsUniqueNames decls mainFun = first M.fromList (go (M.toList decls) mainFun)
+declsUniqueNames decls mainFun = first Map.fromList (go (Map.toList decls) mainFun)
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
@@ -95,11 +95,11 @@ declsUniqueNames decls mainFun = first M.fromList (go (M.toList decls) mainFun)
        -> ([(Name, Definition lang)], Term lang)
     go ds mainFun =
       let (_, ks) =
-            flip runState M.empty $ mapM (onPairM unNameCollect defUNCollect) ds
+            flip runState Map.empty $ mapM (onPairM unNameCollect defUNCollect) ds
       in
       runReader
         (onPairM (mapM (onPairM unNameSubst defUNSubst)) termUNSubst (ds, mainFun))
-        (M.map S.toList ks)
+        (Map.map Set.toList ks)
 
 -- *** Auxiliar Definitions for Unique Naming
 --
@@ -110,14 +110,14 @@ declsUniqueNames decls mainFun = first M.fromList (go (M.toList decls) mainFun)
 -- nameString. We then convert those sets to lists and substitute names accordingly.
 -- If a name shares no nameString with no other name, we ignore nameUnique.
 
-type UNCollectM = State (M.Map T.Text (S.Set Name))
-type UNSubstM   = Reader (M.Map T.Text [Name])
+type UNCollectM = State (Map.Map Text.Text (Set.Set Name))
+type UNSubstM   = Reader (Map.Map Text.Text [Name])
 
 -- We use 'flip S.union' because S.union is more efficient on S.union bigset smallset
 -- and 'M.insertWith f k x' applies 'f x old_value' when there is a collision; hence,
 -- old_value will be the larger set.
 unNameCollect :: Name -> UNCollectM Name
-unNameCollect n = modify (M.insertWith (flip S.union) (nameString n) (S.singleton n)) >> return n
+unNameCollect n = modify (Map.insertWith (flip Set.union) (nameString n) (Set.singleton n)) >> return n
 
 defUNCollect :: Definition lang -> UNCollectM (Definition lang)
 defUNCollect (DFunction r t ty) = DFunction r <$> termUNCollect t <*> typeUNCollect ty
@@ -167,11 +167,11 @@ unTypeDefSubst (Datatype k vs dest cons) =
 
 unNameSubst :: Name -> UNSubstM Name
 unNameSubst n = do
-  muses <- asks (M.lookup $ nameString n)
+  muses <- asks (Map.lookup $ nameString n)
   case muses of
     Just [_] -> return $ n { nameUnique = Nothing }
     -- xs cannot be empty: always insert a nameString with a non-empty set of Name
-    Just xs  -> return $ n { nameUnique = L.elemIndex n xs }
+    Just xs  -> return $ n { nameUnique = List.elemIndex n xs }
     Nothing  -> return n
 
 termUNSubst :: Term lang -> UNSubstM (Term lang)
