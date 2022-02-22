@@ -1,10 +1,8 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE OverloadedStrings          #-}
 module Pirouette.Monad.Logger where
 
@@ -15,7 +13,6 @@ import           Control.Monad.Reader
 import qualified Control.Monad.State.Lazy    as Lazy
 import qualified Control.Monad.State.Strict  as Strict
 import           Control.Monad.Writer.Strict
-import           Control.Monad.Except
 import           Data.List (intercalate)
 import           Data.Foldable (toList)
 import           Data.Sequence hiding (null)

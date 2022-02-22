@@ -5,7 +5,6 @@
 module Pirouette.Term.Syntax.Subst where
 
 import Data.Maybe (fromMaybe)
-import Data.List (foldl')
 import Control.Monad.Identity
 
 class IsVar v where
@@ -68,3 +67,4 @@ shift = shiftCutoff 0
 -- |When traversing a binder, we want to leave Used in substitution when going under a binder
 liftSub :: Sub termv -> Sub termv
 liftSub s = Nothing :< (s :<> Inc 1)
+

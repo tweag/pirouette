@@ -1,24 +1,15 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MonoLocalBinds #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Pirouette.Term.ToTla where
 
 import           Pirouette.Monad
-import           Pirouette.Monad.Maybe
 import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Term.Syntax
 import           Pirouette.Term.ConstraintTree
-import           Pirouette.Term.Transformations
-import           Pirouette.Term.TransitiveDeps
-import           Pirouette.PlutusIR.Utils
 import           Pirouette.TLA.Syntax
 import           Pirouette.TLA.Type
 import           Pirouette.Specializer
@@ -29,23 +20,17 @@ import qualified Language.TLAPlus.Syntax as TLA
 import qualified Language.TLAPlus.Parser as TLA
 import qualified Text.ParserCombinators.Parsec     as P
 
-import           Control.Applicative hiding (empty)
 import           Control.Monad.Reader
-import           Control.Monad.Except
 import           Control.Monad.State
-import           Control.Arrow (first, second, (***))
+import           Control.Arrow (first, second)
 
-import           Data.Functor ( ($>) )
-import           Data.Maybe ( mapMaybe, isJust, catMaybes )
+import           Data.Maybe ( mapMaybe )
 import           Data.Generics.Uniplate.Operations
 import           Data.String
-import           Data.Bifunctor (bimap)
 import qualified Data.List as L
 import qualified Data.Map as M
-import qualified Data.Set as S
 import qualified Data.Text as T
 
-import qualified Language.TLAPlus.Pretty as TLA
 import Pirouette.PlutusIR.ToTerm (PIRType(..), PlutusIR, PIRConstant(..))
 
 -- * TLA Splicing
@@ -292,7 +277,7 @@ trTermNameRec :: (PirouetteReadDefs PlutusIR m) => Name -> TlaT m [(TLA.AS_UnitD
 trTermNameRec n = do
   defN <- tlaPure $ prtDefOf n
   case defN of
-    DFunction _ t ty -> do
+    DFunction _ t _ -> do
       tlaTy <- tlaTypeOfName n
       (:[]) <$> trTermDecl n t tlaTy
     _ -> return []
@@ -309,9 +294,6 @@ trTermDecl n term tlaTy = do
        $ TLA.AS_OperatorDef diu False hd <$> trTerm body (TlaVal $ returnType tlaTy)
   return (dec, def)
   where
-    funToUnderscores :: Type PlutusIR -> [TLA.AS_Expression]
-    funToUnderscores t = map (const $ tlaIdent "_") . fst $ R.tyFunArgs t
-
     declArgs :: Name -> Type PlutusIR -> (TLA.AS_Expression, TlaType)
     declArgs n ty = (tlaIdent n, toTlaOpType ty)
 
@@ -330,7 +312,7 @@ declareTermNameMutRec n = do
     -- When functions are mutually recursive, they cannot be declared higher-order,
     -- so their type is declared using `toTlaHdOpType` rather than the
     -- usual `toTlaOpType`.
-    DFunction _ t ty -> tlaDeclTypeOf (tlaIdent n) (toTlaHdOpType ty)
+    DFunction _ _ ty -> tlaDeclTypeOf (tlaIdent n) (toTlaHdOpType ty)
     _                -> return ()
 
 {-
@@ -399,7 +381,7 @@ trBoundedSetDef tyName tyVars cons = do
            then [setOfDecl (bsetOfBody baseCons [])]
            else [bsetOfRecDecl, bsetOfDecl baseCons recCons, setOfDecl setOfBody]
   where
-    splitByM f [] = return ([],[])
+    splitByM _ [] = return ([],[])
     splitByM f (x:xs) = dec <$> f x <*> splitByM f xs
       where dec True  = first (x:)
             dec False = second (x:)
@@ -837,9 +819,9 @@ trFreeName :: (PirouetteReadDefs PlutusIR m) => Name -> [TLA.AS_Expression] -> T
 trFreeName n args = do
   nDef <- tlaPure (prtDefOf n)
   case nDef of
-    DConstructor _ ty -> trConstrApp n args
+    DConstructor _ _ -> trConstrApp n args
     DDestructor ty    -> trDestrApp n ty args
-    DFunction r df ty -> do
+    DFunction _ _ _ -> do
       tlaAppName n args
     DTypeDef _        -> throwError' $ PEOther $ "trFreeName: Found TypeDef where a term was expected: " ++ show n
 
@@ -905,7 +887,7 @@ trBuiltin P.TailList  args         = tlaPartialApp  (tlaApp1 "TailList") args
 trBuiltin P.UnBData  args         = tlaPartialApp  (tlaApp1 "UnBData") args
 trBuiltin P.UnIData  args         = tlaPartialApp  (tlaApp1 "UnIData") args
 trBuiltin P.BData  args         = tlaPartialApp  (tlaApp1 "BData") args
-trBuiltin bin args = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
+trBuiltin bin _ = throwError' $ PEOther $ "InvalidBuiltin " ++ show bin
 
 tlaPartialApp
   :: (PirouetteReadDefs PlutusIR m)
@@ -915,7 +897,7 @@ tlaPartialApp f [] = do
   y <- tlaFreshName
   return $ TLA.AS_Lambda di [y] (f y)
 tlaPartialApp f [x] = return $ f x
-tlaPartialApp f _   = throwError' $ PEOther "tlaPartialApp: Overapplied f"
+tlaPartialApp _ _   = throwError' $ PEOther "tlaPartialApp: Overapplied f"
 
 tlaPartialApp2
   :: (PirouetteReadDefs PlutusIR m)

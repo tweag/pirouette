@@ -1,6 +1,5 @@
 module Pirouette.PlutusIR.SMT where
 
-import Pirouette.Term.Syntax.Base
 import Pirouette.SMT.Base
 import Pirouette.PlutusIR.ToTerm
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT

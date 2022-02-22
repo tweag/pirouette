@@ -24,7 +24,7 @@ instance Applicative m => Applicative (MaybeT m) where
 
   (MaybeT f) <*> (MaybeT xs) = MaybeT $ fmap delay f <*> xs
     where delay :: Maybe (a -> b) -> Maybe a -> Maybe b
-          delay mf Nothing  = Nothing
+          delay _ Nothing  = Nothing
           delay mf (Just a) = fmap ($ a) mf
 
 instance Monad m => Monad (MaybeT m) where
