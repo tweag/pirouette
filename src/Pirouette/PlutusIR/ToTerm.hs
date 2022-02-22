@@ -362,7 +362,7 @@ trTerm mn t = do
         return $ R.termPure $ R.Free $ Constant $ defUniToConstant tx x
     go (PIR.Builtin _ f)         = return $ R.termPure $ R.Free $ Builtin f
     go (PIR.Error _ _)           = return $ R.termPure $ R.Free Bottom
-    go (PIR.IWrap _ _ _ t) = go t -- VCM: are we sure we don't neet to
+    go (PIR.IWrap _ _ _ t)       = go t -- VCM: are we sure we don't neet to
     go (PIR.Unwrap _ t)          = go t --      preserve the wrap/unwraps?
     go (PIR.TyInst _ t ty)       = R.app <$> go t <*> lift (R.TyArg <$> trType ty)
     go (PIR.TyAbs _ ty k t)      = do

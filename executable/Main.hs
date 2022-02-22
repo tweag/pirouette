@@ -70,7 +70,7 @@ data CliOpts = CliOpts
   }
   deriving (Show)
 
-data Stage = ToTerm | ToTLA | ToCTree | SymbolicExecution
+data Stage = ToTerm | ToTLA | SymbolicExecution
   deriving (Show)
 
 optsToCTreeOpts :: CliOpts -> CTreeOpts
@@ -166,9 +166,8 @@ mainOpts opts uDefs = do
       SymbolicExecution -> do
         when (length relDecls' /= 1) $
           throwError' (PEOther "I need a single term to symbolically execute. Try a stricter --prefix")
-        uncurry symbExec (head relDecls')
+        uncurry symbolicExec (head relDecls')
       ToTerm -> mapM_ (uncurry printDef) relDecls'
-      ToCTree -> mapM_ (uncurry printCTree) relDecls'
       ToTLA -> do
         when (length relDecls' /= 1) $
           throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
@@ -179,18 +178,13 @@ mainOpts opts uDefs = do
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
 
-    printCTree name def = do
-      error "printCTree: constraint tree will be replaced; this is a WIP"
-    -- ct <- termToCTree (optsToCTreeOpts opts) name def
-    -- putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
-    -- putStrLn' ""
-
     toTla n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
-    symbExec n (DFunction _ t _) = SymbolicEval.runFor n t
+    symbolicExec n (DFunction _ t _) = SymbolicEval.runFor n t
+    symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
 processDecls :: (LanguageBuiltins lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
@@ -389,7 +383,7 @@ parseExprWrapper =
     )
 
 parseStage :: Opt.Parser Stage
-parseStage = termOnly Opt.<|> treeOnly Opt.<|> symbExec Opt.<|> pure ToTLA
+parseStage = termOnly Opt.<|> symbExec Opt.<|> pure ToTLA
 
 termOnly :: Opt.Parser Stage
 termOnly =
@@ -397,14 +391,6 @@ termOnly =
     ToTerm
     ( Opt.long "term-only"
         <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --term-only is given, we display the terms that have been produced before symbolically evaluating and translating to TLA"
-    )
-
-treeOnly :: Opt.Parser Stage
-treeOnly =
-  Opt.flag'
-    ToCTree
-    ( Opt.long "tree-only"
-        <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --tree-only is given, we display the terms that have been produced before symbolically evaluating and translating to TLA"
     )
 
 symbExec :: Opt.Parser Stage

@@ -11,23 +11,16 @@ import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
-import           Pirouette.Specializer.TypeDecl (TypeSpecializer)
-
-import           PlutusCore (DefaultFun)
-import           Control.Arrow (first, second)
+import           Control.Arrow (first)
 import           Control.Monad
 import           Control.Monad.Reader
 import qualified Control.Monad.State.Strict as Strict
 import qualified Control.Monad.State.Lazy   as Lazy
 import           Control.Monad.Except
-import           Control.Monad.Fail
 import           Control.Monad.Identity
-import           Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Set as S
-import           Data.Generics.Uniplate.Operations
-import           Data.List.NonEmpty (NonEmpty(..))
 
 -- * The Pirouette Monad(s)
 --
@@ -151,7 +144,7 @@ directDepsOf n = do
   ndef <- prtDefOf n
   return $ case ndef of
     DFunction _ t ty -> typeNames ty <> termNames t
-    DTypeDef d       -> S.unions (flip map (constructors d) $ \(n, c)
+    DTypeDef d       -> S.unions (flip map (constructors d) $ \(_, c)
                                    -> S.unions $ map typeNames (fst $ R.tyFunArgs c))
     DConstructor  _ tyN -> S.singleton $ R.TyArg tyN
     DDestructor   tyN   -> S.singleton $ R.TyArg tyN
@@ -244,7 +237,7 @@ instance (Monad m) => MonadLogger (PrtT m) where
     when (lvl >= l && isFocused ctx focus)
          (lift . lift . logMsg lvl $ msg)
     where
-      isFocused ctx []    = True
+      isFocused _ []    = True
       isFocused ctx focus = any (`elem` focus) ctx
 
   context     = PrtT $ lift $ lift context
