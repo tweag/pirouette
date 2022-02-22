@@ -151,14 +151,8 @@ tlaPure = lift . lift
 tlaPushCtx :: (MonadLogger m) => String -> TlaT m a -> TlaT m a
 tlaPushCtx ctx = mapReaderT (mapStateT $ pushCtx ctx)
 
-data CTreeOpts = CTreeOpts
-  { coPruneMaybe    :: Bool
-  , coWithArguments :: [String]
-  }
-
 data TlaOpts = TlaOpts
-  { toSymbExecOpts  :: CTreeOpts
-  , toActionWrapper :: TLAExprWrapper
+  { toActionWrapper :: TLAExprWrapper
   , toSkeleton      :: TLASpecWrapper
   , toSpecialize    :: String -> Maybe TypeSpecializer
   , defsPostproc    :: [TLA.AS_UnitDef] -> [TLA.AS_UnitDef]

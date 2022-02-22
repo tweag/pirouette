@@ -73,13 +73,6 @@ data CliOpts = CliOpts
 data Stage = ToTerm | ToTLA | SymbolicExecution
   deriving (Show)
 
-optsToCTreeOpts :: CliOpts -> CTreeOpts
-optsToCTreeOpts co =
-  CTreeOpts
-    { coPruneMaybe = not (pruneMaybe co),
-      coWithArguments = withArguments co
-    }
-
 optsToTlaOpts :: (MonadIO m, PirouetteReadDefs BuiltinsOfPIR m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
@@ -88,8 +81,7 @@ optsToTlaOpts co = do
   let spz = mkTLATySpecializer (tySpecializer co)
   return $
     TlaOpts
-      { toSymbExecOpts = optsToCTreeOpts co,
-        toActionWrapper = wr,
+      { toActionWrapper = wr,
         toSkeleton = skel,
         toSpecialize = spz,
         defsPostproc = if dontDefun co then id else defunctionalize,
