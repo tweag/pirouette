@@ -63,6 +63,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.ToTla
 import Pirouette.Term.Transformations
 import Pirouette.Transformations
+import Pirouette.Transformations.Monomorphization
 import qualified PlutusCore as P
 import qualified PlutusCore.Flat as P
 import qualified PlutusCore.Pretty as P
@@ -183,9 +184,9 @@ mainOpts opts uDefs = do
                       if funNamePrefix opts == ""
                         then "DEFAULT_FUN_NAME"
                         else funNamePrefix opts
-               in let mainDef =
+                  mainDef =
                         DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) []
-                   in (mainFunName, mainDef) : relDecls
+               in (mainFunName, mainDef) : relDecls
             else relDecls
     case stage opts of
       SymbolicExecution -> do
@@ -225,7 +226,7 @@ processDecls opts uDefs = do
     runReaderT checkDeBruijnIndices uDefs
 
   -- Otherwise, we proceed normally
-  noMutDefs <- elimEvenOddMutRec uDefs
+  noMutDefs <- elimEvenOddMutRec $ monomorphize uDefs
   let oDefs =
         if noInlining opts
           then noMutDefs

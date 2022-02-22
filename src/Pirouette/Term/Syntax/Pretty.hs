@@ -4,6 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Pirouette.Term.Syntax.Pretty
   (module Pirouette.Term.Syntax.Pretty.Class) where
 
@@ -13,6 +15,7 @@ import           Pirouette.Term.Syntax.Pretty.Class
 
 import           Control.Arrow(first)
 import qualified Data.ByteString           as BS
+import qualified Data.Map                  as M
 import qualified Data.Text                 as T
 import qualified Prettyprinter as Prettyprint (Pretty, pretty)
 import           Prettyprinter hiding (Pretty, pretty)
@@ -86,9 +89,11 @@ instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SF.AnnTerm ann ty f) where
     where isTyLam (SF.Abs ann tx body) = Just (ann, tx, body)
           isTyLam _                    = Nothing
 
-instance (Pretty name, Pretty (BuiltinTypes lang), Pretty (BuiltinTerms lang), Pretty (Constants lang))
-    => Pretty (Definition lang name) where
-  pretty (DFunction _ t ty)  = align $ vsep [pretty ty, pretty t]
+instance (Pretty name, PrettyLang lang) => Pretty (FunDef lang name) where
+  pretty (FunDef _ t ty) = align $ vsep [pretty ty, pretty t]
+
+instance (Pretty name, PrettyLang lang) => Pretty (Definition lang name) where
+  pretty (DFunDef funDef)    = pretty funDef
   pretty (DConstructor i ty) = "Constructor" <+> pretty i <+> pretty ty
   pretty (DDestructor ty)    = "Destructor" <+> pretty ty
   pretty (DTypeDef ty)       = "Type" <+> pretty ty
@@ -109,3 +114,8 @@ instance (Pretty name, Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang name)
     let pvars = sep (map (\(n, k) -> pretty n <> ":" <> pretty k) vars)
      in "data" <+> align (vsep $ [pvars, pretty dest]
                               ++ map (\(n , ty) -> pretty n <+> ":" <+> pretty ty) cs)
+
+instance (Pretty name, PrettyLang lang) => Pretty (Decls lang name) where
+  pretty = align . vsep . map prettyDef . M.toList
+    where
+      prettyDef (name, def) = pretty name <+> "|->" <+> pretty def
