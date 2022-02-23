@@ -229,11 +229,31 @@ findHOFDefs :: LanguageDef lang => Decls lang Name -> HOFDefs lang
 findHOFDefs decls = M.fromList $ hofTypes <> hofFuns
   where
     hofTypes = mkTypeHofDefs declsPairs $ \_ typeDef -> (hasHOFuns . snd) `any` constructors typeDef
-    hofFuns = [ (name, HofDef name 1 $ HDBFun funDef)  -- TODO don't hardcode 1
-              | (name, DFunDef funDef) <- declsPairs
-              , hasHOFuns $ funTy funDef
-              ]
+    hofFuns = findPolyFuns (hasHOFuns . funTy) declsPairs
     declsPairs = M.toList decls
+
+isPolyType :: AnnType ann ty -> Bool
+isPolyType TyAll {} = True
+isPolyType _ = False
+
+isPolyFun :: FunDef lang ann -> Bool
+isPolyFun = isPolyType . funTy
+
+findFuns :: LanguageDef lang
+         => (forall ann. Data ann => FunDef lang ann -> Bool)
+         -> [(Name, Definition lang Name)]
+         -> [(Name, HofDef lang)]
+findFuns pred declsPairs =
+  [ (name, HofDef name 1 $ HDBFun funDef)  -- TODO don't hardcode 1
+  | (name, DFunDef funDef) <- declsPairs
+  , pred funDef
+  ]
+
+findPolyFuns :: LanguageDef lang
+             => (forall ann. Data ann => FunDef lang ann -> Bool)
+             -> [(Name, Definition lang Name)]
+             -> [(Name, HofDef lang)]
+findPolyFuns pred = findFuns (\f -> isPolyFun f && pred f)
 
 mkTypeHofDefs :: LanguageDef lang
               => [(Name, Definition lang Name)]
@@ -264,16 +284,8 @@ hofsClosure decls = go
       | otherwise = go hofs'
       where
         hofs' = hofs <> M.fromList (hofTypes' <> hofFuns')
-        hofTypes' = mkTypeHofDefs declsPairs $ \tyName typeDef -> tyName `M.notMember` hofs
-                                                               && hasHofName typeDef
-        hofFuns' = [ (name, HofDef name 1 $ HDBFun funDef) -- TODO don't hardcode 1
-                   | (name, DFunDef funDef) <- declsPairs
-                   , name `M.notMember` hofs
-                   , hasHofName funDef
-                   , case funTy funDef of       -- we only want to monomorphize polymorphic functions
-                          TyAll {} -> True
-                          _ -> False
-                   ]
+        hofTypes' = mkTypeHofDefs declsPairs $ \_ typeDef -> hasHofName typeDef
+        hofFuns' = findPolyFuns hasHofName declsPairs
 
         hasHofName :: (Data a) => a -> Bool
         hasHofName entity = not (null [ () | TyFree name   <- universeBi entity :: [TypeBase lang Name], name `M.member` hofs ])
