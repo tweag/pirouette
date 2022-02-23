@@ -47,6 +47,7 @@ library
       Pirouette.TLA.Syntax
       Pirouette.TLA.Type
       Pirouette.Transformations
+      Pirouette.Transformations.Monomorphization
   other-modules:
       Paths_pirouette
   hs-source-dirs:

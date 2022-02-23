@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PatternSynonyms #-}
 module Pirouette.Term.Syntax.Base where
 
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -99,7 +100,7 @@ data TypeDef builtins
              , destructor    :: Name
              , constructors  :: [(Name, Type builtins)]
              }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show, Data)
 
 -- |Computes the type of the destructor from a 'TypeDef'. For example, let:
 --
@@ -181,14 +182,26 @@ type TyVarMeta builtins meta = SystF.VarMeta meta Name (TypeBase builtins)
 -- * Definitions
 
 data Rec = Rec | NonRec
-  deriving (Eq , Show)
+  deriving (Eq, Ord, Show, Data)
+
+data FunDef builtins = FunDef
+  { funIsRec :: Rec
+  , funBody :: Term builtins
+  , funTy :: Type builtins
+  }
+  deriving (Eq, Ord, Show, Data)
 
 data Definition builtins
-  = DFunction Rec (Term builtins) (Type builtins)
+  = DFunDef       (FunDef builtins)
   | DConstructor  Int Name
   | DDestructor   Name
   | DTypeDef      (TypeDef builtins)
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show, Data)
+
+pattern DFunction :: Rec -> Term builtins -> Type builtins -> Definition builtins
+pattern DFunction r t ty = DFunDef (FunDef r t ty)
+{-# COMPLETE DFunction, DConstructor, DDestructor, DTypeDef #-}
+-- TODO investigate whether this COMPLETE pragma will be still needed when we upgrade to ghc 9.0/9.2
 
 defTermMapM :: (Monad m)
             => (Term builtins -> m (Term builtins))

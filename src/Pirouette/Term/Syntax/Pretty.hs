@@ -15,6 +15,8 @@ import           Pirouette.Term.Syntax.Pretty.Class
 
 import           Prettyprinter hiding (Pretty, pretty)
 
+import qualified Data.Map as Map
+
 -- * SystemF Instances
 
 instance Pretty SystF.Kind where
@@ -52,9 +54,11 @@ instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SystF.AnnTerm ann ty f) wh
     where isTyLam (SystF.Abs ann tx body) = Just (ann, tx, body)
           isTyLam _                    = Nothing
 
-instance (Pretty (BuiltinTypes builtins), Pretty (BuiltinTerms builtins), Pretty (Constants builtins))
-    => Pretty (Definition builtins) where
-  pretty (DFunction _ t ty)  = align $ vsep [pretty ty, pretty t]
+instance (PrettyLang builtins) => Pretty (FunDef builtins) where
+  pretty (FunDef _ t ty) = align $ vsep [pretty ty, pretty t]
+
+instance (PrettyLang builtins) => Pretty (Definition builtins) where
+  pretty (DFunDef funDef)    = pretty funDef
   pretty (DConstructor i ty) = "Constructor" <+> pretty i <+> pretty ty
   pretty (DDestructor ty)    = "Destructor" <+> pretty ty
   pretty (DTypeDef ty)       = "Type" <+> pretty ty
@@ -68,9 +72,15 @@ instance (Pretty (BuiltinTerms builtins), Pretty (Constants builtins))
   pretty (Constant x)   = pretty x
   pretty (Builtin x)    = "b/" <> pretty x
   pretty (TermFromSignature x)   = pretty x
+  pretty Bottom = "ERROR"
 
 instance (Pretty (BuiltinTypes builtins)) => Pretty (TypeDef builtins) where
   pretty (Datatype k vars dest cs) =
     let pvars = sep (map (\(n, k) -> pretty n <> ":" <> pretty k) vars)
      in "data" <+> align (vsep $ [pvars, pretty dest]
                               ++ map (\(n , ty) -> pretty n <+> ":" <+> pretty ty) cs)
+
+instance (PrettyLang builtins) => Pretty (Decls builtins) where
+  pretty = align . vsep . map prettyDef . Map.toList
+    where
+      prettyDef (name, def) = pretty name <+> "|->" <+> pretty def

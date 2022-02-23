@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 module Pirouette.Monad where
 
 import           Pirouette.Term.Builtins
@@ -19,9 +20,12 @@ import qualified Control.Monad.State.Strict as Strict
 import qualified Control.Monad.State.Lazy   as Lazy
 import           Control.Monad.Except
 import           Control.Monad.Identity
+import Data.Data (Data)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Set as Set
+import           Data.Generics.Uniplate.Operations
+import           Data.List.NonEmpty (NonEmpty(..))
 
 -- * The Pirouette Monad(s)
 --
@@ -181,6 +185,10 @@ data PrtUnorderedDefs lang = PrtUnorderedDefs
   { prtUODecls    :: Decls lang
   , prtUOMainTerm :: Term lang
   }
+  deriving (Eq, Data)
+
+addDecls :: Decls builtins -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
+addDecls decls defs = defs { prtUODecls = prtUODecls defs <> decls }
 
 instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
   prtAllDefs = asks prtUODecls
