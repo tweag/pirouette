@@ -10,18 +10,13 @@
 module Pirouette.SMT.Translation where
 
 import Control.Monad.Except
-import Control.Monad.IO.Class
-import Data.Map (Map)
-import qualified Data.Map as M
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
-import Debug.Trace
 import Pirouette.Monad
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as Raw
+import Pirouette.Term.Builtins
 
 -- * Translating Terms and Types to SMTLIB
 
@@ -32,7 +27,7 @@ import qualified Pirouette.Term.Syntax.SystemF as Raw
 checkDefsToSMT :: (PirouetteReadDefs builtins m, PrettyLang builtins, LanguageSMT builtins) => m ()
 checkDefsToSMT = do
   allDefs <- prtAllDefs
-  forM_ (M.toList allDefs) $ \(n, def) -> do
+  forM_ (Map.toList allDefs) $ \(n, def) -> do
     case def of
       DFunction _red _term ty -> void $ translateType ty
       DTypeDef (Datatype _ _ _ constr) -> mapM_ constructorFromPIR constr

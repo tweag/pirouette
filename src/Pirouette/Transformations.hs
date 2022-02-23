@@ -8,22 +8,18 @@ module Pirouette.Transformations where
 
 import           Pirouette.Monad
 import           Pirouette.Monad.Logger
-import           Pirouette.Monad.Maybe
 import           Pirouette.Term.Syntax
-import qualified Pirouette.Term.Syntax.SystemF as R
-import           Pirouette.Term.Syntax.Subst
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 import           Pirouette.Term.Transformations
 import           Pirouette.Term.TransitiveDeps
-
-import qualified PlutusCore as P
+import Pirouette.Term.Builtins
 
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
-import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty (NonEmpty(..))
 import           Data.List (foldl')
-import           Data.Maybe (mapMaybe)
-import qualified Data.Map as M
-import qualified Data.Set as S
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 import           Data.Generics.Uniplate.Operations
 
 -- |Removes all Even-Odd mutually recursive functions from the program.
@@ -52,9 +48,9 @@ elimEvenOddMutRec udefs = do
   -- > g x = h x + 2
   --
   elimDepCycles :: (LanguageBuiltins lang, PirouetteBase m)
-                => NE.NonEmpty (R.Arg Name Name) -> StateT (PrtUnorderedDefs lang) m [R.Arg Name Name]
-  elimDepCycles (e NE.:| []) = return [e]
-  elimDepCycles (e NE.:| es) = pushCtx ("elimDepCycles " ++ show (e:es)) $ go (e:es)
+                => NonEmpty (SystF.Arg Name Name) -> StateT (PrtUnorderedDefs lang) m [SystF.Arg Name Name]
+  elimDepCycles (e :| []) = return [e]
+  elimDepCycles (e :| es) = pushCtx ("elimDepCycles " ++ show (e:es)) $ go (e:es)
     where
       snoc x xs = xs ++ [x]
 
@@ -62,14 +58,14 @@ elimEvenOddMutRec udefs = do
       -- terms depends on types or vice versa, hence, we should only have to deal with
       -- dependency classes that involve terms or types exclusively.
       go   [] = return []
-      go d@(R.TyArg t : ts) = do
-        unless (all R.isTyArg ts) $ throwError' $ PEOther "Mixed dependencies"
+      go d@(SystF.TyArg t : ts) = do
+        unless (all SystF.isTyArg ts) $ throwError' $ PEOther "Mixed dependencies"
         logWarn "MutRec Types: TLA+ will error if BoundedSetOf is needed for any of these types."
         return d
-      go d@(R.TermArg n : ns) =
-        case mapM R.fromArg d of
+      go d@(SystF.TermArg n : ns) =
+        case mapM SystF.fromArg d of
           Nothing -> throwError' $ PEOther "Mixed dependencies"
-          Just as -> map R.TermArg <$> solveTermDeps 0 as
+          Just as -> map SystF.TermArg <$> solveTermDeps 0 as
 
       -- In order to break the cycle for a class of mutually dependend terms ds, we'll
       -- try to find a non-recursive term d and expand it in all terms in ds \ {d},
@@ -90,7 +86,7 @@ elimEvenOddMutRec udefs = do
       expandDefInSt :: Name -> Name -> StateT (PrtUnorderedDefs lang) m ()
       expandDefInSt n m = do
         defn <- prtTermDefOf n
-        modify (\st -> st { prtUODecls = fst $ expandDefsIn (M.singleton n defn) (prtUODecls st) m })
+        modify (\st -> st { prtUODecls = fst $ expandDefsIn (Map.singleton n defn) (prtUODecls st) m })
 
 -- |Expand all non-recursive definitions in our state, keeping only the
 -- recursive definitions or those satisfying the @keep@ predicate.
@@ -98,7 +94,7 @@ expandAllNonRec :: forall lang . (LanguageBuiltins lang) => (Name -> Bool) -> Pr
 expandAllNonRec keep prtDefs =
   let ds  = prtDecls prtDefs
       ord = prtDepOrder prtDefs
-      (remainingNames, ds', inlinables) = foldl' go ([], ds, M.empty) ord
+      (remainingNames, ds', inlinables) = foldl' go ([], ds, Map.empty) ord
       mainTerm = rewrite (inlineAll inlinables) $ prtMainTerm prtDefs
   in
   PrtOrderedDefs ds' (reverse remainingNames) mainTerm
@@ -108,40 +104,40 @@ expandAllNonRec keep prtDefs =
   -- we keep a map of inlinable definitions and we also maintain the order
   -- for the names that are left in the actual definitions.
   --
-  -- In general, say that: (rNs, ds', rest) = foldl' go ([], decls, M.empty) ord
+  -- In general, say that: (rNs, ds', rest) = foldl' go ([], decls, Map.empty) ord
   -- then, with a slight abuse of notation:
   --
-  -- >    M.union ds' rest == decls -- module beta equivalence
-  -- > && S.fromList rNs == S.fromList (M.keys ds')
+  -- >    Map.union ds' rest == decls -- module beta equivalence
+  -- > && Set.fromList rNs == Set.fromList (Map.keys ds')
   -- > && reverse rNs `isSubListOf` ord
   --
-  go :: ([R.Arg Name Name], Decls lang, M.Map Name (Term lang))
-     -> R.Arg Name Name
-     -> ([R.Arg Name Name], Decls lang, M.Map Name (Term lang))
-  go (names, currDecls, inlinableDecls) (R.TyArg ty) = (R.TyArg ty : names, currDecls, inlinableDecls)
-  go (names, currDecls, inlinableDecls) (R.TermArg k) =
+  go :: ([SystF.Arg Name Name], Decls lang, Map.Map Name (Term lang))
+     -> SystF.Arg Name Name
+     -> ([SystF.Arg Name Name], Decls lang, Map.Map Name (Term lang))
+  go (names, currDecls, inlinableDecls) (SystF.TyArg ty) = (SystF.TyArg ty : names, currDecls, inlinableDecls)
+  go (names, currDecls, inlinableDecls) (SystF.TermArg k) =
     let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
-     in if R.TermArg k `S.member` termNames kDef || keep k
-        then (R.TermArg k : names , decls'            , inlinableDecls)
-        else (names           , M.delete k decls' , M.insert k kDef inlinableDecls)
+     in if SystF.TermArg k `Set.member` termNames kDef || keep k
+        then (SystF.TermArg k : names , decls'            , inlinableDecls)
+        else (names           , Map.delete k decls' , Map.insert k kDef inlinableDecls)
 
 expandDefsIn :: (LanguageBuiltins lang)
-             => M.Map Name (Term lang)
+             => Map.Map Name (Term lang)
              -> Decls lang
              -> Name
              -> (Decls lang, Term lang)
 expandDefsIn inlinables decls k =
-  case M.lookup k decls of
+  case Map.lookup k decls of
     Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
     Just (DFunction r t ty) ->
       let t' = deshadowBoundNames $ rewrite (inlineAll inlinables) t
-       in (M.insert k (DFunction r t' ty) decls, t')
+       in (Map.insert k (DFunction r t' ty) decls, t')
     Just _  -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
 
-inlineAll :: M.Map Name (Term lang) -> Term lang -> Maybe (Term lang)
-inlineAll inlinables (R.App (R.Free (TermFromSignature n)) args) = do
-  nDef <- M.lookup n inlinables
-  Just $ R.appN nDef args
+inlineAll :: Map.Map Name (Term lang) -> Term lang -> Maybe (Term lang)
+inlineAll inlinables (SystF.App (SystF.Free (TermFromSignature n)) args) = do
+  nDef <- Map.lookup n inlinables
+  Just $ SystF.appN nDef args
 inlineAll _ _ = Nothing
 
 -- ** Sanity Checks
@@ -151,7 +147,7 @@ inlineAll _ _ = Nothing
 checkDeBruijnIndices :: (PirouetteReadDefs lang m, PrettyLang lang) => m ()
 checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
   allDefs <- prtAllDefs
-  forM_ (M.toList allDefs) $ \(n, def) -> do
+  forM_ (Map.toList allDefs) $ \(n, def) -> do
     case defTermMapM (\t -> go 0 0 t >> return t) def of
       Left err -> logError ("Invalid de Bruijn index for " ++ show n ++ "; " ++ show err)
                >> logError (renderSingleLineStr (pretty def))
@@ -159,13 +155,13 @@ checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
       Right _  -> return ()
   where
     go :: Integer -> Integer -> Term lang -> Either String ()
-    go ty term (R.Lam (R.Ann ann) _ t)
+    go ty term (SystF.Lam (SystF.Ann ann) _ t)
         = go ty (term + 1) t
-    go ty term (R.Abs (R.Ann ann) _ t)
+    go ty term (SystF.Abs (SystF.Ann ann) _ t)
         = go (ty + 1) term t
-    go ty term (R.App n args) = do
-      mapM_ (R.argElim (const $ return ()) (go ty term)) args
+    go ty term (SystF.App n args) = do
+      mapM_ (SystF.argElim (const $ return ()) (go ty term)) args
       case n of
-        R.Bound _ i -> when (i >= term) $
+        SystF.Bound _ i -> when (i >= term) $
                      Left $ "Referencing var " ++ show i ++ " with only " ++ show term ++ " lams"
         _       -> return ()

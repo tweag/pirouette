@@ -31,7 +31,7 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 import qualified Pirouette.SMT as SMT
-import Control.Lens.Combinators (_18')
+import Pirouette.Term.Builtins
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)

@@ -3,6 +3,7 @@ module Pirouette.SMT.Base where
 
 import Control.Monad.IO.Class
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import Data.Void
 

@@ -37,6 +37,7 @@ import Pirouette.Monad.Logger
 import Pirouette.PlutusIR.SMT ()
 import Pirouette.PlutusIR.Builtins
 import Pirouette.PlutusIR.ToTerm
+import Pirouette.Term.Builtins
 import Pirouette.Term.Defunctionalize
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Syntax

@@ -18,6 +18,7 @@ import Pirouette.Term.Syntax.SystemF
 import Data.Maybe (mapMaybe)
 import Prettyprinter hiding (Pretty (..))
 import Data.List (intersperse)
+import Pirouette.Term.Builtins (PrettyLang)
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;

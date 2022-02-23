@@ -1,11 +1,9 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 module Pirouette.TLA.Syntax where
 
 import           Pirouette.Term.Syntax (Name(..))
 
 import qualified Language.TLAPlus.Syntax as TLA
-import qualified Language.TLAPlus.Parser as TLA
 
 import qualified Data.Text as T
 import qualified Text.ParserCombinators.Parsec.Pos as PPos

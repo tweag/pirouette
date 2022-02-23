@@ -20,12 +20,7 @@ import qualified Data.List                 as List
 import qualified Data.Text                 as Text
 import qualified Data.Map.Strict           as Map
 import qualified Data.Set                  as Set
-import           Data.Data
-import           Data.String
 import           Data.Maybe (fromMaybe)
-import Pirouette.Term.Syntax.Pretty.Class
-import Data.Void
-import Control.Monad.Identity
 
 -- | @separateBoundFrom u t@ outputs @t@ where all the bound variables occuring in both terms
 -- are renamed to avoid name clashes when outputting code that relies on user given names

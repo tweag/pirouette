@@ -1,11 +1,8 @@
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -21,30 +18,22 @@ import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.PlutusIR.Builtins
 
-import           PlutusCore         ( DefaultUni(..)
-                                    , pattern DefaultUniList
-                                    , pattern DefaultUniString
-                                    , pattern DefaultUniPair )
+import           PlutusCore         ( DefaultUni(..))
 import qualified PlutusCore         as P
 import qualified PlutusCore.Pretty  as P
 import qualified PlutusIR.Core.Type as PIR
 
-import qualified Data.ByteString    as BS
-import           Data.Data
-import qualified Data.Text          as T
 import qualified Data.List          as L
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
 import qualified Data.Set           as S
 import           Data.Maybe         (fromMaybe, fromJust)
-import           Prettyprinter hiding (Pretty, pretty)
 
 import           Control.Arrow (first, second, (&&&))
 import           Control.Monad.Except
 import           Control.Monad.Writer
 import           Control.Monad.State
 import           Control.Monad.Reader
-import qualified PlutusCore.Data as P
 
 
 

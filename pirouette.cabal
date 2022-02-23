@@ -22,7 +22,6 @@ library
       Pirouette.PlutusIR.Builtins
       Pirouette.PlutusIR.SMT
       Pirouette.PlutusIR.ToTerm
-      Pirouette.PlutusIR.Utils
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
@@ -33,6 +32,7 @@ library
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
+      Pirouette.Term.Builtins
       Pirouette.Term.Defunctionalize
       Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Syntax

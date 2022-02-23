@@ -7,8 +7,9 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Pirouette.Monad where
 
+import           Pirouette.Term.Builtins
 import           Pirouette.Term.Syntax
-import qualified Pirouette.Term.Syntax.SystemF as R
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 import           Pirouette.Monad.Logger
 import           Pirouette.Monad.Maybe
 import           Control.Arrow (first)
@@ -18,9 +19,9 @@ import qualified Control.Monad.State.Strict as Strict
 import qualified Control.Monad.State.Lazy   as Lazy
 import           Control.Monad.Except
 import           Control.Monad.Identity
-import qualified Data.Map as M
-import qualified Data.Text as T
-import qualified Data.Set as S
+import qualified Data.Map as Map
+import qualified Data.Text as Text
+import qualified Data.Set as Set
 
 -- * The Pirouette Monad(s)
 --
@@ -72,7 +73,7 @@ throwError' msg = do
 -- being compiled, we probably want to use 'PirouetteReadDefs' instead of 'PirouetteBase'
 class (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang m | m -> lang where
   -- |Returns all declarations in scope
-  prtAllDefs :: m (M.Map Name (Definition lang))
+  prtAllDefs :: m (Map.Map Name (Definition lang))
 
   -- |Returns the main program
   prtMain :: m (Term lang)
@@ -82,7 +83,7 @@ class (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang m | m -
   prtDefOf :: Name -> m (Definition lang)
   prtDefOf n = do
     defs <- prtAllDefs
-    case M.lookup n defs of
+    case Map.lookup n defs of
       Nothing -> throwError' $ PEUndefined n
       Just x  -> return x
 
@@ -108,15 +109,15 @@ instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs la
 
 -- |Given a prefix, if there is a single declared name with the given
 -- prefix, returns it. Throws an error otherwise.
-nameForPrefix :: (PirouetteReadDefs lang m) => T.Text -> m Name
+nameForPrefix :: (PirouetteReadDefs lang m) => Text.Text -> m Name
 nameForPrefix pref = pushCtx "nameForPrefix" $ do
   decls <- prtAllDefs
-  let d = M.toList $ M.filterWithKey (\k _ -> pref `T.isPrefixOf` nameString k) decls
+  let d = Map.toList $ Map.filterWithKey (\k _ -> pref `Text.isPrefixOf` nameString k) decls
   case d of
-    []      -> throwError' $ PEOther $ "No declaration with prefix: " ++ T.unpack pref
+    []      -> throwError' $ PEOther $ "No declaration with prefix: " ++ Text.unpack pref
     [(n,_)] -> return n
     _       -> do
-      logWarn $ "Too many declarations with prefix: " ++ T.unpack pref ++ ": " ++ show (map fst d)
+      logWarn $ "Too many declarations with prefix: " ++ Text.unpack pref ++ ": " ++ show (map fst d)
       logWarn   "  will return the first one"
       return $ fst $ head d
 
@@ -137,30 +138,30 @@ typeOfIdent n = do
 -- > f x = g x + h
 -- > g x = f (x - 1)
 --
--- We'll get @S.fromList [R.Arg "g", R.Arg "h"]@. If you'd expect to see
--- @R.Arg "f"@ in the result aswell, use "Pirouette.Term.TransitiveDeps.transitiveDepsOf" instead.
-directDepsOf :: (PirouetteReadDefs lang m) => Name -> m (S.Set (R.Arg Name Name))
+-- We'll get @Set.fromList [SystF.Arg "g", SystF.Arg "h"]@. If you'd expect to see
+-- @SystF.Arg "f"@ in the result aswell, use "Pirouette.Term.TransitiveDeps.transitiveDepsOf" instead.
+directDepsOf :: (PirouetteReadDefs lang m) => Name -> m (Set.Set (SystF.Arg Name Name))
 directDepsOf n = do
   ndef <- prtDefOf n
   return $ case ndef of
     DFunction _ t ty -> typeNames ty <> termNames t
-    DTypeDef d       -> S.unions (flip map (constructors d) $ \(_, c)
-                                   -> S.unions $ map typeNames (fst $ R.tyFunArgs c))
-    DConstructor  _ tyN -> S.singleton $ R.TyArg tyN
-    DDestructor   tyN   -> S.singleton $ R.TyArg tyN
+    DTypeDef d       -> Set.unions (flip map (constructors d) $ \(_, c)
+                                   -> Set.unions $ map typeNames (fst $ SystF.tyFunArgs c))
+    DConstructor  _ tyN -> Set.singleton $ SystF.TyArg tyN
+    DDestructor   tyN   -> Set.singleton $ SystF.TyArg tyN
 
 -- |Just like 'directDepsOf', but forgets the information of whether certain dependency
 -- was on a type or a term.
-directDepsOf' :: (PirouetteReadDefs lang m) => Name -> m (S.Set Name)
-directDepsOf' = fmap (S.map (R.argElim id id)) . directDepsOf
+directDepsOf' :: (PirouetteReadDefs lang m) => Name -> m (Set.Set Name)
+directDepsOf' = fmap (Set.map (SystF.argElim id id)) . directDepsOf
 
 -- |Returns whether a constructor is recursive. For the
 -- type of lists, for example, @Cons@ would be recursive
 -- whereas @Nil@ would not.
 consIsRecursive :: (PirouetteReadDefs lang m) => TyName -> Name -> m Bool
 consIsRecursive ty con = do
-  conArgs <- fst . R.tyFunArgs <$> typeOfIdent con
-  return $ any (\a -> R.TyArg ty `S.member` typeNames a) conArgs
+  conArgs <- fst . SystF.tyFunArgs <$> typeOfIdent con
+  return $ any (\a -> SystF.TyArg ty `Set.member` typeNames a) conArgs
 
 -- |Returns whether a term definition uses itself directly, that is, for
 --
@@ -170,7 +171,7 @@ consIsRecursive ty con = do
 -- calling @termIsRecursive "f"@ would return @False@. See 'transitiveDepsOf' if
 -- you want to know whether a term is depends on itself transitively.
 termIsRecursive :: (PirouetteReadDefs lang m) => Name -> m Bool
-termIsRecursive n = S.member (R.TermArg n) <$> directDepsOf n
+termIsRecursive n = Set.member (SystF.TermArg n) <$> directDepsOf n
 
 -- *** Implementations for 'PirouetteReadDefs'
 
@@ -196,11 +197,11 @@ instance {-# OVERLAPPING #-} (LanguageBuiltins lang, PirouetteBase m)
 -- that is, @f@ appears before @g@ in @prtDepOrder@.
 data PrtOrderedDefs lang = PrtOrderedDefs
   { prtDecls    :: Decls lang
-  , prtDepOrder :: [R.Arg Name Name]
+  , prtDepOrder :: [SystF.Arg Name Name]
   , prtMainTerm :: Term lang
   }
 
-prtOrderedDefs :: PrtUnorderedDefs lang -> [R.Arg Name Name] -> PrtOrderedDefs lang
+prtOrderedDefs :: PrtUnorderedDefs lang -> [SystF.Arg Name Name] -> PrtOrderedDefs lang
 prtOrderedDefs uod ord = PrtOrderedDefs (prtUODecls uod) ord (prtUOMainTerm uod)
 
 instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
@@ -209,7 +210,7 @@ instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (Rea
 
 class (PirouetteReadDefs lang m) => PirouetteDepOrder lang m where
   -- |Returns the dependency ordering of the currently declared terms.
-  prtDependencyOrder :: m [R.Arg Name Name]
+  prtDependencyOrder :: m [SystF.Arg Name Name]
 
 instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
   prtDependencyOrder = asks prtDepOrder
@@ -282,8 +283,8 @@ flushLogs = PrtT . mapReaderT (mapExceptT flushLogger) . unPirouette
 --
 -- > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK], [extra0 .. extraL])
 --
--- Moreover, we already remove the 'R.Arg' wrapper for all the predefined argument positions.
--- Only the extra arguments are kept with their 'R.Arg' because they could be types or terms.
+-- Moreover, we already remove the 'SystF.Arg' wrapper for all the predefined argument positions.
+-- Only the extra arguments are kept with their 'SystF.Arg' because they could be types or terms.
 data UnDestMeta lang meta = UnDestMeta
   { undestName :: Name
   , undestTypeName :: TyName
@@ -295,22 +296,22 @@ data UnDestMeta lang meta = UnDestMeta
   }
 
 unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnDestMeta lang meta)
-unDest (R.App (R.Free (TermFromSignature n)) args) = do
+unDest (SystF.App (SystF.Free (TermFromSignature n)) args) = do
   tyN <- prtIsDest n
   Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
   let nCons = length cons
-  let (tyArgs, args1) = span R.isTyArg args
-  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
+  let (tyArgs, args1) = span SystF.isTyArg args
+  tyArgs' <- mapM (wrapMaybe . SystF.fromTyArg) tyArgs
   case args1 of
-    (R.TermArg x : R.TyArg retTy : casesrest) -> do
+    (SystF.TermArg x : SystF.TyArg retTy : casesrest) -> do
       let (cases, rest) = splitAt nCons casesrest
-      cases' <- mapM (wrapMaybe . R.fromArg) cases
+      cases' <- mapM (wrapMaybe . SystF.fromArg) cases
       return $ UnDestMeta n tyN tyArgs' x retTy cases' rest
     -- The fail string is being ignored by the 'MaybeT'; that's alright, they serve
     -- as programmer documentation or they can be plumbed through a 'trace' by
     -- overloading the MonadFail instance, which was helpful for debugging in the past.
     _ -> fail "unDest: Destructor arguments has non-cannonical structure"
-unDest _ = fail "unDest: not an R.App"
+unDest _ = fail "unDest: not an SystF.App"
 
 data UnConsMeta lang meta = UnConsMeta
   { unconsTypeName :: TyName
@@ -321,11 +322,11 @@ data UnConsMeta lang meta = UnConsMeta
 
 -- |Analogous to 'unDest', but works for constructors.
 unCons :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnConsMeta lang meta)
-unCons (R.App (R.Free (TermFromSignature n)) args) = do
+unCons (SystF.App (SystF.Free (TermFromSignature n)) args) = do
   (idx, tyN) <- prtIsConst n
-  let (tyArgs, args1) = span R.isTyArg args
-  tyArgs' <- mapM (wrapMaybe . R.fromTyArg) tyArgs
-  args1'  <- mapM (wrapMaybe . R.fromArg) args1
+  let (tyArgs, args1) = span SystF.isTyArg args
+  tyArgs' <- mapM (wrapMaybe . SystF.fromTyArg) tyArgs
+  args1'  <- mapM (wrapMaybe . SystF.fromArg) args1
   return $ UnConsMeta tyN tyArgs' idx args1'
 -- The fail is meant for the 'MaybeT', check the comment in 'unDest' for rationale
-unCons _ = fail "unCons: not an R.App"
+unCons _ = fail "unCons: not an SystF.App"

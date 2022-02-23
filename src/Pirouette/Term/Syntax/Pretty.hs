@@ -8,6 +8,7 @@
 module Pirouette.Term.Syntax.Pretty
   (module Pirouette.Term.Syntax.Pretty.Class) where
 
+import           Pirouette.Term.Builtins
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import           Pirouette.Term.Syntax.Base
 import           Pirouette.Term.Syntax.Pretty.Class
