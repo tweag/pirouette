@@ -261,7 +261,7 @@ hofsClosure decls = go
 
     go hofs
       | hofs == hofs' = hofs
-      | otherwise = hofs'
+      | otherwise = go hofs'
       where
         hofs' = hofs <> M.fromList (hofTypes' <> hofFuns')
         hofTypes' = mkTypeHofDefs declsPairs $ \tyName typeDef -> tyName `M.notMember` hofs
