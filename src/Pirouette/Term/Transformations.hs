@@ -462,7 +462,7 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
     go (SystF.App (SystF.Free (TermFromSignature fn)) fargs) = do
       -- Try to see if there's at least one destructor in the arguments.
       -- If we find a destructor within the arguments, we can make sure it
-      -- is an `App` and has at least one argument, the value being eliminated.
+      -- is an `App` and has at least one argument (the value being destructed).
       (dest, fargsZ) <- splitDest fargs
       MaybeT $
         case prtIsDest fn of
