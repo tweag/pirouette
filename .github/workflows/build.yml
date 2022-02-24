@@ -25,13 +25,9 @@ jobs:
           key: cabal-cache-${{ github.sha }}
           restore-keys: |
             cabal-cache
-      - name: Chmod test script, install jq and happy
+      - name: Chmod test script
         run: |
-          chmod u+x tests/integration/run-tests.sh
-          sudo apt-get install jq
-          cd .. # It's important to cd out of the root, otherwise cabal will try to build deps in the cabal.project file
-          cabal update
-          cabal install happy
+          chmod u+x tests/run-tests.sh
       - name: Add pwd to PATH
         run: |
           echo "$(pwd)" >> $GITHUB_PATH
