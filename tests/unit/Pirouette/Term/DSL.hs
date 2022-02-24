@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 -- |This module provides a straight forward DSL for building
 -- 'Pirouette.Term.Syntax.Term', it is useful for tests.
 module Pirouette.Term.DSL where

@@ -14,16 +14,16 @@ import qualified Data.Map as Map
 import Pirouette.Monad
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
+import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as Raw
-import Pirouette.Term.Builtins
 
 -- * Translating Terms and Types to SMTLIB
 
--- |Checks whether we can translate the current datatype definitions and whether
--- the type of each term is amenable to translation. We won't try translating the terms
--- because these will contain bound variables that will need to be substituted by
--- the symbolic execution engine.
+-- | Checks whether we can translate the current datatype definitions and whether
+--  the type of each term is amenable to translation. We won't try translating the terms
+--  because these will contain bound variables that will need to be substituted by
+--  the symbolic execution engine.
 checkDefsToSMT :: (PirouetteReadDefs builtins m, PrettyLang builtins, LanguageSMT builtins) => m ()
 checkDefsToSMT = do
   allDefs <- prtAllDefs

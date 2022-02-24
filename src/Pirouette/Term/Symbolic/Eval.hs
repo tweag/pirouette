@@ -22,16 +22,16 @@ import Data.Data hiding (eqT)
 import Data.Foldable
 import Data.List (intersperse)
 import qualified Data.Map.Strict as M
-import Prettyprinter hiding (Pretty (..))
 import ListT (ListT)
 import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
+import qualified Pirouette.SMT as SMT
+import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
-import qualified Pirouette.SMT as SMT
-import Pirouette.Term.Builtins
+import Prettyprinter hiding (Pretty (..))
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
@@ -83,18 +83,19 @@ data SymEvalSt lang = SymEvalSt
     sestGamma :: M.Map Name (Type lang),
     sestFreshCounter :: Int,
     sestFuel :: Int,
-    -- |A branch that has been validated before is never validated again /unless/ we 'learn' something new.
+    -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
     sestValidated :: Bool
   }
 
--- |Given a result and a resulting state, returns a 'Path' representing it.
+-- | Given a result and a resulting state, returns a 'Path' representing it.
 path :: a -> SymEvalSt lang -> Path lang a
-path x st = Path
-  { pathConstraint = sestConstraint st
-  , pathGamma = sestGamma st
-  , pathStatus = if sestFuel st <= 0 then OutOfFuel else Completed
-  , pathResult = x
-  }
+path x st =
+  Path
+    { pathConstraint = sestConstraint st,
+      pathGamma = sestGamma st,
+      pathStatus = if sestFuel st <= 0 then OutOfFuel else Completed,
+      pathResult = x
+    }
 
 -- | A 'SymEvalT' is equivalent to a function with type:
 --
@@ -113,8 +114,8 @@ symevalT = runSymEvalT st0
 runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
--- |Running a symbolic execution will prepare the solver only once, then use a persistent session
--- to make all the necessary queries.
+-- | Running a symbolic execution will prepare the solver only once, then use a persistent session
+--  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
 runSymEvalT st = ListT.toList . fmap (uncurry path) . SMT.runSolverT s . prepSolver . runSymEvalTRaw st
   where
@@ -141,9 +142,10 @@ instance (MonadFail m) => MonadFail (SymEvalT lang m) where
 instance (MonadIO m) => MonadIO (SymEvalT lang m) where
   liftIO = lift . liftIO
 
--- |Prune the set of paths in the current set.
-prune :: forall lang m a . (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
-prune xs = SymEvalT $ StateT $ \st -> do
+-- | Prune the set of paths in the current set.
+prune :: forall lang m a. (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+prune xs = SymEvalT $
+  StateT $ \st -> do
     (x, st') <- runSymEvalTRaw st xs
     ok <- pathIsPlausible st'
     guard ok
@@ -162,15 +164,15 @@ prune xs = SymEvalT $ StateT $ \st -> do
           SMT.Unsat -> False
           _ -> True
 
--- |Learn a new constraint and add it as a conjunct to the set of constraints of
--- the current path. Make sure that this branch gets marked as /not/ validated, regardless
--- of whether or not we had already validated it before.
+-- | Learn a new constraint and add it as a conjunct to the set of constraints of
+--  the current path. Make sure that this branch gets marked as /not/ validated, regardless
+--  of whether or not we had already validated it before.
 learn :: (SymEvalConstr lang m) => Constraint lang -> SymEvalT lang m ()
-learn c = modify (\st -> st { sestConstraint = c <> sestConstraint st, sestValidated = False })
+learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
 
 declSymVars :: (SymEvalConstr lang m) => [(Name, Type lang)] -> SymEvalT lang m [SymVar]
 declSymVars vs = do
-  modify (\st -> st { sestGamma = M.union (sestGamma st) (M.fromList vs) })
+  modify (\st -> st {sestGamma = M.union (sestGamma st) (M.fromList vs)})
   return $ map (SymVar . fst) vs
 
 freshSymVar :: (SymEvalConstr lang m) => Type lang -> SymEvalT lang m SymVar
@@ -181,8 +183,8 @@ freshSymVars [] = return []
 freshSymVars tys = do
   let n = length tys
   ctr <- gets sestFreshCounter
-  modify (\st -> st { sestFreshCounter = sestFreshCounter st + n })
-  let vars = zipWith (\i ty -> (Name "s" (Just i) , ty)) [ctr..] tys
+  modify (\st -> st {sestFreshCounter = sestFreshCounter st + n})
+  let vars = zipWith (\i ty -> (Name "s" (Just i), ty)) [ctr ..] tys
   declSymVars vars
 
 runEvaluation :: (SymEvalConstr lang m) => Term lang -> SymEvalT lang m (TermMeta lang SymVar)
@@ -193,7 +195,7 @@ runEvaluation t = do
   symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
 
 consumeGas :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
-consumeGas f = modify (\st -> st { sestFuel = sestFuel st - 1 }) >> f
+consumeGas f = modify (\st -> st {sestFuel = sestFuel st - 1}) >> f
 
 currentGas :: (SymEvalConstr lang m) => SymEvalT lang m Int
 currentGas = gets sestFuel
@@ -269,15 +271,16 @@ symeval' t@(R.App hd args) = do
         -- no meta variables.
         let tyParams' = map typeFromMeta tyParams
         term' <- symeval term
-        asum $ for2 consList cases $ \(consName, consTy) caseTerm -> do
-          let (consArgs, _) = R.tyFunArgs consTy
-          svars <- freshSymVars consArgs
-          let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
-          let symbCons = R.App (R.Free $ TermFromSignature consName) symbArgs
-          let mconstr = unify term' symbCons
-          case mconstr of
-            Nothing -> empty
-            Just constr -> learn constr >> consumeGas (symeval $ caseTerm `R.appN` symbArgs)
+        asum $
+          for2 consList cases $ \(consName, consTy) caseTerm -> do
+            let (consArgs, _) = R.tyFunArgs consTy
+            svars <- freshSymVars consArgs
+            let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
+            let symbCons = R.App (R.Free $ TermFromSignature consName) symbArgs
+            let mconstr = unify term' symbCons
+            case mconstr of
+              Nothing -> empty
+              Just constr -> learn constr >> consumeGas (symeval $ caseTerm `R.appN` symbArgs)
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) t = Just (s :== t)
@@ -299,7 +302,6 @@ unifyArg (R.TermArg x) (R.TermArg y) = unify x y
 unifyArg (R.TyArg _) (R.TyArg _) = Just (And []) -- TODO: unify types too?
 unifyArg _ _ = Nothing
 
-
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
 
@@ -309,18 +311,18 @@ zipWithMPlus :: (MonadPlus m) => (a -> b -> m c) -> [a] -> [b] -> m [c]
 zipWithMPlus _ [] [] = return []
 zipWithMPlus _ _ [] = mzero
 zipWithMPlus _ [] _ = mzero
-zipWithMPlus f (x:xs) (y:ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
-
+zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 --- TMP CODE
 
 instance (PrettyLang lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds gamma ps res) =
-    vsep [ "With:" <+> pretty (M.toList gamma)
-         , "If:" <+> indent 2 (pretty conds)
-         , "Status:" <+> pretty ps
-         , "Result:" <+> indent 2 (pretty res)
-         ]
+    vsep
+      [ "With:" <+> pretty (M.toList gamma),
+        "If:" <+> indent 2 (pretty conds),
+        "Status:" <+> pretty ps,
+        "Result:" <+> indent 2 (pretty res)
+      ]
 
 instance Pretty PathStatus where
   pretty Completed = "Completed"
@@ -341,7 +343,7 @@ instance (PrettyLang lang) => Pretty (Constraint lang) where
   pretty (And l) =
     mconcat $ intersperse "\n∧ " (map pretty l)
 
-runFor :: (PrettyLang lang, SymEvalConstr lang m , MonadIO m) => Name -> Term lang -> m ()
+runFor :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
 runFor _ t = do
   paths <- symevalT (runEvaluation t)
   mapM_ (liftIO . print . pretty) paths

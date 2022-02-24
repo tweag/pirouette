@@ -1,24 +1,24 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- |Constraints that we can translate to SMT
+-- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
 import Control.Monad.IO.Class
+import Data.List (intersperse)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (mapMaybe)
 import Pirouette.SMT.Base
-import Pirouette.SMT.Translation
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.SMT.Translation
+import Pirouette.Term.Builtins (PrettyLang)
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
-import Data.Maybe (mapMaybe)
 import Prettyprinter hiding (Pretty (..))
-import Data.List (intersperse)
-import Pirouette.Term.Builtins (PrettyLang)
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
@@ -47,6 +47,7 @@ data Constraint lang meta
 
 instance Semigroup (Constraint lang meta) where
   (<>) = andConstr
+
 instance Monoid (Constraint lang meta) where
   mempty = And []
 
@@ -107,8 +108,12 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 -- which can then be used in further constraints.
 --
 -- Hence, we chose solution #2
-assertConstraintRaw :: (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m)
-  => SimpleSMT.Solver -> Env lang -> Constraint lang meta -> m ()
+assertConstraintRaw ::
+  (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m) =>
+  SimpleSMT.Solver ->
+  Env lang ->
+  Constraint lang meta ->
+  m ()
 assertConstraintRaw s env (Assign name term) =
   do
     let smtName = toSmtName name
@@ -134,8 +139,11 @@ assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 -- `as` term in smtlib). Besides, this function removes applications of types
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
-translateData :: (LanguageSMT lang, ToSMT meta, MonadFail m)
-  => TypeMeta lang meta -> TermMeta lang meta -> m SimpleSMT.SExpr
+translateData ::
+  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
+  TypeMeta lang meta ->
+  TermMeta lang meta ->
+  m SimpleSMT.SExpr
 translateData _ (App var []) = translateVar var
 translateData ty (App (Free (TermFromSignature name)) args) =
   SimpleSMT.app

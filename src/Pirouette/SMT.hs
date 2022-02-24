@@ -1,11 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | This is Pirouette's SMT solver interface; you probably won't need to import
@@ -26,14 +26,17 @@ module Pirouette.SMT
     assert,
 
     -- * Convenient re-exports
-    Constraint(..),
+    Constraint (..),
     SimpleSMT.Result (..),
     module Base,
   )
 where
 
+import Control.Applicative
+import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Control.Monad.State.Class
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
 import Pirouette.SMT.Base as Base
@@ -42,9 +45,6 @@ import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Control.Monad.State.Class
-import Control.Monad.Error.Class
-import Control.Applicative
 
 -- | Solver monad for a specific solver, passed as a phantom type variable @s@ (refer to 'IsSolver' for more)
 --  to know the supported solvers. That's a phantom type variable used only to distinguish
@@ -53,11 +53,13 @@ newtype SolverT m a = SolverT {unSolverT :: ReaderT SimpleSMT.Solver m a}
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO)
 
-instance MonadTrans (SolverT) where
+instance MonadTrans SolverT where
   lift = SolverT . lift
 
 deriving instance MonadState s m => MonadState s (SolverT m)
+
 deriving instance MonadError e m => MonadError e (SolverT m)
+
 deriving instance Alternative m => Alternative (SolverT m)
 
 -- | Runs a computation that requires a session with a solver. The first parameter is
