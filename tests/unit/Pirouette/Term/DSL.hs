@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 -- |This module provides a straight forward DSL for building
 -- 'Pirouette.Term.Syntax.Term', it is useful for tests.
 module Pirouette.Term.DSL where
@@ -9,6 +8,7 @@ module Pirouette.Term.DSL where
 import           Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified Pirouette.Term.Syntax as S
+import           Pirouette.PlutusIR.Builtins
 import           Pirouette.PlutusIR.ToTerm
 import           Pirouette.Monad
 
@@ -35,14 +35,14 @@ mkNewName c = do
       | n `elem` env = Nothing
       | otherwise    = Just n
 
-stubTy :: String -> PirType
-stubTy s = R.tyPure (R.F $ S.TyFree $ Name (T.pack s) Nothing)
+stubTy :: String -> Type BuiltinsOfPIR
+stubTy s = R.tyPure (R.Free $ S.TySig $ Name (T.pack s) Nothing)
 
-type TestTerm = PirTermExpanded
+type TestTerm = Term BuiltinsOfPIR
 
 type TermM = TermGenM TestTerm
 
-term :: TermM -> PirTerm
+term :: TermM -> Term BuiltinsOfPIR
 term gent = runReader gent []
 
 class Abs t where
@@ -78,26 +78,26 @@ var :: Name -> TermM
 var n = do
   stack <- ask
   case n `elemIndex` stack of
-    Just i  -> return (R.termPure (R.B (R.Ann n) $ toInteger i))
+    Just i  -> return (R.termPure (R.Bound (R.Ann n) $ toInteger i))
     Nothing -> error $ "Undeclared variable " ++ show n
 
 def :: Name -> TermM
-def n = return $ R.App (R.F $ S.FreeName $ Name "def" Nothing)
-               [R.Arg (R.termPure (R.F $ S.FreeName n))]
+def n = return $ R.App (R.Free $ S.TermSig $ Name "def" Nothing)
+               [R.TermArg (R.termPure (R.Free $ S.TermSig n))]
 
 func :: Name -> TermM
-func n = return $ R.termPure (R.F $ S.FreeName n)
+func n = return $ R.termPure (R.Free $ S.TermSig n)
 
 infix 4 .$
 (.$) :: TermM -> TermM -> TermM
-f .$ x = R.termApp <$> f <*> (R.Arg <$> x)
+f .$ x = R.termApp <$> f <*> (R.TermArg <$> x)
 
 infix 4 .$$
 (.$$) :: TermM -> [TermM] -> TermM
-f .$$ xs = R.appN <$> f <*> (map R.Arg <$> sequence xs)
+f .$$ xs = R.appN <$> f <*> (map R.TermArg <$> sequence xs)
 
 tyApp :: TermM -> Name -> TermM
-tyApp t n = (`R.app` R.TyArg (R.tyPure $ R.F (S.TyFree n))) <$> t
+tyApp t n = (`R.app` R.TyArg (R.tyPure $ R.Free (S.TySig n))) <$> t
 
 infix 3 :->:
 data PatternM where
@@ -107,8 +107,8 @@ caseofAnn :: String ->  String -> String -> TermM -> [PatternM] -> TermM
 caseofAnn destr tyRes ty x pats = do
   cases <- mapM mklams pats
   x'    <- x
-  return $ R.App (R.F $ S.FreeName $ Name (T.pack destr) Nothing)
-                 (R.Arg x' : R.TyArg (stubTy tyRes) : map R.Arg cases)
+  return $ R.App (R.Free $ S.TermSig $ Name (T.pack destr) Nothing)
+                 (R.TermArg x' : R.TyArg (stubTy tyRes) : map R.TermArg cases)
   where
     mkHint ty constr = [head ty, head constr]
     mklams (constr :->: t) = lam (mkHint ty constr) t

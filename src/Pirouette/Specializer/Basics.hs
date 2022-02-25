@@ -11,6 +11,7 @@ import Language.TLAPlus.Syntax (AS_Expression)
 
 import qualified Data.Text as T
 
+boolSpzMatch :: AS_Expression -> Name -> [a] -> b -> AS_Expression -> AS_Expression
 boolSpzMatch t n [] _ exp
   | nameString n == T.pack "True"  = tlaAnd [t, exp]
   | nameString n == T.pack "False" = tlaAnd [tlaNot t, exp]
@@ -23,6 +24,9 @@ boolSpz = TypeSpecializer {
   spzMatch = boolSpzMatch
 }
 
+listSpzMatch :: TLAIdent n =>
+  AS_Expression
+  -> Name -> [n] -> AS_Expression -> AS_Expression -> AS_Expression
 listSpzMatch t n [] _ exp
   | nameString n == T.pack "Nil"  = tlaAnd [tlaEq t [tla_e|<<>>|], exp]
 listSpzMatch t n [x,tl] freeName exp
@@ -44,6 +48,7 @@ listSpz = TypeSpecializer {
   spzMatch = listSpzMatch
 }
 
+unitSpzMatch :: a -> Name -> [b] -> c -> d -> d
 unitSpzMatch _ n [] _ exp
   | nameString n == T.pack "Unit1"  = exp
 
@@ -55,6 +60,9 @@ unitSpz = TypeSpecializer {
   spzMatch = unitSpzMatch
 }
 
+tuple2SpzMatch :: TLAIdent n =>
+  AS_Expression
+  -> Name -> [n] -> AS_Expression -> AS_Expression -> AS_Expression
 tuple2SpzMatch t n [x,y] freeName exp
   | nameString n == T.pack "Tuple21" =
       tlaLet [tlaAssign freeName t] $

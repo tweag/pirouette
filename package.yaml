@@ -34,12 +34,18 @@ dependencies:
 
 library:
   source-dirs: src
+  ghc-options:
+    -Wall
+    -Wno-orphans
 
 executable:
   main: Main.hs
   source-dirs: executable
   dependencies:
     - pirouette
+  ghc-options:
+    -Wall
+    -Wno-orphans
 
 tests:
   spec:

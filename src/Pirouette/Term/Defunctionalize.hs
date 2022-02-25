@@ -5,7 +5,6 @@ module Pirouette.Term.Defunctionalize(defunctionalize) where
 import           Pirouette.TLA.Syntax
 
 import qualified Language.TLAPlus.Syntax as TLA
-import qualified Language.TLAPlus.Parser as TLA
 
 import           Control.Monad.State
 import           Data.Data

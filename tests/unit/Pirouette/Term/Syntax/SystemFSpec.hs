@@ -10,7 +10,7 @@ import           Control.Monad
 import           Data.Text.Prettyprint.Doc
 import           Test.Hspec
 
-type Ty = Type (Var String String)
+type Ty = AnnType String (Var String String)
 
 tyApp :: Ty -> Ty -> Ty
 tyApp = app
@@ -18,8 +18,8 @@ tyApp = app
 spec = do
   describe "type-level appN" $ do
     it "works for hand-crafted examples" $
-      tyApp (TyLam "x" KStar $ TyApp (B "y" 1) [tyPure $ B "x" 0])
-            (TyLam "w" KStar $ TyApp (B "z" 2) [tyPure $ B "w" 0])
+      tyApp (TyLam "x" KStar $ TyApp (Bound "y" 1) [tyPure $ Bound "x" 0])
+            (TyLam "w" KStar $ TyApp (Bound "z" 2) [tyPure $ Bound "w" 0])
           `shouldBe`
-      tyApp (tyPure $ B "y" 0)
-            (TyLam "w" KStar $ TyApp (B "z" 2) [tyPure $ B "w" 0])
+      tyApp (tyPure $ Bound "y" 0)
+            (TyLam "w" KStar $ TyApp (Bound "z" 2) [tyPure $ Bound "w" 0])

@@ -3,7 +3,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -15,47 +14,28 @@
 
 module Main where
 
--- , termToCTree)
-
-import Control.Arrow (first, second, (***))
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Identity
 import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer.Strict
-import Data.Bifunctor (bimap)
 import qualified Data.ByteString as BS
-import Data.Data
 import Data.Foldable (asum)
-import Data.Functor
-import Data.List (groupBy, isSuffixOf, partition)
-import qualified Data.List as L
-import qualified Data.List.NonEmpty as NE
+import Data.List (groupBy, isSuffixOf)
 import qualified Data.Map as M
-import Data.Maybe (isJust)
-import Data.Semigroup ((<>))
-import qualified Data.Set as S
 import Data.String
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Debug.Trace (trace)
 import Development.GitRev
 import qualified Flat
-import Flat.Decoder.Types
 import GHC.IO.Encoding
 import qualified Language.TLAPlus.Pretty as TLA
-import qualified Language.TLAPlus.Syntax as TLA
 import Options.Applicative ((<**>))
 import qualified Options.Applicative as Opt
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.Monad.Maybe
-import Pirouette.PlutusIR.SMT
+import Pirouette.PlutusIR.SMT ()
+import Pirouette.PlutusIR.Builtins
 import Pirouette.PlutusIR.ToTerm
-import Pirouette.PlutusIR.Utils
-import Pirouette.Specializer.Rewriting
-import Pirouette.Term.ConstraintTree (CTreeOpts (..))
+import Pirouette.Term.Builtins
 import Pirouette.Term.Defunctionalize
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Syntax
@@ -65,15 +45,10 @@ import Pirouette.Term.Transformations
 import Pirouette.Transformations
 import Pirouette.Transformations.Monomorphization
 import qualified PlutusCore as P
-import qualified PlutusCore.Flat as P
-import qualified PlutusCore.Pretty as P
 import PlutusIR.Core.Type (Program)
 import qualified PlutusIR.Parser as PIR
 import Prettyprinter hiding (Pretty (..))
-import System.Environment (getArgs)
 import System.Exit
-import Text.Megaparsec (ParseErrorBundle)
-import Text.Megaparsec.Error (errorBundlePretty)
 
 ---------------------
 
@@ -96,17 +71,10 @@ data CliOpts = CliOpts
   }
   deriving (Show)
 
-data Stage = ToTerm | ToTLA | ToCTree | SymbolicExecution
+data Stage = ToTerm | ToTLA | SymbolicExecution
   deriving (Show)
 
-optsToCTreeOpts :: CliOpts -> CTreeOpts
-optsToCTreeOpts co =
-  CTreeOpts
-    { coPruneMaybe = not (pruneMaybe co),
-      coWithArguments = withArguments co
-    }
-
-optsToTlaOpts :: (MonadIO m, PirouetteReadDefs PlutusIR m) => CliOpts -> m TlaOpts
+optsToTlaOpts :: (MonadIO m, PirouetteReadDefs BuiltinsOfPIR m) => CliOpts -> m TlaOpts
 optsToTlaOpts co = do
   skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
   skel <- if asFunction co then return mkEmptySpecWrapper else mkTLASpecWrapper skel0
@@ -114,8 +82,7 @@ optsToTlaOpts co = do
   let spz = mkTLATySpecializer (tySpecializer co)
   return $
     TlaOpts
-      { toSymbExecOpts = optsToCTreeOpts co,
-        toActionWrapper = wr,
+      { toActionWrapper = wr,
         toSkeleton = skel,
         toSpecialize = spz,
         defsPostproc = if dontDefun co then id else defunctionalize,
@@ -168,7 +135,7 @@ ecTooManyDefs = ExitFailure 16
 -- | Converts a PIR file to a term, displaying the results to the user.
 --  The 'CliOpts' argument controls which transformations should be applied,
 --  which definitions the user is interested into, etc...
-mainOpts :: forall m. (MonadIO m) => CliOpts -> PrtUnorderedDefs PlutusIR -> PrtT m ()
+mainOpts :: forall m. (MonadIO m) => CliOpts -> PrtUnorderedDefs BuiltinsOfPIR -> PrtT m ()
 mainOpts opts uDefs = do
   decls <- processDecls opts uDefs
   flip runReaderT decls $ do
@@ -185,16 +152,15 @@ mainOpts opts uDefs = do
                         then "DEFAULT_FUN_NAME"
                         else funNamePrefix opts
                   mainDef =
-                        DFunction NonRec mainTerm $ R.TyApp (R.F $ TyFree (fromString "Bool")) []
+                        DFunction NonRec mainTerm $ R.TyApp (R.Free $ TySig (fromString "Bool")) []
                in (mainFunName, mainDef) : relDecls
             else relDecls
     case stage opts of
       SymbolicExecution -> do
         when (length relDecls' /= 1) $
           throwError' (PEOther "I need a single term to symbolically execute. Try a stricter --prefix")
-        uncurry symbExec (head relDecls')
+        uncurry symbolicExec (head relDecls')
       ToTerm -> mapM_ (uncurry printDef) relDecls'
-      ToCTree -> mapM_ (uncurry printCTree) relDecls'
       ToTLA -> do
         when (length relDecls' /= 1) $
           throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
@@ -205,20 +171,15 @@ mainOpts opts uDefs = do
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
 
-    printCTree name def = do
-      error "printCTree: constraint tree will be replaced; this is a WIP"
-    -- ct <- termToCTree (optsToCTreeOpts opts) name def
-    -- putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 (pretty ct)]
-    -- putStrLn' ""
-
     toTla n t = do
       opts' <- optsToTlaOpts opts
       spec <- termToSpec opts' n t
       putStrLn' (TLA.prettyPrintAS spec)
 
-    symbExec n (DFunction _ t _) = SymbolicEval.runFor n t
+    symbolicExec n (DFunction _ t _) = SymbolicEval.runFor n t
+    symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
-processDecls :: (LanguageDef lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
+processDecls :: (LanguageBuiltins lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
   -- If the user wishes, we can perform checks on the sanity of the translation
   -- from PlutusIR to PrtDefs
@@ -236,8 +197,8 @@ processDecls opts uDefs = do
   where
     generalTransformations ::
       (PirouetteReadDefs lang m) =>
-      PrtTerm lang ->
-      m (PrtTerm lang)
+      Term lang ->
+      m (Term lang)
     generalTransformations =
       constrDestrId
         -- >=> applyRewRules
@@ -251,7 +212,7 @@ pirouette ::
   (MonadIO m) =>
   FilePath ->
   PrtOpts ->
-  (PrtUnorderedDefs PlutusIR -> PrtT m a) ->
+  (PrtUnorderedDefs BuiltinsOfPIR -> PrtT m a) ->
   m a
 pirouette pir opts f =
   withParsedPIR pir $ \pirProg ->
@@ -267,7 +228,7 @@ pirouette pir opts f =
 withDecls ::
   (MonadIO m, Show l) =>
   Program P.TyName P.Name P.DefaultUni P.DefaultFun l ->
-  (PrtTerm PlutusIR -> Decls PlutusIR Name -> m a) ->
+  (Term BuiltinsOfPIR -> Decls BuiltinsOfPIR -> m a) ->
   m a
 withDecls pir cont = do
   case runExcept $ trProgram pir of
@@ -415,7 +376,7 @@ parseExprWrapper =
     )
 
 parseStage :: Opt.Parser Stage
-parseStage = termOnly Opt.<|> treeOnly Opt.<|> symbExec Opt.<|> pure ToTLA
+parseStage = termOnly Opt.<|> symbExec Opt.<|> pure ToTLA
 
 termOnly :: Opt.Parser Stage
 termOnly =
@@ -423,14 +384,6 @@ termOnly =
     ToTerm
     ( Opt.long "term-only"
         <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --term-only is given, we display the terms that have been produced before symbolically evaluating and translating to TLA"
-    )
-
-treeOnly :: Opt.Parser Stage
-treeOnly =
-  Opt.flag'
-    ToCTree
-    ( Opt.long "tree-only"
-        <> Opt.help "By default we try to produce a TLA module from the given PIR file. If --tree-only is given, we display the terms that have been produced before symbolically evaluating and translating to TLA"
     )
 
 symbExec :: Opt.Parser Stage
