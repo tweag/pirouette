@@ -27,10 +27,13 @@ library
       Pirouette.SMT.Constraints
       Pirouette.SMT.SimpleSMT
       Pirouette.SMT.Translation
+      Pirouette.Specializer
+      Pirouette.Specializer.Basics
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.Builtins
+      Pirouette.Term.Defunctionalize
       Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
@@ -38,8 +41,11 @@ library
       Pirouette.Term.Syntax.Pretty.Class
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
+      Pirouette.Term.ToTla
       Pirouette.Term.Transformations
       Pirouette.Term.TransitiveDeps
+      Pirouette.TLA.Syntax
+      Pirouette.TLA.Type
       Pirouette.Transformations
       Pirouette.Transformations.Monomorphization
   other-modules:

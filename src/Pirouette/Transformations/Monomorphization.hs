@@ -24,6 +24,7 @@ import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
+import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Subst
 import Pirouette.Term.Syntax.SystemF hiding (Var)
 import Prettyprinter hiding (Pretty, pretty)
