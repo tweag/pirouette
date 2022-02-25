@@ -119,7 +119,7 @@ mainOpts opts uDefs = do
                         then "DEFAULT_FUN_NAME"
                         else funNamePrefix opts
                   mainDef =
-                        DFunction NonRec mainTerm $ R.TyApp (R.Free $ TypeFromSignature (fromString "Bool")) []
+                        DFunction NonRec mainTerm $ R.TyApp (R.Free $ TySig (fromString "Bool")) []
                in (mainFunName, mainDef) : relDecls
             else relDecls
     case stage opts of

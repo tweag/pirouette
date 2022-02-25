@@ -236,7 +236,7 @@ trType (PIR.TyForall _ v k body) =
 trType (PIR.TyVar _ tyn) =
   asks
     ( SystF.tyPure
-        . maybe (SystF.Free $ TypeFromSignature $ toName tyn) (SystF.Bound (SystF.Ann $ toName tyn) . fromIntegral)
+        . maybe (SystF.Free $ TySig $ toName tyn) (SystF.Bound (SystF.Ann $ toName tyn) . fromIntegral)
         . L.elemIndex (toName tyn)
         . typeStack
     )
@@ -324,7 +324,7 @@ trTerm mn t = do
     checkIfDep n vs = do
       mDepsOn <- gets (M.lookup n)
       case mDepsOn of
-        Nothing -> return $ SystF.termPure $ SystF.Free $ TermFromSignature n
+        Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig n
         Just ns -> do
           let args =
                 map
@@ -333,7 +333,7 @@ trTerm mn t = do
                       . fst
                   )
                   $ S.toList ns
-          return $ SystF.App (SystF.Free $ TermFromSignature n) args
+          return $ SystF.App (SystF.Free $ TermSig n) args
 
 -- A straightforward translation of a PIRTerm to the Pirouette representation of term.
 -- This function is not used by `trProgram` which is the main function to translate

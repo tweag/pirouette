@@ -50,10 +50,10 @@ class ToName v where
 
 -- | The type system we are interested in is standard polymorphic type-level lambda calculus
 --  where the free variables will be of type 'TypeBase', that is, they are either a builtin type or
---  a type declared previously and currently in the signature.
+--  a type name that refers to some type defined in our context and possessing a signature.
 data TypeBase builtins
   = TyBuiltin (BuiltinTypes builtins)
-  | TypeFromSignature Name
+  | TySig Name
 
 deriving instance (LanguageBuiltins builtins) => Eq (TypeBase builtins)
 
@@ -91,7 +91,7 @@ typeNames :: TypeMeta builtins meta -> Set.Set (SystF.Arg Name Name)
 typeNames = foldMap go
   where
     go :: SystF.VarMeta meta Name (TypeBase builtins) -> Set.Set (SystF.Arg Name Name)
-    go (SystF.Free (TypeFromSignature n)) = Set.singleton (SystF.TyArg n)
+    go (SystF.Free (TySig n)) = Set.singleton (SystF.TyArg n)
     go _ = Set.empty
 
 -- | Returns all the metavariables used by a type
@@ -133,7 +133,7 @@ destructorTypeFor Datatype {} = undefined
 data TermBase builtins
   = Constant (Constants builtins)
   | Builtin (BuiltinTerms builtins)
-  | TermFromSignature Name
+  | TermSig Name
   | Bottom
 
 deriving instance (LanguageBuiltins builtins) => Eq (TermBase builtins)
@@ -173,7 +173,7 @@ termNames :: TermMeta builtins meta -> Set.Set (SystF.Arg Name Name)
 termNames = uncurry (<>) . (foldMap go &&& SystF.termTyFoldMap typeNames)
   where
     go :: SystF.VarMeta meta Name (TermBase builtins) -> Set.Set (SystF.Arg Name Name)
-    go (SystF.Free (TermFromSignature n)) = Set.singleton (SystF.TermArg n)
+    go (SystF.Free (TermSig n)) = Set.singleton (SystF.TermArg n)
     go _ = Set.empty
 
 -- | Returns all the metavariables used by a term

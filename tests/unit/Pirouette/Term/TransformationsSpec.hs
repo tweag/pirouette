@@ -50,8 +50,8 @@ withDummyFunc :: S.Name -> (S.Name, S.Definition BuiltinsOfPIR)
 withDummyFunc s = (s, dummyFun)
   where
     dummyFun = S.DFunction S.Rec dummyTerm dummyType
-    dummyTerm = R.termPure (R.Free (S.TermFromSignature "_"))
-    dummyType = R.tyPure (R.Free (S.TypeFromSignature "_"))
+    dummyTerm = R.termPure (R.Free (S.TermSig "_"))
+    dummyType = R.tyPure (R.Free (S.TySig "_"))
 
 testState extras = PrtUnorderedDefs (M.fromList $ testingDefs extras) undefined
 

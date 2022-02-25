@@ -212,7 +212,7 @@ symeval t = do
     else prune $ symeval' t'
 
 prtMaybeDefOf :: (PirouetteReadDefs lang m) => VarMeta lang meta -> m (Maybe (Definition lang))
-prtMaybeDefOf (R.Free (TermFromSignature n)) = Just <$> prtDefOf n
+prtMaybeDefOf (R.Free (TermSig n)) = Just <$> prtDefOf n
 prtMaybeDefOf _ = pure Nothing
 
 symeval' :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
@@ -276,7 +276,7 @@ symeval' t@(R.App hd args) = do
             let (consArgs, _) = R.tyFunArgs consTy
             svars <- freshSymVars consArgs
             let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
-            let symbCons = R.App (R.Free $ TermFromSignature consName) symbArgs
+            let symbCons = R.App (R.Free $ TermSig consName) symbArgs
             let mconstr = unify term' symbCons
             case mconstr of
               Nothing -> empty

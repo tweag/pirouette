@@ -149,13 +149,13 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = Map.fromList $
     fixName = genSpecName specArgs
 
 specFunApp :: forall builtins. (LanguageBuiltins builtins) => HOFDefs builtins -> SpecFunApp builtins
-specFunApp hofDefs (App (Free (TermFromSignature name)) args)
+specFunApp hofDefs (App (Free (TermSig name)) args)
   | Just someDef <- name `Map.lookup` hofDefs, -- TODO should just the nameString be compared?
     all isSpecArg $ take (hofPolyVarsCount someDef) tyArgs = do
     let (specArgs, remainingArgs) = splitArgs (hofPolyVarsCount someDef) args
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
-    pure $ Free (TermFromSignature speccedName) `App` remainingArgs
+    pure $ Free (TermSig speccedName) `App` remainingArgs
   where
     tyArgs = mapMaybe fromTyArg args
     splitArgs 0 args = ([], args)
@@ -165,20 +165,20 @@ specFunApp hofDefs (App (Free (TermFromSignature name)) args)
 specFunApp _ x = pure x
 
 specTyApp :: (LanguageBuiltins builtins) => HOFDefs builtins -> SpecTyApp builtins
-specTyApp hofDefs (TyApp (Free (TypeFromSignature name)) tyArgs)
+specTyApp hofDefs (TyApp (Free (TySig name)) tyArgs)
   | Just someDef <- name `Map.lookup` hofDefs,
     all isSpecArg $ take (hofPolyVarsCount someDef) tyArgs = do
     let (specArgs, remainingArgs) = splitAt (hofPolyVarsCount someDef) tyArgs
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
-    pure $ Free (TypeFromSignature speccedName) `TyApp` remainingArgs
+    pure $ Free (TySig speccedName) `TyApp` remainingArgs
 specTyApp _ x = pure x
 
 argsToStr :: (LanguageBuiltins builtins) => [Type builtins] -> Text.Text
 argsToStr = Text.intercalate "@" . map f
   where
-    f (Free (TypeFromSignature n) `TyApp` []) = nameString n
-    f (Free (TypeFromSignature n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
+    f (Free (TySig n) `TyApp` []) = nameString n
+    f (Free (TySig n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
     f arg = error $ "unexpected specializing arg" <> show arg
 
 genSpecName :: (LanguageBuiltins builtins) => [Type builtins] -> Name -> Name
@@ -288,8 +288,8 @@ hofsClosure decls = go
 
         hasHofName :: (Data a) => a -> Bool
         hasHofName entity =
-          not (null [() | TypeFromSignature name <- universeBi entity :: [TypeBase builtins], name `Map.member` hofs])
-            || not (null [() | TermFromSignature name <- universeBi entity :: [TermBase builtins], name `Map.member` hofs])
+          not (null [() | TySig name <- universeBi entity :: [TypeBase builtins], name `Map.member` hofs])
+            || not (null [() | TermSig name <- universeBi entity :: [TermBase builtins], name `Map.member` hofs])
 
 -- This really belongs to a Pretty module, but we need them here for nicer debugging anyway for now.
 instance (Pretty (BuiltinTypes builtins), Pretty (FunDef builtins)) => Pretty (HofDefBody builtins) where

@@ -39,7 +39,7 @@ translateTypeBase ::
   TypeBase builtins ->
   m SmtLib.SExpr
 translateTypeBase (TyBuiltin pirType) = return $ translateBuiltinType @builtins pirType
-translateTypeBase (TypeFromSignature name) = return $ SmtLib.symbol (toSmtName name)
+translateTypeBase (TySig name) = return $ SmtLib.symbol (toSmtName name)
 
 translateType ::
   (LanguageSMT builtins, ToSMT meta, MonadFail m) =>
@@ -68,7 +68,7 @@ translateVar ::
   VarMeta builtins meta ->
   m SmtLib.SExpr
 translateVar (Raw.Meta h) = return $ translate h
-translateVar (Raw.Free (TermFromSignature name)) = return $ SmtLib.symbol (toSmtName name)
+translateVar (Raw.Free (TermSig name)) = return $ SmtLib.symbol (toSmtName name)
 translateVar (Raw.Free (Constant c)) = return $ translateConstant @builtins c
 translateVar (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @builtins b
 translateVar (Raw.Bound (Raw.Ann name) _) = fail "translateVar: Bound variable; did you forget to apply something?"

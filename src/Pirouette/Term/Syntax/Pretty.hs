@@ -66,7 +66,7 @@ instance (PrettyLang builtins) => Pretty (Definition builtins) where
 
 instance (Pretty (BuiltinTypes builtins)) => Pretty (TypeBase builtins) where
   pretty (TyBuiltin x) = pretty x
-  pretty (TypeFromSignature n) = pretty n
+  pretty (TySig n) = pretty n
 
 instance
   (Pretty (BuiltinTerms builtins), Pretty (Constants builtins)) =>
@@ -74,7 +74,7 @@ instance
   where
   pretty (Constant x) = pretty x
   pretty (Builtin x) = "b/" <> pretty x
-  pretty (TermFromSignature x) = pretty x
+  pretty (TermSig x) = pretty x
   pretty Bottom = "ERROR"
 
 instance (Pretty (BuiltinTypes builtins)) => Pretty (TypeDef builtins) where

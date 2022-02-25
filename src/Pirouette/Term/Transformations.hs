@@ -76,7 +76,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
           Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
           let cons' = map (second typeToMeta) cons
           return $
-            SystF.App (SystF.Free $ TermFromSignature n) $
+            SystF.App (SystF.Free $ TermSig n) $
               map SystF.TyArg tyArgs
                 ++ [SystF.TermArg x, SystF.TyArg $ tyDrop (length excess) tyReturn]
                 ++ zipWith (\(_, cty) t -> SystF.TermArg $ appExcessive excess cty t) cons' cases
@@ -138,7 +138,7 @@ expandDefs ::
 expandDefs = fmap deshadowBoundNames . pushCtx "expandDefs" . rewriteM (runMaybeT . go)
   where
     go :: Term lang -> MaybeT m (Term lang)
-    go (SystF.App (SystF.Free (TermFromSignature n)) args) = do
+    go (SystF.App (SystF.Free (TermSig n)) args) = do
       isRec <- lift $ termIsRecursive n
       if isRec
         then fail "expandDefs: wont expand"
@@ -224,7 +224,7 @@ chooseHeadCase t ty args fstArg =
                       constrDestrId body
   where
     nameOf :: Type lang -> Maybe Name
-    nameOf (SystF.TyApp (SystF.Free (TypeFromSignature x)) _) = Just x
+    nameOf (SystF.TyApp (SystF.Free (TySig x)) _) = Just x
     nameOf _ = Nothing
 
     -- `blindDest out ty` constructs the term
@@ -234,7 +234,7 @@ chooseHeadCase t ty args fstArg =
     -- where `i` is of type `ty` and `f : ty -> out`
     blindDest :: Type lang -> TypeDef lang -> Term lang
     blindDest tyOut (Datatype _ _ dest cons) =
-      SystF.App (SystF.Free (TermFromSignature dest)) $
+      SystF.App (SystF.Free (TermSig dest)) $
         SystF.TermArg (SystF.termPure (SystF.Bound (fromString "i") 1)) :
         SystF.TyArg tyOut :
         map (SystF.TermArg . consCase) cons
@@ -245,7 +245,7 @@ chooseHeadCase t ty args fstArg =
        in createNLams "x" argsTy $
             SystF.App
               (SystF.Bound (fromString "f") (toInteger (length argsTy)))
-              [SystF.TermArg $ SystF.App (SystF.Free (TermFromSignature n)) (geneXs (length argsTy))]
+              [SystF.TermArg $ SystF.App (SystF.Free (TermSig n)) (geneXs (length argsTy))]
 
     -- `createNLams "x" [a,b,c] t` constructs the term
     -- \ (x0 : a) (x1 : b) (x2 : c) -> t
@@ -299,7 +299,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     isInstance = isInstanceUnder 0 0
 
     isInstanceUnder :: Int -> Int -> Term BuiltinsOfPIR -> Term BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
-    isInstanceUnder nTe _ (SystF.App vL@(SystF.Free (TermFromSignature x)) []) t =
+    isInstanceUnder nTe _ (SystF.App vL@(SystF.Free (TermSig x)) []) t =
       case isHole x of
         Nothing ->
           case t of
@@ -315,12 +315,12 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     isInstanceUnder nTe nTy _ _ = Nothing
 
     isVarInstance :: Var BuiltinsOfPIR -> Var BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
-    isVarInstance (SystF.Free (TermFromSignature x)) vT =
+    isVarInstance (SystF.Free (TermSig x)) vT =
       case isHole x of
         Nothing ->
           case vT of
             SystF.Free y ->
-              if haveSameString (TermFromSignature x) y
+              if haveSameString (TermSig x) y
                 then Just Map.empty
                 else Nothing
             _ -> Nothing
@@ -333,7 +333,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     isVarInstance _ _ = Nothing
 
     isTyInstance :: Int -> Type BuiltinsOfPIR -> Type BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
-    isTyInstance nTy (SystF.TyApp vL@(SystF.Free (TypeFromSignature x)) []) ty =
+    isTyInstance nTy (SystF.TyApp vL@(SystF.Free (TySig x)) []) ty =
       case isHole x of
         Nothing ->
           case ty of
@@ -349,12 +349,12 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     isTyInstance nTy _ _ = Nothing
 
     isTyVarInstance :: TyVar BuiltinsOfPIR -> TyVar BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
-    isTyVarInstance (SystF.Free (TypeFromSignature x)) vT =
+    isTyVarInstance (SystF.Free (TySig x)) vT =
       case isHole x of
         Nothing ->
           case vT of
             SystF.Free y ->
-              if tyHaveSameString (TypeFromSignature x) y
+              if tyHaveSameString (TySig x) y
                 then Just Map.empty
                 else Nothing
             _ -> Nothing
@@ -385,7 +385,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       Map.Map String (Arg BuiltinsOfPIR) ->
       Term BuiltinsOfPIR ->
       m (Term BuiltinsOfPIR)
-    instantiateUnder nTe nTy m tt@(SystF.App v@(SystF.Free (TermFromSignature x)) args) = do
+    instantiateUnder nTe nTy m tt@(SystF.App v@(SystF.Free (TermSig x)) args) = do
       case isHole x of
         Nothing -> SystF.App v <$> mapM (instantiateArg nTe nTy m) args
         Just i ->
@@ -407,7 +407,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       Map.Map String (Arg BuiltinsOfPIR) ->
       Type BuiltinsOfPIR ->
       m (Type BuiltinsOfPIR)
-    instantiateTy nTy m (SystF.TyApp v@(SystF.Free (TypeFromSignature x)) args) =
+    instantiateTy nTy m (SystF.TyApp v@(SystF.Free (TySig x)) args) =
       case isHole x of
         Nothing -> SystF.TyApp v <$> mapM (instantiateTy nTy m) args
         Just i ->
@@ -444,12 +444,12 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     haveSameString (Constant a) (Constant b) = a == b
     haveSameString (Builtin f) (Builtin g) = f == g
     haveSameString Bottom Bottom = True
-    haveSameString (TermFromSignature x) (TermFromSignature y) = nameString x == nameString y
+    haveSameString (TermSig x) (TermSig y) = nameString x == nameString y
     haveSameString _ _ = False
 
     tyHaveSameString :: TypeBase BuiltinsOfPIR -> TypeBase BuiltinsOfPIR -> Bool
     tyHaveSameString (TyBuiltin f) (TyBuiltin g) = f == g
-    tyHaveSameString (TypeFromSignature x) (TypeFromSignature y) = nameString x == nameString y
+    tyHaveSameString (TySig x) (TySig y) = nameString x == nameString y
     tyHaveSameString _ _ = False
 
 -- | Returns an equivalent /destructor normal-form/ (DNF) term.
@@ -476,14 +476,14 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
           ListZipper (ArgMeta lang meta)
         )
     splitDest [] = fail "splitDest: can't split empty list"
-    splitDest (a@(SystF.TermArg a2@(SystF.App (SystF.Free (TermFromSignature n)) _)) : ds) =
+    splitDest (a@(SystF.TermArg a2@(SystF.App (SystF.Free (TermSig n)) _)) : ds) =
       (prtIsDest n >> return (a2, ListZipper ([], ds)))
         <|> (splitDest ds <&> second (zipperCons a))
     splitDest (a : ds) = splitDest ds <&> second (zipperCons a)
 
     go :: TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go (SystF.App (SystF.Bound _ _) _) = fail "destrNF.go: bound name"
-    go (SystF.App (SystF.Free (TermFromSignature fn)) fargs) = do
+    go (SystF.App (SystF.Free (TermSig fn)) fargs) = do
       -- Try to see if there's at least one destructor in the arguments.
       -- If we find a destructor within the arguments, we can make sure it
       -- is an `App` and has at least one argument (the value being destructed).
@@ -511,14 +511,14 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
           let cases' =
                 map
                   ( SystF.preserveLams $ \k ->
-                      SystF.App (SystF.Free $ TermFromSignature fn) . flip plug (fmap (SystF.argMap id $ shift k) fargsZ) . SystF.TermArg
+                      SystF.App (SystF.Free $ TermSig fn) . flip plug (fmap (SystF.argMap id $ shift k) fargsZ) . SystF.TermArg
                   )
                   cases
           -- TODO: This is still wrong, the destructor now doesn't return something of type `ret`,
           --       but instead, it returns something of whichever type f returns.
           logTrace $ "Pushing " ++ show fn ++ " through " ++ show dn
           return $
-            SystF.App (SystF.Free (TermFromSignature dn)) $
+            SystF.App (SystF.Free (TermSig dn)) $
               map SystF.TyArg tyArgs ++ [SystF.TermArg x, SystF.TyArg ret] ++ map SystF.TermArg cases'
     go _ = fail "destrNF.go: not an app"
 

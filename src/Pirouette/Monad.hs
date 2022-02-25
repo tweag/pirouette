@@ -323,7 +323,7 @@ data UnDestMeta lang meta = UnDestMeta
   }
 
 unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnDestMeta lang meta)
-unDest (SystF.App (SystF.Free (TermFromSignature n)) args) = do
+unDest (SystF.App (SystF.Free (TermSig n)) args) = do
   tyN <- prtIsDest n
   Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
   let nCons = length cons
@@ -349,7 +349,7 @@ data UnConsMeta lang meta = UnConsMeta
 
 -- | Analogous to 'unDest', but works for constructors.
 unCons :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnConsMeta lang meta)
-unCons (SystF.App (SystF.Free (TermFromSignature n)) args) = do
+unCons (SystF.App (SystF.Free (TermSig n)) args) = do
   (idx, tyN) <- prtIsConst n
   let (tyArgs, args1) = span SystF.isTyArg args
   tyArgs' <- mapM (wrapMaybe . SystF.fromTyArg) tyArgs

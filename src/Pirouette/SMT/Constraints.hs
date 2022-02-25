@@ -145,7 +145,7 @@ translateData ::
   TermMeta lang meta ->
   m SimpleSMT.SExpr
 translateData _ (App var []) = translateVar var
-translateData ty (App (Free (TermFromSignature name)) args) =
+translateData ty (App (Free (TermSig name)) args) =
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're

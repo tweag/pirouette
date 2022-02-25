@@ -36,7 +36,7 @@ mkNewName c = do
       | otherwise    = Just n
 
 stubTy :: String -> Type BuiltinsOfPIR
-stubTy s = R.tyPure (R.Free $ S.TypeFromSignature $ Name (T.pack s) Nothing)
+stubTy s = R.tyPure (R.Free $ S.TySig $ Name (T.pack s) Nothing)
 
 type TestTerm = Term BuiltinsOfPIR
 
@@ -82,11 +82,11 @@ var n = do
     Nothing -> error $ "Undeclared variable " ++ show n
 
 def :: Name -> TermM
-def n = return $ R.App (R.Free $ S.TermFromSignature $ Name "def" Nothing)
-               [R.TermArg (R.termPure (R.Free $ S.TermFromSignature n))]
+def n = return $ R.App (R.Free $ S.TermSig $ Name "def" Nothing)
+               [R.TermArg (R.termPure (R.Free $ S.TermSig n))]
 
 func :: Name -> TermM
-func n = return $ R.termPure (R.Free $ S.TermFromSignature n)
+func n = return $ R.termPure (R.Free $ S.TermSig n)
 
 infix 4 .$
 (.$) :: TermM -> TermM -> TermM
@@ -97,7 +97,7 @@ infix 4 .$$
 f .$$ xs = R.appN <$> f <*> (map R.TermArg <$> sequence xs)
 
 tyApp :: TermM -> Name -> TermM
-tyApp t n = (`R.app` R.TyArg (R.tyPure $ R.Free (S.TypeFromSignature n))) <$> t
+tyApp t n = (`R.app` R.TyArg (R.tyPure $ R.Free (S.TySig n))) <$> t
 
 infix 3 :->:
 data PatternM where
@@ -107,7 +107,7 @@ caseofAnn :: String ->  String -> String -> TermM -> [PatternM] -> TermM
 caseofAnn destr tyRes ty x pats = do
   cases <- mapM mklams pats
   x'    <- x
-  return $ R.App (R.Free $ S.TermFromSignature $ Name (T.pack destr) Nothing)
+  return $ R.App (R.Free $ S.TermSig $ Name (T.pack destr) Nothing)
                  (R.TermArg x' : R.TyArg (stubTy tyRes) : map R.TermArg cases)
   where
     mkHint ty constr = [head ty, head constr]

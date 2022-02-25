@@ -136,7 +136,7 @@ termUNCollect = Raw.termTrimapM typeUNCollect return collectVar
     collectVar :: Raw.Var Name (TermBase builtins) -> UNCollectM (Raw.Var Name (TermBase builtins))
     collectVar v = do
       case v of
-        Raw.Free (TermFromSignature n) -> void $ unNameCollect n
+        Raw.Free (TermSig n) -> void $ unNameCollect n
         _ -> return ()
       return v
 
@@ -146,7 +146,7 @@ typeUNCollect = mapM collectVar
     collectVar :: Raw.Var Name (TypeBase builtins) -> UNCollectM (Raw.Var Name (TypeBase builtins))
     collectVar v = do
       case v of
-        Raw.Free (TypeFromSignature n) -> void $ unNameCollect n
+        Raw.Free (TySig n) -> void $ unNameCollect n
         _ -> return ()
       return v
 
@@ -175,13 +175,13 @@ termUNSubst :: Term builtins -> UNSubstM (Term builtins)
 termUNSubst = Raw.termTrimapM typeUNSubst return subst
   where
     subst :: Raw.Var Name (TermBase builtins) -> UNSubstM (Raw.Var Name (TermBase builtins))
-    subst (Raw.Free (TermFromSignature n)) = Raw.Free . TermFromSignature <$> unNameSubst n
+    subst (Raw.Free (TermSig n)) = Raw.Free . TermSig <$> unNameSubst n
     subst x = return x
 
 typeUNSubst :: Type builtins -> UNSubstM (Type builtins)
 typeUNSubst = Raw.tyBimapM return subst
   where
-    subst (Raw.Free (TypeFromSignature n)) = Raw.Free . TypeFromSignature <$> unNameSubst n
+    subst (Raw.Free (TySig n)) = Raw.Free . TySig <$> unNameSubst n
     subst x = return x
 
 -- ** Utility Functions
