@@ -27,7 +27,6 @@ import qualified Data.Text.IO as T
 import Development.GitRev
 import qualified Flat
 import GHC.IO.Encoding
-import qualified Language.TLAPlus.Pretty as TLA
 import Options.Applicative ((<**>))
 import qualified Options.Applicative as Opt
 import Pirouette.Monad
@@ -36,11 +35,9 @@ import Pirouette.PlutusIR.SMT ()
 import Pirouette.PlutusIR.Builtins
 import Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Builtins
-import Pirouette.Term.Defunctionalize
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Pirouette.Term.ToTla
 import Pirouette.Term.Transformations
 import Pirouette.Transformations
 import Pirouette.Transformations.Monomorphization
@@ -60,43 +57,13 @@ data CliOpts = CliOpts
   { stage :: Stage,
     funNamePrefix :: String,
     asFunction :: Bool,
-    withArguments :: [String],
-    exprWrapper :: String,
-    skeleton :: Maybe FilePath,
-    pruneMaybe :: Bool,
-    dontDefun :: Bool,
-    tySpecializer :: [String],
     checkSanity :: Bool,
     noInlining :: Bool
   }
   deriving (Show)
 
-data Stage = ToTerm | ToTLA | SymbolicExecution
+data Stage = ToTerm | SymbolicExecution
   deriving (Show)
-
-optsToTlaOpts :: (MonadIO m, PirouetteReadDefs BuiltinsOfPIR m) => CliOpts -> m TlaOpts
-optsToTlaOpts co = do
-  skel0 <- maybe (return defaultSkel) (liftIO . readFile) $ skeleton co
-  skel <- if asFunction co then return mkEmptySpecWrapper else mkTLASpecWrapper skel0
-  wr <- mkTLAExprWrapper (exprWrapper co)
-  let spz = mkTLATySpecializer (tySpecializer co)
-  return $
-    TlaOpts
-      { toActionWrapper = wr,
-        toSkeleton = skel,
-        toSpecialize = spz,
-        defsPostproc = if dontDefun co then id else defunctionalize,
-        toAsFunction = asFunction co
-      }
-  where
-    defaultSkel =
-      unlines
-        [ "---- MODULE " ++ funNamePrefix co ++ "----",
-          "EXTENDS Plutus",
-          "----",
-          "----",
-          "===="
-        ]
 
 -----------------------
 
@@ -161,20 +128,11 @@ mainOpts opts uDefs = do
           throwError' (PEOther "I need a single term to symbolically execute. Try a stricter --prefix")
         uncurry symbolicExec (head relDecls')
       ToTerm -> mapM_ (uncurry printDef) relDecls'
-      ToTLA -> do
-        when (length relDecls' /= 1) $
-          throwError' (PEOther "I need a single term to extract to TLA. Try a stricter --prefix")
-        uncurry toTla (head relDecls')
   where
     printDef name def = do
       let pdef = pretty def
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
-
-    toTla n t = do
-      opts' <- optsToTlaOpts opts
-      spec <- termToSpec opts' n t
-      putStrLn' (TLA.prettyPrintAS spec)
 
     symbolicExec n (DFunction _ t _) = SymbolicEval.runFor n t
     symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
@@ -316,12 +274,6 @@ parseCliOpts =
   CliOpts <$> parseStage
     <*> parsePrefix
     <*> parseAsFunction
-    <*> parseWithArgs
-    <*> parseExprWrapper
-    <*> parseSkeletonFile
-    <*> parsePruneMaybe
-    <*> parseDontDefunctionalize
-    <*> parseTySpecializer
     <*> parseTrSanity
     <*> parseNoInlining
 
@@ -339,44 +291,8 @@ parseNoInlining =
         <> Opt.help "Disable inlining of definitions when generating TLA+ programs"
     )
 
-parseWithArgs :: Opt.Parser [String]
-parseWithArgs =
-  Opt.option
-    (Opt.maybeReader (Just . r))
-    ( Opt.long "with-args"
-        <> Opt.short 'a'
-        <> Opt.value []
-        <> Opt.metavar "STR[,STR]*"
-        <> Opt.help "Renames the transition function arguments to the specified list. The argument INPUT is considered as the user input one and is used to define actions."
-    )
-  where
-    r :: String -> [String]
-    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x, y]) . filter (/= ' ')
-
-parseSkeletonFile :: Opt.Parser (Maybe FilePath)
-parseSkeletonFile =
-  Opt.option
-    (fmap Just Opt.str)
-    ( Opt.metavar "FILE"
-        <> Opt.long "tla-skel"
-        <> Opt.short 's'
-        <> Opt.value Nothing
-        <> Opt.help "Uses the given module as a skeleton. The produced definitions will be inserted after the first TLA.AS_Separator found. A separator is a line consisting of at least four '-'"
-    )
-
-parseExprWrapper :: Opt.Parser String
-parseExprWrapper =
-  Opt.option
-    Opt.str
-    ( Opt.long "action-wrapper"
-        <> Opt.short 'w'
-        <> Opt.value "st' = ___"
-        <> Opt.metavar "TLAExpression"
-        <> Opt.help "How to wrap the produced actions into action-formulas"
-    )
-
 parseStage :: Opt.Parser Stage
-parseStage = termOnly Opt.<|> symbExec Opt.<|> pure ToTLA
+parseStage = termOnly Opt.<|> symbExec
 
 termOnly :: Opt.Parser Stage
 termOnly =
@@ -409,32 +325,6 @@ parseAsFunction =
     ( Opt.long "as-function"
         <> Opt.help "Directly generate a TLA+ function. Do not transform it into an action."
     )
-
-parsePruneMaybe :: Opt.Parser Bool
-parsePruneMaybe =
-  Opt.switch
-    ( Opt.long "dont-prune-maybe"
-        <> Opt.help "Do not suppress the maybe type in the output of the transition function."
-    )
-
-parseDontDefunctionalize :: Opt.Parser Bool
-parseDontDefunctionalize =
-  Opt.switch
-    ( Opt.long "dont-defunctionalize"
-        <> Opt.help "Do not defunctionalize functions passed as constructor arguments."
-    )
-
-parseTySpecializer :: Opt.Parser [String]
-parseTySpecializer =
-  Opt.option
-    (Opt.maybeReader (Just . r))
-    ( Opt.long "ty-spz"
-        <> Opt.value []
-        <> Opt.help "Declare the types to be specialized, ALL to specialize all types."
-    )
-  where
-    r :: String -> [String]
-    r = filter (/= ",") . groupBy (\x y -> ',' `notElem` [x, y]) . filter (/= ' ')
 
 parseArgument :: Opt.Parser FilePath
 parseArgument = Opt.argument Opt.str (Opt.metavar "FILE")
