@@ -172,13 +172,6 @@ specTyApp _ x = pure x
 -- but this kludge together with hardcoding it to be `1` gets us far enough
 -- to work with SMT on some realistic examples.
 
-argsToStr :: (LanguageDef lang) => [PrtType lang] -> T.Text
-argsToStr = T.intercalate "@" . map f
-  where
-    f (F (TyFree n) `TyApp` []) = nameString n
-    f (F (TyFree n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
-    f arg = error $ "unexpected specializing arg" <> show arg
-
 genSpecName :: (LanguageDef lang) => [PrtType lang] -> Name -> Name
 genSpecName args name = Name (nameString name <> "@" <> argsToStr args) Nothing
 

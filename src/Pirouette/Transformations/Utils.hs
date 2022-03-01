@@ -11,6 +11,7 @@ module Pirouette.Transformations.Utils where
 import Data.Data
 import Data.Generics.Uniplate.Data
 import qualified Data.Map as M
+import qualified Data.Text as T
 import Prettyprinter hiding (Pretty, pretty)
 
 import Debug.Trace
@@ -74,6 +75,13 @@ hasHOFuns ty = isHOFTy `any` [ f | f@TyFun {} <- universe ty ]
 isHOFTy :: AnnType ann ty -> Bool
 isHOFTy (TyFun TyFun {} _) = True
 isHOFTy _ = False
+
+argsToStr :: (LanguageDef lang) => [PrtType lang] -> T.Text
+argsToStr = T.intercalate "@" . map f
+  where
+    f (F (TyFree n) `TyApp` []) = nameString n
+    f (F (TyFree n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
+    f arg = error $ "unexpected specializing arg" <> show arg
 
 -- This really belongs to a Pretty module, but we need them here for nicer debugging anyway for now.
 instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang Name)) => Pretty (HofDefBody lang) where
