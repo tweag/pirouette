@@ -56,7 +56,7 @@ defunDefs defs = defs { prtUODecls = defunDef <$> prtUODecls defs }
                                     . trace ("got: " <> renderSingleLineStr (pretty ty'))
                                     . trace ("var: " <> show hofs)
                                     . trace ("body was: " <> renderSingleLineStr (pretty funBody))
-                                    . trace ("body got: " <> renderSingleLineStr (pretty $ rewriteHofBodyArgTypes hofs funBody))
+                                    . trace ("body got: " <> renderSingleLineStr (pretty $ rewriteHofBody hofs funBody))
                                  else id)
                               FunDef{..}
 
@@ -90,19 +90,35 @@ rewriteHofType = go 0
     go pos (TyLam ann k ty) = error "unexpected arg type" -- TODO mention the type
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
-rewriteHofBodyArgTypes :: forall lang. (PrettyLang lang, LanguageDef lang)
-                       => [Maybe (PosApply lang)]
-                       -> B.Term lang Name
-                       -> B.Term lang Name
-rewriteHofBodyArgTypes [] = id
-rewriteHofBodyArgTypes (Nothing : rest) =
-  \case Lam ann ty body -> Lam ann ty $ rewriteHofBodyArgTypes rest body
-        Abs ann kd body -> Abs ann kd $ rewriteHofBodyArgTypes rest body
-        App{} -> error "unexpected App, arguments not exhausted yet"
-rewriteHofBodyArgTypes (Just PosApply{..} : rest) =
-  \case Lam ann ty body -> Lam ann synthType $ rewriteHofBodyArgTypes rest body
-        Abs ann kd body -> error "unexpected Abs where a type should've been replaced"
-        App{} -> error "unexpected App, arguments not exhausted yet"
+rewriteHofBody :: (PrettyLang lang, LanguageDef lang)
+               => [Maybe (PosApply lang)]
+               -> B.Term lang Name
+               -> B.Term lang Name
+rewriteHofBody = go
+  where
+    go [] term = term
+    go _ App{} = error "unexpected App, arguments not exhausted yet"
+
+    go (Nothing : rest) (Lam ann ty body) = Lam ann ty $ go rest body
+    go (Nothing : rest) (Abs ann kd body) = Abs ann kd $ go rest body
+
+    go (Just PosApply{..} : rest) (Lam ann ty body) = Lam ann synthType $ replaceApply applyFunName $ go rest body
+    go (Just _ : _) Abs{} = error "unexpected Abs where a type should've been replaced"
+
+replaceApply :: Name -> B.Term lang Name -> B.Term lang Name
+replaceApply applyFunName = go 0
+  where
+    go idx (Lam ann ty body) = Lam ann ty $ go (idx + 1) body
+    go idx (Abs ann kd body) = Abs ann kd $ go (idx + 1) body
+    go idx (App var args)
+      | B _ n <- var
+      , n == idx
+      , not $ null args = App (F (FreeName applyFunName)) (Arg (App var []) : args')
+      | otherwise = App var args'
+      where
+        args' = recurArg <$> args
+        recurArg arg@TyArg{} = arg
+        recurArg (Arg arg) = Arg $ go idx arg
 
 funTyStr :: (PrettyLang lang, LanguageDef lang) => B.Type lang Name -> T.Text
 funTyStr (dom `TyFun` cod) = funTyStr dom <> " => " <> funTyStr cod
