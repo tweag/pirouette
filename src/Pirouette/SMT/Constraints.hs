@@ -6,8 +6,8 @@
 
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
-
-import Control.Monad.IO.Class
+import Control.Monad.Except
+import Data.Either
 import Data.List (intersperse)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -38,11 +38,14 @@ type Env lang = Map Name (Type lang)
 -- one represents the complete execution of a branch, which leads to an application which cannot be further inlined
 -- (Because it is a builtin or a constant),
 -- whereas the other one represents an ongoing computation killed by lack of fuel.
-data Constraint lang meta
+data AtomicConstraint lang meta
   = Assign Name (TermMeta lang meta)
+  | VarEq Name Name
   | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
-  | And [Constraint lang meta]
+
+data Constraint lang meta
+  = And [AtomicConstraint lang meta]
   | Bot
 
 instance Semigroup (Constraint lang meta) where
@@ -56,17 +59,18 @@ andConstr :: Constraint lang meta -> Constraint lang meta -> Constraint lang met
 andConstr Bot _ = Bot
 andConstr _ Bot = Bot
 andConstr (And l) (And m) = And (l ++ m)
-andConstr (And l) y = And (y : l)
-andConstr x (And m) = And (x : m)
-andConstr x y = And [x, y]
 
-instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
+instance (PrettyLang lang, Pretty meta) => Pretty (AtomicConstraint lang meta) where
   pretty (Assign n term) =
     pretty n <+> "↦" <+> pretty term
+  pretty (VarEq a b) =
+    pretty a <+> "⇔" <+> pretty b
   pretty (NonInlinableSymbolEq t u) =
     pretty t <+> "==" <+> pretty u
   pretty (OutOfFuelEq t u) =
     pretty t <+> "~~" <+> pretty u
+
+instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
   pretty Bot =
     "⊥"
   pretty (And []) =
@@ -83,7 +87,7 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 -- order.
 --
 -- There is an issue for now when generating assertions such as:
--- x : Bool
+-- x : [Bool]
 -- x = Nil
 -- because Nil has type List a. Nil must be applied to Bool.
 --
@@ -108,30 +112,43 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 -- which can then be used in further constraints.
 --
 -- Hence, we chose solution #2
-assertConstraintRaw ::
-  (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m) =>
-  SimpleSMT.Solver ->
+atomicConstraintToSExpr ::
+  (LanguageSMT lang, ToSMT meta, MonadIO m) =>
+  Env lang ->
+  AtomicConstraint lang meta ->
+  ExceptT String m SimpleSMT.SExpr
+atomicConstraintToSExpr env (Assign name term) = do
+  let smtName = toSmtName name
+  let (Just ty) = Map.lookup name env
+  d <- translateData (typeToMeta ty) term
+  return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
+atomicConstraintToSExpr _ (VarEq a b) = do
+  let aName = toSmtName a
+  let bName = toSmtName b
+  return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
+atomicConstraintToSExpr _ (NonInlinableSymbolEq term1 term2) = do
+  t1 <- translateTerm term1
+  t2 <- translateTerm term2
+  return $ t1 `SimpleSMT.eq` t2
+atomicConstraintToSExpr _ (OutOfFuelEq term1 term2) = do
+  t1 <- translateTerm term1
+  t2 <- translateTerm term2
+  return $ t1 `SimpleSMT.eq` t2
+
+-- Since the translation of atomic constraints can fail,
+-- the translation of constraints does not always carry all the information it could.
+-- So the boolean indicates if every atomic constraint have been translated.
+-- A 'False' indicates that some have been forgotten during the translation.
+constraintToSExpr :: (LanguageSMT lang, ToSMT meta, MonadIO m) =>
   Env lang ->
   Constraint lang meta ->
-  m ()
-assertConstraintRaw s env (Assign name term) =
-  do
-    let smtName = toSmtName name
-    let (Just ty) = Map.lookup name env
-    d <- translateData (typeToMeta ty) term
-    liftIO $
-      SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` d)
-assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) = do
-  t1 <- translateTerm term1
-  t2 <- translateTerm term2
-  liftIO $ SimpleSMT.assert s (t1 `SimpleSMT.eq` t2)
-assertConstraintRaw s _ (OutOfFuelEq term1 term2) = do
-  t1 <- translateTerm term1
-  t2 <- translateTerm term2
-  liftIO $ SimpleSMT.assert s (t1 `SimpleSMT.eq` t2)
-assertConstraintRaw s env (And constraints) =
-  sequence_ (assertConstraintRaw s env <$> constraints)
-assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
+  m (Bool, SimpleSMT.SExpr)
+constraintToSExpr env (And constraints) = do
+  atomTrads <- mapM (runExceptT . atomicConstraintToSExpr env) constraints
+  return (all isRight atomTrads, SimpleSMT.andMany (rights atomTrads))
+constraintToSExpr _ Bot = return (True, SimpleSMT.bool False)
+
+
 
 -- | In `Assign` constraints, the assigned terms are always fully-applied
 -- constructors. This dedicated translation function provides required type
@@ -140,10 +157,10 @@ assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
 translateData ::
-  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
+  (LanguageSMT lang, ToSMT meta, Monad m) =>
   TypeMeta lang meta ->
   TermMeta lang meta ->
-  m SimpleSMT.SExpr
+  ExceptT String m SimpleSMT.SExpr
 translateData _ (App var []) = translateVar var
 translateData ty (App (Free (TermSig name)) args) =
   SimpleSMT.app
@@ -151,4 +168,4 @@ translateData ty (App (Free (TermSig name)) args) =
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
     -- translating the overall term.
     <*> mapM (translateData ty) (mapMaybe fromArg args)
-translateData _ _ = fail "Illegal term in translate data"
+translateData _ _ = throwError "Illegal term in translate data"

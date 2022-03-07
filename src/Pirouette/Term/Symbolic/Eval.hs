@@ -20,7 +20,6 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.Data hiding (eqT)
 import Data.Foldable
-import Data.List (intersperse)
 import qualified Data.Map.Strict as M
 import ListT (ListT)
 import qualified ListT
@@ -39,34 +38,13 @@ newtype SymVar = SymVar {symVar :: Name}
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar
 
-data Constraint lang
-  = SymVar :== TermMeta lang SymVar
-  | SymVarEq SymVar SymVar
-  | Eq (TermMeta lang SymVar) (TermMeta lang SymVar)
-  | And [Constraint lang]
-  | Bot
+type Constraint lang = SMT.Constraint lang SymVar
 
-toSmtConstraint :: Constraint lang -> SMT.Constraint lang SymVar
-toSmtConstraint (v :== t) = SMT.Assign (symVar v) t
-toSmtConstraint (SymVarEq t u) = SMT.NonInlinableSymbolEq (R.App (R.Meta t) []) (R.App (R.Meta u) [])
-toSmtConstraint (Eq t u) = SMT.NonInlinableSymbolEq t u
-toSmtConstraint (And xs) = SMT.And (map toSmtConstraint xs)
-toSmtConstraint Bot = SMT.Bot
+symVarEq :: SymVar -> SymVar -> Constraint lang
+symVarEq a b = SMT.And [SMT.VarEq (symVar a) (symVar b)]
 
-instance Semigroup (Constraint lang) where
-  (<>) = andConstr
-
-instance Monoid (Constraint lang) where
-  mempty = And []
-
--- Essentially list concatenation, with the specificity that `Bot` is absorbing.
-andConstr :: Constraint lang -> Constraint lang -> Constraint lang
-andConstr Bot _ = Bot
-andConstr _ Bot = Bot
-andConstr (And l) (And m) = And (l ++ m)
-andConstr (And l) y = And (y : l)
-andConstr x (And m) = And (x : m)
-andConstr x y = And [x, y]
+(=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
+a =:= t = SMT.And [SMT.Assign (symVar a) t]
 
 data PathStatus = Completed | OutOfFuel
 
@@ -126,7 +104,10 @@ runSymEvalT st = ListT.toList . fmap (uncurry path) . SMT.runSolverT s . prepSol
     prepSolver m = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
-      SMT.declareDatatypes decls dependencyOrder
+      declData <- runExceptT (SMT.declareDatatypes decls dependencyOrder)
+      case declData of
+        Right _ -> return ()
+        Left s -> error s
       m
 
 instance (Monad m) => Alternative (SymEvalT lang m) where
@@ -151,13 +132,20 @@ prune xs = SymEvalT $
     guard ok
     return (x, st')
   where
-    pathIsPlausible :: (MonadIO n, MonadFail n) => SymEvalSt lang -> SMT.SolverT n Bool
+    pathIsPlausible :: (MonadIO n) => SymEvalSt lang -> SMT.SolverT n Bool
     pathIsPlausible env
       | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
       | otherwise = do
         SMT.solverPush
-        SMT.declareVariables (sestGamma env)
-        SMT.assert (sestGamma env) (toSmtConstraint $ sestConstraint env)
+        decl <- runExceptT (SMT.declareVariables (sestGamma env))
+        case decl of
+          Right _ -> return ()
+          Left s -> error s
+        -- Here we do not care about the totality of the translation,
+        -- since we want to prune unsatisfiable path.
+        -- And if a partial translation is already unsat,
+        -- so is the translation of the whole set of constraints.
+        void $ SMT.assert (sestGamma env) (sestConstraint env)
         res <- SMT.checkSat
         SMT.solverPop
         return $ case res of
@@ -283,23 +271,23 @@ symeval' t@(R.App hd args) = do
               Just constr -> learn constr >> consumeGas (symeval $ caseTerm `R.appN` symbArgs)
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
-unify (R.App (R.Meta s) []) t = Just (s :== t)
-unify u (R.App (R.Meta s) []) = Just (s :== u)
+unify (R.App (R.Meta s) []) t = Just (s =:= t)
+unify u (R.App (R.Meta s) []) = Just (s =:= u)
 unify (R.App hdT argsT) (R.App hdU argsU) = do
   uTU <- unifyVar hdT hdU
   uArgs <- zipWithMPlus unifyArg argsT argsU
   return $ uTU <> mconcat uArgs
-unify t u = Just (Eq t u)
+unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq t u])
 
 unifyVar :: (LanguageBuiltins lang) => VarMeta lang SymVar -> VarMeta lang SymVar -> Maybe (Constraint lang)
-unifyVar (R.Meta s) (R.Meta r) = Just (SymVarEq s r)
-unifyVar (R.Meta s) t = Just (s :== R.App t [])
-unifyVar t (R.Meta s) = Just (s :== R.App t [])
-unifyVar t u = guard (t == u) >> Just (And [])
+unifyVar (R.Meta s) (R.Meta r) = Just (symVarEq s r)
+unifyVar (R.Meta s) t = Just (s =:= R.App t [])
+unifyVar t (R.Meta s) = Just (s =:= R.App t [])
+unifyVar t u = guard (t == u) >> Just (SMT.And [])
 
 unifyArg :: (LanguageBuiltins lang) => ArgMeta lang SymVar -> ArgMeta lang SymVar -> Maybe (Constraint lang)
 unifyArg (R.TermArg x) (R.TermArg y) = unify x y
-unifyArg (R.TyArg _) (R.TyArg _) = Just (And []) -- TODO: unify types too?
+unifyArg (R.TyArg _) (R.TyArg _) = Just (SMT.And []) -- TODO: unify types too?
 unifyArg _ _ = Nothing
 
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
@@ -331,19 +319,141 @@ instance Pretty PathStatus where
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
-instance (PrettyLang lang) => Pretty (Constraint lang) where
-  pretty (SymVarEq s r) = pretty s <+> "==" <+> pretty r
-  pretty (Eq s r) = pretty s <+> "==" <+> pretty r
-  pretty (n :== term) =
-    pretty n <+> "↦" <+> pretty term
-  pretty Bot =
-    "⊥"
-  pretty (And []) =
-    "⊤"
-  pretty (And l) =
-    mconcat $ intersperse "\n∧ " (map pretty l)
-
 runFor :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
 runFor _ t = do
   paths <- symevalT (runEvaluation t)
   mapM_ (liftIO . print . pretty) paths
+
+-- * All the functions related to symbolic execution guarded by user written predicates rather than fuel.
+
+newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
+newtype InCond lang = InCond (Constraint lang)
+
+data EvaluationWitness lang =
+  Verified | CounterExample (TermMeta lang SymVar)
+
+runConditionalEval :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => Term lang -> [(Name, Type lang)] -> OutCond lang -> InCond lang -> m ()
+runConditionalEval t args outCond inCond = do
+  paths <- symevalT $ do
+    svars <- declSymVars args
+    let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
+    liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+    conditionalEval tApplied outCond inCond
+  mapM_ (liftIO . print . pretty) paths
+
+conditionalEval :: (SymEvalConstr lang m, MonadIO m) => TermMeta lang SymVar -> OutCond lang -> InCond lang -> SymEvalT lang m (EvaluationWitness lang)
+conditionalEval t (OutCond q) (InCond p) = do
+  toEvaluateMore <- pruneAndValidate (q t) p
+  if toEvaluateMore
+  then do
+    t' <- symEvalOneStep t
+    conditionalEval t' (OutCond q) (InCond p)
+  else
+    return (CounterExample t)
+
+symEvalOneStep :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
+-- We cannot symbolic-evaluate polymorphic terms
+symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
+-- If we're forced to symbolic evaluate a lambda, we create a new metavariable
+-- and evaluate the corresponding application.
+symEvalOneStep t@(R.Lam (R.Ann x) ty _) = do
+  let ty' = typeFromMeta ty
+  [svars] <- declSymVars [(x, ty')]
+  R.Lam (R.Ann x) ty <$> symEvalOneStep (t `R.app` R.TermArg (R.App (R.Meta svars) []))
+-- If we're evaluating an applcation, we distinguish between a number
+-- of constituent cases:
+symEvalOneStep t@(R.App hd args) = do
+  mDefHead <- lift $ prtMaybeDefOf hd
+  case mDefHead of
+    -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
+    Nothing -> do
+      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
+      return $ R.App hd evaluatedArgs
+    Just def -> case def of
+      DTypeDef _ -> error "Can't evaluate typedefs"
+      -- If hd is a defined function, we inline its definition.
+      DFunction _rec body _ ->
+        return $ termToMeta body `R.appN` args
+      -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term.
+      DConstructor _ _ -> do
+        evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
+        return $ R.App hd evaluatedArgs
+      -- If hd is a destructor, we have more work to do: we have to expand the term
+      -- being destructed, then combine it with all possible destructor cases.
+      -- Say we're looking at:
+      --
+      -- > symeval (Nil_match @Int l N (\x xs -> M))
+      --
+      -- Then say that symeval l == [(c1, Cons sv1 sv2)]; we now create a fresh
+      -- symbolic variable S to connect the result of l and each of the branches.
+      -- The overall result should be something like:
+      --
+      -- > [ (c1 && S = Cons sv1 sv2 && S = Nil , N)
+      -- > , (c1 && S = Cons sv1 sv2 && S = Cons sv3 sv4 , M)
+      -- > ]
+      --
+      -- Naturally, the first path is already impossible so we do not need to
+      -- move on to evaluate N.
+      DDestructor tyName -> do
+        Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
+        Datatype _ _ _ consList <- lift $ prtTypeDefOf tyName
+        -- We know what is the type of all the possible term results, its whatever
+        -- type we're destructing applied to its arguments, making sure it contains
+        -- no meta variables.
+        let tyParams' = map typeFromMeta tyParams
+        term' <- symEvalOneStep term
+        if term == term'
+        then
+          asum $
+            for2 consList cases $ \(consName, consTy) caseTerm -> do
+              let (consArgs, _) = R.tyFunArgs consTy
+              svars <- freshSymVars consArgs
+              let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
+              let symbCons = R.App (R.Free $ TermSig consName) symbArgs
+              let mconstr = unify term' symbCons
+              case mconstr of
+                Nothing -> empty
+                Just constr -> do
+                  learn constr
+                  return (caseTerm `R.appN` symbArgs)
+        else
+          return $ R.App hd (map R.TyArg tyParams ++ R.TermArg term' : R.TyArg tyRes : map R.TermArg cases ++ excess)
+
+-- | Prune the set of paths in the current set.
+pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> SymEvalT lang m Bool
+pruneAndValidate cOut cIn =
+  SymEvalT $ StateT $ \st -> do
+    contradictProperty <- checkProperty cOut cIn st
+    case contradictProperty of
+      SMT.Unsat -> empty
+      SMT.Sat -> return (False, st)
+      SMT.Unknown -> return (True, st)
+
+-- Our aim is to prove that
+-- (pathConstraints /\ cOut) => cIn.
+-- This is equivalent to the unsatisfiability of
+-- pathConstraints /\ cOut /\ (not cIn).
+checkProperty :: (SMT.LanguageSMT lang, MonadIO m) => Constraint lang -> Constraint lang -> SymEvalSt lang -> SMT.SolverT m SMT.Result
+checkProperty cOut cIn env = do
+  SMT.solverPush
+  decl <- runExceptT (SMT.declareVariables (sestGamma env))
+  case decl of
+    Right _ -> return ()
+    Left s -> error s
+  cstrTotal <- SMT.assert (sestGamma env) (sestConstraint env)
+  outTotal <- SMT.assert (sestGamma env) cOut
+  inTotal <- SMT.assertNot (sestGamma env) cIn
+  result <- SMT.checkSat
+  SMT.solverPop
+  case result of
+    SMT.Sat ->
+      if cstrTotal && outTotal && inTotal
+      then return SMT.Sat
+      -- If a partial translation of the constraints is SAT,
+      -- it does not guarantee us that the full set of constraints is satisfiable.
+      else return SMT.Unknown
+    _ -> return result
+
+instance PrettyLang lang => Pretty (EvaluationWitness lang) where
+  pretty Verified = "Verified"
+  pretty (CounterExample t) = "COUNTER-EXAMPLE: The result is\n" <> pretty t

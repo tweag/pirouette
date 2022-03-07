@@ -3,11 +3,6 @@ module Pirouette.Term.Syntax.SystemFSpec (spec) where
 
 import Pirouette.Term.Syntax.SystemF hiding (tyApp)
 
-import Data.List (groupBy, transpose)
-import Control.Arrow (first)
-
-import           Control.Monad
-import           Data.Text.Prettyprint.Doc
 import           Test.Hspec
 
 type Ty = AnnType String (Var String String)
@@ -15,6 +10,7 @@ type Ty = AnnType String (Var String String)
 tyApp :: Ty -> Ty -> Ty
 tyApp = app
 
+spec :: SpecWith ()
 spec = do
   describe "type-level appN" $ do
     it "works for hand-crafted examples" $

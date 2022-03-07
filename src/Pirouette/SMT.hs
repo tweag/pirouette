@@ -24,16 +24,18 @@ module Pirouette.SMT
     declareVariables,
     declareVariable,
     assert,
+    assertNot,
 
     -- * Convenient re-exports
     Constraint (..),
+    AtomicConstraint (..),
     SimpleSMT.Result (..),
     module Base,
   )
 where
 
 import Control.Applicative
-import Control.Monad.Error.Class
+import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.State.Class
@@ -90,11 +92,11 @@ solverPop :: (MonadIO m) => SolverT m ()
 solverPop = ask >>= liftIO . SimpleSMT.pop
 
 -- | Declare a single datatype in the current solver session.
-declareDatatype :: (LanguageSMT lang, MonadFail m, MonadIO m) => Name -> TypeDef lang -> SolverT m ()
+declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) ()
 declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
   solver <- ask
+  constr' <- mapM constructorFromPIR constructors
   liftIO $ do
-    constr' <- mapM constructorFromPIR constructors
     SimpleSMT.declareDatatype
       solver
       (toSmtName typeName)
@@ -105,7 +107,7 @@ declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
 -- the dependency order passed as the second argument. You can generally get its value
 -- from a 'PirouetteDepOrder' monad.
 declareDatatypes ::
-  (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> SolverT m ()
+  (LanguageSMT lang, MonadIO m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> ExceptT String (SolverT m) ()
 declareDatatypes decls orderedNames =
   forM_ typeNames $ \tyname ->
     case M.lookup tyname decls of
@@ -116,19 +118,38 @@ declareDatatypes decls orderedNames =
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.
-declareVariables :: (LanguageSMT lang, MonadIO m, MonadFail m) => M.Map Name (Type lang) -> SolverT m ()
+declareVariables :: (LanguageSMT lang, MonadIO m) => M.Map Name (Type lang) -> ExceptT String (SolverT m) ()
 declareVariables = mapM_ (uncurry declareVariable) . M.toList
 
 -- | Declares a single variable in the current solver session.
-declareVariable :: (LanguageSMT lang, MonadIO m, MonadFail m) => Name -> Type lang -> SolverT m ()
+declareVariable :: (LanguageSMT lang, MonadIO m) => Name -> Type lang -> ExceptT String (SolverT m) ()
 declareVariable varName varTy = do
   solver <- ask
-  liftIO $ translateType varTy >>= void . SimpleSMT.declare solver (toSmtName varName)
+  tySExpr <- translateType varTy
+  liftIO $ void (SimpleSMT.declare solver (toSmtName varName) tySExpr)
 
 -- | Asserts a constraint; check 'Constraint' for more information
+-- | The functions 'assert' and 'assertNot' output a boolean,
+-- stating if the constraint was fully passed to the SMT solver,
+-- or if a part was lost during the translation process.
 assert ::
-  (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m) =>
+  (LanguageSMT lang, ToSMT meta, MonadIO m) =>
   M.Map Name (Type lang) ->
   Constraint lang meta ->
-  SolverT m ()
-assert gamma c = SolverT $ ReaderT $ \solver -> assertConstraintRaw solver gamma c
+  SolverT m Bool
+assert env c =
+  SolverT $ ReaderT $ \solver -> do
+    (isTotal,expr) <- constraintToSExpr env c
+    liftIO $ SimpleSMT.assert solver expr
+    return isTotal
+
+assertNot ::
+  (LanguageSMT lang, ToSMT meta, MonadIO m) =>
+  M.Map Name (Type lang) ->
+  Constraint lang meta ->
+  SolverT m Bool
+assertNot env c =
+  SolverT $ ReaderT $ \solver -> do
+    (isTotal, expr) <- constraintToSExpr env c
+    liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
+    return isTotal
