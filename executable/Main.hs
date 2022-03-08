@@ -63,6 +63,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.ToTla
 import Pirouette.Term.Transformations
 import Pirouette.Transformations
+import qualified Pirouette.Transformations.Defunctionalization as SFD
 import Pirouette.Transformations.Monomorphization
 import qualified PlutusCore as P
 import qualified PlutusCore.Flat as P
@@ -226,7 +227,7 @@ processDecls opts uDefs = do
     runReaderT checkDeBruijnIndices uDefs
 
   -- Otherwise, we proceed normally
-  noMutDefs <- elimEvenOddMutRec $ monomorphize uDefs
+  noMutDefs <- elimEvenOddMutRec $ SFD.defunctionalize $ monomorphize uDefs
   let oDefs =
         if noInlining opts
           then noMutDefs

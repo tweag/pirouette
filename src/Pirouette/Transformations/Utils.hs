@@ -8,6 +8,7 @@
 
 module Pirouette.Transformations.Utils where
 
+import Control.Arrow (first, second)
 import Data.Data
 import Data.Generics.Uniplate.Data
 import qualified Data.Map as M
@@ -75,6 +76,16 @@ hasHOFuns ty = isHOFTy `any` [ f | f@TyFun {} <- universe ty ]
 isHOFTy :: AnnType ann ty -> Bool
 isHOFTy (TyFun TyFun {} _) = True
 isHOFTy _ = False
+
+-- * @splitArgs n args@ splits @args@ into the first @n@ type arguments and everything else.
+--
+-- For instance, @splitArgs 2 [Arg a, TyArg A, TyArg B, Arg b, TyArg C]@
+-- yields @([A, B], [Arg a, Arg b, TyArg C])@.
+splitArgs :: Int -> [Arg ty v] -> ([ty], [Arg ty v])
+splitArgs 0 args = ([], args)
+splitArgs n (TyArg tyArg : args) = first (tyArg :) $ splitArgs (n - 1) args
+splitArgs n (arg : args) = second (arg :) $ splitArgs n args
+splitArgs _ [] = error "Less args than poly args count"
 
 argsToStr :: (LanguageDef lang) => [PrtType lang] -> T.Text
 argsToStr = T.intercalate "@" . map f

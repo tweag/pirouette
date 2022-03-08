@@ -115,8 +115,8 @@ data SpecRequest lang = SpecRequest
   }
   deriving (Show, Eq, Ord)
 
-type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => TermMeta lang Void Name -> m (TermMeta lang Void Name)
-type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => TypeMeta lang Void Name -> m (TypeMeta lang Void Name)
+type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => PrtTerm lang -> m (PrtTerm lang)
+type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => PrtType lang -> m (PrtType lang)
 
 executeSpecRequest :: (LanguageDef lang) => SpecRequest lang -> Decls lang Name
 executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
@@ -148,10 +148,6 @@ specFunApp hofDefs (App (F (FreeName name)) args)
     pure $ F (FreeName speccedName) `App` remainingArgs
   where
     tyArgs = mapMaybe fromTyArg args
-    splitArgs 0 args = ([], args)
-    splitArgs n (TyArg tyArg : args) = first (tyArg :) $ splitArgs (n - 1) args
-    splitArgs n (arg : args) = second (arg :) $ splitArgs n args
-    splitArgs _ [] = error "Less args than poly args count"
     hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specFunApp _ x = pure x
 
