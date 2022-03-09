@@ -34,74 +34,13 @@ import Pirouette.Term.Syntax.Pretty
 import Pirouette.Term.Syntax.Subst
 import Pirouette.Term.Syntax.SystemF
 
+import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
 
 defunctionalize :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize = etaExpand -- traceDefsId $ defunDefs defs0
-
-etaExpand :: forall lang. (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
-          => PrtUnorderedDefs lang
-          -> PrtUnorderedDefs lang
-etaExpand defs@PrtUnorderedDefs{..} = transformBi exp defs
-  where
-    exp :: PrtTerm lang -> PrtTerm lang
-    exp src@(F (FreeName name) `App` args)
-      | Just nameType <- lookupNameType prtUODecls name
-      , specNameType <- nameType `appN` argsTy
-      , (fullArgs, _) <- flattenType specNameType
-      , remainingArgs <- drop (length args - length argsTy) fullArgs
-      , let remArgsLen = fromIntegral $ length remainingArgs
-      , remArgsLen > 0
-      , let new = wrapInLambdas remainingArgs $ F (FreeName name) `App` ((shiftArg remArgsLen <$> args) <> mkExpIndices remArgsLen)
-        = trace ("was: " <> renderSingleLineStr (pretty src))
-        . trace ("got: " <> renderSingleLineStr (pretty new))
-        $ new
-      where 
-        argsTy = mapMaybe fromTyArg args
-    exp term = term
-
-    mkExpIndices cnt = [ Arg $ B (Ann "η") idx `App` []
-                       | idx <- reverse [0 .. cnt - 1]
-                       ]
-
-wrapInLambdas :: [FlatArgType lang] -> PrtTerm lang -> PrtTerm lang
-wrapInLambdas types term = foldr f term types
-  where
-    f (FlatTyArg k) = Abs (Ann "η") k
-    f (FlatTermArg ty) = Lam (Ann "η") ty
-
-data FlatArgType lang
-  = FlatTyArg Kind
-  | FlatTermArg (PrtType lang)
-  deriving (Show)
-
-flattenType :: PrtType lang -> ([FlatArgType lang], PrtType lang)
-flattenType ty@TyApp{} = ([], ty)
-flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
-flattenType (TyAll ann kind ty) = first (FlatTyArg kind :) $ flattenType ty
-flattenType TyLam{} = error "unnormalized type"
-
--- TODO have a proper @instance HasSubst (PrtArg lang)@ or smth similar
-shiftArg :: Integer -> PrtArg lang -> PrtArg lang
-shiftArg k (Arg e) = Arg $ shift k e
-shiftArg k (TyArg t) = TyArg $ shift k t
-
--- * Returns the type of the given name.
---
--- This may return Nothing if the name is not known or
--- if the name doesn't have a *-inhabiting type (for instance, being a type itself).
-lookupNameType :: Decls lang Name -> Name -> Maybe (PrtType lang)
-lookupNameType decls name = name `M.lookup` decls >>= getName
-  where
-    getName (DFunDef fd) = Just $ funTy fd
-    getName (DConstructor idx typeName) = do
-      DTypeDef Datatype{..} <- typeName `M.lookup` decls   -- this pattern-match failure shall probably be a hard error instead of Nothing
-      conTy <- constructors `safeIdx` idx
-      pure $ foldr (\(name, kind) ty -> TyAll (Ann name) kind ty) (snd conTy) typeVariables
-    getName (DDestructor na) = Nothing -- TODO just write the type of the destructor out
-    getName (DTypeDef td) = Nothing
+defunctionalize = traceDefsId . etaExpand . defunDefs -- traceDefsId $ defunDefs defs0
 
 defunDefs :: forall lang. (PrettyLang lang, LanguageDef lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 defunDefs defs = defs { prtUODecls = defunDef <$> prtUODecls defs }

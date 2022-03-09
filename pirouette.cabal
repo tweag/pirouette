@@ -48,6 +48,7 @@ library
       Pirouette.TLA.Type
       Pirouette.Transformations
       Pirouette.Transformations.Defunctionalization
+      Pirouette.Transformations.EtaExpand
       Pirouette.Transformations.Monomorphization
       Pirouette.Transformations.Utils
   other-modules:
