@@ -10,28 +10,17 @@
 module Pirouette.Transformations.Defunctionalization(defunctionalize) where
 
 import Control.Arrow ((***))
-import Control.Monad.Reader
-import Control.Monad.Writer.Strict
-import Data.Bifunctor
-import Data.Data
 import Data.Generics.Uniplate.Data
-import Data.List
 import qualified Data.Map as M
-import Data.Maybe
 import qualified Data.Set as S
-import Data.String
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
-import Data.Void
-import Prettyprinter hiding (Pretty, pretty)
 
 import Debug.Trace
 
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
-import Pirouette.Term.Syntax.Pretty
-import Pirouette.Term.Syntax.Subst
 import Pirouette.Term.Syntax.SystemF
 
 import Pirouette.Transformations.EtaExpand

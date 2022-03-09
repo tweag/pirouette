@@ -11,13 +11,9 @@ import Data.Bifunctor
 import Data.Generics.Uniplate.Data
 import qualified Data.Map as M
 import Data.Maybe
-import Data.String.Interpolate.IsString
-import Prettyprinter hiding (Pretty, pretty)
 
 import Pirouette.Monad
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base as B
-import Pirouette.Term.Syntax.Pretty
 import Pirouette.Term.Syntax.Subst
 import Pirouette.Term.Syntax.SystemF
 
