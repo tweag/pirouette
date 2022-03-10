@@ -77,6 +77,13 @@ isHOFTy :: AnnType ann ty -> Bool
 isHOFTy (TyFun TyFun {} _) = True
 isHOFTy _ = False
 
+-- @Arg Kind (PrtType lang)@ could've been used here instead,
+-- but having a distinct type seems to be a bit nicer, at least for now for hole-driven development reasons.
+data FlatArgType lang
+  = FlatTyArg Kind
+  | FlatTermArg (PrtType lang)
+  deriving (Show)
+
 -- * @splitArgs n args@ splits @args@ into the first @n@ type arguments and everything else.
 --
 -- For instance, @splitArgs 2 [Arg a, TyArg A, TyArg B, Arg b, TyArg C]@

@@ -47,11 +47,6 @@ wrapInLambdas types term = foldr f term types
     f (FlatTyArg k) = Abs (Ann "η") k
     f (FlatTermArg ty) = Lam (Ann "η") ty
 
-data FlatArgType lang
-  = FlatTyArg Kind
-  | FlatTermArg (PrtType lang)
-  deriving (Show)
-
 flattenType :: PrtType lang -> ([FlatArgType lang], PrtType lang)
 flattenType ty@TyApp{} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
@@ -63,7 +58,7 @@ shiftArg :: Integer -> PrtArg lang -> PrtArg lang
 shiftArg k (Arg e) = Arg $ shift k e
 shiftArg k (TyArg t) = TyArg $ shift k t
 
--- * Returns the type of the given name.
+-- | Returns the type of the given name.
 --
 -- This may return Nothing if the name is not known or
 -- if the name doesn't have a *-inhabiting type (for instance, being a type itself).
