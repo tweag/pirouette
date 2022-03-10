@@ -14,7 +14,7 @@ in pkgs.mkShell {
     buildInputs = ourpkgs.build-deps ++ ourpkgs.dev-deps ++ runtime-deps;
 
     # This shell hook was taken from: https://github.com/input-output-hk/ouroboros-network/pull/3649/files
-    # and is necessary to set the right localle so tools such as ormolu and graphmod can work
+    # and is necessary to set the right locale so tools such as ormolu and graphmod can work
     # with files contaning non-ascii characters.
     shellHook =
       if (pkgs.glibcLocales != null && pkgs.stdenv.hostPlatform.libc == "glibc")
