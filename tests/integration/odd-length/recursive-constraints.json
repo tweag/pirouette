@@ -1,0 +1,54 @@
+{
+  "inputs" :  [
+    { "name" : "l",
+      "typ" : "TyApp List [Bool]"
+    }
+  ],
+  "outputCond" : {
+    "resultName" : "t",
+    "conditionBody":
+      { "tag": "And",
+        "and": [
+          { "tag": "ASTCond",
+            "cond": "TermEq t (App (Free \"True\") [])"},
+          { "tag": "Native",
+            "contents":
+            { "native": "lt (app (symbol \"length\") [symbol \"pir_l\"]) (int 10)"}
+          }
+        ]
+      }
+  },
+  "inputCond" :
+    { "tag": "Or",
+      "or": [
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 1)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 3)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 5)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 7)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 9)"}
+      ]
+    },
+  "additionalDefs" : [
+    { "fun" : "length",
+      "args" : [
+        { "name" : "ll",
+          "typ" : "app (symbol \"pir_List\") [symbol \"pir_Bool\"]"
+        }
+      ],
+      "resultType" : "tInt",
+      "definition" :
+        "\\f -> match (symbol \"ll\") [(symbol \"pir_Nil\", int 0), (app (symbol \"pir_Cons\") [symbol \"y\", symbol \"ys\"], add (int 1) (app f [symbol \"ys\"]))]"
+    }
+  ],
+  "axioms" : [
+    { "forall" :
+      { "vars" : [
+          { "name" : "l",
+            "typ" : "app (symbol \"pir_List\") [symbol \"pir_Bool\"]"
+          }
+        ],
+        "prop" : "ge (app (symbol \"length\") [symbol \"l\"]) (int 0)"
+      }
+    }
+  ]
+}

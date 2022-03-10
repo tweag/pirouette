@@ -1,0 +1,44 @@
+{
+  "inputs" :  [
+    { "name" : "l",
+      "typ" : "TyApp List [Bool]"
+    }
+  ],
+  "outputCond" : {
+    "resultName" : "t",
+    "conditionBody":
+      { "tag": "And",
+        "and": [
+          { "tag": "ASTCond",
+            "cond": "TermEq t (App (Free \"True\") [])"},
+          { "tag": "Native",
+            "contents":
+            { "native": "lt (app (symbol \"length\") [symbol \"pir_l\"]) (int 10)"}
+          }
+        ]
+      }
+  },
+  "inputCond" :
+    { "tag": "Or",
+      "or": [
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 1)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 3)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 5)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 7)"},
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 8)"}
+      ]
+    },
+  "additionalDefs" : [
+    { "fun" : "length",
+      "args" : [
+        { "name" : "ll",
+          "typ" : "app (symbol \"pir_List\") [symbol \"pir_Bool\"]"
+        }
+      ],
+      "resultType" : "tInt",
+      "definition" :
+        "\\f -> match (symbol \"ll\") [(symbol \"pir_Nil\", int 0), (app (symbol \"pir_Cons\") [symbol \"y1\", symbol \"ys1\"], match (symbol \"ys1\") [(symbol \"pir_Nil\", int 1), (app (symbol \"pir_Cons\") [symbol \"y2\", symbol \"ys2\"], match (symbol \"ys2\") [(symbol \"pir_Nil\", int 2), (app (symbol \"pir_Cons\") [symbol \"y3\", symbol \"ys3\"], match (symbol \"ys3\") [(symbol \"pir_Nil\", int 3), (app (symbol \"pir_Cons\") [symbol \"y4\", symbol \"ys4\"], match (symbol \"ys4\") [(symbol \"pir_Nil\", int 4), (app (symbol \"pir_Cons\") [symbol \"y5\", symbol \"ys5\"], match (symbol \"ys5\") [(symbol \"pir_Nil\", int 5), (app (symbol \"pir_Cons\") [symbol \"y6\", symbol \"ys6\"], match (symbol \"ys6\") [(symbol \"pir_Nil\", int 6), (app (symbol \"pir_Cons\") [symbol \"y7\", symbol \"ys7\"], match (symbol \"ys7\") [(symbol \"pir_Nil\", int 7), (app (symbol \"pir_Cons\") [symbol \"y8\", symbol \"ys8\"], match (symbol \"ys8\") [(symbol \"pir_Nil\", int 8), (app (symbol \"pir_Cons\") [symbol \"y9\", symbol \"ys9\"], match (symbol \"ys9\") [(symbol \"pir_Nil\", int 9), (app (symbol \"pir_Cons\") [symbol \"y10\", symbol \"ys10\"], match (symbol \"ys10\") [(symbol \"pir_Nil\", int 10), (app (symbol \"pir_Cons\") [symbol \"y11\", symbol \"ys11\"], match (symbol \"ys11\") [(symbol \"pir_Nil\", int 11), (app (symbol \"pir_Cons\") [symbol \"y12\", symbol \"ys12\"], int 12)])])])])])])])])])])])]"
+    }
+  ],
+  "axioms" : []
+}

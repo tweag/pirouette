@@ -71,6 +71,8 @@ module Pirouette.SMT.SimpleSMT
     symbol,
     keyword,
     as,
+    match,
+    forall,
 
     -- ** Types
     tInt,
@@ -722,6 +724,22 @@ const f = fun f []
 app :: SExpr -> [SExpr] -> SExpr
 app f [] = f -- Tweag: fix problematic parenthesis in generated smtlib sexpr
 app f xs = List (f : xs)
+
+match :: SExpr -> [(SExpr, SExpr)] -> SExpr
+match t cases =
+  List
+    [ Atom "match",
+      t,
+      List $ map (\(a,b) -> List [a,b]) cases
+    ]
+
+forall :: [(String, SExpr)] -> SExpr -> SExpr
+forall vars prop =
+  List
+    [ Atom "forall",
+      List (map (\(s,e) -> List [symbol s, e]) vars),
+      prop
+    ]
 
 -- Identifiers -----------------------------------------------------------------------
 

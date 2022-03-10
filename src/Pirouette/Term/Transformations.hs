@@ -63,10 +63,10 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 --
 --  > v = [d/Bool x T[thunk := Unit] F[thunk := Unit]]
 --  Generally v = [d/Bool T F] since `thunk` has no reason to appear in `T` and `F`.
-removeExcessiveDestArgs :: (Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
+removeExcessiveDestArgs :: (Show meta, Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
 removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
+    go :: (Show meta, PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go t = do
       UnDestMeta n tyN tyArgs x tyReturn cases excess <- unDest t
       if null excess
@@ -83,7 +83,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
 
     -- Receives the excessive arguments, the type of the constructor whose case we're on and
     -- the term defining the value at this constructor's case.
-    appExcessive :: [ArgMeta lang meta] -> TypeMeta lang meta -> TermMeta lang meta -> TermMeta lang meta
+    appExcessive :: (Show meta, LanguageBuiltins lang) => [ArgMeta lang meta] -> TypeMeta lang meta -> TermMeta lang meta -> TermMeta lang meta
     appExcessive l (SystF.TyFun _ b) (SystF.Lam n ty t) =
       SystF.Lam n ty (appExcessive (map (SystF.argMap id (shift 1)) l) b t) -- `a` and `ty` are equal, up to substitution of variables in the type of the constructors.
     appExcessive _ (SystF.TyFun _ _) _ =
@@ -173,10 +173,10 @@ expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
 -- | Simplify /destructor after constructor/ applications. For example,
 --
 --  > [d/Maybe [c/Just X] N (\ J)] == [J X]
-constrDestrId :: (Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
+constrDestrId :: (Show meta, Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
 constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
-    go :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
+    go :: (Show meta, PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go t = do
       UnDestMeta _ tyN tyArgs x ret cases excess <- unDest t
       UnConsMeta tyN' xTyArgs xIdx xArgs <- unCons x
@@ -463,7 +463,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
 --  >  [d/Maybe x $(destrNF [f N a0 a1]) (\ $(destrNF [f J a0 a1]))]
 --
 --  that is, we push the application of f down to the branches of the "case" statement.
-destrNF :: forall lang m meta. (Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
+destrNF :: forall lang m meta. (Show meta, Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
 destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
   where
     -- Returns a term that is a destructor from a list of terms respecting

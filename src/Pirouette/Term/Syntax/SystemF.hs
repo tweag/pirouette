@@ -252,7 +252,7 @@ argMapM f g (TermArg x) = TermArg <$> g x
 argMap :: (ty -> ty') -> (v -> v') -> Arg ty v -> Arg ty' v'
 argMap f g = runIdentity . argMapM (return . f) (return . g)
 
-instance (HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
+instance (Show v, Show ty, Show ann, HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
   type SubstVar (AnnTerm ty ann v) = v
   var = termPure
 
@@ -271,7 +271,7 @@ substTy s (Lam v ty body) = Lam v (subst s ty) (substTy s body)
 substTy s (Abs v kd body) = Abs v kd (substTy (liftSub s) body)
 
 termApp ::
-  (HasSubst ty, IsVar v) =>
+  (Show v, Show ty, Show ann, HasSubst ty, IsVar v) =>
   AnnTerm ty ann v ->
   Arg ty (AnnTerm ty ann v) ->
   AnnTerm ty ann v
@@ -286,7 +286,7 @@ termApp _ _ = error "Mismatched Term/Type application"
 --  such as TLA+ are very unhappy about name shadowing, so you might want to map
 --  over the result and deshadow bound names.
 expandVar ::
-  (HasSubst ty, Eq v, IsVar v, Data ty, Data ann, Data v) =>
+  (Show v, Show ty, Show ann, HasSubst ty, Eq v, IsVar v, Data ty, Data ann, Data v) =>
   (v, AnnTerm ty ann v) ->
   AnnTerm ty ann v ->
   AnnTerm ty ann v
@@ -297,7 +297,7 @@ expandVar (n, defn) = transform go
       | otherwise = appN defn args
     go t = t
 
-instance (IsVar v, HasSubst ty) => HasApp (AnnTerm ty ann v) where
+instance (Show v, Show ty, Show ann, IsVar v, HasSubst ty) => HasApp (AnnTerm ty ann v) where
   type AppArg (AnnTerm ty ann v) = Arg ty (AnnTerm ty ann v)
 
   -- Single pass substitution;
@@ -309,7 +309,7 @@ instance (IsVar v, HasSubst ty) => HasApp (AnnTerm ty ann v) where
     case (t, u) of
       (Lam {}, TermArg _) -> goTerm t us
       (Abs {}, TyArg _) -> goType t us
-      (_, _) -> error "Mismatched Term/Type application"
+      (_, _) -> error $ "Mismatched Term/Type application " <> show t <> " and " <> show u
     where
       go getHead getNHead from sub t us =
         -- first we decide whether we have more lambdas or more arguments;

@@ -179,7 +179,7 @@ argsToStr = Text.intercalate "@" . map f
   where
     f (Free (TySig n) `TyApp` []) = nameString n
     f (Free (TySig n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
-    f arg = error $ "unexpected specializing arg" <> show arg
+    f arg = error $ "unexpected specializing arg " <> show arg
 
 genSpecName :: (LanguageBuiltins builtins) => [Type builtins] -> Name -> Name
 genSpecName args name = Name (nameString name <> "@" <> argsToStr args) Nothing

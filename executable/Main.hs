@@ -36,6 +36,7 @@ import Pirouette.PlutusIR.Builtins
 import Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Builtins
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
+import Pirouette.Term.Symbolic.Interface as SymbolicEval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
@@ -58,7 +59,8 @@ data CliOpts = CliOpts
     funNamePrefix :: String,
     asFunction :: Bool,
     checkSanity :: Bool,
-    noInlining :: Bool
+    noInlining :: Bool,
+    constraintFile :: FilePath
   }
   deriving (Show)
 
@@ -134,7 +136,12 @@ mainOpts opts uDefs = do
       putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
       putStrLn' ""
 
-    symbolicExec n (DFunction _ t _) = SymbolicEval.runFor n t
+    symbolicExec n (DFunction _ t _) =
+      let fil = constraintFile opts in
+      if fil == ""
+      then SymbolicEval.runFor n t
+      else
+        SymbolicEval.runIncorrectness (constraintFile opts) t
     symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
 processDecls :: (LanguageBuiltins lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
@@ -276,20 +283,7 @@ parseCliOpts =
     <*> parseAsFunction
     <*> parseTrSanity
     <*> parseNoInlining
-
-parseTrSanity :: Opt.Parser Bool
-parseTrSanity =
-  Opt.switch
-    ( Opt.long "sanity-check"
-        <> Opt.help "Perform a series of extra checks, can help with debugging"
-    )
-
-parseNoInlining :: Opt.Parser Bool
-parseNoInlining =
-  Opt.switch
-    ( Opt.long "no-inlining"
-        <> Opt.help "Disable inlining of definitions when generating TLA+ programs"
-    )
+    <*> parseConstraintFile
 
 parseStage :: Opt.Parser Stage
 parseStage = termOnly Opt.<|> symbExec
@@ -324,6 +318,29 @@ parseAsFunction =
   Opt.switch
     ( Opt.long "as-function"
         <> Opt.help "Directly generate a TLA+ function. Do not transform it into an action."
+    )
+
+parseTrSanity :: Opt.Parser Bool
+parseTrSanity =
+  Opt.switch
+    ( Opt.long "sanity-check"
+        <> Opt.help "Perform a series of extra checks, can help with debugging"
+    )
+
+parseNoInlining :: Opt.Parser Bool
+parseNoInlining =
+  Opt.switch
+    ( Opt.long "no-inlining"
+        <> Opt.help "Disable inlining of definitions when generating TLA+ programs"
+    )
+
+parseConstraintFile :: Opt.Parser FilePath
+parseConstraintFile =
+  Opt.option
+    Opt.str
+    ( Opt.long "constraints"
+        <> Opt.value ""
+        <> Opt.help "The constraints used to guide symbolic evaluation"
     )
 
 parseArgument :: Opt.Parser FilePath

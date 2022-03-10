@@ -11,6 +11,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Pirouette.Term.Symbolic.Eval where
 
@@ -28,9 +29,12 @@ import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT as SMT
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
+import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 import Prettyprinter hiding (Pretty (..))
+
+import Debug.Trace (trace)
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
@@ -62,8 +66,16 @@ data SymEvalSt lang = SymEvalSt
     sestFreshCounter :: Int,
     sestFuel :: Int,
     -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
-    sestValidated :: Bool
+    sestValidated :: Bool,
+    sestKnownNames :: [Name] -- The list of names the SMT solver is aware of
   }
+
+instance (PrettyLang lang) => Pretty (SymEvalSt lang) where
+  pretty SymEvalSt{..} =
+    "Constraints are" <+> pretty sestConstraint <> "\n" <>
+    "in environnement" <+> pretty (M.toList sestGamma) <> "\n" <>
+    "with a counter at" <+> pretty sestFreshCounter <+>
+    "and" <+> pretty sestFuel <+> "fuel remaining"
 
 -- | Given a result and a resulting state, returns a 'Path' representing it.
 path :: a -> SymEvalSt lang -> Path lang a
@@ -87,7 +99,7 @@ type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.Lang
 symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
 symevalT = runSymEvalT st0
   where
-    st0 = SymEvalSt mempty M.empty 0 10 False
+    st0 = SymEvalSt mempty M.empty 0 10 False []
 
 runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
@@ -95,20 +107,26 @@ runSymEvalTRaw st = flip runStateT st . symEvalT
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
-runSymEvalT st = ListT.toList . fmap (uncurry path) . SMT.runSolverT s . prepSolver . runSymEvalTRaw st
+runSymEvalT st symEvalT =
+  ListT.toList $ do
+    solvPair <- SMT.runSolverT s $ do
+      usedNames <- prepSolver
+      let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
+      runSymEvalTRaw newState symEvalT
+    let paths = uncurry path solvPair
+    return paths
   where
-    -- we'll rely on cvc4 without dbg messages
-    s = SMT.cvc4_ALL_SUPPORTED False
+    -- we'll rely on cvc4 with dbg messages
+    s = SMT.cvc4_ALL_SUPPORTED True
 
-    prepSolver :: (SymEvalConstr lang k) => SMT.SolverT (ListT k) a -> SMT.SolverT (ListT k) a
-    prepSolver m = do
+    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
+    prepSolver = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
       declData <- runExceptT (SMT.declareDatatypes decls dependencyOrder)
       case declData of
-        Right _ -> return ()
+        Right usedNames -> return usedNames
         Left s -> error s
-      m
 
 instance (Monad m) => Alternative (SymEvalT lang m) where
   empty = SymEvalT $ StateT $ const empty
@@ -124,10 +142,12 @@ instance (MonadIO m) => MonadIO (SymEvalT lang m) where
   liftIO = lift . liftIO
 
 -- | Prune the set of paths in the current set.
-prune :: forall lang m a. (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+prune :: forall lang m a. (Pretty a, SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
 prune xs = SymEvalT $
   StateT $ \st -> do
     (x, st') <- runSymEvalTRaw st xs
+    trace ("  X is " ++ show (pretty x)) $ return ()
+    trace ("  in the context " ++ show (pretty st')) $ return ()
     ok <- pathIsPlausible st'
     guard ok
     return (x, st')
@@ -145,7 +165,7 @@ prune xs = SymEvalT $
         -- since we want to prune unsatisfiable path.
         -- And if a partial translation is already unsat,
         -- so is the translation of the whole set of constraints.
-        void $ SMT.assert (sestGamma env) (sestConstraint env)
+        void $ SMT.assert (sestGamma env) (sestKnownNames env) (sestConstraint env)
         res <- SMT.checkSat
         SMT.solverPop
         return $ case res of
@@ -261,10 +281,11 @@ symeval' t@(R.App hd args) = do
         term' <- symeval term
         asum $
           for2 consList cases $ \(consName, consTy) caseTerm -> do
-            let (consArgs, _) = R.tyFunArgs consTy
+            let instantiatedTy = subst (foldl' (\s t -> Just t :< s) (Inc 0) tyParams') consTy
+            let (consArgs, _) = R.tyFunArgs instantiatedTy
             svars <- freshSymVars consArgs
-            let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
-            let symbCons = R.App (R.Free $ TermSig consName) symbArgs
+            let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+            let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
             let mconstr = unify term' symbCons
             case mconstr of
               Nothing -> empty
@@ -332,15 +353,6 @@ newtype InCond lang = InCond (Constraint lang)
 data EvaluationWitness lang =
   Verified | CounterExample (TermMeta lang SymVar)
 
-runConditionalEval :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => Term lang -> [(Name, Type lang)] -> OutCond lang -> InCond lang -> m ()
-runConditionalEval t args outCond inCond = do
-  paths <- symevalT $ do
-    svars <- declSymVars args
-    let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-    liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
-    conditionalEval tApplied outCond inCond
-  mapM_ (liftIO . print . pretty) paths
-
 conditionalEval :: (SymEvalConstr lang m, MonadIO m) => TermMeta lang SymVar -> OutCond lang -> InCond lang -> SymEvalT lang m (EvaluationWitness lang)
 conditionalEval t (OutCond q) (InCond p) = do
   toEvaluateMore <- pruneAndValidate (q t) p
@@ -406,10 +418,11 @@ symEvalOneStep t@(R.App hd args) = do
         then
           asum $
             for2 consList cases $ \(consName, consTy) caseTerm -> do
-              let (consArgs, _) = R.tyFunArgs consTy
+              let instantiatedTy = subst (foldl' (\s t -> Just t :< s) (Inc 0) tyParams') consTy
+              let (consArgs, _) = R.tyFunArgs instantiatedTy
               svars <- freshSymVars consArgs
-              let symbArgs = map (R.TyArg . typeToMeta) tyParams' ++ map (R.TermArg . (`R.App` []) . R.Meta) svars
-              let symbCons = R.App (R.Free $ TermSig consName) symbArgs
+              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
               let mconstr = unify term' symbCons
               case mconstr of
                 Nothing -> empty
@@ -440,9 +453,12 @@ checkProperty cOut cIn env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  cstrTotal <- SMT.assert (sestGamma env) (sestConstraint env)
-  outTotal <- SMT.assert (sestGamma env) cOut
-  inTotal <- SMT.assertNot (sestGamma env) cIn
+  cstrTotal <- SMT.assert (sestGamma env) (sestKnownNames
+   env) (sestConstraint env)
+  outTotal <- SMT.assert (sestGamma env) (sestKnownNames
+   env)cOut
+  inTotal <- SMT.assertNot (sestGamma env) (sestKnownNames
+   env)cIn
   result <- SMT.checkSat
   SMT.solverPop
   case result of

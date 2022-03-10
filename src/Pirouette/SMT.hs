@@ -36,7 +36,6 @@ where
 
 import Control.Applicative
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.State.Class
 import qualified Data.Map as M
@@ -92,7 +91,7 @@ solverPop :: (MonadIO m) => SolverT m ()
 solverPop = ask >>= liftIO . SimpleSMT.pop
 
 -- | Declare a single datatype in the current solver session.
-declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) ()
+declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) [Name]
 declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
   solver <- ask
   constr' <- mapM constructorFromPIR constructors
@@ -102,17 +101,19 @@ declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
       (toSmtName typeName)
       (map (toSmtName . fst) typeVariabes)
       constr'
+  return $ typeName : map fst constructors
 
 -- | Declare a set of datatypes in the current solver session, in the order specified by
 -- the dependency order passed as the second argument. You can generally get its value
 -- from a 'PirouetteDepOrder' monad.
 declareDatatypes ::
-  (LanguageSMT lang, MonadIO m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> ExceptT String (SolverT m) ()
-declareDatatypes decls orderedNames =
-  forM_ typeNames $ \tyname ->
+  (LanguageSMT lang, MonadIO m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> ExceptT String (SolverT m) [Name]
+declareDatatypes decls orderedNames = do
+  usedNames <- forM typeNames $ \tyname ->
     case M.lookup tyname decls of
       Just (DTypeDef tdef) -> declareDatatype tyname tdef
-      _ -> return ()
+      _ -> return []
+  return $ concat usedNames
   where
     typeNames = mapMaybe (R.argElim Just (const Nothing)) orderedNames
 
@@ -135,21 +136,23 @@ declareVariable varName varTy = do
 assert ::
   (LanguageSMT lang, ToSMT meta, MonadIO m) =>
   M.Map Name (Type lang) ->
+  [Name] ->
   Constraint lang meta ->
   SolverT m Bool
-assert env c =
+assert env knownNames c =
   SolverT $ ReaderT $ \solver -> do
-    (isTotal,expr) <- constraintToSExpr env c
+    (isTotal,expr) <- constraintToSExpr env knownNames c
     liftIO $ SimpleSMT.assert solver expr
     return isTotal
 
 assertNot ::
   (LanguageSMT lang, ToSMT meta, MonadIO m) =>
   M.Map Name (Type lang) ->
+  [Name] ->
   Constraint lang meta ->
   SolverT m Bool
-assertNot env c =
+assertNot env knownNames c =
   SolverT $ ReaderT $ \solver -> do
-    (isTotal, expr) <- constraintToSExpr env c
+    (isTotal, expr) <- constraintToSExpr env knownNames c
     liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
     return isTotal

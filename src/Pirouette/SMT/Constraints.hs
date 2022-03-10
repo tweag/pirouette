@@ -43,6 +43,7 @@ data AtomicConstraint lang meta
   | VarEq Name Name
   | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
+  | Native SimpleSMT.SExpr
 
 data Constraint lang meta
   = And [AtomicConstraint lang meta]
@@ -69,6 +70,8 @@ instance (PrettyLang lang, Pretty meta) => Pretty (AtomicConstraint lang meta) w
     pretty t <+> "==" <+> pretty u
   pretty (OutOfFuelEq t u) =
     pretty t <+> "~~" <+> pretty u
+  pretty (Native expr) =
+    pretty $ show expr
 
 instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
   pretty Bot =
@@ -115,25 +118,28 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 atomicConstraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, MonadIO m) =>
   Env lang ->
+  [Name] ->
   AtomicConstraint lang meta ->
   ExceptT String m SimpleSMT.SExpr
-atomicConstraintToSExpr env (Assign name term) = do
+atomicConstraintToSExpr env knownNames (Assign name term) = do
   let smtName = toSmtName name
   let (Just ty) = Map.lookup name env
-  d <- translateData (typeToMeta ty) term
+  d <- translateData knownNames (typeToMeta ty) term
   return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
-atomicConstraintToSExpr _ (VarEq a b) = do
+atomicConstraintToSExpr _ knownNames (VarEq a b) = do
   let aName = toSmtName a
   let bName = toSmtName b
   return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
-atomicConstraintToSExpr _ (NonInlinableSymbolEq term1 term2) = do
-  t1 <- translateTerm term1
-  t2 <- translateTerm term2
+atomicConstraintToSExpr _ knownNames (NonInlinableSymbolEq term1 term2) = do
+  t1 <- translateTerm knownNames term1
+  t2 <- translateTerm knownNames term2
   return $ t1 `SimpleSMT.eq` t2
-atomicConstraintToSExpr _ (OutOfFuelEq term1 term2) = do
-  t1 <- translateTerm term1
-  t2 <- translateTerm term2
+atomicConstraintToSExpr _ knownNames (OutOfFuelEq term1 term2) = do
+  t1 <- translateTerm knownNames term1
+  t2 <- translateTerm knownNames term2
   return $ t1 `SimpleSMT.eq` t2
+atomicConstraintToSExpr _ knownNames (Native expr) =
+  return expr
 
 -- Since the translation of atomic constraints can fail,
 -- the translation of constraints does not always carry all the information it could.
@@ -141,12 +147,13 @@ atomicConstraintToSExpr _ (OutOfFuelEq term1 term2) = do
 -- A 'False' indicates that some have been forgotten during the translation.
 constraintToSExpr :: (LanguageSMT lang, ToSMT meta, MonadIO m) =>
   Env lang ->
+  [Name] ->
   Constraint lang meta ->
   m (Bool, SimpleSMT.SExpr)
-constraintToSExpr env (And constraints) = do
-  atomTrads <- mapM (runExceptT . atomicConstraintToSExpr env) constraints
+constraintToSExpr env knownNames (And constraints) = do
+  atomTrads <- mapM (runExceptT . atomicConstraintToSExpr env knownNames) constraints
   return (all isRight atomTrads, SimpleSMT.andMany (rights atomTrads))
-constraintToSExpr _ Bot = return (True, SimpleSMT.bool False)
+constraintToSExpr _ _ Bot = return (True, SimpleSMT.bool False)
 
 
 
@@ -158,14 +165,16 @@ constraintToSExpr _ Bot = return (True, SimpleSMT.bool False)
 -- term.
 translateData ::
   (LanguageSMT lang, ToSMT meta, Monad m) =>
+  [Name] ->
   TypeMeta lang meta ->
   TermMeta lang meta ->
   ExceptT String m SimpleSMT.SExpr
-translateData _ (App var []) = translateVar var
-translateData ty (App (Free (TermSig name)) args) =
+translateData knownNames _ (App var []) = translateVar knownNames var
+translateData knownNames ty (App (Free (TermSig name)) args) = do
+  guard (name `elem` knownNames)
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
     -- translating the overall term.
-    <*> mapM (translateData ty) (mapMaybe fromArg args)
-translateData _ _ = throwError "Illegal term in translate data"
+    <*> mapM (translateData knownNames ty) (mapMaybe fromArg args)
+translateData _ _ _ = throwError "Illegal term in translate data"

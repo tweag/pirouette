@@ -32,6 +32,7 @@ library
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.Builtins
       Pirouette.Term.Symbolic.Eval
+      Pirouette.Term.Symbolic.Interface
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
@@ -49,6 +50,7 @@ library
   ghc-options: -Wall -Wno-orphans
   build-depends:
       QuickCheck
+    , aeson
     , base >=4.9 && <5
     , bytestring
     , containers
@@ -82,6 +84,7 @@ executable pirouette
   ghc-options: -Wall -Wno-orphans
   build-depends:
       QuickCheck
+    , aeson
     , base >=4.9 && <5
     , bytestring
     , containers
@@ -120,6 +123,7 @@ test-suite spec
       tests/unit
   build-depends:
       QuickCheck
+    , aeson
     , base >=4.9 && <5
     , bytestring
     , containers

@@ -137,7 +137,7 @@ expandDefsIn inlinables decls k =
        in (Map.insert k (DFunction r t' ty) decls, t')
     Just _ -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
 
-inlineAll :: Map.Map Name (Term lang) -> Term lang -> Maybe (Term lang)
+inlineAll :: (LanguageBuiltins lang) => Map.Map Name (Term lang) -> Term lang -> Maybe (Term lang)
 inlineAll inlinables (SystF.App (SystF.Free (TermSig n)) args) = do
   nDef <- Map.lookup n inlinables
   Just $ SystF.appN nDef args

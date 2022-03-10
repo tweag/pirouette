@@ -42,6 +42,6 @@ cvc4_ALL_SUPPORTED dbg = do
   -- To suppress this logging, replace the 2 next lines by
   -- s <- liiftIO $ SimpleSMT.newSolver "cvc4" ["--lang=smt2"] Nothing
   ml <- if dbg then Just <$> liftIO (SimpleSMT.newLogger 0) else return Nothing
-  s <- liftIO $ SimpleSMT.newSolver "cvc4" ["--lang=smt2", "--incremental"] ml
+  s <- liftIO $ SimpleSMT.newSolver "cvc4" ["--lang=smt2", "--incremental", "--fmf-fun"] ml
   liftIO $ SimpleSMT.setLogic s "ALL_SUPPORTED"
   return s

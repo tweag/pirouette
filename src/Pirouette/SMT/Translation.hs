@@ -56,32 +56,37 @@ translateType x = throwError $ "Translate type to smtlib: cannot handle " <> sho
 -- A frequent situation in system F, but not allowed in the logic of SMT solvers.
 translateTerm ::
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
+  [Name] ->
   TermMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateTerm (Raw.App var args) = SmtLib.app <$> translateVar var <*> mapM translateArg args
-translateTerm (Raw.Lam ann ty term) = throwError "Translate term to smtlib: Lambda abstraction in term"
-translateTerm (Raw.Abs ann kind term) = throwError "Translate term to smtlib: Type abstraction in term"
+translateTerm knownNames (Raw.App var args) = SmtLib.app <$> translateVar knownNames var <*> mapM (translateArg knownNames) args
+translateTerm _ (Raw.Lam ann ty term) = throwError "Translate term to smtlib: Lambda abstraction in term"
+translateTerm _ (Raw.Abs ann kind term) = throwError "Translate term to smtlib: Type abstraction in term"
 
 translateVar ::
   forall builtins meta m.
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
+  [Name] ->
   VarMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateVar (Raw.Meta h) = return $ translate h
-translateVar (Raw.Free (TermSig name)) = return $ SmtLib.symbol (toSmtName name)
-translateVar (Raw.Free (Constant c)) = return $ translateConstant @builtins c
-translateVar (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @builtins b
-translateVar (Raw.Bound (Raw.Ann name) _) = throwError "translateVar: Bound variable; did you forget to apply something?"
-translateVar (Raw.Free Bottom) = throwError "translateVar: Bottom; unclear how to translate that. WIP"
+translateVar _ (Raw.Meta h) = return $ translate h
+translateVar knownNames (Raw.Free (TermSig name)) = do
+  guard (name `elem` knownNames)
+  return $ SmtLib.symbol (toSmtName name)
+translateVar _ (Raw.Free (Constant c)) = return $ translateConstant @builtins c
+translateVar _ (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @builtins b
+translateVar _ (Raw.Bound (Raw.Ann name) _) = throwError "translateVar: Bound variable; did you forget to apply something?"
+translateVar _ (Raw.Free Bottom) = throwError "translateVar: Bottom; unclear how to translate that. WIP"
 
 translateArg ::
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
+  [Name] ->
   ArgMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateArg (Raw.TermArg term) = translateTerm term
+translateArg knownNames (Raw.TermArg term) = translateTerm knownNames term
 -- TODO: This case is known to create invalid SMT terms,
 -- since in SMT solver, application of a term to a type is not allowed.
-translateArg (Raw.TyArg ty) = translateType ty
+translateArg _ (Raw.TyArg ty) = translateType ty
 
 -- | The definition of constructors in SMTlib follows a fixed layout. This
 -- function translates constructor types in PlutusIR to this layout and
