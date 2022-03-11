@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ParallelListComp #-}
 
 module Pirouette.Transformations.Defunctionalization(defunctionalize) where
 
@@ -14,6 +15,7 @@ import Control.Monad.RWS.Strict
 import Data.Bifunctor (first)
 import Data.Generics.Uniplate.Data
 import qualified Data.IntMap as IM
+import Data.List (nub)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.String.Interpolate.IsString
@@ -62,12 +64,12 @@ defunCalls toDefun defs = fst $ evalRWS (defunCallsM defs) () (DefunState mempty
     defunCallsInTerm :: PrtTerm lang -> DefunBodiesCtx lang (PrtTerm lang)
     defunCallsInTerm = go []
       where
-        go :: [FlatArgType lang] -> PrtTerm lang -> DefunBodiesCtx lang (PrtTerm lang)
+        go :: [(FlatArgType lang, Ann Name)] -> PrtTerm lang -> DefunBodiesCtx lang (PrtTerm lang)
         go ctx (term `App` args) = do
           args' <- mapM (argElim (pure . TyArg) (fmap Arg . go ctx)) args
           goApp ctx term args'
-        go ctx (Lam ann ty term) = Lam ann ty <$> go (FlatTermArg ty : ctx) term
-        go ctx (Abs ann k  term) = Abs ann k  <$> go (FlatTyArg k : ctx) term
+        go ctx (Lam ann ty term) = Lam ann ty <$> go ((FlatTermArg ty, ann) : ctx) term
+        go ctx (Abs ann k  term) = Abs ann k  <$> go ((FlatTyArg k, ann) : ctx) term
 
         goApp ctx (F (FreeName name)) args
           | Just hofsList <- M.lookup name toDefun = do
@@ -75,21 +77,38 @@ defunCalls toDefun defs = fst $ evalRWS (defunCallsM defs) () (DefunState mempty
             pure $ F (FreeName name) `App` args'
         goApp ctx term args = pure $ term `App` args
 
-    replaceArg :: [FlatArgType lang]
+    replaceArg :: [(FlatArgType lang, Ann Name)]
                -> (Integer, Maybe (DefunHofArgInfo lang), PrtArg lang)
                -> DefunBodiesCtx lang (PrtArg lang)
     replaceArg ctx (_, Just hofArgInfo, Arg lam@Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _   (_, _, arg) = pure arg
 
 mkClosureArg :: LanguageDef lang
-             => [FlatArgType lang]
+             => [(FlatArgType lang, Ann Name)]
              -> DefunHofArgInfo lang
              -> PrtTerm lang
              -> DefunBodiesCtx lang (PrtArg lang)
 mkClosureArg ctx DefunHofArgInfo{..} lam = do
   ctorIdx <- newCtorIdx synthType
   let ctorName = [i|#{closureTypeName}_ctor_#{ctorIdx}|]
-  pure $ Arg $ F (FreeName ctorName) `App` []
+  pure $ Arg $ F (FreeName ctorName) `App` [ Arg $ B (snd $ ctx !! fromIntegral idx) idx `App` [] | idx <- frees ]
+  where
+    frees = collectFreeDeBruijns lam
+    free2closurePos = M.fromList [ (freeIdx, closurePos)
+                                 | freeIdx <- frees
+                                 | closurePos <- reverse [0 .. fromIntegral $ length frees - 1]
+                                 ]
+
+collectFreeDeBruijns :: PrtTerm lang
+                     -> [Integer]
+collectFreeDeBruijns = nub . go 0
+  where
+    go cutoff (App var args) = checkVar cutoff var <> foldMap (argElim (const mempty) (go cutoff)) args
+    go cutoff (Lam _ _ term) = go (cutoff + 1) term
+    go cutoff (Abs _ _ term) = go (cutoff + 1) term
+
+    checkVar cutoff (B _ n) | n >= cutoff = [n - cutoff]
+    checkVar _ _ = mempty
 
 newCtorIdx :: LanguageDef lang => B.Type lang Name -> DefunBodiesCtx lang Int
 newCtorIdx ty = do
