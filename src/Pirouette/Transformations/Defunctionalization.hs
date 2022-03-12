@@ -35,9 +35,29 @@ import Pirouette.Transformations.Utils
 defunctionalize :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize defs = traceDefsId $ defunCalls toDefun $ etaExpand defs'
+defunctionalize defs = defs'' { prtUODecls = prtUODecls defs'' <> typeDecls }
   where
     (defs', toDefun) = defunDefs defs
+    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
+
+    typeDecls = mkClosureTypes closureCtorInfos
+
+-- * Closure type generation
+
+mkClosureTypes :: [ClosureCtorInfo lang] -> Decls lang Name
+mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls
+  where
+    types = M.toList $ M.fromListWith (<>) [ (closureTypeName, [info])
+                                           | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
+                                           ]
+    typeDecls = [ (tyName, typeDecl)
+                | (tyName, infos) <- types
+                , let info2ctor ClosureCtorInfo{..} = (ctorName, foldr TyFun (F (TyFree tyName) `TyApp` []) ctorArgs)
+                , let typeDecl = DTypeDef $ Datatype KStar [] [i|#{tyName}_match|] (info2ctor <$> infos)
+                ]
+    ctorDecls = [ (ctorName, DConstructor ctorIdx closureTypeName)
+                | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
+                ]
 
 -- * Defunctionalization of function call sites
 
@@ -58,8 +78,8 @@ type DefunBodiesCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 defunCalls :: forall lang. (PrettyLang lang, LanguageDef lang)
            => M.Map Name (HofsList lang)
            -> PrtUnorderedDefs lang
-           -> PrtUnorderedDefs lang
-defunCalls toDefun defs = fst $ evalRWS (defunCallsM defs) () (DefunState mempty)
+           -> (PrtUnorderedDefs lang, [ClosureCtorInfo lang])
+defunCalls toDefun defs = evalRWS (defunCallsM defs) mempty (DefunState mempty)
   where
     defunCallsM :: PrtUnorderedDefs lang -> DefunBodiesCtx lang (PrtUnorderedDefs lang)
     defunCallsM PrtUnorderedDefs{..} = do
