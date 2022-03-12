@@ -46,7 +46,14 @@ newtype DefunState lang = DefunState
   }
   deriving (Show)
 
-type DefunBodiesCtx lang = RWS () () (DefunState lang)
+data ClosureCtorInfo lang = ClosureCtorInfo
+  { hofArgInfo :: DefunHofArgInfo lang
+  , ctorIdx :: Int
+  , ctorName :: Name
+  , ctorArgs :: [PrtType lang]
+  }
+
+type DefunBodiesCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
 defunCalls :: forall lang. (PrettyLang lang, LanguageDef lang)
            => M.Map Name (HofsList lang)
@@ -88,9 +95,10 @@ mkClosureArg :: LanguageDef lang
              -> DefunHofArgInfo lang
              -> PrtTerm lang
              -> DefunBodiesCtx lang (PrtArg lang)
-mkClosureArg ctx DefunHofArgInfo{..} lam = do
+mkClosureArg ctx hofArgInfo@DefunHofArgInfo{..} lam = do
   ctorIdx <- newCtorIdx synthType
   let ctorName = [i|#{closureTypeName}_ctor_#{ctorIdx}|]
+  tell [ClosureCtorInfo{..}]
   pure $ Arg $ F (FreeName ctorName) `App` [ Arg $ B (snd $ ctx !! fromIntegral idx) idx `App` [] | idx <- frees ]
   where
     frees = collectFreeDeBruijns lam
@@ -98,6 +106,7 @@ mkClosureArg ctx DefunHofArgInfo{..} lam = do
                                  | freeIdx <- frees
                                  | closurePos <- reverse [0 .. fromIntegral $ length frees - 1]
                                  ]
+    ctorArgs = (\(FlatTermArg ty) -> ty) . fst . (ctx !!) . fromIntegral <$> frees
 
 collectFreeDeBruijns :: PrtTerm lang
                      -> [Integer]
@@ -109,6 +118,18 @@ collectFreeDeBruijns = nub . go 0
 
     checkVar cutoff (B _ n) | n >= cutoff = [n - cutoff]
     checkVar _ _ = mempty
+
+remapFreeDeBruijns :: M.Map Integer Integer
+                   -> PrtTerm lang
+                   -> PrtTerm lang
+remapFreeDeBruijns mapping = go 0
+  where
+    go cutoff (App var args) = remapVar cutoff var `App` (argElim TyArg (Arg . go cutoff) <$> args)
+    go cutoff (Lam _ _ term) = go (cutoff + 1) term
+    go cutoff (Abs _ _ term) = go (cutoff + 1) term
+
+    remapVar cutoff (B ann n) | n >= cutoff = B ann $ mapping M.! (n - cutoff)
+    remapVar _ v = v
 
 newCtorIdx :: LanguageDef lang => B.Type lang Name -> DefunBodiesCtx lang Int
 newCtorIdx ty = do
@@ -155,7 +176,7 @@ data DefunHofArgInfo lang = DefunHofArgInfo
   { synthType :: B.Type lang Name
   , closureTypeName :: Name
   , applyFunName :: Name
-  } deriving (Show)
+  } deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
 -- where the @Closure[Ty2->Ty3]@ is the ADT with the labels and environments for the funargs of type @Ty2 -> Ty3@.
