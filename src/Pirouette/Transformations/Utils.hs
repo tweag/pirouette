@@ -84,6 +84,12 @@ data FlatArgType lang
   | FlatTermArg (PrtType lang)
   deriving (Show)
 
+flattenType :: PrtType lang -> ([FlatArgType lang], PrtType lang)
+flattenType ty@TyApp{} = ([], ty)
+flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
+flattenType (TyAll ann kind ty) = first (FlatTyArg kind :) $ flattenType ty
+flattenType TyLam{} = error "unnormalized type"
+
 -- * @splitArgs n args@ splits @args@ into the first @n@ type arguments and everything else.
 --
 -- For instance, @splitArgs 2 [Arg a, TyArg A, TyArg B, Arg b, TyArg C]@

@@ -47,12 +47,6 @@ wrapInLambdas types term = foldr f term types
     f (FlatTyArg k) = Abs (Ann "η") k
     f (FlatTermArg ty) = Lam (Ann "η") ty
 
-flattenType :: PrtType lang -> ([FlatArgType lang], PrtType lang)
-flattenType ty@TyApp{} = ([], ty)
-flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
-flattenType (TyAll ann kind ty) = first (FlatTyArg kind :) $ flattenType ty
-flattenType TyLam{} = error "unnormalized type"
-
 -- TODO have a proper @instance HasSubst (PrtArg lang)@ or smth similar
 shiftArg :: Integer -> PrtArg lang -> PrtArg lang
 shiftArg k (Arg e) = Arg $ shift k e
