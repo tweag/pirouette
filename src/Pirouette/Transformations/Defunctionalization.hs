@@ -145,10 +145,10 @@ remapFreeDeBruijns :: M.Map Integer Integer
 remapFreeDeBruijns mapping = go 0
   where
     go cutoff (App var args) = remapVar cutoff var `App` (argElim TyArg (Arg . go cutoff) <$> args)
-    go cutoff (Lam _ _ term) = go (cutoff + 1) term
-    go cutoff (Abs _ _ term) = go (cutoff + 1) term
+    go cutoff (Lam ann ty term) = Lam ann ty $ go (cutoff + 1) term
+    go cutoff (Abs ann k  term) = Abs ann k  $ go (cutoff + 1) term
 
-    remapVar cutoff (B ann n) | n >= cutoff = B ann $ mapping M.! (n - cutoff)
+    remapVar cutoff (B _ n) | n >= cutoff = B (Ann "ctx") $ cutoff + mapping M.! (n - cutoff)
     remapVar _ v = v
 
 newCtorIdx :: LanguageDef lang => B.Type lang Name -> DefunBodiesCtx lang Int
