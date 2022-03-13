@@ -201,18 +201,12 @@ defunDefs defs = (defs { prtUODecls = decls' }, M.fromList toDefun)
     defunDef x = (x, Nothing)
 
     defunFun :: FunDef lang Name -> (FunDef lang Name, Maybe (HofsList lang))
-    defunFun FunDef{..} = dumpChange (FunDef funIsRec funBody' funTy' , hofsList)
+    defunFun FunDef{..} = (FunDef funIsRec funBody' funTy' , hofsList)
       where
         (funTy', hofs) = rewriteHofType funTy
         changed = funTy' /= funTy
         funBody' | changed = rewriteHofBody hofs funBody
                  | otherwise = funBody
-        dumpChange | changed = trace ("was: " <> renderSingleLineStr (pretty funTy))
-                             . trace ("got: " <> renderSingleLineStr (pretty funTy'))
-                             . trace ("var: " <> show hofs)
-                             . trace ("body was: " <> renderSingleLineStr (pretty funBody))
-                             . trace ("body got: " <> renderSingleLineStr (pretty $ rewriteHofBody hofs funBody))
-                   | otherwise = id
         hofsList | changed = Just hofs
                  | otherwise = Nothing
 
