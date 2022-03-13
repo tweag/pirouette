@@ -35,29 +35,52 @@ import Pirouette.Transformations.Utils
 defunctionalize :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize defs = defs'' { prtUODecls = prtUODecls defs'' <> typeDecls }
+defunctionalize defs = renderSingleLineStr (pretty typeDecls) `trace` defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
   where
     (defs', toDefun) = defunDefs defs
     (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
 
     typeDecls = mkClosureTypes closureCtorInfos
+    applyFunDecls = mkApplyFuns closureCtorInfos
 
 -- * Closure type generation
 
 mkClosureTypes :: [ClosureCtorInfo lang] -> Decls lang Name
-mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls
+mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
   where
-    types = M.toList $ M.fromListWith (<>) [ (closureTypeName, [info])
-                                           | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
-                                           ]
+    types = M.toList $ M.fromListWith (<>) [ (closureTypeName $ hofArgInfo info, [info]) | info <- infos ]
     typeDecls = [ (tyName, typeDecl)
                 | (tyName, infos) <- types
                 , let info2ctor ClosureCtorInfo{..} = (ctorName, foldr TyFun (F (TyFree tyName) `TyApp` []) ctorArgs)
-                , let typeDecl = DTypeDef $ Datatype KStar [] [i|#{tyName}_match|] (info2ctor <$> infos)
+                , let typeDecl = DTypeDef $ Datatype KStar [] (dtorName tyName) (info2ctor <$> infos)
                 ]
     ctorDecls = [ (ctorName, DConstructor ctorIdx closureTypeName)
                 | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
                 ]
+    dtorDecls = [ (dtorName tyName, DDestructor tyName) | tyName <- fst <$> types ]
+
+dtorName :: Name -> Name
+dtorName tyName = [i|#{tyName}_match|]
+
+-- * Apply function generation
+
+mkApplyFuns :: [ClosureCtorInfo lang] -> Decls lang Name
+mkApplyFuns infos = M.fromList funDecls
+  where
+    funs = M.toList $ M.fromListWith (<>) [ (applyFunName $ hofArgInfo info, [info]) | info <- infos ]
+
+    funDecls = [ (funName, DFunDef $ FunDef NonRec funBody funTy)
+               | (funName, infos) <- funs
+               , let DefunHofArgInfo{..} = hofArgInfo $ head infos
+               , let closTy = F (TyFree closureTypeName) `TyApp` []
+               , let funTy = closTy `TyFun` hofType
+               , let (argsTys, resTy) = flattenType hofType
+               , let funBody = let closArgIdx = Arg $ B (Ann "cls") 0 `App` []
+                                   dtorResTy = TyArg resTy
+                                in Lam (Ann "cls") closTy
+                                    $ F (FreeName $ dtorName closureTypeName) `App` (closArgIdx : dtorResTy : (Arg . mkDtorBranch <$> infos))
+               ]
+    mkDtorBranch ClosureCtorInfo{..} = foldr (Lam (Ann "ctx")) hofTerm ctorArgs
 
 -- * Defunctionalization of function call sites
 
@@ -71,6 +94,7 @@ data ClosureCtorInfo lang = ClosureCtorInfo
   , ctorIdx :: Int
   , ctorName :: Name
   , ctorArgs :: [PrtType lang]
+  , hofTerm :: PrtTerm lang
   }
 
 type DefunBodiesCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
@@ -118,7 +142,7 @@ mkClosureArg :: LanguageDef lang
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo{..} lam = do
   ctorIdx <- newCtorIdx synthType
   let ctorName = [i|#{closureTypeName}_ctor_#{ctorIdx}|]
-  tell [ClosureCtorInfo{..}]
+  tell [ClosureCtorInfo{hofTerm = remapFreeDeBruijns free2closurePos lam, ..}]
   pure $ Arg $ F (FreeName ctorName) `App` [ Arg $ B (snd $ ctx !! fromIntegral idx) idx `App` [] | idx <- frees ]
   where
     frees = collectFreeDeBruijns lam
@@ -196,6 +220,7 @@ data DefunHofArgInfo lang = DefunHofArgInfo
   { synthType :: B.Type lang Name
   , closureTypeName :: Name
   , applyFunName :: Name
+  , hofType :: B.Type lang Name
   } deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
@@ -216,7 +241,7 @@ rewriteHofType = go 0
                               closureTypeName = [i|Closure[#{tyStr}]|]
                               applyFunName = [i|Apply[#{tyStr}]|]
                               synthType = TyApp (F $ TyFree closureTypeName) []
-                           in (synthType, Just DefunHofArgInfo{..})
+                           in (synthType, Just DefunHofArgInfo{hofType = dom, ..})
                _ -> (dom, Nothing)
     go _    ty@TyApp{} = (ty, []) -- this doesn't defun things like `List (foo -> bar)`, which is fine for now
     go pos (TyAll ann k ty) = TyAll ann k *** (Nothing :) $ go (pos + 1) ty
