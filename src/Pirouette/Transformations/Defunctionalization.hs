@@ -7,6 +7,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE TupleSections #-}
 
 module Pirouette.Transformations.Defunctionalization(defunctionalize) where
 
@@ -32,6 +33,7 @@ import Pirouette.Term.Syntax.SystemF
 
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
+import Control.Monad.Writer.Strict
 
 defunctionalize :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
                 => PrtUnorderedDefs lang
@@ -218,36 +220,31 @@ newCtorIdx ty = do
 
 type HofsList lang = [Maybe (DefunHofArgInfo lang)]
 
-traverseDefs :: (Definition lang Name -> (Definition lang Name, Maybe a))
+traverseDefs :: Monad m
+             => (Name -> Definition lang Name -> m (Definition lang Name))
              -> PrtUnorderedDefs lang
-             -> (PrtUnorderedDefs lang, [(Name, a)])
-traverseDefs defunDef defs = (defs { prtUODecls = decls' }, toDefun)
+             -> m (PrtUnorderedDefs lang)
+traverseDefs defunDef defs = do
+  decls' <- forM defsList $ \(name, def) -> (name,) <$> defunDef name def
+  pure $ defs { prtUODecls = M.fromList decls' }
   where
-    (toDefun, decls') = M.mapAccumWithKey f [] $ prtUODecls defs
-    f toDefunAcc name def
-      | Just res <- maybeRes = ((name, res) : toDefunAcc, def')
-      | otherwise = (toDefunAcc, def)
-      where
-        (def', maybeRes) = defunDef def
+    defsList = M.toList $ prtUODecls defs
 
 defunDefs :: forall lang. (PrettyLang lang, LanguageDef lang)
           => PrtUnorderedDefs lang
           -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunDefs = second M.fromList . traverseDefs defunDef
+defunDefs = second M.fromList . runWriter . traverseDefs defunDef
   where
-    defunDef :: Definition lang Name -> (Definition lang Name, Maybe (HofsList lang))
-    defunDef (DFunDef fd) = first DFunDef $ defunFun fd
-    defunDef x = (x, Nothing)
-
-    defunFun :: FunDef lang Name -> (FunDef lang Name, Maybe (HofsList lang))
-    defunFun FunDef{..} = (FunDef funIsRec funBody' funTy' , hofsList)
+    defunDef :: Name -> Definition lang Name -> Writer [(Name, HofsList lang)] (Definition lang Name)
+    defunDef name (DFunDef FunDef{..}) =  do
+      when changed $ tell [(name, hofs)]
+      pure $ DFunDef $ FunDef funIsRec funBody' funTy'
       where
         (funTy', hofs) = rewriteHofType funTy
         changed = funTy' /= funTy
         funBody' | changed = rewriteHofBody hofs funBody
                  | otherwise = funBody
-        hofsList | changed = Just hofs
-                 | otherwise = Nothing
+    defunDef _ x = pure x
 
 data DefunHofArgInfo lang = DefunHofArgInfo
   { synthType :: B.Type lang Name
