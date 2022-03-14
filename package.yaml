@@ -17,8 +17,8 @@ dependencies:
   - prettyprinter
   - gitrev
   - optparse-applicative
-  - parsec
   - megaparsec
+  - parser-combinators
   - uniplate
   - hspec
   - QuickCheck

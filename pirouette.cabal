@@ -15,6 +15,9 @@ extra-source-files:
 
 library
   exposed-modules:
+      Pirouette.Languages.Example
+      Pirouette.Languages.Example.Syntax
+      Pirouette.Languages.Example.ToTerm
       Pirouette.Monad
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
@@ -62,7 +65,7 @@ library
     , megaparsec
     , mtl >=2.2.2
     , optparse-applicative
-    , parsec
+    , parser-combinators
     , plutus-core
     , prettyprinter
     , process
@@ -95,7 +98,7 @@ executable pirouette
     , megaparsec
     , mtl >=2.2.2
     , optparse-applicative
-    , parsec
+    , parser-combinators
     , pirouette
     , plutus-core
     , prettyprinter
@@ -112,6 +115,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Pirouette.PlutusIR.ToTermSpec
+      Pirouette.SMTSpec
       Pirouette.Term.DSL
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
@@ -133,7 +137,7 @@ test-suite spec
     , megaparsec
     , mtl >=2.2.2
     , optparse-applicative
-    , parsec
+    , parser-combinators
     , pirouette
     , plutus-core
     , prettyprinter

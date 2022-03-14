@@ -34,7 +34,7 @@ data VarMeta meta ann f
 
 varMapMetaM :: (Monad m) => (meta -> m meta') -> VarMeta meta ann f -> m (VarMeta meta' ann f)
 varMapMetaM f (Meta x) = Meta <$> f x
-varMapMetaM _ (Bound ann i) = return $ Bound ann i
+varMapMetaM _ (Bound ann0 i) = return $ Bound ann0 i
 varMapMetaM _ (Free x) = return $ Free x
 
 varMapMeta :: (meta -> meta') -> VarMeta meta ann f -> VarMeta meta' ann f
@@ -53,7 +53,7 @@ instance IsVar (VarMeta meta ann f) where
   isBound (Bound _ i) = Just i
   isBound _ = Nothing
 
-  varMapM f (Bound ann i) = Bound ann <$> f i
+  varMapM f (Bound ann0 i) = Bound ann0 <$> f i
   varMapM _ v = return v
 
   annMap f (Bound (Ann a) i) = Bound (Ann (f a)) i
