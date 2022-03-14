@@ -57,7 +57,7 @@ data PIRBuiltinType
   | PIRTypeData
   | PIRTypeList (Maybe PIRBuiltinType)
   | PIRTypePair (Maybe PIRBuiltinType) (Maybe PIRBuiltinType)
-  deriving (Eq, Ord, Show, Data, Typeable)
+  deriving (Eq, Ord, Show, Read, Data, Typeable)
 
 defUniToType :: forall k (a :: k). DefaultUni (P.Esc a) -> PIRBuiltinType
 defUniToType DefaultUniInteger = PIRTypeInteger

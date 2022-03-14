@@ -25,7 +25,7 @@
         { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 3)"},
         { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 5)"},
         { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 7)"},
-        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 8)"}
+        { "native" : "eq (app (symbol \"length\") [symbol \"pir_l\"]) (int 9)"}
       ]
     },
   "additionalDefs" : [

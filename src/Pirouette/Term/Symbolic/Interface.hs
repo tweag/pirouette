@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Term.Symbolic.Interface where
@@ -9,7 +8,6 @@ module Pirouette.Term.Symbolic.Interface where
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Symbolic.Eval
-import Pirouette.Term.Builtins
 import qualified Pirouette.SMT as SMT
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Data.Aeson
@@ -24,8 +22,7 @@ import Control.Monad.Except
 import qualified Text.Megaparsec.Char.Lexer as L
 import Pirouette.Term.Syntax.Pretty ( Pretty(pretty) )
 import Control.Monad.Reader
-import Debug.Trace (trace)
-import Text.Megaparsec.Debug (dbg)
+import Pirouette.Term.Builtins (BuiltinTypes)
 
 type Parser = Parsec Void String
 
@@ -95,31 +92,39 @@ data UserDeclaredConstraints lang = UserDeclaredConstraints {
   udcAxioms :: IO ()
 }
 
-parseConstraintDescription :: SimpleSMT.Solver -> ConstraintDescription -> UserDeclaredConstraints lang
-parseConstraintDescription solver ConstraintDescription{..} =
+parseConstraintDescription :: (Read (BuiltinTypes lang)) => (SimpleSMT.Solver, SimpleSMT.Solver) -> ConstraintDescription -> UserDeclaredConstraints  lang
+parseConstraintDescription
+  solvers@(_, solver_good_at_unsat)
+  ConstraintDescription{..} =
   let udcInputs = map parseAnnotVar inputs
       !udcOutputCond = parseOutputCond outputCond
       !udcInputCond = parseInputCond inputCond
-      udcAdditionalDefs = mapM (parseAdditionalDefs solver) additionalDefs
-      udcAxioms = mapM_ (parseAxioms solver) axioms
+      udcAdditionalDefs = mapM (parseAdditionalDefs solvers) additionalDefs
+      udcAxioms = mapM_ (parseAxioms solver_good_at_unsat) axioms
   in
   UserDeclaredConstraints {..}
 
-parseAnnotVar :: AnnotVar -> (Name, Type lang)
+parseAnnotVar :: (Read (BuiltinTypes lang)) => AnnotVar -> (Name, Type  lang )
 parseAnnotVar AnnotVar{..} =
   (fromString name, parseType typ)
 
-parseOutputCond :: OutputCond -> OutCond lang
+parseOutputCond :: (Read (BuiltinTypes lang)) => OutputCond -> OutCond  lang
 parseOutputCond OutputCond{..} =
   OutCond $ parseCondAsFunction resultName conditionBody
 
-parseInputCond :: Condition -> InCond lang
+parseInputCond :: (Read (BuiltinTypes lang)) => Condition -> InCond  lang
 parseInputCond cond = InCond $ parseCond cond
 
-parseAdditionalDefs :: SimpleSMT.Solver -> SMTLevelDef -> IO SimpleSMT.SExpr
-parseAdditionalDefs solver SMTLevelDef{..} =
+parseAdditionalDefs :: (SimpleSMT.Solver, SimpleSMT.Solver) -> SMTLevelDef -> IO SimpleSMT.SExpr
+parseAdditionalDefs (s1, s2) SMTLevelDef{..} = do
+  void $ SimpleSMT.defineFunRec
+    s1
+    fun
+    (map parseAnnotVarAsSMT args)
+    (parseSExpr resultType)
+    (parseSMTFun definition)
   SimpleSMT.defineFunRec
-    solver
+    s2
     fun
     (map parseAnnotVarAsSMT args)
     (parseSExpr resultType)
@@ -133,16 +138,17 @@ parseAxioms solver (UniversalProp UniversalContent{..}) =
       (parseSExpr prop)
 
 
-parseType :: String -> Type lang
+parseType :: (Read (BuiltinTypes lang)) => String -> Type lang
 parseType s = fromJust $ parseMaybe parseType' s
 
-parseType' :: Parser (Type lang)
+parseType' :: (Read (BuiltinTypes lang)) => Parser (Type lang)
 parseType' =
   try parseTyApp <|>
+  try parseBuiltin <|>
   parseElementaryType
 
   where
-    parseTyApp :: Parser (Type lang)
+    parseTyApp :: (Read (BuiltinTypes lang)) => Parser (Type lang)
     parseTyApp = do
       void $ string "TyApp "
       hd <- parseElementaryType
@@ -150,6 +156,11 @@ parseType' =
       args <- parseList parseType'
       return $ SystF.appN hd args
 
+    parseBuiltin :: (Read (BuiltinTypes lang)) => Parser (Type lang)
+    parseBuiltin = do
+      void $ string "TyBuiltin "
+      builtin <- read <$> some (alphaNumChar <|> char '_')
+      return $ SystF.TyApp (SystF.Free (TyBuiltin builtin)) []
 
     parseElementaryType :: Parser (Type lang)
     parseElementaryType = do
@@ -159,10 +170,10 @@ parseType' =
       where
         tyVar name = SystF.TyApp (SystF.Free (TySig name)) []
 
-parseCond :: Condition -> Constraint lang
+parseCond :: (Read (BuiltinTypes lang)) => Condition -> Constraint  lang
 parseCond c = parseCondAsFunction "" c undefined
 
-parseCondAsFunction :: String -> Condition -> TermMeta lang SymVar -> Constraint lang
+parseCondAsFunction :: (Read (BuiltinTypes lang)) => String -> Condition -> TermMeta  lang  SymVar -> Constraint  lang
 parseCondAsFunction var (And conds) t =
   foldMap (\c -> parseCondAsFunction var c t) conds
 parseCondAsFunction _ (Or conds) _ =
@@ -280,18 +291,18 @@ parseSExprOp2 =
     SExprGe <$ string "ge "
   ]
 
-parseAtomicCondAsFunction :: String -> String -> TermMeta lang SymVar -> SMT.AtomicConstraint lang SymVar
+parseAtomicCondAsFunction :: (Read (BuiltinTypes lang)) => String -> String -> TermMeta  lang  SymVar -> SMT.AtomicConstraint  lang  SymVar
 parseAtomicCondAsFunction var cond =
   fromJust $ parseMaybe (parseAtomicCondAsFunction' var) cond
 
-parseAtomicCondAsFunction' :: String -> Parser (TermMeta lang SymVar -> SMT.AtomicConstraint lang SymVar)
+parseAtomicCondAsFunction' :: (Read (BuiltinTypes lang)) => String -> Parser (TermMeta  lang  SymVar -> SMT.AtomicConstraint  lang  SymVar)
 parseAtomicCondAsFunction' var =
   try parseAssign <|>
   try (const <$> parseVarEq) <|>
   parseTermEq
 
   where
-    parseAssign :: Parser (TermMeta lang SymVar -> SMT.AtomicConstraint lang SymVar)
+    parseAssign :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> SMT.AtomicConstraint  lang  SymVar)
     parseAssign = do
       void $ string "Assign "
       varAssigned <- some (alphaNumChar <|> char '_')
@@ -299,7 +310,7 @@ parseAtomicCondAsFunction' var =
       t <- parseParenTermAsFun
       return $ SMT.Assign (fromString varAssigned) <$> t
 
-    parseVarEq :: Parser (SMT.AtomicConstraint lang SymVar)
+    parseVarEq :: Parser (SMT.AtomicConstraint  lang  SymVar)
     parseVarEq = do
       void $ string "VarEq "
       varA <- some (alphaNumChar <|> char '_')
@@ -307,7 +318,7 @@ parseAtomicCondAsFunction' var =
       varB <- some (alphaNumChar <|> char '_')
       return $ SMT.VarEq (fromString varA) (fromString varB)
 
-    parseTermEq :: Parser (TermMeta lang SymVar -> SMT.AtomicConstraint lang SymVar)
+    parseTermEq :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> SMT.AtomicConstraint  lang  SymVar)
     parseTermEq = do
       void $ string "TermEq "
       t <- parseParenTermAsFun
@@ -315,19 +326,19 @@ parseAtomicCondAsFunction' var =
       u <- parseParenTermAsFun
       return $ SMT.NonInlinableSymbolEq <$> t <*> u
 
-    parseParenTermAsFun :: Parser (TermMeta lang SymVar -> TermMeta lang SymVar)
+    parseParenTermAsFun :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> TermMeta  lang  SymVar)
     parseParenTermAsFun =
       try (theVar var) <|>
       try (betweenParen app) <|>
       betweenParen lam
 
-    parseTermAsFun :: Parser (TermMeta lang SymVar -> TermMeta lang SymVar)
+    parseTermAsFun :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> TermMeta  lang  SymVar)
     parseTermAsFun =
       try (theVar var) <|>
       try app <|>
       lam
 
-    app :: Parser (TermMeta lang SymVar -> TermMeta lang SymVar)
+    app :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> TermMeta  lang  SymVar)
     app = do
       void $ string "App "
       varApplied <- betweenParen parseVarMeta
@@ -338,14 +349,14 @@ parseAtomicCondAsFunction' var =
 
       where
 
-        parseArgListAsFun :: Parser (TermMeta lang SymVar -> [ArgMeta lang SymVar])
+        parseArgListAsFun :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> [ArgMeta  lang  SymVar])
         parseArgListAsFun = do
           mRes <- optional (try nonEmpty)
           return $ fromMaybe (const []) mRes
 
           where
 
-            nonEmpty :: Parser (TermMeta lang SymVar -> [ArgMeta lang SymVar])
+            nonEmpty :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> [ArgMeta  lang  SymVar])
             nonEmpty = do
               hd <- parseTermAsFun
               mTail <-
@@ -356,7 +367,7 @@ parseAtomicCondAsFunction' var =
                 Nothing -> return $ \t -> [SystF.TermArg (hd t)]
                 Just l -> return $ \t -> SystF.TermArg (hd t) : l t
 
-    lam :: Parser (TermMeta lang SymVar -> TermMeta lang SymVar)
+    lam :: (Read (BuiltinTypes lang)) => Parser (TermMeta  lang  SymVar -> TermMeta  lang  SymVar)
     lam = do
       void $ string "Lam \""
       varName <- some (alphaNumChar <|> char '_')
@@ -366,27 +377,26 @@ parseAtomicCondAsFunction' var =
       body <- parseParenTermAsFun
       return $ SystF.Lam (fromString varName) (typeToMeta ty) <$> body
 
-parseVarMeta :: Parser (VarMeta lang SymVar)
+parseVarMeta :: Parser (VarMeta  lang  SymVar)
 parseVarMeta = do
   try free <|> bound
 
   where
     -- One cannot have language polymorphic buitins,
     -- so we assume that we are only dealing with constants.
-    free :: Parser (VarMeta lang SymVar)
+    free :: Parser (VarMeta  lang  SymVar)
     free = do
       void $ string "Free \""
       fVar <- some (alphaNumChar <|> char '_')
       void $ char '\"'
       return $ SystF.Free (TermSig $ fromString fVar)
 
-    bound :: Parser (VarMeta lang SymVar)
+    bound :: Parser (VarMeta  lang  SymVar)
     bound = do
       void $ string "Bound \""
       name <- some (alphaNumChar <|> char '_')
       void $ string "\" "
-      i <- L.decimal
-      return $ SystF.Bound (fromString name) i
+      SystF.Bound (fromString name) <$> L.decimal
 
 parseAnnotVarAsSMT :: AnnotVar -> (String, SimpleSMT.SExpr)
 parseAnnotVarAsSMT AnnotVar{..} =
@@ -446,19 +456,21 @@ parsePairAsFun p q = do
   void $ char ')'
   return $ \t -> (resA t, resB t)
 
-runIncorrectness :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => FilePath -> Term lang -> m ()
+runIncorrectness :: (SymEvalConstr  lang  m, MonadIO m, Read (BuiltinTypes lang)) => FilePath -> Term  lang  -> m ()
 runIncorrectness fil t = do
   paths <- symevalT $ do
-    solver <- SymEvalT $ lift $ SMT.SolverT ask
+    solvers <- SymEvalT $ lift $ SMT.SolverT ask
     constrDescription <- liftIO $ eitherDecodeFileStrict fil
     case constrDescription of
       Left l -> error $ "Impossible to parse this file\n" ++ l
       Right cstDescr -> do
-        let !UserDeclaredConstraints {..} = parseConstraintDescription solver cstDescr
+        let !UserDeclaredConstraints {..} = parseConstraintDescription solvers cstDescr
         void $ liftIO udcAdditionalDefs
         liftIO udcAxioms
         svars <- declSymVars udcInputs
         let tApplied = SystF.appN (termToMeta t) $ map (SystF.TermArg . (`SystF.App` []) . SystF.Meta) svars
         liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
         conditionalEval tApplied udcOutputCond udcInputCond
-  mapM_ (liftIO . print . pretty) paths
+  if null paths
+  then liftIO $ putStrLn "Condition VERIFIED"
+  else mapM_ (liftIO . print . pretty) paths
