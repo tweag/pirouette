@@ -12,11 +12,12 @@ module Pirouette.Transformations.Defunctionalization(defunctionalize) where
 
 import Control.Arrow ((***))
 import Control.Monad.RWS.Strict
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.Generics.Uniplate.Data
 import qualified Data.IntMap as IM
 import Data.List (nub)
 import qualified Data.Map as M
+import Data.Maybe
 import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
@@ -35,7 +36,39 @@ import Pirouette.Transformations.Utils
 defunctionalize :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize defs = renderSingleLineStr (pretty typeDecls) `trace` defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
+defunctionalize = defunTypes
+
+-- * Defunctionalization of types
+
+defunTypes :: (PrettyLang lang, LanguageDef lang)
+           => PrtUnorderedDefs lang
+           -> PrtUnorderedDefs lang
+defunTypes defs = map fst toDefun `traceShow` traceDefsId (etaExpand defs')
+  where
+    (defs', toDefun) = traverseDefs defunType defs
+
+    defunType (DTypeDef Datatype{..}) = (DTypeDef Datatype{constructors = ctors', ..}, maybeAllHofs)
+      where
+        (ctors', allMaybeHofs) = unzip [ ((ctorName, ctorTy'), maybeHofs)
+                                       | (ctorName, ctorTy) <- constructors
+                                       , let (ctorTy', hofs) = rewriteHofType ctorTy
+                                             maybeHofs | ctorTy' == ctorTy = Nothing
+                                                       | otherwise = trace ("ctor " <> show ctorName)
+                                                                   . trace ("was: " <> renderSingleLineStr (pretty ctorTy))
+                                                                   . trace ("got: " <> renderSingleLineStr (pretty ctorTy'))
+                                                                   $ Just hofs
+                                       ]
+        -- ugly, but we could build the right abstractions for `traverseDefs` later on
+        maybeAllHofs | isJust `any` allMaybeHofs = Just $ zip allMaybeHofs [0..]
+                     | otherwise = Nothing
+    defunType x = (x, Nothing)
+
+-- * Defunctionalization of functions
+
+defunFuns :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
+          => PrtUnorderedDefs lang
+          -> PrtUnorderedDefs lang
+defunFuns defs = defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
   where
     (defs', toDefun) = defunDefs defs
     (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
@@ -185,19 +218,25 @@ newCtorIdx ty = do
 
 type HofsList lang = [Maybe (DefunHofArgInfo lang)]
 
-defunDefs :: forall lang. (PrettyLang lang, LanguageDef lang) => PrtUnorderedDefs lang -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunDefs defs = (defs { prtUODecls = decls' }, M.fromList toDefun)
+traverseDefs :: (Definition lang Name -> (Definition lang Name, Maybe a))
+             -> PrtUnorderedDefs lang
+             -> (PrtUnorderedDefs lang, [(Name, a)])
+traverseDefs defunDef defs = (defs { prtUODecls = decls' }, toDefun)
   where
     (toDefun, decls') = M.mapAccumWithKey f [] $ prtUODecls defs
     f toDefunAcc name def
-      | Just hofsList <- maybeHofsList = ((name, hofsList) : toDefunAcc, def')
+      | Just res <- maybeRes = ((name, res) : toDefunAcc, def')
       | otherwise = (toDefunAcc, def)
       where
-        (def', maybeHofsList) = defunDef def
+        (def', maybeRes) = defunDef def
 
+defunDefs :: forall lang. (PrettyLang lang, LanguageDef lang)
+          => PrtUnorderedDefs lang
+          -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
+defunDefs = second M.fromList . traverseDefs defunDef
+  where
     defunDef :: Definition lang Name -> (Definition lang Name, Maybe (HofsList lang))
     defunDef (DFunDef fd) = first DFunDef $ defunFun fd
-    defunDef (DTypeDef td) = (DTypeDef td, Nothing) -- TODO do this too
     defunDef x = (x, Nothing)
 
     defunFun :: FunDef lang Name -> (FunDef lang Name, Maybe (HofsList lang))
