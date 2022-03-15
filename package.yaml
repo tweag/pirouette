@@ -31,6 +31,7 @@ dependencies:
   - flat >= 0.4.5
   - plutus-core
   - list-t
+  - template-haskell
 
 library:
   source-dirs: src

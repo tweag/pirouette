@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveLift #-}
 
 module Pirouette.Term.Syntax.SystemF where
 
@@ -19,6 +20,7 @@ import Data.String
 import Data.Typeable
 import Data.Void
 import Pirouette.Term.Syntax.Subst
+import Language.Haskell.TH.Syntax (Lift)
 
 -- * System F
 
@@ -30,7 +32,7 @@ data VarMeta meta ann f
   | Meta meta -- Meta variables are holes.
   -- Their type is unrelated to the other ones in the term,
   -- allowing to construct heterogeneous terms.
-  deriving (Eq, Ord, Functor, Show, Data, Typeable, Foldable, Traversable)
+  deriving (Eq, Ord, Functor, Show, Data, Typeable, Foldable, Traversable, Lift)
 
 varMapMetaM :: (Monad m) => (meta -> m meta') -> VarMeta meta ann f -> m (VarMeta meta' ann f)
 varMapMetaM f (Meta x) = Meta <$> f x
@@ -62,7 +64,7 @@ instance IsVar (VarMeta meta ann f) where
 -- ** Kinds
 
 data Kind = KStar | KTo Kind Kind
-  deriving (Eq, Ord, Show, Data, Typeable)
+  deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
 -- ** Types
 
@@ -71,7 +73,7 @@ data AnnType ann tyVar
   | TyFun (AnnType ann tyVar) (AnnType ann tyVar)
   | TyLam (Ann ann) Kind (AnnType ann tyVar)
   | TyAll (Ann ann) Kind (AnnType ann tyVar)
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable, Lift)
 
 tyBimapM ::
   (Monad m) =>
@@ -143,7 +145,7 @@ data AnnTerm ty ann v
   -- It is the one usually denoted λ.
   | Abs (Ann ann) Kind (AnnTerm ty ann v) -- Term level type lambda (abstract over type to construct term).
   -- It is the one usually denoted Λ.
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable, Lift)
 
 termTyFoldMap :: (Monoid m) => (ty -> m) -> AnnTerm ty ann v -> m
 termTyFoldMap f (App _ args) = mconcat $ mapMaybe (fmap f . fromTyArg) args
@@ -194,7 +196,7 @@ preserveLamsM ::
   (Integer -> AnnTerm ty ann v -> m (AnnTerm ty ann v)) ->
   AnnTerm ty ann v ->
   m (AnnTerm ty ann v)
-preserveLamsM f (Lam ann ty t) = Lam ann ty <$> preserveLamsM (\n -> f (n + 1)) t
+preserveLamsM f (Lam ann0 ty t) = Lam ann0 ty <$> preserveLamsM (\n -> f (n + 1)) t
 preserveLamsM f t = f 0 t
 
 preserveLams ::
@@ -227,7 +229,7 @@ withLams = foldr (\bv t -> uncurry Lam (first Ann bv) . t) id
 data Arg ty v
   = TyArg ty
   | TermArg v
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable, Lift)
 
 argElim :: (ty -> a) -> (v -> a) -> Arg ty v -> a
 argElim f g (TermArg x) = g x
@@ -349,7 +351,7 @@ app t arg = appN t [arg]
 -- ** Proof-Irrelevant Annotations
 
 newtype Ann x = Ann {ann :: x}
-  deriving (Show, Data, Typeable, Functor, Foldable, Traversable)
+  deriving (Show, Data, Typeable, Functor, Foldable, Traversable, Lift)
 
 instance Eq (Ann x) where
   _ == _ = True

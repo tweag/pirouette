@@ -15,16 +15,17 @@ extra-source-files:
 
 library
   exposed-modules:
-      Pirouette.Languages.Example
-      Pirouette.Languages.Example.Syntax
-      Pirouette.Languages.Example.ToTerm
+      Language.Pirouette.Example
+      Language.Pirouette.Example.QuasiQuoter
+      Language.Pirouette.Example.Syntax
+      Language.Pirouette.Example.ToTerm
+      Language.Pirouette.PlutusIR.Builtins
+      Language.Pirouette.PlutusIR.SMT
+      Language.Pirouette.PlutusIR.ToTerm
       Pirouette.Monad
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
-      Pirouette.PlutusIR.Builtins
-      Pirouette.PlutusIR.SMT
-      Pirouette.PlutusIR.ToTerm
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
@@ -70,6 +71,7 @@ library
     , prettyprinter
     , process
     , simple-smt
+    , template-haskell
     , text
     , tlaplus
     , tlaplus-qq
@@ -104,6 +106,7 @@ executable pirouette
     , prettyprinter
     , process
     , simple-smt
+    , template-haskell
     , text
     , tlaplus
     , tlaplus-qq
@@ -143,6 +146,7 @@ test-suite spec
     , prettyprinter
     , process
     , simple-smt
+    , template-haskell
     , text
     , tlaplus
     , tlaplus-qq

@@ -18,7 +18,7 @@ import qualified Data.Text as Text
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
-import Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.Builtins
 import Pirouette.Specializer.PIRTransformations
 import Pirouette.Specializer.Rewriting
 import Pirouette.Term.Builtins

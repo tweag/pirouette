@@ -2,10 +2,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Pirouette.Languages.Example.Syntax where
+{-# LANGUAGE DeriveLift #-}
 
+module Language.Pirouette.Example.Syntax where
 
-import qualified Data.Text as T
 import Text.Megaparsec
 import Data.Void
 import Data.Data
@@ -18,6 +18,7 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import qualified Data.Set as S
 import Data.Foldable
 import Control.Arrow (second)
+import Language.Haskell.TH.Syntax (Lift)
 
 type Parser = Parsec Void String
 
@@ -60,7 +61,7 @@ parseFunDecl = do
   symbol "::"
   t <- parseType
   symbol "="
-  x <- parseExpr
+  x <- parseTerm
   return (i, FunDecl t x)
 
 parseKind :: Parser SystF.Kind
@@ -72,7 +73,7 @@ parseKind =
 data ExTypes
   = TyInteger
   | TyBool
-  deriving (Eq, Ord, Show, Data, Typeable)
+  deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
 parseExType :: Parser ExTypes
 parseExType = (TyInteger <$ symbol "Integer")
@@ -122,20 +123,13 @@ data ExTerm
   | TermSub
   | TermLt
   | TermEq
-  deriving (Eq, Ord, Show, Data, Typeable)
-
-parseExTerm :: Parser ExTerm
-parseExTerm = asum
-  [ TermAdd <$ symbol "+"
-  , TermSub <$ symbol "-"
-  , TermLt <$ symbol "<"
-  , TermEq <$ symbol "=="
-  ]
+  | TermIte
+  deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
 data ExConstant
   = ConstInt Integer
   | ConstBool Bool
-  deriving (Eq, Ord, Show, Data, Typeable)
+  deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
 parseExConstants :: Parser ExConstant
 parseExConstants = asum
@@ -164,8 +158,8 @@ exprBinApp f x = ExprApp (ExprApp f x)
 exprBinApp' :: ExTerm -> Expr -> Expr -> Expr
 exprBinApp' f x = ExprApp (ExprApp (ExprBase f) x)
 
-parseExpr :: Parser Expr
-parseExpr = makeExprParser pAtom ops
+parseTerm :: Parser Expr
+parseTerm = makeExprParser pAtom ops
   where
     ops = [ [ InfixL (return ExprApp) ]
           , [ InfixR (symbol "+" >> return (exprBinApp' TermAdd))
@@ -178,26 +172,27 @@ parseExpr = makeExprParser pAtom ops
 
     pAbs :: Parser Expr
     pAbs = try (symbol "abs")
-        >> ExprAbs <$> ident <*> (symbol "::" >> parseKind) <*> (symbol "." >> parseExpr)
+        >> ExprAbs <$> ident <*> (symbol "::" >> parseKind) <*> (symbol "." >> parseTerm)
 
     pLam :: Parser Expr
     pLam = try (symbol "\\")
-        >> ExprLam <$> ident <*> (symbol "::" >> parseType) <*> (symbol "." >> parseExpr)
+        >> ExprLam <$> ident <*> (symbol "::" >> parseType) <*> (symbol "." >> parseTerm)
 
     parseIf :: Parser Expr
     parseIf = do
       try (symbol "if")
-      c <- parseExpr
+      c <- parseTerm
       symbol "then"
-      t <- parseExpr
+      t <- parseTerm
       symbol "else"
-      ExprIf c t <$> parseExpr
+      ExprIf c t <$> parseTerm
 
     pAtom :: Parser Expr
     pAtom = asum
       [ pAbs
       , pLam
-      , parens parseExpr
+      , parens parseTerm
+      , parseIf
       , ExprTy <$> (try (symbol "@") >> parseType)
       , ExprVar <$> try ident
       , ExprLit <$> try parseExConstants
