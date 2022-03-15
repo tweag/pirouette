@@ -80,16 +80,16 @@ defunFuns defs = defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFu
 
 -- * Closure type generation
 
-mkClosureTypes :: [ClosureCtorInfo lang] -> Decls lang Name
+mkClosureTypes :: (PrettyLang lang, LanguageDef lang) => [ClosureCtorInfo lang] -> Decls lang Name
 mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
   where
-    types = M.toList $ M.fromListWith (<>) [ (closureTypeName $ hofArgInfo info, [info]) | info <- infos ]
+    types = M.toList $ M.fromListWith (<>) [ (closureTypeName $ hofType $ hofArgInfo info, [info]) | info <- infos ]
     typeDecls = [ (tyName, typeDecl)
                 | (tyName, infos) <- types
                 , let info2ctor ClosureCtorInfo{..} = (ctorName, foldr TyFun (F (TyFree tyName) `TyApp` []) ctorArgs)
                 , let typeDecl = DTypeDef $ Datatype KStar [] (dtorName tyName) (info2ctor <$> infos)
                 ]
-    ctorDecls = [ (ctorName, DConstructor ctorIdx closureTypeName)
+    ctorDecls = [ (ctorName, DConstructor ctorIdx $ closureTypeName hofType)
                 | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
                 ]
     dtorDecls = [ (dtorName tyName, DDestructor tyName) | tyName <- fst <$> types ]
@@ -99,21 +99,21 @@ dtorName tyName = [i|#{tyName}_match|]
 
 -- * Apply function generation
 
-mkApplyFuns :: [ClosureCtorInfo lang] -> Decls lang Name
+mkApplyFuns :: (PrettyLang lang, LanguageDef lang) => [ClosureCtorInfo lang] -> Decls lang Name
 mkApplyFuns infos = M.fromList funDecls
   where
-    funs = M.toList $ M.fromListWith (<>) [ (applyFunName $ hofArgInfo info, [info]) | info <- infos ]
+    funs = M.toList $ M.fromListWith (<>) [ (applyFunName $ hofType $ hofArgInfo info, [info]) | info <- infos ]
 
     funDecls = [ (funName, DFunDef $ FunDef NonRec funBody funTy)
                | (funName, infos) <- funs
                , let DefunHofArgInfo{..} = hofArgInfo $ head infos
-               , let closTy = F (TyFree closureTypeName) `TyApp` []
+               , let closTy = closureType hofType
                , let funTy = closTy `TyFun` hofType
                , let (argsTys, resTy) = flattenType hofType
                , let funBody = let closArgIdx = Arg $ B (Ann "cls") 0 `App` []
                                    dtorResTy = TyArg resTy
-                                in Lam (Ann "cls") closTy
-                                    $ F (FreeName $ dtorName closureTypeName) `App` (closArgIdx : dtorResTy : (Arg . mkDtorBranch <$> infos))
+                                   dtor = F (FreeName $ dtorName $ closureTypeName hofType)
+                                in Lam (Ann "cls") closTy $ dtor `App` (closArgIdx : dtorResTy : (Arg . mkDtorBranch <$> infos))
                ]
     mkDtorBranch ClosureCtorInfo{..} = foldr (Lam (Ann "ctx")) hofTerm ctorArgs
 
@@ -169,14 +169,14 @@ defunCalls toDefun defs = evalRWS (defunCallsM defs) mempty (DefunState mempty)
     replaceArg ctx (_, Just hofArgInfo, Arg lam@Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _   (_, _, arg) = pure arg
 
-mkClosureArg :: LanguageDef lang
+mkClosureArg :: (PrettyLang lang, LanguageDef lang)
              => [(FlatArgType lang, Ann Name)]
              -> DefunHofArgInfo lang
              -> PrtTerm lang
              -> DefunBodiesCtx lang (PrtArg lang)
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo{..} lam = do
-  ctorIdx <- newCtorIdx synthType
-  let ctorName = [i|#{closureTypeName}_ctor_#{ctorIdx}|]
+  ctorIdx <- newCtorIdx $ closureType hofType
+  let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
   tell [ClosureCtorInfo{hofTerm = remapFreeDeBruijns free2closurePos lam, ..}]
   pure $ Arg $ F (FreeName ctorName) `App` [ Arg $ B (snd $ ctx !! fromIntegral idx) idx `App` [] | idx <- frees ]
   where
@@ -242,16 +242,11 @@ defunDefs = second M.fromList . runWriter . traverseDefs defunDef
       where
         (funTy', hofs) = rewriteHofType funTy
         changed = funTy' /= funTy
-        funBody' | changed = rewriteHofBody hofs funBody
+        funBody' | changed = rewriteHofBody funBody
                  | otherwise = funBody
     defunDef _ x = pure x
 
-data DefunHofArgInfo lang = DefunHofArgInfo
-  { synthType :: B.Type lang Name
-  , closureTypeName :: Name
-  , applyFunName :: Name
-  , hofType :: B.Type lang Name
-  } deriving (Show, Eq, Ord)
+newtype DefunHofArgInfo lang = DefunHofArgInfo { hofType :: B.Type lang Name } deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
 -- where the @Closure[Ty2->Ty3]@ is the ADT with the labels and environments for the funargs of type @Ty2 -> Ty3@.
@@ -267,31 +262,24 @@ rewriteHofType = go 0
         thisIdx = App (B (Ann "") pos) []
         (dom', posApply) =
           case dom of
-               TyFun{} -> let tyStr = funTyStr dom
-                              closureTypeName = [i|Closure[#{tyStr}]|]
-                              applyFunName = [i|Apply[#{tyStr}]|]
-                              synthType = TyApp (F $ TyFree closureTypeName) []
-                           in (synthType, Just DefunHofArgInfo{hofType = dom, ..})
+               TyFun{} -> (closureType dom, Just $ DefunHofArgInfo dom)
                _ -> (dom, Nothing)
     go _    ty@TyApp{} = (ty, []) -- this doesn't defun things like `List (foo -> bar)`, which is fine for now
     go pos (TyAll ann k ty) = TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go pos (TyLam ann k ty) = error "unexpected arg type" -- TODO mention the type
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
+-- Dis-assuming this is merely about recursing on `App` ctor as well.
 rewriteHofBody :: (PrettyLang lang, LanguageDef lang)
-               => [Maybe (DefunHofArgInfo lang)]
-               -> B.Term lang Name
+               => B.Term lang Name
                -> B.Term lang Name
 rewriteHofBody = go
   where
-    go [] term = term
-    go _ App{} = error "unexpected App, arguments not exhausted yet"
-
-    go (Nothing : rest) (Lam ann ty body) = Lam ann ty $ go rest body
-    go (Nothing : rest) (Abs ann kd body) = Abs ann kd $ go rest body
-
-    go (Just DefunHofArgInfo{..} : rest) (Lam ann ty body) = Lam ann synthType $ replaceApply applyFunName $ go rest body
-    go (Just _ : _) Abs{} = error "unexpected Abs where a type should've been replaced"
+    go e@App{} = e
+    go (Abs ann kd body) = Abs ann kd $ go body
+    go (Lam ann ty body) = case ty of
+                                TyFun{} -> Lam ann (closureType ty) $ replaceApply (applyFunName ty) $ go body
+                                _ -> Lam ann ty $ go body
 
 replaceApply :: Name -> B.Term lang Name -> B.Term lang Name
 replaceApply applyFunName = go 0
@@ -307,6 +295,15 @@ replaceApply applyFunName = go 0
         args' = recurArg <$> args
         recurArg arg@TyArg{} = arg
         recurArg (Arg arg) = Arg $ go idx arg
+
+closureTypeName :: (PrettyLang lang, LanguageDef lang) => B.Type lang Name -> Name
+closureTypeName ty = [i|Closure[#{funTyStr ty}]|]
+
+applyFunName :: (PrettyLang lang, LanguageDef lang) => B.Type lang Name -> Name
+applyFunName ty = [i|Apply[#{funTyStr ty}]|]
+
+closureType :: (PrettyLang lang, LanguageDef lang) => B.Type lang Name -> B.Type lang Name
+closureType ty = F (TyFree $ closureTypeName ty) `TyApp` []
 
 funTyStr :: (PrettyLang lang, LanguageDef lang) => B.Type lang Name -> T.Text
 funTyStr (dom `TyFun` cod) = funTyStr dom <> " => " <> funTyStr cod
