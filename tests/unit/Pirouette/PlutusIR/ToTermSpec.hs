@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Pirouette.PlutusIR.ToTermSpec where
 
-import           Pirouette.PlutusIR.ToTerm
+import           Language.Pirouette.PlutusIR.ToTerm
 import           Pirouette.Term.Syntax
 import           Pirouette.Term.Transformations
 import           Pirouette.Monad

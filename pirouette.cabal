@@ -71,6 +71,10 @@ library
     , prettyprinter
     , process
     , simple-smt
+    , tasty
+    , tasty-hspec
+    , tasty-hunit
+    , tasty-quickcheck
     , template-haskell
     , text
     , tlaplus
@@ -106,6 +110,10 @@ executable pirouette
     , prettyprinter
     , process
     , simple-smt
+    , tasty
+    , tasty-hspec
+    , tasty-hunit
+    , tasty-quickcheck
     , template-haskell
     , text
     , tlaplus
@@ -119,7 +127,6 @@ test-suite spec
   other-modules:
       Pirouette.PlutusIR.ToTermSpec
       Pirouette.SMTSpec
-      Pirouette.Term.DSL
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Paths_pirouette
@@ -146,6 +153,10 @@ test-suite spec
     , prettyprinter
     , process
     , simple-smt
+    , tasty
+    , tasty-hspec
+    , tasty-hunit
+    , tasty-quickcheck
     , template-haskell
     , text
     , tlaplus

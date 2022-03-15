@@ -1,8 +1,9 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Pirouette.Term.TransformationsSpec (spec) where
+module Pirouette.Term.TransformationsSpec  where
 
+{-
 import           Pirouette.Monad
 import           Pirouette.Monad.Maybe
 import           Pirouette.Monad.Logger
@@ -387,3 +388,4 @@ tcfoldBoolSpec = term $ lam2 $ \ x y ->
     , func "False"
     , x
     ]
+-}

@@ -32,6 +32,10 @@ dependencies:
   - plutus-core
   - list-t
   - template-haskell
+  - tasty
+  - tasty-hunit
+  - tasty-hspec
+  - tasty-quickcheck
 
 library:
   source-dirs: src
