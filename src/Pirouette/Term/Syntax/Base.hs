@@ -6,7 +6,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DeriveLift #-}
 
 module Pirouette.Term.Syntax.Base where
 
@@ -21,7 +20,6 @@ import Data.Void
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax.Pretty.Class
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Language.Haskell.TH.Syntax (Lift)
 
 -- * Names
 
@@ -29,7 +27,7 @@ import Language.Haskell.TH.Syntax (Lift)
 --  is supposed to be humanly readable, we might want to remove the 'nameUnique'
 --  part of non-ambiguous names.
 data Name = Name {nameString :: Text.Text, nameUnique :: Maybe Int}
-  deriving (Eq, Ord, Data, Typeable, Lift)
+  deriving (Eq, Ord, Data, Typeable)
 
 -- | We'll just define a 'TyName' synonym to keep our Haskell type-signatures
 --  more organized.
@@ -66,7 +64,6 @@ deriving instance (LanguageBuiltins builtins) => Data (TypeBase builtins)
 
 deriving instance (LanguageBuiltins builtins) => Typeable (TypeBase builtins)
 
-deriving instance (LanguageBuiltins builtins) => Lift (TypeBase builtins)
 
 -- | A Pirouette type is a 'SystF.Type' whose variables are 'TypeBase' and it has metavariables
 --  of type 'meta'. If you're just using this as a library you're likely more interested in
@@ -112,7 +109,7 @@ data TypeDef builtins = Datatype
     destructor :: Name,
     constructors :: [(Name, Type builtins)]
   }
-  deriving (Eq, Ord, Show, Data, Lift)
+  deriving (Eq, Ord, Show, Data)
 
 -- | Computes the type of the destructor from a 'TypeDef'. For example, let:
 --
@@ -148,8 +145,6 @@ deriving instance (LanguageBuiltins builtins) => Show (TermBase builtins)
 deriving instance (LanguageBuiltins builtins) => Data (TermBase builtins)
 
 deriving instance (LanguageBuiltins builtins) => Typeable (TermBase builtins)
-
-deriving instance (LanguageBuiltins builtins) => Lift (TermBase builtins)
 
 -- | A 'TermMeta' for a given builtins uage is a 'SystF.Term' with types being a 'Type' and
 --  diambiguated free names: we're aware on whether these free names are constants,
@@ -206,21 +201,21 @@ type TyVarMeta builtins meta = SystF.VarMeta meta Name (TypeBase builtins)
 -- * Definitions
 
 data Rec = Rec | NonRec
-  deriving (Eq, Ord, Show, Data, Lift)
+  deriving (Eq, Ord, Show, Data)
 
 data FunDef builtins = FunDef
   { funIsRec :: Rec,
     funBody :: Term builtins,
     funTy :: Type builtins
   }
-  deriving (Eq, Ord, Show, Data, Lift)
+  deriving (Eq, Ord, Show, Data)
 
 data Definition builtins
   = DFunDef (FunDef builtins)
   | DConstructor Int Name
   | DDestructor Name
   | DTypeDef (TypeDef builtins)
-  deriving (Eq, Ord, Show, Data, Lift)
+  deriving (Eq, Ord, Show, Data)
 
 pattern DFunction :: Rec -> Term builtins -> Type builtins -> Definition builtins
 pattern DFunction r t ty = DFunDef (FunDef r t ty)

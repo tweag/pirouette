@@ -198,6 +198,9 @@ parseTerm = makeExprParser pAtom ops
       , ExprLit <$> try parseExConstants
       ]
 
+lexeme :: Parser a -> Parser a
+lexeme = L.lexeme spaceConsumer
+
 spaceConsumer :: Parser ()
 spaceConsumer = L.space space1 (L.skipLineComment "--") empty
 
@@ -206,7 +209,7 @@ symbol = void . L.symbol spaceConsumer
 
 ident :: Parser String
 ident = do
-  i <- L.lexeme spaceConsumer ((:) <$> lowerChar <*> many alphaNumChar)
+  i <- lexeme ((:) <$> lowerChar <*> many alphaNumChar)
   guard (i `S.notMember` reservedNames)
   return i
   where
@@ -215,7 +218,7 @@ ident = do
 
 typeName :: Parser String
 typeName = do
-  t <- L.lexeme spaceConsumer ((:) <$> upperChar <*> many alphaNumChar)
+  t <- lexeme ((:) <$> upperChar <*> many alphaNumChar)
   guard (t `S.notMember` reservedTypeNames)
   return t
   where
