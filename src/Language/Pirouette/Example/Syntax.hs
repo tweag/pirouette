@@ -95,16 +95,6 @@ parens a = try (symbol "(") *> a <* symbol ")"
 parseType :: Parser Ty
 parseType = makeExprParser pAtom [ [ InfixL pApp ] , [ InfixR pFun ] ]
   where
-    pAtom :: Parser Ty
-    pAtom = asum
-       [ pLamAll (try (symbol "all") >> return TyAll)
-       , pLamAll (symbol "\\" >> return TyLam)
-       , TyVar <$> try ident
-       , TyBase <$> try parseExType
-       , TyFree <$> try typeName
-       , parens parseType
-       ]
-
     pApp :: Parser (Ty -> Ty -> Ty)
     pApp = return TyApp
 
@@ -117,6 +107,21 @@ parseType = makeExprParser pAtom [ [ InfixL pApp ] , [ InfixR pFun ] ]
       f <$> ident
         <*> (symbol "::" >> parseKind)
         <*> (symbol "." >> parseType)
+
+    pAtom = asum
+      [ pLamAll (try (symbol "all") >> return TyAll)
+      , pLamAll (symbol "\\" >> return TyLam)
+      , parseTypeAtom
+      ]
+
+parseTypeAtom :: Parser Ty
+parseTypeAtom = asum
+   [ TyVar <$> try ident
+   , TyBase <$> try parseExType
+   , TyFree <$> try typeName
+   , parens parseType
+   ]
+
 
 data ExTerm
   = TermAdd
@@ -193,7 +198,7 @@ parseTerm = makeExprParser pAtom ops
       , pLam
       , parens parseTerm
       , parseIf
-      , ExprTy <$> (try (symbol "@") >> parseType)
+      , ExprTy <$> (try (symbol "@") >> parseTypeAtom)
       , ExprVar <$> try ident
       , ExprLit <$> try parseExConstants
       ]
@@ -209,7 +214,7 @@ symbol = void . L.symbol spaceConsumer
 
 ident :: Parser String
 ident = do
-  i <- lexeme ((:) <$> lowerChar <*> many alphaNumChar)
+  i <- lexeme ((:) <$> lowerChar <*> many (alphaNumChar <|> char '_'))
   guard (i `S.notMember` reservedNames)
   return i
   where
@@ -218,7 +223,7 @@ ident = do
 
 typeName :: Parser String
 typeName = do
-  t <- lexeme ((:) <$> upperChar <*> many alphaNumChar)
+  t <- lexeme ((:) <$> upperChar <*> many (alphaNumChar <|> char '_'))
   guard (t `S.notMember` reservedTypeNames)
   return t
   where

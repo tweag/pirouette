@@ -254,3 +254,6 @@ fromConstDef _ = Nothing
 
 -- | A program will be translated into a number of term and type declarations.
 type Decls builtins = Map Name (Definition builtins)
+
+-- | A program consists in a set of declarations and a main term.
+type Program builtins = (Decls builtins, Term builtins)

@@ -125,7 +125,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Pirouette.PlutusIR.ToTermSpec
+      Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.SMTSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec

@@ -10,8 +10,9 @@ import Language.Pirouette.Example.Syntax
 import Control.Monad.Except
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Data.String
-import Data.List (elemIndex)
+import Data.List (elemIndex, isPrefixOf)
 import qualified Data.Map as M
+import Control.Arrow (first)
 
 data Ex deriving Data
 instance LanguageBuiltins Ex where
@@ -42,7 +43,7 @@ trDataDecl sName (DataDecl vars cons) = do
   let destName = fromString $ "match_" ++ sName
   constrs <- mapM (\(n, ty) -> (fromString n ,) <$> trType tyEnv ty) cons
   return
-    $ (name, DTypeDef $ Datatype ki undefined destName constrs)
+    $ (name, DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs)
     : (destName, DDestructor name)
     : zipWith (\n i -> (fst n, DConstructor i name)) constrs [0..]
 
@@ -54,7 +55,7 @@ trType env (TyApp ty ty2) = SystF.app <$> trType env ty <*> trType env ty2
 trType env (TyVar s) =
   case s `elemIndex` env of
     Just i -> return $ SystF.tyPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
-    Nothing -> throwError $ "Variable " ++ s ++ " undeclared"
+    Nothing -> throwError $ "type variable " ++ s ++ " undeclared"
 trType env (TyFree s) = return $ SystF.tyPure $ SystF.Free $ TySig (fromString s)
 trType env (TyBase et) = return $ SystF.tyPure $ SystF.Free $ TyBuiltin et
 
@@ -76,6 +77,6 @@ trTerm tyEnv termEnv (ExprIf c t e) = do
 trTerm tyEnv termEnv (ExprVar s) =
   case s `elemIndex` termEnv of
     Just i -> return $ SystF.termPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
-    Nothing -> throwError $ "Variable " ++ s ++ " undeclared"
+    Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig (fromString s)
 trTerm tyEnv termEnv (ExprLit ec) = return $ SystF.termPure (SystF.Free $ Constant ec)
 trTerm tyEnv termEnv (ExprBase et) = return $ SystF.termPure (SystF.Free $ Builtin et)
