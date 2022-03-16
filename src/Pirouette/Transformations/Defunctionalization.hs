@@ -16,7 +16,7 @@ import Control.Monad.RWS.Strict
 import Data.Bifunctor (first, second)
 import Data.Generics.Uniplate.Data
 import qualified Data.IntMap as IM
-import Data.List (nub)
+import Data.List (nub, sortOn)
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
@@ -110,7 +110,7 @@ mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
     typeDecls = [ (tyName, typeDecl)
                 | (tyName, infos) <- types
                 , let info2ctor ClosureCtorInfo{..} = (ctorName, foldr TyFun (F (TyFree tyName) `TyApp` []) ctorArgs)
-                , let typeDecl = DTypeDef $ Datatype KStar [] (dtorName tyName) (info2ctor <$> infos)
+                , let typeDecl = DTypeDef $ Datatype KStar [] (dtorName tyName) (info2ctor <$> sortOn ctorIdx infos)
                 ]
     ctorDecls = [ (ctorName, DConstructor ctorIdx $ closureTypeName hofType)
                 | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
