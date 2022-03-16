@@ -45,13 +45,17 @@ defunctionalize = defunTypes
 defunTypes :: (PrettyLang lang, LanguageDef lang)
            => PrtUnorderedDefs lang
            -> PrtUnorderedDefs lang
-defunTypes defs = map fst toDefun `traceShow` traceDefsId (etaExpand defs')
+defunTypes defs = defunDtors defs''
   where
-    (defs', toDefun) = traverseDefs defunType defs
+    (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
+    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
 
-    defunType (DTypeDef Datatype{..}) = (DTypeDef Datatype{constructors = ctors', ..}, maybeAllHofs)
+    defunTypeDef name (DTypeDef Datatype{..}) = do
+      forM_ allMaybeHofs $ \case (ctorName, Just hof) -> tell $ M.singleton ctorName hof
+                                 _ -> pure ()
+      pure $ DTypeDef Datatype{constructors = ctors', ..}
       where
-        (ctors', allMaybeHofs) = unzip [ ((ctorName, ctorTy'), maybeHofs)
+        (ctors', allMaybeHofs) = unzip [ ((ctorName, ctorTy'), (ctorName, maybeHofs))
                                        | (ctorName, ctorTy) <- constructors
                                        , let (ctorTy', hofs) = rewriteHofType ctorTy
                                              maybeHofs | ctorTy' == ctorTy = Nothing
@@ -60,10 +64,28 @@ defunTypes defs = map fst toDefun `traceShow` traceDefsId (etaExpand defs')
                                                                    . trace ("got: " <> renderSingleLineStr (pretty ctorTy'))
                                                                    $ Just hofs
                                        ]
-        -- ugly, but we could build the right abstractions for `traverseDefs` later on
-        maybeAllHofs | isJust `any` allMaybeHofs = Just $ zip allMaybeHofs [0..]
-                     | otherwise = Nothing
-    defunType x = (x, Nothing)
+    defunTypeDef _ x = pure x
+
+-- Destructors have a well-known structure: they are η-expanded,
+-- they accept a bunch of funargs that needn't be defunctionalized, etc,
+-- so we can have a few shortcuts
+defunDtors :: forall lang. (PrettyLang lang, LanguageDef lang)
+           => PrtUnorderedDefs lang
+           -> PrtUnorderedDefs lang
+defunDtors defs = transformBi f defs
+  where
+    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
+    getDtorName (DTypeDef Datatype{..}) = Just destructor
+    getDtorName _ = Nothing
+
+    f :: PrtTerm lang -> PrtTerm lang
+    f (F (FreeName name) `App` args)
+      | name `S.member` dtorsNames = F (FreeName name) `App` (prefix <> branches')
+      where
+        (branches, prefix) = reverse *** reverse $ span isArg $ reverse args
+        tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
+        branches' = argElim tyArgErr (Arg . rewriteHofBody) <$> branches
+    f x = x
 
 -- * Defunctionalization of functions
 
