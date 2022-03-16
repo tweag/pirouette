@@ -38,17 +38,22 @@ import Control.Monad.Writer.Strict
 defunctionalize :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize = defunTypes
+defunctionalize defs = traceDefsId defs' { prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls }
+  where
+    (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpand defs) mempty (DefunState mempty)
+
+    typeDecls = mkClosureTypes closureCtorInfos
+    applyFunDecls = mkApplyFuns closureCtorInfos
 
 -- * Defunctionalization of types
 
+-- evalRWS (defunCallsM defs) mempty (DefunState mempty)
 defunTypes :: (PrettyLang lang, LanguageDef lang)
            => PrtUnorderedDefs lang
-           -> PrtUnorderedDefs lang
-defunTypes defs = defunDtors defs''
+           -> DefunCallsCtx lang (PrtUnorderedDefs lang)
+defunTypes defs = defunCalls toDefun defs'
   where
     (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
-    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
 
     defunTypeDef name (DTypeDef Datatype{..}) = do
       forM_ allMaybeHofs $ \case (ctorName, Just hof) -> tell $ M.singleton ctorName hof
@@ -91,14 +96,10 @@ defunDtors defs = transformBi f defs
 
 defunFuns :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
           => PrtUnorderedDefs lang
-          -> PrtUnorderedDefs lang
-defunFuns defs = defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
+          -> DefunCallsCtx lang (PrtUnorderedDefs lang)
+defunFuns defs = defunCalls toDefun defs'
   where
     (defs', toDefun) = defunDefs defs
-    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
-
-    typeDecls = mkClosureTypes closureCtorInfos
-    applyFunDecls = mkApplyFuns closureCtorInfos
 
 -- * Closure type generation
 
@@ -154,25 +155,22 @@ data ClosureCtorInfo lang = ClosureCtorInfo
   , hofTerm :: PrtTerm lang
   }
 
-type DefunBodiesCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
+type DefunCallsCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
 defunCalls :: forall lang. (PrettyLang lang, LanguageDef lang)
            => M.Map Name (HofsList lang)
            -> PrtUnorderedDefs lang
-           -> (PrtUnorderedDefs lang, [ClosureCtorInfo lang])
-defunCalls toDefun defs = evalRWS (defunCallsM defs) mempty (DefunState mempty)
+           -> DefunCallsCtx lang (PrtUnorderedDefs lang)
+defunCalls toDefun PrtUnorderedDefs{..} = do
+  mainTerm' <- defunCallsInTerm prtUOMainTerm
+  decls' <- for prtUODecls $ \case DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm body
+                                   def -> pure def
+  pure $ PrtUnorderedDefs decls' mainTerm'
   where
-    defunCallsM :: PrtUnorderedDefs lang -> DefunBodiesCtx lang (PrtUnorderedDefs lang)
-    defunCallsM PrtUnorderedDefs{..} = do
-      mainTerm' <- defunCallsInTerm prtUOMainTerm
-      decls' <- for prtUODecls $ \case DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm body
-                                       def -> pure def
-      pure $ PrtUnorderedDefs decls' mainTerm'
-
-    defunCallsInTerm :: PrtTerm lang -> DefunBodiesCtx lang (PrtTerm lang)
+    defunCallsInTerm :: PrtTerm lang -> DefunCallsCtx lang (PrtTerm lang)
     defunCallsInTerm = go []
       where
-        go :: [(FlatArgType lang, Ann Name)] -> PrtTerm lang -> DefunBodiesCtx lang (PrtTerm lang)
+        go :: [(FlatArgType lang, Ann Name)] -> PrtTerm lang -> DefunCallsCtx lang (PrtTerm lang)
         go ctx (term `App` args) = do
           args' <- mapM (argElim (pure . TyArg) (fmap Arg . go ctx)) args
           goApp ctx term args'
@@ -187,7 +185,7 @@ defunCalls toDefun defs = evalRWS (defunCallsM defs) mempty (DefunState mempty)
 
     replaceArg :: [(FlatArgType lang, Ann Name)]
                -> (Integer, Maybe (DefunHofArgInfo lang), PrtArg lang)
-               -> DefunBodiesCtx lang (PrtArg lang)
+               -> DefunCallsCtx lang (PrtArg lang)
     replaceArg ctx (_, Just hofArgInfo, Arg lam@Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _   (_, _, arg) = pure arg
 
@@ -195,7 +193,7 @@ mkClosureArg :: (PrettyLang lang, LanguageDef lang)
              => [(FlatArgType lang, Ann Name)]
              -> DefunHofArgInfo lang
              -> PrtTerm lang
-             -> DefunBodiesCtx lang (PrtArg lang)
+             -> DefunCallsCtx lang (PrtArg lang)
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo{..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
@@ -232,7 +230,7 @@ remapFreeDeBruijns mapping = go 0
     remapVar cutoff (B _ n) | n >= cutoff = B (Ann "ctx") $ cutoff + mapping M.! (n - cutoff)
     remapVar _ v = v
 
-newCtorIdx :: LanguageDef lang => B.Type lang Name -> DefunBodiesCtx lang Int
+newCtorIdx :: LanguageDef lang => B.Type lang Name -> DefunCallsCtx lang Int
 newCtorIdx ty = do
   idx <- gets $ M.findWithDefault 0 ty . closureType2Idx
   modify' $ \st -> st { closureType2Idx = M.insert ty (idx + 1) $ closureType2Idx st }
@@ -255,11 +253,10 @@ traverseDefs defunDef defs = do
 defunDefs :: forall lang. (PrettyLang lang, LanguageDef lang)
           => PrtUnorderedDefs lang
           -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunDefs = second M.fromList . runWriter . traverseDefs defunDef
+defunDefs = runWriter . traverseDefs defunDef
   where
-    defunDef :: Name -> Definition lang Name -> Writer [(Name, HofsList lang)] (Definition lang Name)
     defunDef name (DFunDef FunDef{..}) =  do
-      when changed $ tell [(name, hofs)]
+      when changed $ tell $ M.singleton name hofs
       pure $ DFunDef $ FunDef funIsRec funBody' funTy'
       where
         (funTy', hofs) = rewriteHofType funTy
