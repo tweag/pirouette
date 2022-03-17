@@ -36,7 +36,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
-import Pirouette.Term.Builtins (LanguageBuiltins(..))
+import Pirouette.Term.Builtins (LanguageBuiltins (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -154,15 +154,17 @@ parseFunDecl = label "Function declaration" $ do
   return (i, FunDecl t x)
 
 parseKind :: Parser SystF.Kind
-parseKind = label "Kind" $
-  makeExprParser
-    (parens parseKind <|> (SystF.KStar <$ symbol "Type"))
-    [[InfixR $ SystF.KTo <$ symbol "->"]]
+parseKind =
+  label "Kind" $
+    makeExprParser
+      (parens parseKind <|> (SystF.KStar <$ symbol "Type"))
+      [[InfixR $ SystF.KTo <$ symbol "->"]]
 
 parseExType :: Parser ExType
-parseExType = label "Builtin type" $
-  (TyInteger <$ symbol "Integer")
-    <|> (TyBool <$ symbol "Bool")
+parseExType =
+  label "Builtin type" $
+    (TyInteger <$ symbol "Integer")
+      <|> (TyBool <$ symbol "Bool")
 
 parens :: Parser a -> Parser a
 parens a = try (symbol "(") *> a <* symbol ")"
@@ -194,20 +196,22 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
         ]
 
 parseTypeAtom :: Parser Ty
-parseTypeAtom = label "Type atom" $
-  asum
-    [ TyVar <$> try ident,
-      TyBase <$> try parseExType,
-      TyFree <$> try typeName,
-      parens parseType
-    ]
+parseTypeAtom =
+  label "Type atom" $
+    asum
+      [ TyVar <$> try ident,
+        TyBase <$> try parseExType,
+        TyFree <$> try typeName,
+        parens parseType
+      ]
 
 parseExConstants :: Parser ExConstant
-parseExConstants = label "Constant" $
-  asum
-    [ ConstInt <$> integer,
-      ConstBool <$> parseBoolean
-    ]
+parseExConstants =
+  label "Constant" $
+    asum
+      [ ConstInt <$> integer,
+        ConstBool <$> parseBoolean
+      ]
   where
     parseBoolean = (True <$ symbol "True") <|> (False <$ symbol "False")
     integer :: Parser Integer

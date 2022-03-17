@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -9,7 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DeriveLift #-}
 
 -- | This module declares 'PlutusIR' as a supported language, instantiates all the
 --  necessary bits for using the facilities from "Pirouette.Term.Syntax" and provides
@@ -20,6 +20,7 @@ module Language.Pirouette.PlutusIR.Builtins where
 import qualified Data.ByteString as BS
 import Data.Data
 import qualified Data.Text as T
+import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax.Pretty.Class
 import PlutusCore
@@ -28,7 +29,6 @@ import PlutusCore
     pattern DefaultUniPair,
     pattern DefaultUniString,
   )
-import Language.Haskell.TH.Syntax (Lift)
 import qualified PlutusCore as P
 import qualified PlutusCore.Data as P
 import Prettyprinter hiding (Pretty, pretty)

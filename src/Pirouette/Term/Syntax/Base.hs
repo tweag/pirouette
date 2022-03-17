@@ -64,7 +64,6 @@ deriving instance (LanguageBuiltins builtins) => Data (TypeBase builtins)
 
 deriving instance (LanguageBuiltins builtins) => Typeable (TypeBase builtins)
 
-
 -- | A Pirouette type is a 'SystF.Type' whose variables are 'TypeBase' and it has metavariables
 --  of type 'meta'. If you're just using this as a library you're likely more interested in
 --  'Type'.

@@ -8,8 +8,8 @@ module Pirouette.Term.Builtins where
 
 import Data.Data (Data)
 import Data.Typeable (Typeable)
-import Pirouette.Term.Syntax.Pretty.Class
 import Language.Haskell.TH.Syntax (Lift)
+import Pirouette.Term.Syntax.Pretty.Class
 
 type EqOrdShowDataTypeableLift a = (Eq a, Ord a, Show a, Data a, Typeable a, Lift a)
 

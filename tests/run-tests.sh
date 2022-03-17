@@ -3,7 +3,7 @@ set -uo pipefail
 
 show_help() {
   cat <<EOF
-usage: ./ci/run-tests.sh [--ci]
+usage: ./tests/run-tests.sh [--ci]
   Note the script is ran from the repo root; Running without --ci
   will run "ormolu --mode inplace" and fix offending files.
   Options:
@@ -44,10 +44,6 @@ run_ormolu() {
     ormolu_res=$?
   fi
 
-  if $ci && [[ "$ormolu_res" -eq "0" ]]; then
-    rm "./${proj}-ormolu.artifact"
-  fi
-
   return $ormolu_res
 }
 
@@ -63,10 +59,6 @@ run_cabal_test() {
   else
     cabal run tests
     cabal_res=$?
-  fi
-
-  if $ci && [[ "$cabal_res" -eq "0" ]]; then
-    rm "./$proj-cabal-test.artifact"
   fi
 
   return $cabal_res
@@ -86,10 +78,6 @@ run_hlint() {
   else
     hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs"
     hlint_res=$?
-  fi
-
-  if $ci && [[ "$hlint_res" -eq "0" ]]; then
-    rm "./$proj-hlint.artifact"
   fi
 
   return $hlint_res
