@@ -1,1 +1,0 @@
-../MultiSigStateMachine/ContractSpec.tla

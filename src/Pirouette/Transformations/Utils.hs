@@ -19,15 +19,16 @@ import Debug.Trace
 
 import Pirouette.Monad
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.SystemF
+import Pirouette.Term.Syntax.SystemF hiding (Arg)
+import Pirouette.Term.Builtins
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 
 traceDefsId :: (PrettyLang lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
 
 data HofDefBody lang
-  = HDBType (TypeDef lang Name)
-  | HDBFun  (FunDef lang Name)
+  = HDBType (TypeDef lang)
+  | HDBFun  (FunDef lang)
   deriving (Show, Eq, Ord)
 
 data HofDef lang = HofDef
@@ -38,35 +39,35 @@ data HofDef lang = HofDef
 
 type HOFDefs lang = M.Map Name (HofDef lang)
 
-findFuns :: LanguageDef lang
-         => (forall ann. Data ann => FunDef lang ann -> Bool)
-         -> [(Name, Definition lang Name)]
+findFuns :: LanguageBuiltins lang
+         => [(Name, Definition lang)]
+         -> (FunDef lang -> Bool)
          -> [(Name, HofDef lang)]
-findFuns pred declsPairs =
+findFuns declsPairs predi =
   [ (name, HofDef name $ HDBFun funDef)
   | (name, DFunDef funDef) <- declsPairs
-  , pred funDef
+  , predi funDef
   ]
 
-findTypes :: LanguageDef lang
-          => [(Name, Definition lang Name)]
-          -> (Name -> TypeDef lang Name -> Bool)
+findTypes :: LanguageBuiltins lang
+          => [(Name, Definition lang)]
+          -> (Name -> TypeDef lang -> Bool)
           -> [(Name, HofDef lang)]
-findTypes declsPairs pred =
+findTypes declsPairs predi =
   [ (name, HofDef tyName $ HDBType typeDef)
   | (tyName, DTypeDef typeDef) <- declsPairs
-  , pred tyName typeDef
+  , predi tyName typeDef
   , name <- tyName : destructor typeDef : (fst <$> constructors typeDef)
   ]
 
-findHOFDefs :: forall lang. LanguageDef lang
-            => (forall ann. Data ann => FunDef lang ann -> Bool)
-            -> (Name -> TypeDef lang Name -> Bool)
-            -> [(Name, Definition lang Name)]
+findHOFDefs :: forall lang. LanguageBuiltins lang
+            => (FunDef lang -> Bool)
+            -> (Name -> TypeDef lang -> Bool)
+            -> [(Name, Definition lang)]
             -> HOFDefs lang
-findHOFDefs funPred tyPred declsPairs = M.fromList $ findFuns funPred' declsPairs <> findTypes declsPairs tyPred'
+findHOFDefs funPred tyPred declsPairs = M.fromList $ findFuns declsPairs funPred' <> findTypes declsPairs tyPred'
   where
-    funPred' :: forall ann. Data ann => FunDef lang ann -> Bool
+    funPred' :: FunDef lang -> Bool
     funPred' fun = funPred fun && hasHOFuns (funTy fun)
     tyPred' name typeDef = tyPred name typeDef && (hasHOFuns . snd) `any` constructors typeDef
 
@@ -77,43 +78,43 @@ isHOFTy :: AnnType ann ty -> Bool
 isHOFTy (TyFun TyFun {} _) = True
 isHOFTy _ = False
 
--- @Arg Kind (PrtType lang)@ could've been used here instead,
+-- @Arg Kind (Type lang)@ could've been used here instead,
 -- but having a distinct type seems to be a bit nicer, at least for now for hole-driven development reasons.
 data FlatArgType lang
   = FlatTyArg Kind
-  | FlatTermArg (PrtType lang)
+  | FlatTermArg (Type lang)
   deriving (Show)
 
-flattenType :: PrtType lang -> ([FlatArgType lang], PrtType lang)
+flattenType :: Type lang -> ([FlatArgType lang], Type lang)
 flattenType ty@TyApp{} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
-flattenType (TyAll ann kind ty) = first (FlatTyArg kind :) $ flattenType ty
+flattenType (TyAll _ann kind0 ty) = first (FlatTyArg kind0 :) $ flattenType ty
 flattenType TyLam{} = error "unnormalized type"
 
 -- * @splitArgs n args@ splits @args@ into the first @n@ type arguments and everything else.
 --
 -- For instance, @splitArgs 2 [Arg a, TyArg A, TyArg B, Arg b, TyArg C]@
 -- yields @([A, B], [Arg a, Arg b, TyArg C])@.
-splitArgs :: Int -> [Arg ty v] -> ([ty], [Arg ty v])
+splitArgs :: Int -> [SystF.Arg ty v] -> ([ty], [SystF.Arg ty v])
 splitArgs 0 args = ([], args)
 splitArgs n (TyArg tyArg : args) = first (tyArg :) $ splitArgs (n - 1) args
 splitArgs n (arg : args) = second (arg :) $ splitArgs n args
 splitArgs _ [] = error "Less args than poly args count"
 
-argsToStr :: (LanguageDef lang) => [PrtType lang] -> T.Text
+argsToStr :: (LanguageBuiltins lang) => [Type lang] -> T.Text
 argsToStr = T.intercalate "@" . map f
   where
-    f (F (TyFree n) `TyApp` []) = nameString n
-    f (F (TyFree n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
+    f (SystF.Free (TySig n) `TyApp` []) = nameString n
+    f (SystF.Free (TySig n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
     f arg = error $ "unexpected specializing arg" <> show arg
 
 -- This really belongs to a Pretty module, but we need them here for nicer debugging anyway for now.
-instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang Name)) => Pretty (HofDefBody lang) where
+instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang)) => Pretty (HofDefBody lang) where
   pretty (HDBType defn) = "<typ>" <+> pretty defn
   pretty (HDBFun  defn) = "<fun>" <+> pretty defn
 
-instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang Name)) => Pretty (HofDef lang) where
+instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang)) => Pretty (HofDef lang) where
   pretty = pretty . hofDefBody
 
-instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang Name)) => Pretty (HOFDefs lang) where
+instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang)) => Pretty (HOFDefs lang) where
   pretty = align . vsep . map (\(n, d) -> pretty n <+> pretty d) . M.toList
