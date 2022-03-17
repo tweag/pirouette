@@ -26,22 +26,22 @@ withUnorderedDecls (decls, main) m =
 
 sampleProgram :: Program Ex
 sampleProgram = [prog|
-data Maybe (a :: Type)
-  = Nothing :: Maybe a
-  | Just :: a -> Maybe a
+data Maybe (a : Type)
+  = Nothing : Maybe a
+  | Just : a -> Maybe a
 
-fun add :: Integer -> Integer -> Integer
-    = \x :: Integer . \y :: Integer . x + y
+fun add : Integer -> Integer -> Integer
+    = \(x : Integer) (y : Integer) . x + y
 
-fun f1 :: Maybe Integer -> Integer
-    = \x :: Maybe Integer .
-      add (match_Maybe @Integer x @Integer 42 (\n :: Integer . n)) 1
+fun f1 : Maybe Integer -> Integer
+    = \x : Maybe Integer .
+      add (match_Maybe @Integer x @Integer 42 (\n : Integer . n)) 1
 
-fun destrNF_f1 :: Maybe Integer -> Integer
-    = \x :: Maybe Integer .
-      match_Maybe @Integer x @Integer (add 42 1) (\n :: Integer . add n 1)
+fun destrNF_f1 : Maybe Integer -> Integer
+    = \x : Maybe Integer .
+      match_Maybe @Integer x @Integer (add 42 1) (\n : Integer . add n 1)
 
-fun main :: Integer = 42
+fun main : Integer = 42
 |]
 
 tests :: [TestTree]

@@ -5,6 +5,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- |Provides the quasiquoters to be able to write @Ex@ programs
+-- directly into Haskell source files. Using the functions
+-- exported by this module requires the @-XQuasiQuotes@ extension.
 module Language.Pirouette.Example.QuasiQuoter (prog, term, ty) where
 
 import Control.Monad.Except (runExcept)

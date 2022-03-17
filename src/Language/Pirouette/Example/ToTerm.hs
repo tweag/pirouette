@@ -1,24 +1,20 @@
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TupleSections #-}
+
+-- |Provides a simple translation from the syntactical categories
+-- of "Language.Pirouette.Example.Syntax" into their respective
+-- counterparts in "Pirouette.Term.Base". The main aspect of this
+-- translation is computing de Bruijn indices.
 module Language.Pirouette.Example.ToTerm where
 
-import Data.Data
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax.Base
 import Language.Pirouette.Example.Syntax
 import Control.Monad.Except
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Data.String
-import Data.List (elemIndex, isPrefixOf)
+import Data.List (elemIndex)
 import qualified Data.Map as M
 import Control.Arrow (first)
-
-data Ex deriving Data
-instance LanguageBuiltins Ex where
-  type BuiltinTypes Ex = ExTypes
-  type BuiltinTerms Ex = ExTerm
-  type Constants Ex = ExConstant
 
 type TrM = Except String
 
@@ -56,15 +52,15 @@ trType env (TyVar s) =
   case s `elemIndex` env of
     Just i -> return $ SystF.tyPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
     Nothing -> throwError $ "type variable " ++ s ++ " undeclared"
-trType env (TyFree s) = return $ SystF.tyPure $ SystF.Free $ TySig (fromString s)
-trType env (TyBase et) = return $ SystF.tyPure $ SystF.Free $ TyBuiltin et
+trType _ (TyFree s) = return $ SystF.tyPure $ SystF.Free $ TySig (fromString s)
+trType _ (TyBase et) = return $ SystF.tyPure $ SystF.Free $ TyBuiltin et
 
 trTerm :: Env -> Env -> Expr -> TrM (Term Ex)
 trTerm tyEnv termEnv (ExprApp ex (ExprTy tyArg)) =
   SystF.app <$> trTerm tyEnv termEnv ex <*> (SystF.TyArg <$> trType tyEnv tyArg)
 trTerm tyEnv termEnv (ExprApp ex arg) =
   SystF.app <$> trTerm tyEnv termEnv ex <*> (SystF.TermArg <$> trTerm tyEnv termEnv arg)
-trTerm tyEnv termEnv (ExprTy ty) = throwError "ExprTy found outside an ExprApp chain"
+trTerm _ _ (ExprTy _) = throwError "ExprTy found outside an ExprApp chain"
 trTerm tyEnv termEnv (ExprLam s ty ex) =
   SystF.Lam (SystF.Ann $ fromString s) <$> trType tyEnv ty <*> trTerm tyEnv (s:termEnv) ex
 trTerm tyEnv termEnv (ExprAbs s ki ex) =
@@ -74,9 +70,9 @@ trTerm tyEnv termEnv (ExprIf c t e) = do
   t' <- trTerm tyEnv termEnv t
   e' <- trTerm tyEnv termEnv e
   return $ SystF.App (SystF.Free $ Builtin TermIte) $ map SystF.TermArg [c', t', e']
-trTerm tyEnv termEnv (ExprVar s) =
+trTerm _ termEnv (ExprVar s) =
   case s `elemIndex` termEnv of
     Just i -> return $ SystF.termPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
     Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig (fromString s)
-trTerm tyEnv termEnv (ExprLit ec) = return $ SystF.termPure (SystF.Free $ Constant ec)
-trTerm tyEnv termEnv (ExprBase et) = return $ SystF.termPure (SystF.Free $ Builtin et)
+trTerm _ _ (ExprLit ec) = return $ SystF.termPure (SystF.Free $ Constant ec)
+trTerm _ _ (ExprBase et) = return $ SystF.termPure (SystF.Free $ Builtin et)
