@@ -12,7 +12,7 @@
 --  anything under the @SMT/@ folder explicitely unless you're trying to do some
 --  very specific things or declaring a language. In which case, you probably
 --  want only "Pirouette.SMT.Base" and "Pirouette.SMT.SimpleSMT" to bring get the necessary
---  classes and definitions in scope. Check "Pirouette.PlutusIR.SMT" for an example.
+--  classes and definitions in scope. Check "Language.Pirouette.PlutusIR.SMT" for an example.
 module Pirouette.SMT
   ( SolverT (..),
     checkSat,

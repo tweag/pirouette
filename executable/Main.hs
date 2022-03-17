@@ -31,9 +31,9 @@ import Options.Applicative ((<**>))
 import qualified Options.Applicative as Opt
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.PlutusIR.SMT ()
-import Pirouette.PlutusIR.Builtins
-import Pirouette.PlutusIR.ToTerm
+import Language.Pirouette.PlutusIR.SMT ()
+import Language.Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Builtins
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Syntax
