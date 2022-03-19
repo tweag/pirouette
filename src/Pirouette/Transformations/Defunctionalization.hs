@@ -63,10 +63,7 @@ defunTypes defs = defunCalls toDefun $ defunDtors defs'
                                        | (ctorName, ctorTy) <- constructors
                                        , let (ctorTy', hofs) = rewriteHofType ctorTy
                                              maybeHofs | ctorTy' == ctorTy = Nothing
-                                                       | otherwise = trace ("ctor " <> show ctorName)
-                                                                   . trace ("was: " <> renderSingleLineStr (pretty ctorTy))
-                                                                   . trace ("got: " <> renderSingleLineStr (pretty ctorTy'))
-                                                                   $ Just hofs
+                                                       | otherwise = Just hofs
                                        ]
     defunTypeDef _ x = pure x
 
