@@ -50,7 +50,7 @@ defunctionalize defs = traceDefsId defs' { prtUODecls = prtUODecls defs' <> type
 defunTypes :: (PrettyLang lang, LanguageDef lang)
            => PrtUnorderedDefs lang
            -> DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunTypes defs = defunCalls toDefun defs'
+defunTypes defs = defunCalls toDefun $ defunDtors defs'
   where
     (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
 
