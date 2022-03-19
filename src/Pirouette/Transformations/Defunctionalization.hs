@@ -47,7 +47,6 @@ defunctionalize defs = traceDefsId defs' { prtUODecls = prtUODecls defs' <> type
 
 -- * Defunctionalization of types
 
--- evalRWS (defunCallsM defs) mempty (DefunState mempty)
 defunTypes :: (PrettyLang lang, LanguageDef lang)
            => PrtUnorderedDefs lang
            -> DefunCallsCtx lang (PrtUnorderedDefs lang)
@@ -99,7 +98,17 @@ defunFuns :: (PrettyLang lang, Pretty (FunDef lang Name), LanguageDef lang)
           -> DefunCallsCtx lang (PrtUnorderedDefs lang)
 defunFuns defs = defunCalls toDefun defs'
   where
-    (defs', toDefun) = defunDefs defs
+    (defs', toDefun) = runWriter $ traverseDefs defunFunDef defs
+
+    defunFunDef name (DFunDef FunDef{..}) =  do
+      when changed $ tell $ M.singleton name hofs
+      pure $ DFunDef $ FunDef funIsRec funBody' funTy'
+      where
+        (funTy', hofs) = rewriteHofType funTy
+        changed = funTy' /= funTy
+        funBody' | changed = rewriteHofBody funBody
+                 | otherwise = funBody
+    defunFunDef _ x = pure x
 
 -- * Closure type generation
 
@@ -244,26 +253,11 @@ traverseDefs :: Monad m
              => (Name -> Definition lang Name -> m (Definition lang Name))
              -> PrtUnorderedDefs lang
              -> m (PrtUnorderedDefs lang)
-traverseDefs defunDef defs = do
-  decls' <- forM defsList $ \(name, def) -> (name,) <$> defunDef name def
+traverseDefs f defs = do
+  decls' <- forM defsList $ \(name, def) -> (name,) <$> f name def
   pure $ defs { prtUODecls = M.fromList decls' }
   where
     defsList = M.toList $ prtUODecls defs
-
-defunDefs :: forall lang. (PrettyLang lang, LanguageDef lang)
-          => PrtUnorderedDefs lang
-          -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunDefs = runWriter . traverseDefs defunDef
-  where
-    defunDef name (DFunDef FunDef{..}) =  do
-      when changed $ tell $ M.singleton name hofs
-      pure $ DFunDef $ FunDef funIsRec funBody' funTy'
-      where
-        (funTy', hofs) = rewriteHofType funTy
-        changed = funTy' /= funTy
-        funBody' | changed = rewriteHofBody funBody
-                 | otherwise = funBody
-    defunDef _ x = pure x
 
 newtype DefunHofArgInfo lang = DefunHofArgInfo { hofType :: B.Type lang Name } deriving (Show, Eq, Ord)
 
