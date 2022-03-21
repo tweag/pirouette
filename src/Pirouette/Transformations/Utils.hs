@@ -64,7 +64,8 @@ findHOFDefs :: forall lang. LanguageBuiltins lang
             -> (Name -> TypeDef lang -> Bool)
             -> [(Name, Definition lang)]
             -> HOFDefs lang
-findHOFDefs funPred tyPred declsPairs = M.fromList $ findFuns declsPairs funPred' <> findTypes declsPairs tyPred'
+findHOFDefs funPred tyPred declsPairs =
+  M.fromList $ findFuns declsPairs funPred' <> findTypes declsPairs tyPred'
   where
     funPred' :: FunDef lang -> Bool
     funPred' fun = funPred fun && hasHOFuns (funTy fun)

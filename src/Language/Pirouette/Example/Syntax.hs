@@ -276,7 +276,7 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           parens parseTerm,
           parseIf,
           ExprTy <$> (try (symbol "@") >> parseTypeAtom),
-          ExprVar <$> try ident,
+          ExprVar <$> try (ident <|> typeName),
           ExprLit <$> try parseExConstants
         ]
 

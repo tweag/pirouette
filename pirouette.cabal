@@ -132,6 +132,7 @@ test-suite spec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Pirouette.Transformations.EtaExpandSpec
+      Pirouette.Transformations.MonomorphizationSpec
       Paths_pirouette
   hs-source-dirs:
       tests/unit

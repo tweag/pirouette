@@ -9,7 +9,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ParallelListComp #-}
 
-module Pirouette.Transformations.Monomorphization(monomorphize) where
+module Pirouette.Transformations.Monomorphization(monomorphize, findPolyHOFDefs) where
 
 import Control.Monad.Writer.Strict
 import Data.Data

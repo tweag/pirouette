@@ -3,6 +3,7 @@ import qualified Language.Pirouette.PlutusIR.ToTermSpec as FP
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Term.TransformationsSpec as Tr
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
+import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
 import Test.Tasty
 
 main :: IO ()
@@ -15,7 +16,8 @@ tests =
     [ testGroup "SystemF" SF.tests,
       testGroup
         "Transformations"
-        [testGroup "EtaExpand" Eta.tests],
+        [testGroup "EtaExpand" Eta.tests,
+         testGroup "Monomorphization" Mono.tests],
       testGroup "Term" [testGroup "Transformations" Tr.tests],
       testGroup
         "Language"
