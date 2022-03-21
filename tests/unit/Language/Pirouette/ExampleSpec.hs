@@ -22,7 +22,11 @@ tests =
       "Can parse types"
       [ testCase "Example 1" $ canParseType [ty| \x : Type . x |],
         testCase "Example 2" $ canParseType [ty| all f : Type -> Type . \(x : Type) (y : Type) . f x -> f y |],
-        testCase "Example 3" $ canParseType [ty| One (Two Three) (Four Five) Six Seven |]
+        testCase "Example 3" $ canParseType [ty| One (Two Three) (Four Five) Six Seven |],
+        testCase "Example 4" $
+          let t1 = [ty| \(x : Type) (y : Type) . F x y |]
+              t2 = [ty| \(x : Type) . \(y : Type) . F x y |]
+           in (t1 :: Type Ex) @?= t2
       ],
     testGroup
       "Can parse terms"

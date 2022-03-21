@@ -35,7 +35,7 @@ defunctionalize :: (LanguagePretty lang, LanguageBuiltins lang)
 defunctionalize defs = renderSingleLineStr (pretty typeDecls) `trace` defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
   where
     (defs', toDefun) = defunDefs defs
-    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpand defs'
+    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpandAll defs'
 
     typeDecls = mkClosureTypes closureCtorInfos
     applyFunDecls = mkApplyFuns closureCtorInfos

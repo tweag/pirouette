@@ -295,7 +295,7 @@ parseBinder binder parseVars parseBody = do
   vars <- parseVars
   guard (not $ null vars)
   b <- parseBody
-  let (n0, k0) : rest = vars
+  let (n0, k0) : rest = reverse vars
   return $ foldr (\(n, k) b' -> binder n k b') (binder n0 k0 b) rest
 
 lexeme :: Parser a -> Parser a

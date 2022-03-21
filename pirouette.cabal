@@ -131,6 +131,7 @@ test-suite spec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
+      Pirouette.Transformations.EtaExpandSpec
       Paths_pirouette
   hs-source-dirs:
       tests/unit
