@@ -28,9 +28,8 @@ import Pirouette.Term.Syntax.SystemF
 
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
-import Pirouette.Term.Builtins
 
-defunctionalize :: (PrettyLang lang, Pretty (FunDef lang), LanguageBuiltins lang)
+defunctionalize :: (LanguagePretty lang, LanguageBuiltins lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
 defunctionalize defs = renderSingleLineStr (pretty typeDecls) `trace` defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
@@ -97,7 +96,7 @@ data ClosureCtorInfo lang = ClosureCtorInfo
 
 type DefunBodiesCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
-defunCalls :: forall lang. (PrettyLang lang, LanguageBuiltins lang)
+defunCalls :: forall lang. (LanguagePretty lang, LanguageBuiltins lang)
            => M.Map Name (HofsList lang)
            -> PrtUnorderedDefs lang
            -> (PrtUnorderedDefs lang, [ClosureCtorInfo lang])
@@ -183,7 +182,7 @@ newCtorIdx ty = do
 
 type HofsList lang = [Maybe (DefunHofArgInfo lang)]
 
-defunDefs :: forall lang. (PrettyLang lang, LanguageBuiltins lang) => PrtUnorderedDefs lang -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
+defunDefs :: forall lang. (LanguagePretty lang, LanguageBuiltins lang) => PrtUnorderedDefs lang -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
 defunDefs defs = (defs { prtUODecls = decls' }, M.fromList toDefun)
   where
     (toDefun, decls') = M.mapAccumWithKey f [] $ prtUODecls defs
@@ -223,7 +222,7 @@ data DefunHofArgInfo lang = DefunHofArgInfo
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
 -- where the @Closure[Ty2->Ty3]@ is the ADT with the labels and environments for the funargs of type @Ty2 -> Ty3@.
-rewriteHofType :: forall lang. (PrettyLang lang, LanguageBuiltins lang)
+rewriteHofType :: forall lang. (LanguagePretty lang, LanguageBuiltins lang)
                => B.Type lang
                -> (B.Type lang, HofsList lang)
 rewriteHofType = go 0
@@ -246,7 +245,7 @@ rewriteHofType = go 0
     go pos (TyLam ann k ty) = error "unexpected arg type" -- TODO mention the type
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
-rewriteHofBody :: (PrettyLang lang, LanguageBuiltins lang)
+rewriteHofBody :: (LanguagePretty lang, LanguageBuiltins lang)
                => [Maybe (DefunHofArgInfo lang)]
                -> B.Term lang
                -> B.Term lang
@@ -276,7 +275,7 @@ replaceApply applyFunName = go 0
         recurArg arg@TyArg{} = arg
         recurArg (TermArg arg) = TermArg $ go idx arg
 
-funTyStr :: (PrettyLang lang, LanguageBuiltins lang) => B.Type lang -> T.Text
+funTyStr :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> T.Text
 funTyStr (dom `TyFun` cod) = funTyStr dom <> " => " <> funTyStr cod
 funTyStr a@TyApp{} = argsToStr [a]
 funTyStr ty = error $ "unexpected arg type during defunctionalization:\n"

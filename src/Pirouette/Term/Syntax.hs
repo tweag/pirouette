@@ -1,4 +1,6 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Pirouette.Term.Syntax
   ( module EXPORT,
@@ -26,41 +28,38 @@ import qualified Pirouette.Term.Syntax.SystemF as Raw
 -- are renamed to avoid name clashes when outputting code that relies on user given names
 -- while still being able to use something close to the programmer-given names for the
 -- generated code.
-separateBoundFrom :: Term builtins -> Term builtins -> Term builtins
+separateBoundFrom :: Term lang -> Term lang -> Term lang
 separateBoundFrom u t =
-  let boundOf = Raw.termAnnFold Set.singleton
-   in let inter = Set.intersection (boundOf u) (boundOf t)
-       in if null inter
-            then t
-            else -- `structuredInter` transforms the set of name clashes into a map
-            -- from nameString to the list of nameUnique associated.
+  let inter = Set.intersection (boundOf u) (boundOf t)
+   in if null inter
+        then t
+        else
+          let f = rename (structuredInter inter) (Set.union (boundOf u) (boundOf t))
+           in Raw.termTrimap id f (annMap f) t
+  where
+    boundOf = Raw.termAnnFold Set.singleton
 
-              let structuredInter =
-                    Set.fold
-                      (\n m -> Map.insertWith (++) (nameString n) [nameUnique n] m)
-                      Map.empty
-                      inter
-               in -- `nextFresh s txt i n` takes a set `s` of names and a `nameString` `txt` and outputs
-                  -- the first index which does not create clash.
-                  -- `n` starts from 0 and increases until a number not already taken is met,
-                  -- whereas `i` counts how much new number must be met.
-                  -- The purpose of `i` is to avoid to rename identically `x0` and `x1`
-                  -- if both are subject to name clash.
-                  let nextFresh :: Set.Set Name -> Text.Text -> Int -> Int -> Name
-                      nextFresh s txt i n
-                        | Set.member (Name txt (Just n)) s = nextFresh s txt i (n + 1)
-                        | i == 0 = Name txt (Just n)
-                        | otherwise = nextFresh s txt (i - 1) (n + 1)
-                   in let rename :: Map.Map Text.Text [Maybe Int] -> Set.Set Name -> Name -> Name
-                          rename m s n@(Name txt u) =
-                            case Map.lookup txt m of
-                              Nothing -> n
-                              Just x ->
-                                case List.elemIndex u x of
-                                  Nothing -> n
-                                  Just i -> nextFresh s txt i 0
-                       in let f = rename structuredInter (Set.union (boundOf u) (boundOf t))
-                           in Raw.termTrimap id f (annMap f) t
+    -- `structuredInter` transforms the set of name clashes into a map
+    -- from nameString to the list of nameUnique associated.
+    structuredInter inter = Set.fold (\n m -> Map.insertWith (++) (nameString n) [nameUnique n] m) Map.empty inter
+
+    -- `nextFresh s txt i n` takes a set `s` of names and a `nameString` `txt` and outputs
+    -- the first index which does not create clash.
+    -- `n` starts from 0 and increases until a number not already taken is met,
+    -- whereas `i` counts how much new number must be met.
+    -- The purpose of `i` is to avoid to rename identically `x0` and `x1`
+    -- if both are subject to name clash.
+    nextFresh :: Set.Set Name -> Text.Text -> Int -> Int -> Name
+    nextFresh s txt i n
+      | Set.member (Name txt (Just n)) s = nextFresh s txt i (n + 1)
+      | i == 0 = Name txt (Just n)
+      | otherwise = nextFresh s txt (i - 1) (n + 1)
+
+    rename :: Map.Map Text.Text [Maybe Int] -> Set.Set Name -> Name -> Name
+    rename m s n@(Name txt uniq) = fromMaybe n $ do
+      x <- Map.lookup txt m
+      i <- List.elemIndex uniq x
+      return $ nextFresh s txt i 0
 
 -- ** Uniquely Naming
 
@@ -79,16 +78,15 @@ separateBoundFrom u t =
 -- https://github.com/input-output-hk/plutus/issues/3445
 
 -- | Exported interface function to uniquely naming declarations.
-declsUniqueNames :: Decls builtins -> Term builtins -> (Decls builtins, Term builtins)
-declsUniqueNames decls mainFun = first Map.fromList (go (Map.toList decls) mainFun)
+declsUniqueNames :: forall lang . Decls lang -> Term lang -> (Decls lang, Term lang)
+declsUniqueNames decls mainFun = first Map.fromList (go (Map.toList decls))
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
     go ::
-      [(Name, Definition builtins)] ->
-      Term builtins ->
-      ([(Name, Definition builtins)], Term builtins)
-    go ds mainFun =
+      [(Name, Definition lang)] ->
+      ([(Name, Definition lang)], Term lang)
+    go ds =
       let (_, ks) =
             flip runState Map.empty $ mapM (onPairM unNameCollect defUNCollect) ds
        in runReader
@@ -116,13 +114,13 @@ type UNSubstM = Reader (Map.Map Text.Text [Name])
 unNameCollect :: Name -> UNCollectM Name
 unNameCollect n = modify (Map.insertWith (flip Set.union) (nameString n) (Set.singleton n)) >> return n
 
-defUNCollect :: Definition builtins -> UNCollectM (Definition builtins)
+defUNCollect :: Definition lang -> UNCollectM (Definition lang)
 defUNCollect (DFunction r t ty) = DFunction r <$> termUNCollect t <*> typeUNCollect ty
 defUNCollect (DConstructor i n) = DConstructor i <$> unNameCollect n
 defUNCollect (DDestructor n) = DDestructor <$> unNameCollect n
 defUNCollect (DTypeDef n) = DTypeDef <$> unTypeDefCollect n
 
-unTypeDefCollect :: TypeDef builtins -> UNCollectM (TypeDef builtins)
+unTypeDefCollect :: TypeDef lang -> UNCollectM (TypeDef lang)
 unTypeDefCollect d@(Datatype _ _ dest cons) = do
   void $ unNameCollect dest
   let (consNames, types) = unzip cons
@@ -130,35 +128,35 @@ unTypeDefCollect d@(Datatype _ _ dest cons) = do
   mapM_ typeUNCollect types
   return d
 
-termUNCollect :: Term builtins -> UNCollectM (Term builtins)
+termUNCollect :: Term lang -> UNCollectM (Term lang)
 termUNCollect = Raw.termTrimapM typeUNCollect return collectVar
   where
-    collectVar :: Raw.Var Name (TermBase builtins) -> UNCollectM (Raw.Var Name (TermBase builtins))
+    collectVar :: Raw.Var Name (TermBase lang) -> UNCollectM (Raw.Var Name (TermBase lang))
     collectVar v = do
       case v of
         Raw.Free (TermSig n) -> void $ unNameCollect n
         _ -> return ()
       return v
 
-typeUNCollect :: Type builtins -> UNCollectM (Type builtins)
+typeUNCollect :: Type lang -> UNCollectM (Type lang)
 typeUNCollect = mapM collectVar
   where
-    collectVar :: Raw.Var Name (TypeBase builtins) -> UNCollectM (Raw.Var Name (TypeBase builtins))
+    collectVar :: Raw.Var Name (TypeBase lang) -> UNCollectM (Raw.Var Name (TypeBase lang))
     collectVar v = do
       case v of
         Raw.Free (TySig n) -> void $ unNameCollect n
         _ -> return ()
       return v
 
-defUNSubst :: Definition builtins -> UNSubstM (Definition builtins)
+defUNSubst :: Definition lang -> UNSubstM (Definition lang)
 defUNSubst (DFunction r t ty) = DFunction r <$> termUNSubst t <*> typeUNSubst ty
 defUNSubst (DConstructor i n) = DConstructor i <$> unNameSubst n
 defUNSubst (DDestructor n) = DDestructor <$> unNameSubst n
 defUNSubst (DTypeDef n) = DTypeDef <$> unTypeDefSubst n
 
-unTypeDefSubst :: TypeDef builtins -> UNSubstM (TypeDef builtins)
-unTypeDefSubst (Datatype k vs dest cons) =
-  Datatype k <$> mapM (\(n, k) -> (,k) <$> unNameSubst n) vs
+unTypeDefSubst :: TypeDef lang -> UNSubstM (TypeDef lang)
+unTypeDefSubst (Datatype ki vs dest cons) =
+  Datatype ki <$> mapM (\(n, k) -> (,k) <$> unNameSubst n) vs
     <*> unNameSubst dest
     <*> mapM (\(n, ty) -> (,) <$> unNameSubst n <*> typeUNSubst ty) cons
 
@@ -171,24 +169,25 @@ unNameSubst n = do
     Just xs -> return $ n {nameUnique = List.elemIndex n xs}
     Nothing -> return n
 
-termUNSubst :: Term builtins -> UNSubstM (Term builtins)
-termUNSubst = Raw.termTrimapM typeUNSubst return subst
+termUNSubst :: Term lang -> UNSubstM (Term lang)
+termUNSubst = Raw.termTrimapM typeUNSubst return subst0
   where
-    subst :: Raw.Var Name (TermBase builtins) -> UNSubstM (Raw.Var Name (TermBase builtins))
-    subst (Raw.Free (TermSig n)) = Raw.Free . TermSig <$> unNameSubst n
-    subst x = return x
+    subst0 :: Raw.Var Name (TermBase lang) -> UNSubstM (Raw.Var Name (TermBase lang))
+    subst0 (Raw.Free (TermSig n)) = Raw.Free . TermSig <$> unNameSubst n
+    subst0 x = return x
 
-typeUNSubst :: Type builtins -> UNSubstM (Type builtins)
-typeUNSubst = Raw.tyBimapM return subst
+typeUNSubst :: Type lang -> UNSubstM (Type lang)
+typeUNSubst = Raw.tyBimapM return subst0
   where
-    subst (Raw.Free (TySig n)) = Raw.Free . TySig <$> unNameSubst n
-    subst x = return x
+    subst0 (Raw.Free (TySig n)) = Raw.Free . TySig <$> unNameSubst n
+    subst0 x = return x
 
 -- ** Utility Functions
 
 safeIdx :: (Integral i) => [a] -> i -> Maybe a
 safeIdx l = go l . fromIntegral
   where
+    go :: [a] -> Integer -> Maybe a
     go [] _ = Nothing
     go (x : _) 0 = Just x
     go (_ : xs) n = go xs (n -1)

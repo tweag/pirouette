@@ -5,7 +5,6 @@ module Pirouette.SMT.Base where
 import Control.Monad.IO.Class
 import Data.Void
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 
 -- | Captures the languages that can be translated to SMTLIB; namelly,

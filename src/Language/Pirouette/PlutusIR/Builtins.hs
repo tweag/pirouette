@@ -21,8 +21,7 @@ import qualified Data.ByteString as BS
 import Data.Data
 import qualified Data.Text as T
 import Language.Haskell.TH.Syntax (Lift)
-import Pirouette.Term.Builtins
-import Pirouette.Term.Syntax.Pretty.Class
+import Pirouette.Term.Syntax
 import PlutusCore
   ( DefaultUni (..),
     pattern DefaultUniList,

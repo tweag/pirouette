@@ -36,7 +36,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
-import Pirouette.Term.Builtins (LanguageBuiltins (..))
+import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -57,6 +57,10 @@ data ExType
   | TyBool
   deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
+instance Pretty ExType where
+  prettyPrec _ TyInteger = "Integer"
+  prettyPrec _ TyBool = "Bool"
+
 data ExTerm
   = TermAdd
   | TermSub
@@ -65,10 +69,22 @@ data ExTerm
   | TermIte
   deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
+instance Pretty ExTerm where
+  prettyPrec _ TermAdd = "add"
+  prettyPrec _ TermSub = "sub"
+  prettyPrec _ TermLt = "<"
+  prettyPrec _ TermEq = "=="
+  prettyPrec _ TermIte = "ite"
+
 data ExConstant
   = ConstInt Integer
   | ConstBool Bool
   deriving (Eq, Ord, Show, Data, Typeable, Lift)
+
+instance Pretty ExConstant where
+  prettyPrec _ (ConstInt n) = pretty n
+  prettyPrec _ (ConstBool b) = pretty b
+
 
 -- | The language builtins definition
 data Ex deriving (Data)

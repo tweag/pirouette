@@ -34,7 +34,6 @@ library
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
-      Pirouette.Term.Builtins
       Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
@@ -130,7 +129,6 @@ test-suite spec
   other-modules:
       Language.Pirouette.ExampleSpec
       Language.Pirouette.PlutusIR.ToTermSpec
-      Pirouette.SMTSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
       Paths_pirouette

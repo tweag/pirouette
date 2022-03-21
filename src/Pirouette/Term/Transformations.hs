@@ -21,7 +21,6 @@ import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.Specializer.PIRTransformations
 import Pirouette.Specializer.Rewriting
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -79,7 +78,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
             SystF.App (SystF.Free $ TermSig n) $
               map SystF.TyArg tyArgs
                 ++ [SystF.TermArg x, SystF.TyArg $ tyDrop (length excess) tyReturn]
-                ++ zipWith (\(_, cty) t -> SystF.TermArg $ appExcessive excess cty t) cons' cases
+                ++ zipWith (\(_, cty) t0 -> SystF.TermArg $ appExcessive excess cty t0) cons' cases
 
     -- Receives the excessive arguments, the type of the constructor whose case we're on and
     -- the term defining the value at this constructor's case.
@@ -95,7 +94,7 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
     tyDrop 0 t = t
     tyDrop n (SystF.TyFun _ b) = tyDrop (n -1) b
     tyDrop n (SystF.TyAll _ _ t) = tyDrop (n -1) t
-    tyDrop n t = error "Ill-typed program: not enough type parameters to drop"
+    tyDrop _ _ = error "Ill-typed program: not enough type parameters to drop"
 
 -- | Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
 --  after performing any sort of inlining.
@@ -122,10 +121,10 @@ deshadowBoundNamesWithForbiddenNames = go []
       let args' = map (SystF.argMap id (go bvs forbidden)) args
           n' =
             case n of
-              SystF.Bound x i ->
+              SystF.Bound _x i ->
                 if fromInteger i >= length bvs
                   then n
-                  else SystF.Bound (SystF.Ann (unsafeIdx "deshadowBoundNames" bvs $ fromInteger i)) i
+                  else SystF.Bound (SystF.Ann (unsafeIdx "deshadowBoundNames" bvs i)) i
               _ -> n
        in SystF.App n' args'
 

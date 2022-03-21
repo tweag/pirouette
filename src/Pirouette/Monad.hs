@@ -17,14 +17,11 @@ import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as Lazy
 import qualified Control.Monad.State.Strict as Strict
 import Data.Data (Data)
-import Data.Generics.Uniplate.Operations
-import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 

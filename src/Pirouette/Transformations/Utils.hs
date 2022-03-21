@@ -20,10 +20,9 @@ import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF hiding (Arg)
-import Pirouette.Term.Builtins
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
-traceDefsId :: (PrettyLang lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+traceDefsId :: (LanguagePretty lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
 
 data HofDefBody lang

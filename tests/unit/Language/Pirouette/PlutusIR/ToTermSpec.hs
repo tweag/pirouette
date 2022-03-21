@@ -67,3 +67,6 @@ tests = (:[]) $ withResource acquire (const $ return ()) $ \progAct ->
       case runExcept (trProgramDecls pir) of
         Left err -> fail $ show err
         Right decls -> return decls
+
+-- TODO: Check that Datatype decls have the typeVariables redeclared on
+-- constructors

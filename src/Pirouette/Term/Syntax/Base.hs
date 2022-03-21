@@ -7,6 +7,11 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 
+-- |Provides the base syntactical elements for the languages supported by Pirouette.
+-- This module /does not/ expose the underlying System F implementation. In case
+-- you're interested in manipulating terms at the Systm F level make sure
+-- to bring in "Pirouette.Term.Syntax.SystemF", which is meant to be
+-- imported qualified.
 module Pirouette.Term.Syntax.Base where
 
 import Control.Arrow ((&&&))
@@ -17,7 +22,6 @@ import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as Text
 import Data.Void
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax.Pretty.Class
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
@@ -50,27 +54,27 @@ class ToName v where
 -- | The type system we are interested in is standard polymorphic type-level lambda calculus
 --  where the free variables will be of type 'TypeBase', that is, they are either a builtin type or
 --  a type name that refers to some type defined in our context and possessing a signature.
-data TypeBase builtins
-  = TyBuiltin (BuiltinTypes builtins)
+data TypeBase lang
+  = TyBuiltin (BuiltinTypes lang)
   | TySig Name
 
-deriving instance (LanguageBuiltins builtins) => Eq (TypeBase builtins)
+deriving instance (LanguageBuiltins lang) => Eq (TypeBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Ord (TypeBase builtins)
+deriving instance (LanguageBuiltins lang) => Ord (TypeBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Show (TypeBase builtins)
+deriving instance (LanguageBuiltins lang) => Show (TypeBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Data (TypeBase builtins)
+deriving instance (LanguageBuiltins lang) => Data (TypeBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Typeable (TypeBase builtins)
+deriving instance (LanguageBuiltins lang) => Typeable (TypeBase lang)
 
 -- | A Pirouette type is a 'SystF.Type' whose variables are 'TypeBase' and it has metavariables
 --  of type 'meta'. If you're just using this as a library you're likely more interested in
 --  'Type'.
-type TypeMeta builtins meta = SystF.AnnType Name (SystF.VarMeta meta Name (TypeBase builtins))
+type TypeMeta lang meta = SystF.AnnType Name (SystF.VarMeta meta Name (TypeBase lang))
 
 -- | A 'Type' is a 'TypeMeta' with 'Void' passed to metavariables
-type Type builtins = TypeMeta builtins Void
+type Type lang = TypeMeta lang Void
 
 typeMetaMapM ::
   (Monad m) =>
@@ -86,27 +90,38 @@ typeFromMeta :: TypeMeta lang meta -> Type lang
 typeFromMeta = runIdentity . typeMetaMapM (const $ error "Type with metavariables")
 
 -- | Returns all the (free) names used by a type
-typeNames :: TypeMeta builtins meta -> Set.Set (SystF.Arg Name Name)
+typeNames :: TypeMeta lang meta -> Set.Set (SystF.Arg Name Name)
 typeNames = foldMap go
   where
-    go :: SystF.VarMeta meta Name (TypeBase builtins) -> Set.Set (SystF.Arg Name Name)
+    go :: SystF.VarMeta meta Name (TypeBase lang) -> Set.Set (SystF.Arg Name Name)
     go (SystF.Free (TySig n)) = Set.singleton (SystF.TyArg n)
     go _ = Set.empty
 
 -- | Returns all the metavariables used by a type
-typeMetas :: (Ord meta) => TypeMeta builtins meta -> Set.Set meta
+typeMetas :: (Ord meta) => TypeMeta lang meta -> Set.Set meta
 typeMetas = foldMap go
   where
-    go :: SystF.VarMeta meta Name (TypeBase builtins) -> Set.Set meta
+    go :: SystF.VarMeta meta Name (TypeBase lang) -> Set.Set meta
     go (SystF.Meta m) = Set.singleton m
     go _ = Set.empty
 
 -- | The supported type definitions. At this point, we only support datatype definitions.
-data TypeDef builtins = Datatype
+data TypeDef lang = -- | Define a new datatype. For example:
+  --
+  --   > either = Datatype
+  --   >   { kind          = * -> * -> *
+  --   >   , typeVariables = [("a", *), ("b", *)]
+  --   >   , destructor    = "Either_match"
+  --   >   , constructors  = [("Left", TyAll a b . (a -> Either a b))
+  --   >                     ,("Right", TyAll a b . (b -> Either a b))]
+  --   >   }
+  Datatype
   { kind :: SystF.Kind,
+    -- | The 'typeVariables' field is here because it makes the computation of the type of destructors
+    --  much easier. These type variables are declared with 'SystF.TyAll' on the types of the 'constructors'.
     typeVariables :: [(Name, SystF.Kind)],
     destructor :: Name,
-    constructors :: [(Name, Type builtins)]
+    constructors :: [(Name, Type lang)]
   }
   deriving (Eq, Ord, Show, Data)
 
@@ -123,39 +138,39 @@ data TypeDef builtins = Datatype
 --  The type for the PlutusIR destructor of Either would be:
 --
 --  > TyAll a b . Either a b -> TyAll c -> (a -> c) -> (b -> c) -> c
-destructorTypeFor :: TypeDef builtins -> Type builtins
+destructorTypeFor :: TypeDef lang -> Type lang
 destructorTypeFor Datatype {} = undefined
 
 -- * Terms
 
 -- | This is to 'Term', what 'TypeBase' is to 'Type'.
-data TermBase builtins
-  = Constant (Constants builtins)
-  | Builtin (BuiltinTerms builtins)
+data TermBase lang
+  = Constant (Constants lang)
+  | Builtin (BuiltinTerms lang)
   | TermSig Name
   | Bottom
 
-deriving instance (LanguageBuiltins builtins) => Eq (TermBase builtins)
+deriving instance (LanguageBuiltins lang) => Eq (TermBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Ord (TermBase builtins)
+deriving instance (LanguageBuiltins lang) => Ord (TermBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Show (TermBase builtins)
+deriving instance (LanguageBuiltins lang) => Show (TermBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Data (TermBase builtins)
+deriving instance (LanguageBuiltins lang) => Data (TermBase lang)
 
-deriving instance (LanguageBuiltins builtins) => Typeable (TermBase builtins)
+deriving instance (LanguageBuiltins lang) => Typeable (TermBase lang)
 
--- | A 'TermMeta' for a given builtins uage is a 'SystF.Term' with types being a 'Type' and
+-- | A 'TermMeta' for a given lang uage is a 'SystF.Term' with types being a 'Type' and
 --  diambiguated free names: we're aware on whether these free names are constants,
---  builtins or refer to some definition that will require a definition map.
+--  lang or refer to some definition that will require a definition map.
 --
 --  Moreover, there's a possibility to insert meta variables in the tree. If you're
 --  a user of the library, you're most likely going to need only 'Term', which
 --  have no metavariables.
-type TermMeta builtins meta = SystF.AnnTerm (TypeMeta builtins meta) Name (SystF.VarMeta meta Name (TermBase builtins))
+type TermMeta lang meta = SystF.AnnTerm (TypeMeta lang meta) Name (SystF.VarMeta meta Name (TermBase lang))
 
 -- | A 'Term' is a 'TermMeta' with 'Void' as the metavariable.
-type Term builtins = TermMeta builtins Void
+type Term lang = TermMeta lang Void
 
 termMetaMapM ::
   (Monad m) =>
@@ -164,59 +179,59 @@ termMetaMapM ::
   m (TermMeta lang meta')
 termMetaMapM f = SystF.termTrimapM (typeMetaMapM f) return (SystF.varMapMetaM f)
 
-termToMeta :: Term builtins -> TermMeta builtins meta
+termToMeta :: Term lang -> TermMeta lang meta
 termToMeta = runIdentity . termMetaMapM absurd
 
 -- | Returns all the (free) names used by a term
-termNames :: TermMeta builtins meta -> Set.Set (SystF.Arg Name Name)
+termNames :: TermMeta lang meta -> Set.Set (SystF.Arg Name Name)
 termNames = uncurry (<>) . (foldMap go &&& SystF.termTyFoldMap typeNames)
   where
-    go :: SystF.VarMeta meta Name (TermBase builtins) -> Set.Set (SystF.Arg Name Name)
+    go :: SystF.VarMeta meta Name (TermBase lang) -> Set.Set (SystF.Arg Name Name)
     go (SystF.Free (TermSig n)) = Set.singleton (SystF.TermArg n)
     go _ = Set.empty
 
 -- | Returns all the metavariables used by a term
-termMetas :: (Ord meta) => TermMeta builtins meta -> Set.Set meta
+termMetas :: (Ord meta) => TermMeta lang meta -> Set.Set meta
 termMetas = uncurry (<>) . (foldMap go &&& SystF.termTyFoldMap typeMetas)
   where
-    go :: SystF.VarMeta meta Name (TermBase builtins) -> Set.Set meta
+    go :: SystF.VarMeta meta Name (TermBase lang) -> Set.Set meta
     go (SystF.Meta m) = Set.singleton m
     go _ = Set.empty
 
 -- * Arguments and variables
 
-type ArgMeta builtins meta = SystF.Arg (TypeMeta builtins meta) (TermMeta builtins meta)
+type ArgMeta lang meta = SystF.Arg (TypeMeta lang meta) (TermMeta lang meta)
 
-type Arg builtins = SystF.Arg (Type builtins) (Term builtins)
+type Arg lang = SystF.Arg (Type lang) (Term lang)
 
-type Var builtins = SystF.Var Name (TermBase builtins)
+type Var lang = SystF.Var Name (TermBase lang)
 
-type VarMeta builtins meta = SystF.VarMeta meta Name (TermBase builtins)
+type VarMeta lang meta = SystF.VarMeta meta Name (TermBase lang)
 
-type TyVar builtins = SystF.Var Name (TypeBase builtins)
+type TyVar lang = SystF.Var Name (TypeBase lang)
 
-type TyVarMeta builtins meta = SystF.VarMeta meta Name (TypeBase builtins)
+type TyVarMeta lang meta = SystF.VarMeta meta Name (TypeBase lang)
 
 -- * Definitions
 
 data Rec = Rec | NonRec
   deriving (Eq, Ord, Show, Data)
 
-data FunDef builtins = FunDef
+data FunDef lang = FunDef
   { funIsRec :: Rec,
-    funBody :: Term builtins,
-    funTy :: Type builtins
+    funBody :: Term lang,
+    funTy :: Type lang
   }
   deriving (Eq, Ord, Show, Data)
 
-data Definition builtins
-  = DFunDef (FunDef builtins)
+data Definition lang
+  = DFunDef (FunDef lang)
   | DConstructor Int Name
   | DDestructor Name
-  | DTypeDef (TypeDef builtins)
+  | DTypeDef (TypeDef lang)
   deriving (Eq, Ord, Show, Data)
 
-pattern DFunction :: Rec -> Term builtins -> Type builtins -> Definition builtins
+pattern DFunction :: Rec -> Term lang -> Type lang -> Definition lang
 pattern DFunction r t ty = DFunDef (FunDef r t ty)
 
 {-# COMPLETE DFunction, DConstructor, DDestructor, DTypeDef #-}
@@ -225,34 +240,65 @@ pattern DFunction r t ty = DFunDef (FunDef r t ty)
 
 defTermMapM ::
   (Monad m) =>
-  (Term builtins -> m (Term builtins)) ->
-  Definition builtins ->
-  m (Definition builtins)
+  (Term lang -> m (Term lang)) ->
+  Definition lang ->
+  m (Definition lang)
 defTermMapM f (DFunction r t ty) = flip (DFunction r) ty <$> f t
 defTermMapM _ (DTypeDef td) = pure $ DTypeDef td
 defTermMapM _ (DConstructor i n) = pure $ DConstructor i n
 defTermMapM _ (DDestructor n) = pure $ DDestructor n
 
-fromTypeDef :: Definition builtins -> Maybe (TypeDef builtins)
+fromTypeDef :: Definition lang -> Maybe (TypeDef lang)
 fromTypeDef (DTypeDef d) = Just d
 fromTypeDef _ = Nothing
 
-fromTermDef :: Definition builtins -> Maybe (Term builtins)
+fromTermDef :: Definition lang -> Maybe (Term lang)
 fromTermDef (DFunction _ d _) = Just d
 fromTermDef _ = Nothing
 
-fromDestDef :: Definition builtins -> Maybe Name
+fromDestDef :: Definition lang -> Maybe Name
 fromDestDef (DDestructor d) = Just d
 fromDestDef _ = Nothing
 
-fromConstDef :: Definition builtins -> Maybe (Int, Name)
+fromConstDef :: Definition lang -> Maybe (Int, Name)
 fromConstDef (DConstructor i n) = Just (i, n)
 fromConstDef _ = Nothing
 
 -- * Declarations
 
 -- | A program will be translated into a number of term and type declarations.
-type Decls builtins = Map Name (Definition builtins)
+type Decls lang = Map Name (Definition lang)
 
 -- | A program consists in a set of declarations and a main term.
-type Program builtins = (Decls builtins, Term builtins)
+type Program lang = (Decls lang, Term lang)
+
+-- * Language Builtins
+
+type EqOrdShowDataTypeable a = (Eq a, Ord a, Show a, Data a, Typeable a)
+
+type LanguageConstrs lang =
+  ( EqOrdShowDataTypeable (BuiltinTypes lang),
+    EqOrdShowDataTypeable (BuiltinTerms lang),
+    EqOrdShowDataTypeable (Constants lang),
+    Typeable lang,
+    Data lang
+  )
+
+-- | Defines the builtins of a language. We distinguish the 'Constants' which are the constructors of
+--  objects of the 'BuiltinTypes' and the other builtin terms (essentially functions manipulating those obects).
+--  Constants can be thought of as the /literals/ of the language. Check "Language.Pirouette.Example" for
+--  a simple example.
+class (LanguageConstrs lang) => LanguageBuiltins lang where
+  type BuiltinTypes lang :: *
+  type BuiltinTerms lang :: *
+  type Constants lang :: *
+
+-- | Auxiliary constraint for pretty-printing terms of a given language.
+type LanguagePretty lang =
+  ( Pretty (BuiltinTypes lang),
+    Pretty (BuiltinTerms lang),
+    Pretty (Constants lang)
+  )
+
+-- | Auxiliary constraint grouping everything we know about @lang@.
+type Language lang = (LanguageBuiltins lang, LanguagePretty lang)

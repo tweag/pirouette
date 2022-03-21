@@ -15,7 +15,6 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.Transformations
@@ -59,11 +58,11 @@ elimEvenOddMutRec udefs = do
         -- terms depends on types or vice versa, hence, we should only have to deal with
         -- dependency classes that involve terms or types exclusively.
         go [] = return []
-        go d@(SystF.TyArg t : ts) = do
+        go d@(SystF.TyArg _t : ts) = do
           unless (all SystF.isTyArg ts) $ throwError' $ PEOther "Mixed dependencies"
           logWarn "MutRec Types: TLA+ will error if BoundedSetOf is needed for any of these types."
           return d
-        go d@(SystF.TermArg n : ns) =
+        go d@(SystF.TermArg _n : _ns) =
           case mapM SystF.fromArg d of
             Nothing -> throwError' $ PEOther "Mixed dependencies"
             Just as -> map SystF.TermArg <$> solveTermDeps 0 as
@@ -147,7 +146,7 @@ inlineAll _ _ = Nothing
 
 -- | Checks that all deBruijn indices make sense, this gets run whenever pirouette
 --  is ran with the @--sanity-check@ flag.
-checkDeBruijnIndices :: (PirouetteReadDefs lang m, PrettyLang lang) => m ()
+checkDeBruijnIndices :: (PirouetteReadDefs lang m, LanguagePretty lang) => m ()
 checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
   allDefs <- prtAllDefs
   forM_ (Map.toList allDefs) $ \(n, def) -> do
@@ -159,9 +158,9 @@ checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
       Right _ -> return ()
   where
     go :: Integer -> Integer -> Term lang -> Either String ()
-    go ty term (SystF.Lam (SystF.Ann ann) _ t) =
+    go ty term (SystF.Lam (SystF.Ann _ann) _ t) =
       go ty (term + 1) t
-    go ty term (SystF.Abs (SystF.Ann ann) _ t) =
+    go ty term (SystF.Abs (SystF.Ann _ann) _ t) =
       go (ty + 1) term t
     go ty term (SystF.App n args) = do
       mapM_ (SystF.argElim (const $ return ()) (go ty term)) args

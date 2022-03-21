@@ -17,10 +17,9 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 
 import Pirouette.Transformations.Utils
-import Pirouette.Term.Builtins
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
-etaExpand :: forall lang. (PrettyLang lang, LanguageBuiltins lang)
+etaExpand :: forall lang. (LanguagePretty lang, LanguageBuiltins lang)
           => PrtUnorderedDefs lang
           -> PrtUnorderedDefs lang
 etaExpand defs@PrtUnorderedDefs{..} = transformBi exp defs

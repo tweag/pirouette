@@ -27,7 +27,6 @@ import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT as SMT
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
@@ -104,7 +103,7 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
-type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.LanguageSMT lang, MonadIO m)
+type SymEvalConstr lang m = (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMT lang, MonadIO m)
 
 symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
 symevalT = runSymEvalT st0
@@ -315,7 +314,7 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 --- TMP CODE
 
-instance (PrettyLang lang, Pretty a) => Pretty (Path lang a) where
+instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds gamma ps res) =
     vsep
       [ "With:" <+> pretty (M.toList gamma),
@@ -331,7 +330,7 @@ instance Pretty PathStatus where
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
-instance (PrettyLang lang) => Pretty (Constraint lang) where
+instance (LanguagePretty lang) => Pretty (Constraint lang) where
   pretty (SymVarEq s r) = pretty s <+> "==" <+> pretty r
   pretty (Eq s r) = pretty s <+> "==" <+> pretty r
   pretty (n :== term) =
@@ -343,7 +342,7 @@ instance (PrettyLang lang) => Pretty (Constraint lang) where
   pretty (And l) =
     mconcat $ intersperse "\n∧ " (map pretty l)
 
-runFor :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
+runFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
 runFor _ t = do
   paths <- symevalT (runEvaluation t)
   mapM_ (liftIO . print . pretty) paths

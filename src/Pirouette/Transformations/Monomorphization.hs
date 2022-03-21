@@ -24,7 +24,6 @@ import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
 import Pirouette.Transformations.Utils
-import Pirouette.Term.Builtins
 
 -- * Monomorphization
 --
@@ -81,7 +80,7 @@ import Pirouette.Term.Builtins
 -- And, since SMTLIB does support polymorphism, we can leave type variables not occuring in a higher-order context,
 -- potentially reducing the number of extra specialized terms.
 
-monomorphize :: forall lang. (PrettyLang lang, Pretty (FunDef lang), LanguageBuiltins lang)
+monomorphize :: forall lang. (LanguagePretty lang, Pretty (FunDef lang), LanguageBuiltins lang)
              => PrtUnorderedDefs lang
              -> PrtUnorderedDefs lang
 monomorphize defs0 = prune $ go mempty defs0
@@ -191,7 +190,7 @@ isPolyType SystF.TyAll {} = True
 isPolyType _ = False
 
 
-hofsClosure :: forall lang. (LanguageBuiltins lang, PrettyLang lang) => Decls lang -> HOFDefs lang -> HOFDefs lang
+hofsClosure :: forall lang. (LanguageBuiltins lang, LanguagePretty lang) => Decls lang -> HOFDefs lang -> HOFDefs lang
 hofsClosure decls = go
   where
     declsPairs = M.toList decls

@@ -34,7 +34,6 @@ import Pirouette.Monad.Logger
 import Language.Pirouette.PlutusIR.SMT ()
 import Language.Pirouette.PlutusIR.Builtins
 import Language.Pirouette.PlutusIR.ToTerm
-import Pirouette.Term.Builtins
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
@@ -138,7 +137,7 @@ mainOpts opts uDefs = do
     symbolicExec n (DFunction _ t _) = SymbolicEval.runFor n t
     symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
-processDecls :: (LanguageBuiltins lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
+processDecls :: (LanguageBuiltins lang, LanguagePretty lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
   -- If the user wishes, we can perform checks on the sanity of the translation
   -- from PlutusIR to PrtDefs

@@ -8,7 +8,6 @@
 module Pirouette.Term.Syntax.Pretty (module Pirouette.Term.Syntax.Pretty.Class) where
 
 import qualified Data.Map as Map
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Pretty.Class
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -42,7 +41,7 @@ instance (Pretty x) => Pretty (SystF.Ann x) where
 
 instance (Pretty ty, Pretty f) => Pretty (SystF.Arg ty f) where
   prettyPrec d (SystF.TermArg x) = prettyPrec d x
-  prettyPrec d (SystF.TyArg x) = "@" <> prettyPrec 12 x
+  prettyPrec _ (SystF.TyArg x) = "@" <> prettyPrec 12 x
 
 instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SystF.AnnTerm ann ty f) where
   prettyPrec d (SystF.App n args) = prettyPrecApp d n args (nest 4)
@@ -55,30 +54,30 @@ instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SystF.AnnTerm ann ty f) wh
       isTyLam (SystF.Abs ann tx body) = Just (ann, tx, body)
       isTyLam _ = Nothing
 
-instance (PrettyLang builtins) => Pretty (FunDef builtins) where
+instance (LanguagePretty lang) => Pretty (FunDef lang) where
   pretty (FunDef _ t ty) = align $ vsep [pretty ty, pretty t]
 
-instance (PrettyLang builtins) => Pretty (Definition builtins) where
+instance (LanguagePretty lang) => Pretty (Definition lang) where
   pretty (DFunDef funDef) = pretty funDef
   pretty (DConstructor i ty) = "Constructor" <+> pretty i <+> pretty ty
   pretty (DDestructor ty) = "Destructor" <+> pretty ty
   pretty (DTypeDef ty) = "Type" <+> pretty ty
 
-instance (Pretty (BuiltinTypes builtins)) => Pretty (TypeBase builtins) where
+instance (Pretty (BuiltinTypes lang)) => Pretty (TypeBase lang) where
   pretty (TyBuiltin x) = pretty x
   pretty (TySig n) = pretty n
 
 instance
-  (Pretty (BuiltinTerms builtins), Pretty (Constants builtins)) =>
-  Pretty (TermBase builtins)
+  (Pretty (BuiltinTerms lang), Pretty (Constants lang)) =>
+  Pretty (TermBase lang)
   where
   pretty (Constant x) = pretty x
   pretty (Builtin x) = "b/" <> pretty x
   pretty (TermSig x) = pretty x
   pretty Bottom = "ERROR"
 
-instance (Pretty (BuiltinTypes builtins)) => Pretty (TypeDef builtins) where
-  pretty (Datatype k vars dest cs) =
+instance (Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang) where
+  pretty (Datatype _k vars dest cs) =
     let pvars = sep (map (\(n, k) -> pretty n <> ":" <> pretty k) vars)
      in "data"
           <+> align
@@ -87,7 +86,7 @@ instance (Pretty (BuiltinTypes builtins)) => Pretty (TypeDef builtins) where
                   ++ map (\(n, ty) -> pretty n <+> ":" <+> pretty ty) cs
             )
 
-instance (PrettyLang builtins) => Pretty (Decls builtins) where
+instance (LanguagePretty lang) => Pretty (Decls lang) where
   pretty = align . vsep . map prettyDef . Map.toList
     where
       prettyDef (name, def) = pretty name <+> "|->" <+> pretty def

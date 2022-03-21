@@ -15,7 +15,6 @@ import Data.Maybe (mapMaybe)
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
-import Pirouette.Term.Builtins (PrettyLang)
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
 import Prettyprinter hiding (Pretty (..))
@@ -60,7 +59,7 @@ andConstr (And l) y = And (y : l)
 andConstr x (And m) = And (x : m)
 andConstr x y = And [x, y]
 
-instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
+instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
   pretty (Assign n term) =
     pretty n <+> "↦" <+> pretty term
   pretty (NonInlinableSymbolEq t u) =
