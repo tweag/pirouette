@@ -80,6 +80,6 @@ lookupNameType decls name = name `M.lookup` decls >>= getName
     getName (DConstructor idx typeName) = do
       DTypeDef Datatype {..} <- typeName `M.lookup` decls -- this pattern-match failure shall probably be a hard error instead of Nothing
       conTy <- constructors `safeIdx` idx
-      pure $ foldr (\(n, k) ty -> SystF.TyAll (SystF.Ann n) k ty) (snd conTy) typeVariables
-    getName (DDestructor _na) = Nothing -- TODO just write the type of the destructor out
-    getName (DTypeDef _td) = Nothing
+      pure $ foldr (\(name', kind') ty -> SystF.TyAll (SystF.Ann name') kind' ty) (snd conTy) typeVariables
+    getName (DDestructor _) = Nothing -- TODO just write the type of the destructor out
+    getName (DTypeDef _) = Nothing

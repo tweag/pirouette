@@ -42,20 +42,20 @@ findFuns :: LanguageBuiltins lang
          => [(Name, Definition lang)]
          -> (FunDef lang -> Bool)
          -> [(Name, HofDef lang)]
-findFuns declsPairs predi =
+findFuns declsPairs funPred =
   [ (name, HofDef name $ HDBFun funDef)
   | (name, DFunDef funDef) <- declsPairs
-  , predi funDef
+  , funPred funDef
   ]
 
 findTypes :: LanguageBuiltins lang
           => [(Name, Definition lang)]
           -> (Name -> TypeDef lang -> Bool)
           -> [(Name, HofDef lang)]
-findTypes declsPairs predi =
+findTypes declsPairs tyPred =
   [ (name, HofDef tyName $ HDBType typeDef)
   | (tyName, DTypeDef typeDef) <- declsPairs
-  , predi tyName typeDef
+  , tyPred tyName typeDef
   , name <- tyName : destructor typeDef : (fst <$> constructors typeDef)
   ]
 
@@ -88,7 +88,7 @@ data FlatArgType lang
 flattenType :: Type lang -> ([FlatArgType lang], Type lang)
 flattenType ty@TyApp{} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
-flattenType (TyAll _ann kind0 ty) = first (FlatTyArg kind0 :) $ flattenType ty
+flattenType (TyAll _ k ty) = first (FlatTyArg k :) $ flattenType ty
 flattenType TyLam{} = error "unnormalized type"
 
 -- * @splitArgs n args@ splits @args@ into the first @n@ type arguments and everything else.

@@ -121,9 +121,13 @@
       )
       (abs a (type)
         (lam v [AdditiveMonoid a]
-          [ { [ { AdditiveMonoid_match a } v ] (fun a (fun a a)) }
-            (lam v_160 (fun a (fun a a)) (lam v_162 a v_160))
-          ]
+          (lam arg1 a
+            (lam arg2 a
+              [ { [ { AdditiveMonoid_match a } v ] a }
+                (lam v_160 (fun a (fun a a)) (lam v_162 a [ v_160 arg1 arg2 ]))
+              ]
+            )
+          )
         )
       )
     )

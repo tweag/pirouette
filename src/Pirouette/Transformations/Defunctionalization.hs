@@ -7,52 +7,115 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE TupleSections #-}
 
 module Pirouette.Transformations.Defunctionalization(defunctionalize) where
 
 import Control.Arrow ((***))
 import Control.Monad.RWS.Strict
-import Data.Bifunctor (first)
-import Data.List (nub)
+import Data.Generics.Uniplate.Data
+import Data.List (nub, sortOn)
 import qualified Data.Map as M
+import Data.Maybe
+import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
 
-import Debug.Trace
-
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
-import Pirouette.Term.Syntax.SystemF
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
+import Control.Monad.Writer.Strict
 
 defunctionalize :: (LanguagePretty lang, LanguageBuiltins lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize defs = renderSingleLineStr (pretty typeDecls) `trace` defs'' { prtUODecls = prtUODecls defs'' <> typeDecls <> applyFunDecls }
+defunctionalize defs = traceDefsId defs' { prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls }
   where
-    (defs', toDefun) = defunDefs defs
-    (defs'', closureCtorInfos) = defunCalls toDefun $ etaExpandAll defs'
+    (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpandAll defs) mempty (DefunState mempty)
 
     typeDecls = mkClosureTypes closureCtorInfos
     applyFunDecls = mkApplyFuns closureCtorInfos
 
+-- * Defunctionalization of types
+
+defunTypes :: (LanguagePretty lang, LanguageBuiltins lang)
+           => PrtUnorderedDefs lang
+           -> DefunCallsCtx lang (PrtUnorderedDefs lang)
+defunTypes defs = defunCalls toDefun $ defunDtors defs'
+  where
+    (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
+
+    defunTypeDef _ (DTypeDef Datatype{..}) = do
+      forM_ allMaybeHofs $ \case (ctorName, Just hof) -> tell $ M.singleton ctorName hof
+                                 _ -> pure ()
+      pure $ DTypeDef Datatype{constructors = ctors', ..}
+      where
+        (ctors', allMaybeHofs) = unzip [ ((ctorName, ctorTy'), (ctorName, maybeHofs))
+                                       | (ctorName, ctorTy) <- constructors
+                                       , let (ctorTy', hofs) = rewriteHofType ctorTy
+                                             maybeHofs | ctorTy' == ctorTy = Nothing
+                                                       | otherwise = Just hofs
+                                       ]
+    defunTypeDef _ x = pure x
+
+-- Destructors have a well-known structure: they are η-expanded,
+-- they accept a bunch of funargs that needn't be defunctionalized, etc,
+-- so we can have a few shortcuts
+defunDtors :: forall lang. (LanguagePretty lang, LanguageBuiltins lang)
+           => PrtUnorderedDefs lang
+           -> PrtUnorderedDefs lang
+defunDtors defs = transformBi f defs
+  where
+    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
+    getDtorName (DTypeDef Datatype{..}) = Just destructor
+    getDtorName _ = Nothing
+
+    f :: Term lang -> Term lang
+    f (SystF.Free (TermSig name) `SystF.App` args)
+      | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix <> branches')
+      where
+        (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
+        tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
+        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
+    f x = x
+
+-- * Defunctionalization of functions
+
+defunFuns :: (LanguagePretty lang, Pretty (FunDef lang), LanguageBuiltins lang)
+          => PrtUnorderedDefs lang
+          -> DefunCallsCtx lang (PrtUnorderedDefs lang)
+defunFuns defs = defunCalls toDefun defs'
+  where
+    (defs', toDefun) = runWriter $ traverseDefs defunFunDef defs
+
+    defunFunDef name (DFunDef FunDef{..}) =  do
+      when changed $ tell $ M.singleton name hofs
+      pure $ DFunDef $ FunDef funIsRec funBody' funTy'
+      where
+        (funTy', hofs) = rewriteHofType funTy
+        changed = funTy' /= funTy
+        funBody' | changed = rewriteHofBody funBody
+                 | otherwise = funBody
+    defunFunDef _ x = pure x
+
 -- * Closure type generation
 
-mkClosureTypes :: [ClosureCtorInfo lang] -> Decls lang
+mkClosureTypes :: (Language lang) => [ClosureCtorInfo lang] -> Decls lang
 mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
   where
-    types = M.toList $ M.fromListWith (<>) [ (closureTypeName $ hofArgInfo info, [info]) | info <- infos ]
+    types = M.toList $ M.fromListWith (<>) [ (closureTypeName $ hofType $ hofArgInfo info, [info]) | info <- infos ]
     typeDecls = [ (tyName, typeDecl)
-                | (tyName, infos) <- types
-                , let info2ctor ClosureCtorInfo{..} = (ctorName, foldr TyFun (Free (B.TySig tyName) `TyApp` []) ctorArgs)
-                , let typeDecl = DTypeDef $ Datatype KStar [] (dtorName tyName) (info2ctor <$> infos)
+                | (tyName, infos') <- types
+                , let info2ctor ClosureCtorInfo{..} = (ctorName, foldr SystF.TyFun (SystF.Free (TySig tyName) `SystF.TyApp` []) ctorArgs)
+                , let typeDecl = DTypeDef $ Datatype SystF.KStar [] (dtorName tyName) (info2ctor <$> sortOn ctorIdx infos')
                 ]
-    ctorDecls = [ (ctorName, DConstructor ctorIdx closureTypeName)
-                | info@ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
+    ctorDecls = [ (ctorName, DConstructor ctorIdx $ closureTypeName hofType)
+                | ClosureCtorInfo { hofArgInfo = DefunHofArgInfo{..}, ..} <- infos
                 ]
     dtorDecls = [ (dtorName tyName, DDestructor tyName) | tyName <- fst <$> types ]
 
@@ -61,23 +124,23 @@ dtorName tyName = [i|#{tyName}_match|]
 
 -- * Apply function generation
 
-mkApplyFuns :: [ClosureCtorInfo lang] -> Decls lang
+mkApplyFuns :: (Language lang) => [ClosureCtorInfo lang] -> Decls lang
 mkApplyFuns infos = M.fromList funDecls
   where
-    funs = M.toList $ M.fromListWith (<>) [ (applyFunName $ hofArgInfo info, [info]) | info <- infos ]
+    funs = M.toList $ M.fromListWith (<>) [ (applyFunName $ hofType $ hofArgInfo info, [info]) | info <- infos ]
 
     funDecls = [ (funName, DFunDef $ FunDef NonRec funBody funTy)
-               | (funName, infos) <- funs
-               , let DefunHofArgInfo{..} = hofArgInfo $ head infos
-               , let closTy = Free (B.TySig closureTypeName) `TyApp` []
-               , let funTy = closTy `TyFun` hofType
-               , let (argsTys, resTy) = flattenType hofType
-               , let funBody = let closArgIdx = TermArg $ Bound (Ann "cls") 0 `App` []
-                                   dtorResTy = TyArg resTy
-                                in Lam (Ann "cls") closTy
-                                    $ Free (B.TermSig $ dtorName closureTypeName) `App` (closArgIdx : dtorResTy : (TermArg . mkDtorBranch <$> infos))
+               | (funName, infos') <- funs
+               , let DefunHofArgInfo{..} = hofArgInfo $ head infos'
+               , let closTy = closureType hofType
+               , let funTy = closTy `SystF.TyFun` hofType
+               , let (_, resTy) = flattenType hofType
+               , let funBody = let closArgIdx = SystF.TermArg $ SystF.Bound (SystF.Ann "cls") 0 `SystF.App` []
+                                   dtorResTy = SystF.TyArg resTy
+                                   dtor = SystF.Free (TermSig $ dtorName $ closureTypeName hofType)
+                                in SystF.Lam (SystF.Ann "cls") closTy $ dtor `SystF.App` (closArgIdx : dtorResTy : (SystF.TermArg . mkDtorBranch <$> infos'))
                ]
-    mkDtorBranch ClosureCtorInfo{..} = foldr (Lam (Ann "ctx")) hofTerm ctorArgs
+    mkDtorBranch ClosureCtorInfo{..} = foldr (SystF.Lam (SystF.Ann "ctx")) hofTerm ctorArgs
 
 -- * Defunctionalization of function call sites
 
@@ -94,53 +157,50 @@ data ClosureCtorInfo lang = ClosureCtorInfo
   , hofTerm :: Term lang
   }
 
-type DefunBodiesCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
+type DefunCallsCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
-defunCalls :: forall lang. (LanguagePretty lang, LanguageBuiltins lang)
+defunCalls :: forall lang. (Language lang)
            => M.Map Name (HofsList lang)
            -> PrtUnorderedDefs lang
-           -> (PrtUnorderedDefs lang, [ClosureCtorInfo lang])
-defunCalls toDefun defs = evalRWS (defunCallsM defs) mempty (DefunState mempty)
+           -> DefunCallsCtx lang (PrtUnorderedDefs lang)
+defunCalls toDefun PrtUnorderedDefs{..} = do
+  mainTerm' <- defunCallsInTerm prtUOMainTerm
+  decls' <- for prtUODecls $ \case DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm body
+                                   def -> pure def
+  pure $ PrtUnorderedDefs decls' mainTerm'
   where
-    defunCallsM :: PrtUnorderedDefs lang -> DefunBodiesCtx lang (PrtUnorderedDefs lang)
-    defunCallsM PrtUnorderedDefs{..} = do
-      mainTerm' <- defunCallsInTerm prtUOMainTerm
-      decls' <- for prtUODecls $ \case DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm body
-                                       def -> pure def
-      pure $ PrtUnorderedDefs decls' mainTerm'
-
-    defunCallsInTerm :: Term lang -> DefunBodiesCtx lang (Term lang)
+    defunCallsInTerm :: Term lang -> DefunCallsCtx lang (Term lang)
     defunCallsInTerm = go []
       where
-        go :: [(FlatArgType lang, Ann Name)] -> Term lang -> DefunBodiesCtx lang (Term lang)
-        go ctx (term `App` args) = do
-          args' <- mapM (argElim (pure . TyArg) (fmap TermArg . go ctx)) args
+        go :: [(FlatArgType lang, SystF.Ann Name)] -> Term lang -> DefunCallsCtx lang (Term lang)
+        go ctx (term `SystF.App` args) = do
+          args' <- mapM (SystF.argElim (pure . SystF.TyArg) (fmap SystF.TermArg . go ctx)) args
           goApp ctx term args'
-        go ctx (Lam ann ty term) = Lam ann ty <$> go ((FlatTermArg ty, ann) : ctx) term
-        go ctx (Abs ann k  term) = Abs ann k  <$> go ((FlatTyArg k, ann) : ctx) term
+        go ctx (SystF.Lam ann ty term) = SystF.Lam ann ty <$> go ((FlatTermArg ty, ann) : ctx) term
+        go ctx (SystF.Abs ann k  term) = SystF.Abs ann k  <$> go ((FlatTyArg k, ann) : ctx) term
 
-        goApp ctx (Free (TermSig name)) args
+        goApp ctx (SystF.Free (TermSig name)) args
           | Just hofsList <- M.lookup name toDefun = do
             args' <- forM (zip3 [0..] hofsList args) (replaceArg ctx)
-            pure $ Free (B.TermSig name) `App` args'
-        goApp ctx term args = pure $ term `App` args
+            pure $ SystF.Free (TermSig name) `SystF.App` args'
+        goApp _ term args = pure $ term `SystF.App` args
 
-    replaceArg :: [(FlatArgType lang, Ann Name)]
-               -> (Integer, Maybe (DefunHofArgInfo lang), B.Arg lang)
-               -> DefunBodiesCtx lang (B.Arg lang)
-    replaceArg ctx (_, Just hofArgInfo, TermArg lam@Lam {}) = mkClosureArg ctx hofArgInfo lam
+    replaceArg :: [(FlatArgType lang, SystF.Ann Name)]
+               -> (Integer, Maybe (DefunHofArgInfo lang), Arg lang)
+               -> DefunCallsCtx lang (Arg lang)
+    replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _   (_, _, arg) = pure arg
 
-mkClosureArg :: LanguageBuiltins lang
-             => [(FlatArgType lang, Ann Name)]
+mkClosureArg :: (LanguagePretty lang, LanguageBuiltins lang)
+             => [(FlatArgType lang, SystF.Ann Name)]
              -> DefunHofArgInfo lang
              -> Term lang
-             -> DefunBodiesCtx lang (B.Arg lang)
+             -> DefunCallsCtx lang (Arg lang)
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo{..} lam = do
-  ctorIdx <- newCtorIdx synthType
-  let ctorName = [i|#{closureTypeName}_ctor_#{ctorIdx}|]
+  ctorIdx <- newCtorIdx $ closureType hofType
+  let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
   tell [ClosureCtorInfo{hofTerm = remapFreeDeBruijns free2closurePos lam, ..}]
-  pure $ TermArg $ Free (B.TermSig ctorName) `App` [ TermArg $ Bound (snd $ ctx !! fromIntegral idx) idx `App` [] | idx <- frees ]
+  pure $ SystF.TermArg $ SystF.Free (TermSig ctorName) `SystF.App` [ SystF.TermArg $ SystF.Bound (snd $ ctx !! fromIntegral idx) idx `SystF.App` [] | idx <- frees ]
   where
     frees = collectFreeDeBruijns lam
     free2closurePos = M.fromList [ (freeIdx, closurePos)
@@ -153,11 +213,11 @@ collectFreeDeBruijns :: Term lang
                      -> [Integer]
 collectFreeDeBruijns = nub . go 0
   where
-    go cutoff (App var args) = checkVar cutoff var <> foldMap (argElim (const mempty) (go cutoff)) args
-    go cutoff (Lam _ _ term) = go (cutoff + 1) term
-    go cutoff (Abs _ _ term) = go (cutoff + 1) term
+    go cutoff (SystF.App var args) = checkVar cutoff var <> foldMap (SystF.argElim (const mempty) (go cutoff)) args
+    go cutoff (SystF.Lam _ _ term) = go (cutoff + 1) term
+    go cutoff (SystF.Abs _ _ term) = go (cutoff + 1) term
 
-    checkVar cutoff (Bound _ n) | n >= cutoff = [n - cutoff]
+    checkVar cutoff (SystF.Bound _ n) | n >= cutoff = [n - cutoff]
     checkVar _ _ = mempty
 
 remapFreeDeBruijns :: M.Map Integer Integer
@@ -165,14 +225,14 @@ remapFreeDeBruijns :: M.Map Integer Integer
                    -> Term lang
 remapFreeDeBruijns mapping = go 0
   where
-    go cutoff (App var args) = remapVar cutoff var `App` (argElim TyArg (TermArg . go cutoff) <$> args)
-    go cutoff (Lam ann ty term) = Lam ann ty $ go (cutoff + 1) term
-    go cutoff (Abs ann k  term) = Abs ann k  $ go (cutoff + 1) term
+    go cutoff (SystF.App var args) = remapVar cutoff var `SystF.App` (SystF.argElim SystF.TyArg (SystF.TermArg . go cutoff) <$> args)
+    go cutoff (SystF.Lam ann ty term) = SystF.Lam ann ty $ go (cutoff + 1) term
+    go cutoff (SystF.Abs ann k  term) = SystF.Abs ann k  $ go (cutoff + 1) term
 
-    remapVar cutoff (Bound _ n) | n >= cutoff = Bound (Ann "ctx") $ cutoff + mapping M.! (n - cutoff)
+    remapVar cutoff (SystF.Bound _ n) | n >= cutoff = SystF.Bound (SystF.Ann "ctx") $ cutoff + mapping M.! (n - cutoff)
     remapVar _ v = v
 
-newCtorIdx :: LanguageBuiltins lang => B.Type lang -> DefunBodiesCtx lang Int
+newCtorIdx :: LanguageBuiltins lang => B.Type lang -> DefunCallsCtx lang Int
 newCtorIdx ty = do
   idx <- gets $ M.findWithDefault 0 ty . closureType2Idx
   modify' $ \st -> st { closureType2Idx = M.insert ty (idx + 1) $ closureType2Idx st }
@@ -182,43 +242,17 @@ newCtorIdx ty = do
 
 type HofsList lang = [Maybe (DefunHofArgInfo lang)]
 
-defunDefs :: forall lang. (LanguagePretty lang, LanguageBuiltins lang) => PrtUnorderedDefs lang -> (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunDefs defs = (defs { prtUODecls = decls' }, M.fromList toDefun)
+traverseDefs :: Monad m
+             => (Name -> Definition lang -> m (Definition lang))
+             -> PrtUnorderedDefs lang
+             -> m (PrtUnorderedDefs lang)
+traverseDefs f defs = do
+  decls' <- forM defsList $ \(name, def) -> (name,) <$> f name def
+  pure $ defs { prtUODecls = M.fromList decls' }
   where
-    (toDefun, decls') = M.mapAccumWithKey f [] $ prtUODecls defs
-    f toDefunAcc name def
-      | Just hofsList <- maybeHofsList = ((name, hofsList) : toDefunAcc, def')
-      | otherwise = (toDefunAcc, def)
-      where
-        (def', maybeHofsList) = defunDef def
+    defsList = M.toList $ prtUODecls defs
 
-    defunDef :: Definition lang -> (Definition lang, Maybe (HofsList lang))
-    defunDef (DFunDef fd) = first DFunDef $ defunFun fd
-    defunDef (DTypeDef td) = (DTypeDef td, Nothing) -- TODO do this too
-    defunDef x = (x, Nothing)
-
-    defunFun :: FunDef lang -> (FunDef lang, Maybe (HofsList lang))
-    defunFun FunDef{..} = dumpChange (FunDef funIsRec funBody' funTy' , hofsList)
-      where
-        (funTy', hofs) = rewriteHofType funTy
-        changed = funTy' /= funTy
-        funBody' | changed = rewriteHofBody hofs funBody
-                 | otherwise = funBody
-        dumpChange | changed = trace ("was: " <> renderSingleLineStr (pretty funTy))
-                             . trace ("got: " <> renderSingleLineStr (pretty funTy'))
-                             . trace ("var: " <> show hofs)
-                             . trace ("body was: " <> renderSingleLineStr (pretty funBody))
-                             . trace ("body got: " <> renderSingleLineStr (pretty $ rewriteHofBody hofs funBody))
-                   | otherwise = id
-        hofsList | changed = Just hofs
-                 | otherwise = Nothing
-
-data DefunHofArgInfo lang = DefunHofArgInfo
-  { synthType :: B.Type lang
-  , closureTypeName :: Name
-  , applyFunName :: Name
-  , hofType :: B.Type lang
-  } deriving (Show, Eq, Ord)
+newtype DefunHofArgInfo lang = DefunHofArgInfo { hofType :: B.Type lang } deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
 -- where the @Closure[Ty2->Ty3]@ is the ADT with the labels and environments for the funargs of type @Ty2 -> Ty3@.
@@ -228,55 +262,56 @@ rewriteHofType :: forall lang. (LanguagePretty lang, LanguageBuiltins lang)
 rewriteHofType = go 0
   where
     go :: Integer -> B.Type lang -> (B.Type lang, [Maybe (DefunHofArgInfo lang)])
-    go pos (dom `TyFun` cod) = (dom' `TyFun` cod', posApply : applies)
+    go pos (dom `SystF.TyFun` cod) = (dom' `SystF.TyFun` cod', posApply : applies)
       where
         (cod', applies) = go (pos + 1) cod
-        thisIdx = App (Bound (Ann "") pos) []
         (dom', posApply) =
           case dom of
-               TyFun{} -> let tyStr = funTyStr dom
-                              closureTypeName = [i|Closure[#{tyStr}]|]
-                              applyFunName = [i|Apply[#{tyStr}]|]
-                              synthType = TyApp (Free $ B.TySig closureTypeName) []
-                           in (synthType, Just DefunHofArgInfo{hofType = dom, ..})
+               SystF.TyFun{} -> (closureType dom, Just $ DefunHofArgInfo dom)
                _ -> (dom, Nothing)
-    go _    ty@TyApp{} = (ty, []) -- this doesn't defun things like `List (foo -> bar)`, which is fine for now
-    go pos (TyAll ann k ty) = TyAll ann k *** (Nothing :) $ go (pos + 1) ty
-    go pos (TyLam ann k ty) = error "unexpected arg type" -- TODO mention the type
+    go _    ty@SystF.TyApp{} = (ty, []) -- this doesn't defun things like `List (foo -> bar)`, which is fine for now
+    go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
+    go pos (SystF.TyLam ann k ty) = error "unexpected arg type" -- TODO mention the type
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
+-- Dis-assuming this is merely about recursing on `App` ctor as well.
 rewriteHofBody :: (LanguagePretty lang, LanguageBuiltins lang)
-               => [Maybe (DefunHofArgInfo lang)]
-               -> B.Term lang
+               => B.Term lang
                -> B.Term lang
 rewriteHofBody = go
   where
-    go [] term = term
-    go _ App{} = error "unexpected App, arguments not exhausted yet"
-
-    go (Nothing : rest) (Lam ann ty body) = Lam ann ty $ go rest body
-    go (Nothing : rest) (Abs ann kd body) = Abs ann kd $ go rest body
-
-    go (Just DefunHofArgInfo{..} : rest) (Lam ann ty body) = Lam ann synthType $ replaceApply applyFunName $ go rest body
-    go (Just _ : _) Abs{} = error "unexpected Abs where a type should've been replaced"
+    go e@SystF.App{} = e
+    go (SystF.Abs ann kd body) = SystF.Abs ann kd $ go body
+    go (SystF.Lam ann ty body) = case ty of
+                                      SystF.TyFun{} -> SystF.Lam ann (closureType ty) $ replaceApply (applyFunName ty) $ go body
+                                      _ -> SystF.Lam ann ty $ go body
 
 replaceApply :: Name -> B.Term lang -> B.Term lang
-replaceApply applyFunName = go 0
+replaceApply applyFun = go 0
   where
-    go idx (Lam ann ty body) = Lam ann ty $ go (idx + 1) body
-    go idx (Abs ann kd body) = Abs ann kd $ go (idx + 1) body
-    go idx (App var args)
-      | Bound _ n <- var
+    go idx (SystF.Lam ann ty body) = SystF.Lam ann ty $ go (idx + 1) body
+    go idx (SystF.Abs ann kd body) = SystF.Abs ann kd $ go (idx + 1) body
+    go idx (SystF.App var args)
+      | SystF.Bound _ n <- var
       , n == idx
-      , not $ null args = App (Free (B.TermSig applyFunName)) (TermArg (App var []) : args')
-      | otherwise = App var args'
+      , not $ null args = SystF.App (SystF.Free (TermSig applyFun)) (SystF.TermArg (SystF.App var []) : args')
+      | otherwise = SystF.App var args'
       where
         args' = recurArg <$> args
-        recurArg arg@TyArg{} = arg
-        recurArg (TermArg arg) = TermArg $ go idx arg
+        recurArg arg@SystF.TyArg{} = arg
+        recurArg (SystF.TermArg arg) = SystF.TermArg $ go idx arg
+
+closureTypeName :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> Name
+closureTypeName ty = [i|Closure[#{funTyStr ty}]|]
+
+applyFunName :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> Name
+applyFunName ty = [i|Apply[#{funTyStr ty}]|]
+
+closureType :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> B.Type lang
+closureType ty = SystF.Free (TySig $ closureTypeName ty) `SystF.TyApp` []
 
 funTyStr :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> T.Text
-funTyStr (dom `TyFun` cod) = funTyStr dom <> " => " <> funTyStr cod
-funTyStr a@TyApp{} = argsToStr [a]
+funTyStr (dom `SystF.TyFun` cod) = funTyStr dom <> " => " <> funTyStr cod
+funTyStr app@SystF.TyApp{} = argsToStr [app]
 funTyStr ty = error $ "unexpected arg type during defunctionalization:\n"
                    <> renderSingleLineStr (pretty ty)
