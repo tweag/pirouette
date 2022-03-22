@@ -15,10 +15,10 @@ import Data.List (elemIndex, foldl')
 import qualified Data.Map as Map
 import Data.String (fromString)
 import qualified Data.Text as Text
+import Language.Pirouette.PlutusIR.Builtins
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
-import Pirouette.PlutusIR.Builtins
 import Pirouette.Specializer.PIRTransformations
 import Pirouette.Specializer.Rewriting
 import Pirouette.Term.Builtins

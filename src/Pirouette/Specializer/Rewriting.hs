@@ -8,8 +8,8 @@ module Pirouette.Specializer.Rewriting where
 import Control.Monad.Except
 import Data.Bifunctor
 import qualified Data.Text as T
-import Pirouette.PlutusIR.Builtins
-import Pirouette.PlutusIR.ToTerm
+import Language.Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Syntax.Base (Term)
 import qualified PlutusCore as P
 import qualified PlutusIR.Parser as PIR

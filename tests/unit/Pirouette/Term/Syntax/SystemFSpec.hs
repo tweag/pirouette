@@ -1,25 +1,32 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Pirouette.Term.Syntax.SystemFSpec (spec) where
+{-# LANGUAGE QuasiQuotes #-}
 
-import Pirouette.Term.Syntax.SystemF hiding (tyApp)
+module Pirouette.Term.Syntax.SystemFSpec (tests) where
 
-import Data.List (groupBy, transpose)
 import Control.Arrow (first)
+import Control.Monad
+import Data.List (groupBy, transpose)
+import Language.Pirouette.Example
+import Pirouette.Term.Syntax.SystemF hiding (tyApp)
+import Test.Tasty
+import Test.Tasty.HUnit
+import Pirouette.Term.Syntax.Base
 
-import           Control.Monad
-import           Data.Text.Prettyprint.Doc
-import           Test.Hspec
+-- We need to help the typechecker with some explicit types
+sameTy :: Type Ex -> Type Ex -> Assertion
+sameTy = (@?=)
 
-type Ty = AnnType String (Var String String)
+sameTerm :: Term Ex -> Term Ex -> Assertion
+sameTerm = (@?=)
 
-tyApp :: Ty -> Ty -> Ty
-tyApp = app
-
-spec = do
-  describe "type-level appN" $ do
-    it "works for hand-crafted examples" $
-      tyApp (TyLam "x" KStar $ TyApp (Bound "y" 1) [tyPure $ Bound "x" 0])
-            (TyLam "w" KStar $ TyApp (Bound "z" 2) [tyPure $ Bound "w" 0])
-          `shouldBe`
-      tyApp (tyPure $ Bound "y" 0)
-            (TyLam "w" KStar $ TyApp (Bound "z" 2) [tyPure $ Bound "w" 0])
+tests :: [TestTree]
+tests =
+  [ testCase "Type-Type application" $
+      sameTy
+        [ty| \f : Type -> Type . (\x : Type . f x) (\w : Type . w) |]
+        [ty| \f : Type -> Type . f (\w : Type . w) |],
+    testCase "Term-Type application" $
+      sameTerm [term| (\a : Integer . /\ r : Type . \b : r . a) 3 @Bool 4 |] [term| 3 |],
+    testCase "Terms equality is alpha-equivalence" $
+      sameTerm [term| \a : Integer . a |] [term| \b : Integer . b |]
+  ]

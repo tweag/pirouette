@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -14,11 +15,12 @@
 --  necessary bits for using the facilities from "Pirouette.Term.Syntax" and provides
 --  a translation function 'trProgram' to translate a plutusIR program into a 'PrtTerm'
 --  and a map of definitions.
-module Pirouette.PlutusIR.Builtins where
+module Language.Pirouette.PlutusIR.Builtins where
 
 import qualified Data.ByteString as BS
 import Data.Data
 import qualified Data.Text as T
+import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax.Pretty.Class
 import PlutusCore
@@ -40,7 +42,11 @@ data BuiltinsOfPIR
 
 deriving instance Data P.DefaultFun
 
+deriving instance Lift P.DefaultFun
+
 deriving instance Data P.Data
+
+deriving instance Lift P.Data
 
 instance LanguageBuiltins BuiltinsOfPIR where
   type BuiltinTypes BuiltinsOfPIR = PIRBuiltinType
@@ -57,7 +63,7 @@ data PIRBuiltinType
   | PIRTypeData
   | PIRTypeList (Maybe PIRBuiltinType)
   | PIRTypePair (Maybe PIRBuiltinType) (Maybe PIRBuiltinType)
-  deriving (Eq, Ord, Show, Data, Typeable)
+  deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
 defUniToType :: forall k (a :: k). DefaultUni (P.Esc a) -> PIRBuiltinType
 defUniToType DefaultUniInteger = PIRTypeInteger
@@ -83,7 +89,7 @@ data PIRConstant
   | PIRConstList [PIRConstant]
   | PIRConstPair PIRConstant PIRConstant
   | PIRConstData P.Data
-  deriving (Eq, Ord, Show, Data, Typeable)
+  deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
 defUniToConstant :: DefaultUni (P.Esc a) -> a -> PIRConstant
 defUniToConstant DefaultUniInteger x = PIRConstInteger x

@@ -12,7 +12,7 @@
 --  necessary bits for using the facilities from "Pirouette.Term.Syntax" and provides
 --  a translation function 'trProgram' to translate a plutusIR program into a 'PrtTerm'
 --  and a map of definitions.
-module Pirouette.PlutusIR.ToTerm where
+module Language.Pirouette.PlutusIR.ToTerm where
 
 import Control.Arrow (first, second, (&&&))
 import Control.Monad.Except
@@ -24,7 +24,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.Set as S
-import Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import PlutusCore (DefaultUni (..))

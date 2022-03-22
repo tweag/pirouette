@@ -17,8 +17,8 @@ dependencies:
   - prettyprinter
   - gitrev
   - optparse-applicative
-  - parsec
   - megaparsec
+  - parser-combinators
   - uniplate
   - hspec
   - QuickCheck
@@ -31,6 +31,11 @@ dependencies:
   - flat >= 0.4.5
   - plutus-core
   - list-t
+  - template-haskell
+  - tasty
+  - tasty-hunit
+  - tasty-hspec
+  - tasty-quickcheck
 
 library:
   source-dirs: src
