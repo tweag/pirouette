@@ -1,7 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Pirouette.Term.TransformationsSpec (spec) where
 
@@ -11,6 +9,7 @@ import           Pirouette.Monad.Logger
 import qualified Pirouette.Term.Syntax as S
 import           Pirouette.Term.Transformations
 import           Pirouette.Term.DSL
+import           Pirouette.PlutusIR.Builtins
 import           Pirouette.PlutusIR.ToTerm
 import qualified Pirouette.Term.Syntax.SystemF as R
 
@@ -22,7 +21,7 @@ import           Control.Monad.Identity
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Except
-import           Data.Text.Prettyprint.Doc
+import           Prettyprinter
 import           Test.Hspec
 import           Data.Maybe
 import qualified Data.Set  as Set
@@ -31,7 +30,7 @@ import qualified Data.Text as T
 
 -- * Mocking a number of definitions for the PrtT monad
 
-testingDefs :: [S.Name] -> [(S.Name, S.PrtDef PlutusIR)]
+testingDefs :: [S.Name] -> [(S.Name, S.Definition BuiltinsOfPIR)]
 testingDefs extras =
   [("destMaybe", S.DDestructor "Maybe")
   ,("destEither", S.DDestructor "Either")
@@ -47,18 +46,18 @@ testingDefs extras =
  where
    stubsFor n = (n , S.DConstructor 0 n)
 
-withDummyFunc :: S.Name -> (S.Name, S.PrtDef PlutusIR)
+withDummyFunc :: S.Name -> (S.Name, S.Definition BuiltinsOfPIR)
 withDummyFunc s = (s, dummyFun)
   where
     dummyFun = S.DFunction S.Rec dummyTerm dummyType
-    dummyTerm = R.termPure (R.F (S.FreeName "_"))
-    dummyType = R.tyPure (R.F (S.TyFree "_"))
+    dummyTerm = R.termPure (R.Free (S.TermSig "_"))
+    dummyType = R.tyPure (R.Free (S.TySig "_"))
 
 testState extras = PrtUnorderedDefs (M.fromList $ testingDefs extras) undefined
 
 testOpts = PrtOpts DEBUG []
 
-runPrtTest :: [S.Name] -> ReaderT (PrtUnorderedDefs PlutusIR) (PrtT Identity) a -> a
+runPrtTest :: [S.Name] -> ReaderT (PrtUnorderedDefs BuiltinsOfPIR) (PrtT Identity) a -> a
 runPrtTest extras =
   either (error . show) id . fst . runIdentity . runPrtT testOpts . flip runReaderT (testState extras)
 

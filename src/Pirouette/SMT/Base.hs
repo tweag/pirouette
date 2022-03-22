@@ -1,17 +1,19 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Pirouette.SMT.Base where
 
 import Control.Monad.IO.Class
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
-import Pirouette.Term.Syntax
 import Data.Void
+import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.Term.Builtins
+import Pirouette.Term.Syntax
 
 -- | Captures the languages that can be translated to SMTLIB; namelly,
 -- we need to be able to translate each individual base syntactical category.
 --
 -- This class is defined with @-XAllowAmbiguousTypes@ and therefore
 -- should be used with @-XTypeApplications@ whenever necessary.
-class (LanguageDef lang) => LanguageSMT lang where
+class (LanguageBuiltins lang) => LanguageSMT lang where
   translateBuiltinType :: BuiltinTypes lang -> SimpleSMT.SExpr
   translateBuiltinTerm :: BuiltinTerms lang -> SimpleSMT.SExpr
   translateConstant :: Constants lang -> SimpleSMT.SExpr

@@ -19,21 +19,18 @@ library
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
+      Pirouette.PlutusIR.Builtins
       Pirouette.PlutusIR.SMT
       Pirouette.PlutusIR.ToTerm
-      Pirouette.PlutusIR.Utils
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
       Pirouette.SMT.SimpleSMT
       Pirouette.SMT.Translation
-      Pirouette.Specializer
-      Pirouette.Specializer.Basics
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
-      Pirouette.Term.ConstraintTree
-      Pirouette.Term.Defunctionalize
+      Pirouette.Term.Builtins
       Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
@@ -41,11 +38,8 @@ library
       Pirouette.Term.Syntax.Pretty.Class
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
-      Pirouette.Term.ToTla
       Pirouette.Term.Transformations
       Pirouette.Term.TransitiveDeps
-      Pirouette.TLA.Syntax
-      Pirouette.TLA.Type
       Pirouette.Transformations
       Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.EtaExpand
@@ -55,6 +49,7 @@ library
       Paths_pirouette
   hs-source-dirs:
       src
+  ghc-options: -Wall -Wno-orphans
   build-depends:
       QuickCheck
     , base >=4.9 && <5
@@ -87,6 +82,7 @@ executable pirouette
       Paths_pirouette
   hs-source-dirs:
       executable
+  ghc-options: -Wall -Wno-orphans
   build-depends:
       QuickCheck
     , base >=4.9 && <5

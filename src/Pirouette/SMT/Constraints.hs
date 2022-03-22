@@ -1,26 +1,24 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- |Constraints that we can translate to SMT
+-- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
 import Control.Monad.IO.Class
-import Data.Bifunctor (bimap)
+import Data.List (intersperse)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Void
+import Data.Maybe (mapMaybe)
 import Pirouette.SMT.Base
-import Pirouette.SMT.Translation
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.SMT.Translation
+import Pirouette.Term.Builtins (PrettyLang)
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
-import qualified PlutusCore as P
-import Data.Maybe (mapMaybe)
 import Prettyprinter hiding (Pretty (..))
-import Data.List (intersperse)
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
@@ -30,7 +28,7 @@ import Data.List (intersperse)
 -- Its somthing to think about later, but for now this will do.
 
 -- | Bindings from names to types (for the assign constraints)
-type Env lang = Map Name (PrtType lang)
+type Env lang = Map Name (Type lang)
 
 -- | Constraints of a path during symbolic execution
 -- We would like to have
@@ -41,14 +39,15 @@ type Env lang = Map Name (PrtType lang)
 -- (Because it is a builtin or a constant),
 -- whereas the other one represents an ongoing computation killed by lack of fuel.
 data Constraint lang meta
-  = Assign Name (PrtTermMeta lang meta)
-  | NonInlinableSymbolEq (PrtTermMeta lang meta) (PrtTermMeta lang meta)
-  | OutOfFuelEq (PrtTermMeta lang meta) (PrtTermMeta lang meta)
+  = Assign Name (TermMeta lang meta)
+  | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
+  | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
   | And [Constraint lang meta]
   | Bot
 
 instance Semigroup (Constraint lang meta) where
   (<>) = andConstr
+
 instance Monoid (Constraint lang meta) where
   mempty = And []
 
@@ -109,13 +108,17 @@ instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
 -- which can then be used in further constraints.
 --
 -- Hence, we chose solution #2
-assertConstraintRaw :: (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m)
-  => SimpleSMT.Solver -> Env lang -> Constraint lang meta -> m ()
+assertConstraintRaw ::
+  (LanguageSMT lang, ToSMT meta, MonadIO m, MonadFail m) =>
+  SimpleSMT.Solver ->
+  Env lang ->
+  Constraint lang meta ->
+  m ()
 assertConstraintRaw s env (Assign name term) =
   do
     let smtName = toSmtName name
     let (Just ty) = Map.lookup name env
-    d <- translateData (prtTypeToMeta ty) term
+    d <- translateData (typeToMeta ty) term
     liftIO $
       SimpleSMT.assert s (SimpleSMT.symbol smtName `SimpleSMT.eq` d)
 assertConstraintRaw s _ (NonInlinableSymbolEq term1 term2) = do
@@ -136,13 +139,16 @@ assertConstraintRaw s _ Bot = liftIO $ SimpleSMT.assert s (SimpleSMT.bool False)
 -- `as` term in smtlib). Besides, this function removes applications of types
 -- to terms ; they do not belong in the term world of the resulting smtlib
 -- term.
-translateData :: (LanguageSMT lang, ToSMT meta, MonadFail m)
-  => PrtTypeMeta lang meta -> PrtTermMeta lang meta -> m SimpleSMT.SExpr
-translateData ty (App var []) = translateVar var
-translateData ty (App (F (FreeName name)) args) =
+translateData ::
+  (LanguageSMT lang, ToSMT meta, MonadFail m) =>
+  TypeMeta lang meta ->
+  TermMeta lang meta ->
+  m SimpleSMT.SExpr
+translateData _ (App var []) = translateVar var
+translateData ty (App (Free (TermSig name)) args) =
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
     -- translating the overall term.
     <*> mapM (translateData ty) (mapMaybe fromArg args)
-translateData ty _ = fail "Illegal term in translate data"
+translateData _ _ = fail "Illegal term in translate data"
