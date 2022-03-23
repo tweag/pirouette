@@ -50,9 +50,9 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 -- | Solver monad for a specific solver, passed as a phantom type variable @s@ (refer to 'IsSolver' for more)
 --  to know the supported solvers. That's a phantom type variable used only to distinguish
 --  solver-specific operations, such as initialization
-newtype SolverT m a = SolverT {unSolverT :: ReaderT (SimpleSMT.Solver, SimpleSMT.Solver) m a}
+newtype SolverT m a = SolverT {unSolverT :: ReaderT SimpleSMT.Solver m a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadReader (SimpleSMT.Solver, SimpleSMT.Solver), MonadIO)
+  deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO)
 
 instance MonadTrans SolverT where
   lift = SolverT . lift
@@ -65,17 +65,14 @@ deriving instance Alternative m => Alternative (SolverT m)
 
 -- | Runs a computation that requires a session with a solver. The first parameter is
 -- an action that launches a solver. Check 'cvc4_ALL_SUPPORTED' for an example.
-runSolverT :: forall m a. (MonadIO m) => IO (SimpleSMT.Solver, SimpleSMT.Solver) -> SolverT m a -> m a
+runSolverT :: forall m a. (MonadIO m) => IO SimpleSMT.Solver -> SolverT m a -> m a
 runSolverT s (SolverT comp) = liftIO s >>= runReaderT comp
 
 -- | Returns 'Sat', 'Unsat' or 'Unknown' for the current solver session.
 checkSat :: (MonadIO m) => SolverT m SimpleSMT.Result
 checkSat = do
-  (solver_good_at_sat, solver_good_at_unsat) <- ask
-  answer1 <- liftIO $ SimpleSMT.check solver_good_at_unsat
-  case answer1 of
-    SimpleSMT.Unknown -> liftIO $ SimpleSMT.check solver_good_at_sat
-    _ -> return answer1
+  solver <- ask
+  liftIO $ SimpleSMT.check solver
 
 -- | Pushes the solver context, creating a checkpoint. This is useful if you plan to execute
 --  many queries that share definitions. A typical use pattern would be:
@@ -90,30 +87,23 @@ checkSat = do
 --  >   return r
 solverPush :: (MonadIO m) => SolverT m ()
 solverPush = do
-  (s1, s2) <- ask
-  liftIO $ SimpleSMT.push s1
-  liftIO $ SimpleSMT.push s2
+  solver <- ask
+  liftIO $ SimpleSMT.push solver
 
 -- | Pops the current checkpoint, check 'solverPush' for an example.
 solverPop :: (MonadIO m) => SolverT m ()
 solverPop = do
-  (s1, s2) <- ask
-  liftIO $ SimpleSMT.pop s1
-  liftIO $ SimpleSMT.pop s2
+  solver <- ask
+  liftIO $ SimpleSMT.pop solver
 
 -- | Declare a single datatype in the current solver session.
 declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) [Name]
 declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
-  (s1, s2) <- ask
+  solver <- ask
   constr' <- mapM constructorFromPIR constructors
   liftIO $ do
     SimpleSMT.declareDatatype
-      s1
-      (toSmtName typeName)
-      (map (toSmtName . fst) typeVariabes)
-      constr'
-    SimpleSMT.declareDatatype
-      s2
+      solver
       (toSmtName typeName)
       (map (toSmtName . fst) typeVariabes)
       constr'
@@ -141,10 +131,9 @@ declareVariables = mapM_ (uncurry declareVariable) . M.toList
 -- | Declares a single variable in the current solver session.
 declareVariable :: (LanguageSMT lang, MonadIO m) => Name -> Type lang -> ExceptT String (SolverT m) ()
 declareVariable varName varTy = do
-  (s1, s2) <- ask
+  solver <- ask
   tySExpr <- translateType varTy
-  liftIO $ void (SimpleSMT.declare s1 (toSmtName varName) tySExpr)
-  liftIO $ void (SimpleSMT.declare s2 (toSmtName varName) tySExpr)
+  liftIO $ void (SimpleSMT.declare solver (toSmtName varName) tySExpr)
 
 -- | Asserts a constraint; check 'Constraint' for more information
 -- | The functions 'assert' and 'assertNot' output a boolean,
@@ -157,10 +146,9 @@ assert ::
   Constraint lang meta ->
   SolverT m Bool
 assert env knownNames c =
-  SolverT $ ReaderT $ \(s1, s2) -> do
+  SolverT $ ReaderT $ \solver -> do
     (isTotal,expr) <- constraintToSExpr env knownNames c
-    liftIO $ SimpleSMT.assert s1 expr
-    liftIO $ SimpleSMT.assert s2 expr
+    liftIO $ SimpleSMT.assert solver expr
     return isTotal
 
 assertNot ::
@@ -170,8 +158,7 @@ assertNot ::
   Constraint lang meta ->
   SolverT m Bool
 assertNot env knownNames c =
-  SolverT $ ReaderT $ \(s1, s2) -> do
+  SolverT $ ReaderT $ \solver -> do
     (isTotal, expr) <- constraintToSExpr env knownNames c
-    liftIO $ SimpleSMT.assert s1 (SimpleSMT.not expr)
-    liftIO $ SimpleSMT.assert s2 (SimpleSMT.not expr)
+    liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
     return isTotal

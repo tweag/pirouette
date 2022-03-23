@@ -7,7 +7,6 @@ import Data.Void
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
-import Control.Applicative (Alternative, (<|>))
 
 -- | Captures the languages that can be translated to SMTLIB; namelly,
 -- we need to be able to translate each individual base syntactical category.
@@ -39,12 +38,10 @@ type WithDebugMessages = Bool
 -- to handle datatypes. The boolean parameter controls debug messages.
 -- The "fmf-fun" options is much better at finding sat by constructing finite model of recursive functions,
 -- whereas "full-saturate-quant" makes a much better use of the universally quantified hints to find unsat.
-cvc5_ALL_SUPPORTED :: (MonadIO m) => WithDebugMessages -> m (SimpleSMT.Solver, SimpleSMT.Solver)
-cvc5_ALL_SUPPORTED dbg = do
+cvc4_ALL_SUPPORTED :: (MonadIO m) => WithDebugMessages -> m SimpleSMT.Solver
+cvc4_ALL_SUPPORTED dbg = do
   -- This generates a "Solver" which logs every interaction it has.
   ml <- if dbg then Just <$> liftIO (SimpleSMT.newLogger 0) else return Nothing
-  s_fmf <- liftIO $ SimpleSMT.newSolver "cvc4" ["--lang=smt2", "--incremental", "--fmf-fun", "--tlimit-per=60000"] ml
-  s_saturate <- liftIO $ SimpleSMT.newSolver "cvc4" ["--lang=smt2", "--incremental", "--full-saturate-quant", "--tlimit-per=60000"] ml
-  liftIO $ SimpleSMT.setLogic s_fmf "ALL"
-  liftIO $ SimpleSMT.setLogic s_saturate "ALL"
-  return (s_fmf, s_saturate)
+  s <- liftIO $ SimpleSMT.newSolver "cvc4" ["--lang=smt2", "--incremental", "--fmf-fun"] ml
+  liftIO $ SimpleSMT.setLogic s "ALL"
+  return s

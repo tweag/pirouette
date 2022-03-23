@@ -44,10 +44,10 @@
     { "forall" :
       { "vars" : [
           { "name" : "l",
-            "typ" : "app (symbol \"pir_List\") [symbol \"pir_Bool\"]"
+            "typ" : "TyApp List [Bool]"
           }
         ],
-        "prop" : "ge (app (symbol \"length\") [symbol \"l\"]) (int 0)"
+        "prop" : "ge (app (symbol \"length\") [l]) (int 0)"
       }
     }
   ]

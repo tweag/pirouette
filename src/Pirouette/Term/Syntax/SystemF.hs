@@ -16,7 +16,6 @@ import Data.Generics.Uniplate.Data ()
 import Data.Generics.Uniplate.Operations (transform)
 import Data.Maybe (mapMaybe)
 import Data.String
-import Data.Typeable
 import Data.Void
 import Pirouette.Term.Syntax.Subst
 

@@ -17,16 +17,19 @@ module Pirouette.Term.Symbolic.Eval where
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Reader (ask)
 import Control.Monad.Except
 import Control.Monad.State
 import Data.Data hiding (eqT)
 import Data.Foldable
+import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import ListT (ListT)
 import qualified ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT as SMT
+import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -117,7 +120,7 @@ runSymEvalT st symEvalT =
     return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    s = SMT.cvc5_ALL_SUPPORTED False
+    s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
@@ -353,13 +356,18 @@ newtype InCond lang = InCond (Constraint lang)
 data EvaluationWitness lang =
   Verified | CounterExample (TermMeta lang SymVar)
 
-conditionalEval :: (SymEvalConstr lang m, MonadIO m) => TermMeta lang SymVar -> OutCond lang -> InCond lang -> SymEvalT lang m (EvaluationWitness lang)
-conditionalEval t (OutCond q) (InCond p) = do
-  toEvaluateMore <- pruneAndValidate (q t) p
+data UniversalAxiom lang = UniversalAxiom {
+  boundVars :: [(Name, Type lang)],
+  axiomBody :: [SimpleSMT.SExpr] -> SimpleSMT.SExpr
+}
+
+conditionalEval :: (SymEvalConstr lang m, MonadIO m) => TermMeta lang SymVar -> OutCond lang -> InCond lang -> [UniversalAxiom lang]-> SymEvalT lang m (EvaluationWitness lang)
+conditionalEval t (OutCond q) (InCond p) axioms = do
+  toEvaluateMore <- pruneAndValidate (q t) p axioms
   if toEvaluateMore
   then do
     t' <- symEvalOneStep t
-    conditionalEval t' (OutCond q) (InCond p)
+    conditionalEval t' (OutCond q) (InCond p) axioms
   else
     return (CounterExample t)
 
@@ -433,32 +441,50 @@ symEvalOneStep t@(R.App hd args) = do
           return $ R.App hd (map R.TyArg tyParams ++ R.TermArg term' : R.TyArg tyRes : map R.TermArg cases ++ excess)
 
 -- | Prune the set of paths in the current set.
-pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> SymEvalT lang m Bool
-pruneAndValidate cOut cIn =
+pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m Bool
+pruneAndValidate cOut cIn axioms =
   SymEvalT $ StateT $ \st -> do
-    contradictProperty <- checkProperty cOut cIn st
+    contradictProperty <- checkProperty cOut cIn axioms st
     case contradictProperty of
       SMT.Unsat -> empty
       SMT.Sat -> return (False, st)
       SMT.Unknown -> return (True, st)
 
+instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
+instantiateAxiomWithVars axioms env =
+  SMT.SolverT $ do
+    solver <- ask
+    liftIO $
+      mapM_
+        (\(name, ty) ->
+          mapM_
+            (\UniversalAxiom{..} ->
+              when (List.any (\(_,tyV) -> tyV == ty) boundVars) $
+                if length boundVars == 1
+                then
+                  void $ SimpleSMT.assert solver (axiomBody [SimpleSMT.symbol (SMT.toSmtName name)])
+                else error "Several universally bound variables not handled yet" -- TODO
+            )
+            axioms
+        )
+        (M.toList $ sestGamma env)
+
 -- Our aim is to prove that
 -- (pathConstraints /\ cOut) => cIn.
 -- This is equivalent to the unsatisfiability of
 -- pathConstraints /\ cOut /\ (not cIn).
-checkProperty :: (SMT.LanguageSMT lang, MonadIO m) => Constraint lang -> Constraint lang -> SymEvalSt lang -> SMT.SolverT m SMT.Result
-checkProperty cOut cIn env = do
+checkProperty :: (SMT.LanguageSMT lang, MonadIO m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m SMT.Result
+checkProperty cOut cIn axioms env = do
   SMT.solverPush
-  decl <- runExceptT (SMT.declareVariables (sestGamma env))
+  let vars = sestGamma env
+  decl <- runExceptT (SMT.declareVariables vars)
+  instantiateAxiomWithVars axioms env
   case decl of
     Right _ -> return ()
     Left s -> error s
-  cstrTotal <- SMT.assert (sestGamma env) (sestKnownNames
-   env) (sestConstraint env)
-  outTotal <- SMT.assert (sestGamma env) (sestKnownNames
-   env)cOut
-  inTotal <- SMT.assertNot (sestGamma env) (sestKnownNames
-   env)cIn
+  cstrTotal <- SMT.assert vars (sestKnownNames env) (sestConstraint env)
+  outTotal <- SMT.assert vars (sestKnownNames env) cOut
+  inTotal <- SMT.assertNot vars (sestKnownNames env) cIn
   result <- SMT.checkSat
   SMT.solverPop
   case result of

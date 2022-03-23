@@ -152,7 +152,7 @@ processDecls opts uDefs = do
     runReaderT checkDeBruijnIndices uDefs
 
   -- Otherwise, we proceed normally
-  noMutDefs <- elimEvenOddMutRec uDefs -- $ monomorphize uDefs
+  noMutDefs <- elimEvenOddMutRec $ monomorphize uDefs
   let oDefs =
         if noInlining opts
           then noMutDefs
