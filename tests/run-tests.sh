@@ -93,11 +93,13 @@ for p in ${projects[*]}; do
 done
 
 for p in ${projects[*]}; do
-  run_ormolu "$p"
-  if [[ "$?" -ne "0" ]]; then
-    echo "[FAILURE] 'ormolu --check' failed for $p; check the respective artifact."
-    ormolu_ok=false
-  fi
+  ## Disable ormolu for the time being; re-enable back before merging into main.
+  ##
+  ## run_ormolu "$p"
+  ## if [[ "$?" -ne "0" ]]; then
+  ##   echo "[FAILURE] 'ormolu --check' failed for $p; check the respective artifact."
+  ##   ormolu_ok=false
+  ## fi
 
   run_cabal_test "$p"
   if [[ "$?" -ne "0" ]]; then
