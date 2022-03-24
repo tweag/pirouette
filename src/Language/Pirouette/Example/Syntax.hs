@@ -195,16 +195,16 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
     pFun = TyFun <$ symbol "->"
 
     pAll :: Parser Ty
-    pAll = do
+    pAll = label "pAll" $ do
       try (symbol "all")
       parseBinder TyAll (parseBinderNames ident (parseTyOf >> parseKind)) (symbol "." >> parseType)
 
     pLam :: Parser Ty
-    pLam = do
+    pLam = label "pLam" $ do
       try (symbol "\\")
       parseBinder TyLam (parseBinderNames ident (parseTyOf >> parseKind)) (symbol "." >> parseType)
 
-    pAtom =
+    pAtom = try $
       asum
         [ pLam,
           pAll,

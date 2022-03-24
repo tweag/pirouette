@@ -9,7 +9,7 @@ module Language.Pirouette.Example.ToTerm where
 
 import Control.Arrow (first)
 import Control.Monad.Except
-import Data.List (elemIndex)
+import Data.List (elemIndex, nub, (\\))
 import qualified Data.Map as M
 import Data.String
 import Language.Pirouette.Example.Syntax
@@ -25,8 +25,18 @@ trProgram ::
   FunDecl ->
   TrM (M.Map Name (Definition Ex), Term Ex)
 trProgram env (FunDecl _ main) =
-  let decls = mapM (uncurry (\s -> either (trDataDecl s) (fmap ((: []) . (fromString s,)) . trFunDecl))) $ M.toList env
-   in (,) <$> (M.fromList . concat <$> decls) <*> trTerm [] [] main
+  let decls =
+        mapM (uncurry (\s -> either (trDataDecl s) (fmap ((: []) . (fromString s,)) . trFunDecl))) $
+          M.toList env
+   in (,) <$> (decls >>= toDecls . concat) <*> trTerm [] [] main
+  where
+    toDecls :: [(Name, Definition Ex)] -> TrM (Decls Ex)
+    toDecls ds =
+      let names = map fst ds
+          repeated = names \\ nub names
+       in if null repeated
+            then return $ M.fromList ds
+            else throwError $ "Repeaded definitions: " ++ show repeated
 
 trFunDecl :: FunDecl -> TrM (Definition Ex)
 trFunDecl (FunDecl ty expr) =

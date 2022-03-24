@@ -18,16 +18,18 @@ canParseProgram _ = return ()
 
 tests :: [TestTree]
 tests =
-  [ testGroup
-      "Can parse types"
-      [ testCase "Example 1" $ canParseType [ty| \x : Type . x |],
-        testCase "Example 2" $ canParseType [ty| all f : Type -> Type . \(x : Type) (y : Type) . f x -> f y |],
-        testCase "Example 3" $ canParseType [ty| One (Two Three) (Four Five) Six Seven |],
-        testCase "Example 4" $
+  [ testCase "Can parse types" $ do
+      canParseType [ty| \x : Type . x |]
+      canParseType [ty| all f : Type -> Type . \(x : Type) (y : Type) . f x -> f y |]
+      canParseType [ty| One (Two Three) (Four Five) Six Seven |]
+      canParseType [ty| all a : Type . all b : Type . a -> b -> a |]
+      canParseType [ty| Integer -> (all a : Type . Integer) |]
+      canParseType [ty| all a : Type . a -> all b : Type . a -> Integer |]
+      canParseType [ty| all a : Type . a -> all b : (Type -> Type) . Integer -> b a -> Integer |],
+     testCase "Type binders with or without parenthesis" $ do
           let t1 = [ty| \(x : Type) (y : Type) . F x y |]
               t2 = [ty| \(x : Type) . \(y : Type) . F x y |]
-           in (t1 :: Type Ex) @?= t2
-      ],
+           in (t1 :: Type Ex) @?= t2 ,
     testGroup
       "Can parse terms"
       [ testCase "Example 1" $

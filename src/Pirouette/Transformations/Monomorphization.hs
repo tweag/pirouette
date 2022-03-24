@@ -9,7 +9,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ParallelListComp #-}
 
-module Pirouette.Transformations.Monomorphization(monomorphize, findPolyHOFDefs) where
+module Pirouette.Transformations.Monomorphization
+  (monomorphize, hofsClosure, findPolyHOFDefs)
+  where
 
 import Control.Monad.Writer.Strict
 import Data.Data
@@ -24,6 +26,8 @@ import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
 import Pirouette.Transformations.Utils
+
+import Debug.Trace
 
 -- * Monomorphization
 --
@@ -110,7 +114,7 @@ data SpecRequest lang = SpecRequest
 type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => Term lang -> m (Term lang)
 type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => Type lang -> m (Type lang)
 
-executeSpecRequest :: (LanguageBuiltins lang) => SpecRequest lang -> Decls lang
+executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
 executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   case hofDefBody of
        HDBFun FunDef{..} -> let newDef = DFunction funIsRec (funBody `SystF.appN` map SystF.TyArg specArgs) (funTy `SystF.appN` specArgs)
@@ -130,8 +134,12 @@ executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   where
     fixName = genSpecName specArgs
 
-specFunApp :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
-specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
+specFunApp :: forall lang. (Language lang) => HOFDefs lang -> SpecFunApp lang
+specFunApp hofDefs f = trace (renderSingleLineStr $ "specFunApp: " <> pretty (M.keys hofDefs) <> ": " <> pretty f)
+                             (specFunApp' hofDefs f)
+
+specFunApp' :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
+specFunApp' hofDefs (SystF.App (SystF.Free (TermSig name)) args)
   | Just someDef <- name `M.lookup` hofDefs    -- TODO should just the nameString be compared?
   , all isSpecArg $ take hofPolyVarsCount tyArgs = do
     let (specArgs, remainingArgs) = splitArgs hofPolyVarsCount args
@@ -141,7 +149,7 @@ specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
   where
     tyArgs = mapMaybe SystF.fromTyArg args
     hofPolyVarsCount = 1 -- TODO don't hardcode 1
-specFunApp _ x = pure x
+specFunApp' _ x = pure x
 
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
