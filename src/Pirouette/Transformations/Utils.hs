@@ -104,9 +104,13 @@ splitArgs _ [] = error "Less args than poly args count"
 argsToStr :: (LanguageBuiltins lang) => [Type lang] -> T.Text
 argsToStr = T.intercalate "@" . map f
   where
-    f (SystF.Free (TySig n) `TyApp` []) = nameString n
-    f (SystF.Free (TySig n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
+    f (SystF.Free n `TyApp` args) =
+      tyBaseString n <> if null args then mempty else "<" <> argsToStr args <> ">"
     f arg = error $ "unexpected specializing arg" <> show arg
+
+tyBaseString :: LanguageBuiltins lang => TypeBase lang -> T.Text
+tyBaseString (TyBuiltin bt) = T.pack $ show bt
+tyBaseString (TySig na) = nameString na
 
 -- This really belongs to a Pretty module, but we need them here for nicer debugging anyway for now.
 instance (Pretty (BuiltinTypes lang), Pretty (FunDef lang)) => Pretty (HofDefBody lang) where

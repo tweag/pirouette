@@ -10,7 +10,7 @@
 {-# LANGUAGE ParallelListComp #-}
 
 module Pirouette.Transformations.Monomorphization
-  (monomorphize, hofsClosure, findPolyHOFDefs)
+  (monomorphize, hofsClosure, findPolyHOFDefs, specFunApp, SpecRequest(..))
   where
 
 import Control.Monad.Writer.Strict
@@ -134,13 +134,17 @@ executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   where
     fixName = genSpecName specArgs
 
-specFunApp :: forall lang. (Language lang) => HOFDefs lang -> SpecFunApp lang
-specFunApp hofDefs f = trace (renderSingleLineStr $ "specFunApp: " <> pretty (M.keys hofDefs) <> ": " <> pretty f)
-                             (specFunApp' hofDefs f)
-
-specFunApp' :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
-specFunApp' hofDefs (SystF.App (SystF.Free (TermSig name)) args)
-  | Just someDef <- name `M.lookup` hofDefs    -- TODO should just the nameString be compared?
+-- |Specilizes a function application of the form:
+--
+-- > hof @Integer x y z
+--
+-- Where @hof@ has been identified as a higher-order function and
+-- its type argument contains no bound-variables: in other words,
+-- we can substitute that call with @hof_Integer@ while creating a monomorphic
+-- definition for @hof@.
+specFunApp :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
+specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
+  | Just someDef <- name `M.lookup` hofDefs -- We compare the entire name, not just the nameString part: x0 /= x1.
   , all isSpecArg $ take hofPolyVarsCount tyArgs = do
     let (specArgs, remainingArgs) = splitArgs hofPolyVarsCount args
         speccedName = genSpecName specArgs name
@@ -149,7 +153,7 @@ specFunApp' hofDefs (SystF.App (SystF.Free (TermSig name)) args)
   where
     tyArgs = mapMaybe SystF.fromTyArg args
     hofPolyVarsCount = 1 -- TODO don't hardcode 1
-specFunApp' _ x = pure x
+specFunApp _ x = pure x
 
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
@@ -196,7 +200,6 @@ findPolyFuns predi = flip findFuns (\f -> isPolyType (funTy f) && predi f)
 isPolyType :: SystF.AnnType ann ty -> Bool
 isPolyType SystF.TyAll {} = True
 isPolyType _ = False
-
 
 hofsClosure :: forall lang. (Language lang) => Decls lang -> HOFDefs lang -> HOFDefs lang
 hofsClosure decls = go

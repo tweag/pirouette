@@ -36,6 +36,7 @@ dependencies:
   - tasty-hunit
   - tasty-hspec
   - tasty-quickcheck
+  - tasty-expected-failure
 
 library:
   source-dirs: src

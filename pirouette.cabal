@@ -74,6 +74,7 @@ library
     , process
     , simple-smt
     , tasty
+    , tasty-expected-failure
     , tasty-hspec
     , tasty-hunit
     , tasty-quickcheck
@@ -113,6 +114,7 @@ executable pirouette
     , process
     , simple-smt
     , tasty
+    , tasty-expected-failure
     , tasty-hspec
     , tasty-hunit
     , tasty-quickcheck
@@ -158,6 +160,7 @@ test-suite spec
     , process
     , simple-smt
     , tasty
+    , tasty-expected-failure
     , tasty-hspec
     , tasty-hunit
     , tasty-quickcheck
