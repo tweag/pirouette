@@ -8,8 +8,8 @@
 module Pirouette.Transformations.EtaExpand (etaExpandAll, etaExpandTerm) where
 
 import Data.Generics.Uniplate.Data
+import Data.List
 import qualified Data.Map as M
-import Data.Maybe
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -39,23 +39,40 @@ etaExpandTerm t = do
 etaExpandAux :: Decls lang -> Term lang -> Term lang
 etaExpandAux decls (SystF.Free (TermSig name) `SystF.App` args)
   | Just nameType <- lookupNameType decls name,
-    specNameType <- nameType `SystF.appN` argsTy,
-    (fullArgs, _) <- flattenType specNameType,
-    remainingArgs <- drop (length args - length argsTy) fullArgs,
+    specNameType <- foldl' SystF.tyAfterTermApp nameType args,
+    (remainingArgs, _) <- flattenType specNameType,
     let remArgsLen = fromIntegral $ length remainingArgs,
     remArgsLen > 0 =
     wrapInLambdas remainingArgs $
       SystF.Free (TermSig name)
         `SystF.App` ( (shiftArg remArgsLen <$> args)
-                        <> mkExpIndices remArgsLen
+                        <> mkExpIndices remainingArgs
                     )
   where
-    argsTy = mapMaybe SystF.fromTyArg args
+    mkExpIndices argList =
+      let (nbTypeArg, nbTermArg) = countArgs argList
+       in -- Since the de Bruijn indices are counted from 0,
+          -- we decrease by one the number of arguments to get the de Bruijn to use.
+          go argList (nbTypeArg - 1) (nbTermArg - 1)
+      where
+        countArgs l =
+          foldl'
+            ( \(nbTy, nbTe) x ->
+                case x of
+                  FlatTyArg {} -> (nbTy + 1, nbTe)
+                  FlatTermArg {} -> (nbTy, nbTe + 1)
+            )
+            (0, 0)
+            l
 
-    mkExpIndices cnt =
-      [ SystF.TermArg $ SystF.Bound (SystF.Ann "η") idx `SystF.App` []
-        | idx <- reverse [0 .. cnt - 1]
-      ]
+        go [] (-1) (-1) = []
+        go [] _ _ = error "Number of expected arguments does not match."
+        go (FlatTyArg {} : tl) nbTy nbTe =
+          SystF.TyArg (SystF.Bound (SystF.Ann "η") nbTy `SystF.TyApp` []) :
+          go tl (nbTy - 1) nbTe
+        go (FlatTermArg {} : tl) nbTy nbTe =
+          SystF.TermArg (SystF.Bound (SystF.Ann "η") nbTe `SystF.App` []) :
+          go tl nbTy (nbTe - 1)
 etaExpandAux _ term = term
 
 wrapInLambdas :: [FlatArgType lang] -> Term lang -> Term lang

@@ -118,10 +118,11 @@ tyApp (TyLam _ _ t) u = subst (singleSub u) t
 tyApp TyAll {} _ = error "Can't apply TyAll"
 tyApp TyFun {} _ = error "Can't apply TyFun"
 
-tyAfterTermApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
+tyAfterTermApp :: (IsVar v, IsVar vTerm) => AnnType ann v -> Arg (AnnType ann v) (AnnTerm ty ann vTerm) -> AnnType ann v
 tyAfterTermApp (TyApp n args) u = error "Terms of type TyApp are not supposed to be applied."
 tyAfterTermApp (TyLam _ _ t) u = error "Terms of type TyLam cannot be applied."
-tyAfterTermApp (TyAll _ _ t) u = subst (singleSub u) t
+tyAfterTermApp (TyAll _ _ t) (TyArg u) = subst (singleSub u) t
+tyAfterTermApp (TyAll _ _ t) (TermArg u) = error "A type application was expected."
 tyAfterTermApp (TyFun _ t) _ = t -- Here we do not check that the term of the provided argument is the one expected by the function.
 
 -- TODO: write an efficient appN that substitutes multiple variables in one go

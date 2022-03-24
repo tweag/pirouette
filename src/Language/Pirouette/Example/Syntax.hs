@@ -85,7 +85,6 @@ instance Pretty ExConstant where
   prettyPrec _ (ConstInt n) = pretty n
   prettyPrec _ (ConstBool b) = pretty b
 
-
 -- | The language builtins definition
 data Ex deriving (Data)
 
