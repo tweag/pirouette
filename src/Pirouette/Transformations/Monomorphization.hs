@@ -83,7 +83,31 @@ import Debug.Trace
 -- so we need to monomorphize everything higher-order before defunctionalization.
 -- And, since SMTLIB does support polymorphism, we can leave type variables not occuring in a higher-order context,
 -- potentially reducing the number of extra specialized terms.
+--
+-- -- * Shortcomings
+--
+-- The tl;dr example is actually a bit of wishful thinking: right now, only the first type variable gets monomorphized.
+-- The example is what the module will eventually do, but full monomorphization on all tyvars is TODO for now.
 
+-- | The ultimate monomorphization, orchestrating the rest of the functions in this module.
+--
+-- Monomorphization goes as follows:
+--
+-- 1. The higher-order polymorphic definitions are collected (via 'findPolyHOFDefs'):
+--    * all the functions having functional arguments of polymorphic type,
+--    * all the types having at least one constructor having a polymorphic HOF field.
+-- 2. The transitive closure of functions mentioning the names of things from step (1) is built (via 'hofDefs').
+-- 3. a. All mentions of names from (2) applied to concrete types only (where no type variables are present)
+--       are replaced with a specialized name, so @foldl @Bool @Bool f x y@ becomes @foldl_Bool_Bool f x y@
+--       (via 'specFunApp' and 'specTyApp').
+--    b. The definitions corresponding to the names found during step (a) get generated:
+--       so, if step (a) replaced @fold @Bool @Bool@ with @fold_Bool_Bool@ somewhere, then this step
+--       actually generates the definition of @fold_Bool_Bool@ based on the "template" @fold@.
+-- 4. Since step (3b) might introduce more names from (2) applied to concrete types,
+--    the whole step (3) is repeated until the fixpoint
+--    (which presumably might not exist for arbitrary System Fω, but shall exist for the subset of programs we care about).
+-- 5. Having done that, all the higher-order definitions from (2) are subject to @prune@.
+--    If step (3) works correctly, then they are not used transitively from the modified main term.
 monomorphize :: forall lang. (Language lang)
              => PrtUnorderedDefs lang
              -> PrtUnorderedDefs lang
@@ -105,15 +129,16 @@ monomorphize defs0 = prune $ go mempty defs0
     prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
     prune defs = defs { prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` hofDefs) $ prtUODecls defs }
 
+-- | Describes a definition (a function or a type) that needs to be specialized with the given type arguments list.
 data SpecRequest lang = SpecRequest
   { origDef :: HofDef lang
   , specArgs :: [Type lang]
   }
   deriving (Show, Eq, Ord)
 
-type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => Term lang -> m (Term lang)
-type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => Type lang -> m (Type lang)
-
+-- | Takes a description of what needs to be specialized
+-- (a function or a type definition along with specialization args)
+-- and produces the specialized definitions.
 executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
 executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   case hofDefBody of
@@ -134,14 +159,22 @@ executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   where
     fixName = genSpecName specArgs
 
--- |Specilizes a function application of the form:
+type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => Term lang -> m (Term lang)
+type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => Type lang -> m (Type lang)
+
+-- |Specializes a function application of the form:
 --
 -- > hof @Integer x y z
 --
--- Where @hof@ has been identified as a higher-order function and
--- its type argument contains no bound-variables: in other words,
+-- at call site, where @hof@ has been identified as
+-- 1. either a higher-order function itself,
+-- 2. or invoking a polymorphic higher-order function, perhaps, transitively;
+-- and its type argument contains no bound-variables: in other words,
 -- we can substitute that call with @hof_Integer@ while creating a monomorphic
 -- definition for @hof@.
+--
+-- This function only does the substitution _at call site_ and emits a 'SpecRequest' denoting that the corresponding
+-- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
 specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
   | Just someDef <- name `M.lookup` hofDefs -- We compare the entire name, not just the nameString part: x0 /= x1.
@@ -155,6 +188,18 @@ specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
     hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specFunApp _ x = pure x
 
+-- |Specializes a type application of the form
+--
+-- > HOFType @Integer
+--
+-- where @HOFType a@ has at least one constructor having a higher-order argument mentioning @a@,
+-- perhaps, transitively.
+-- For example, both these definitions would be specialized:
+--
+-- > data Semigroup a = MkSemigroup (a -> a -> a)
+-- > data Monoid a = MkMonoid (Semigroup a) a
+--
+-- See the docs for 'specFunApp' for more details.
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
   | Just someDef <- name `M.lookup` hofDefs
@@ -201,6 +246,12 @@ isPolyType :: SystF.AnnType ann ty -> Bool
 isPolyType SystF.TyAll {} = True
 isPolyType _ = False
 
+-- | Finds the transitive closure of functions invoking higher-order things.
+--
+-- > hofsClosure decls hofDefs
+--
+-- returns the set of type or function definitions (a subset of @decls@)
+-- that transitively mention names in @hofDefs@.
 hofsClosure :: forall lang. (Language lang) => Decls lang -> HOFDefs lang -> HOFDefs lang
 hofsClosure decls = go
   where
