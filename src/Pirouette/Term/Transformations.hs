@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -177,8 +178,8 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
   where
     go :: (Show meta, PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go t = do
-      UnDestMeta _ tyN tyArgs x ret cases excess <- unDest t
-      UnConsMeta tyN' xTyArgs xIdx xArgs <- unCons x
+      UnDestMeta _ tyN _tyArgs x _ret cases excess <- unDest t
+      UnConsMeta tyN' _xTyArgs xIdx xArgs <- unCons x
       guard (tyN == tyN')
       let xCase = unsafeIdx "constrDestrId" cases xIdx
       logTrace $ show tyN
@@ -239,8 +240,8 @@ chooseHeadCase t ty args fstArg =
         map (SystF.TermArg . consCase) cons
 
     consCase :: (Name, Type lang) -> Term lang
-    consCase (n, ty) =
-      let (argsTy, _) = SystF.tyFunArgs ty
+    consCase (n, consTy) =
+      let (argsTy, _) = SystF.tyFunArgs consTy
        in createNLams "x" argsTy $
             SystF.App
               (SystF.Bound (fromString "f") (toInteger (length argsTy)))
@@ -253,7 +254,7 @@ chooseHeadCase t ty args fstArg =
       let go [] _ = id
           go (h : tl) i =
             SystF.Lam (SystF.Ann $ fromString (s ++ show i)) h . go tl (i + 1)
-       in go tys 0
+       in go tys (0 :: Int)
 
     -- `geneXs 3` is the representation of `[x0#2, x1#1, x2#0]`,
     -- which are the arguments expected after a `\x0 x1 x2`.
@@ -291,17 +292,17 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       RewritingRule (Term BuiltinsOfPIR) (Term BuiltinsOfPIR) ->
       Term BuiltinsOfPIR ->
       m (Term BuiltinsOfPIR)
-    applyOneRule (RewritingRule _ lhs rhs) t =
-      deshadowBoundNames <$> rewriteM (traverse (`instantiate` rhs) . isInstance lhs) t
+    applyOneRule RewritingRule { lhs, rhs } tm =
+      deshadowBoundNames <$> rewriteM (traverse (`instantiate` rhs) . isInstance lhs) tm
 
     isInstance :: Term BuiltinsOfPIR -> Term BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
     isInstance = isInstanceUnder 0 0
 
     isInstanceUnder :: Int -> Int -> Term BuiltinsOfPIR -> Term BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
-    isInstanceUnder nTe _ (SystF.App vL@(SystF.Free (TermSig x)) []) t =
+    isInstanceUnder nTe _ (SystF.App vL@(SystF.Free (TermSig x)) []) tm =
       case isHole x of
         Nothing ->
-          case t of
+          case tm of
             SystF.App vT [] -> isVarInstance vL vT
             _ -> Nothing
         Just i -> Just $ Map.singleton i (SystF.TermArg $ shift (toInteger (- nTe)) t)
@@ -311,7 +312,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       Map.union <$> isInstanceUnder (nTe + 1) nTy tL tT <*> isTyInstance nTy tyL tyT
     isInstanceUnder nTe nTy (SystF.Abs _ _ tL) (SystF.Abs _ _ tT) =
       isInstanceUnder nTe (nTy + 1) tL tT
-    isInstanceUnder nTe nTy _ _ = Nothing
+    isInstanceUnder _nTe _nTy _ _ = Nothing
 
     isVarInstance :: Var BuiltinsOfPIR -> Var BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
     isVarInstance (SystF.Free (TermSig x)) vT =
@@ -345,7 +346,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     isTyInstance nTy (SystF.TyAll _ _ tyL) (SystF.TyAll _ _ tyT) = isTyInstance (nTy + 1) tyL tyT
     isTyInstance nTy (SystF.TyFun aL bL) (SystF.TyFun aT bT) =
       Map.union <$> isTyInstance nTy aL aT <*> isTyInstance nTy bL bT
-    isTyInstance nTy _ _ = Nothing
+    isTyInstance _nTy _ _ = Nothing
 
     isTyVarInstance :: TyVar BuiltinsOfPIR -> TyVar BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
     isTyVarInstance (SystF.Free (TySig x)) vT =
@@ -368,7 +369,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
     isArgInstance :: Int -> Int -> Arg BuiltinsOfPIR -> Arg BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))
     isArgInstance nTe nTy (SystF.TermArg tL) (SystF.TermArg tT) = isInstanceUnder nTe nTy tL tT
     isArgInstance _ nTy (SystF.TyArg tyL) (SystF.TyArg tyT) = isTyInstance nTy tyL tyT
-    isArgInstance nTe nTy _ _ = Nothing
+    isArgInstance _nTe _nTy _ _ = Nothing
 
     instantiate ::
       (PirouetteReadDefs BuiltinsOfPIR m) =>
@@ -384,21 +385,21 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       Map.Map String (Arg BuiltinsOfPIR) ->
       Term BuiltinsOfPIR ->
       m (Term BuiltinsOfPIR)
-    instantiateUnder nTe nTy m tt@(SystF.App v@(SystF.Free (TermSig x)) args) = do
+    instantiateUnder nTe nTy m (SystF.App v@(SystF.Free (TermSig x)) args) = do
       case isHole x of
         Nothing -> SystF.App v <$> mapM (instantiateArg nTe nTy m) args
         Just i ->
           case Map.lookup i m of
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
-            Just (SystF.TermArg t) ->
-              SystF.appN (shift (toInteger nTe) t) <$> mapM (instantiateArg nTe nTy m) args
+            Just (SystF.TermArg tm) ->
+              SystF.appN (shift (toInteger nTe) tm) <$> mapM (instantiateArg nTe nTy m) args
             Just (SystF.TyArg _) -> throwError' $ PEOther $ "Variable x" ++ show i ++ " is at a term position on the right hand side, but was a type on the left-hand side."
     instantiateUnder nTe nTy m (SystF.App v args) =
       SystF.App v <$> mapM (instantiateArg nTe nTy m) args
-    instantiateUnder nTe nTy m (SystF.Lam ann ty t) =
-      SystF.Lam ann <$> instantiateTy nTy m ty <*> instantiateUnder (nTe + 1) nTy m t
-    instantiateUnder nTe nTy m (SystF.Abs ann k t) =
-      SystF.Abs ann k <$> instantiateUnder nTe (nTy + 1) m t
+    instantiateUnder nTe nTy m (SystF.Lam ann ty tm) =
+      SystF.Lam ann <$> instantiateTy nTy m ty <*> instantiateUnder (nTe + 1) nTy m tm
+    instantiateUnder nTe nTy m (SystF.Abs ann k tm) =
+      SystF.Abs ann k <$> instantiateUnder nTe (nTy + 1) m tm
 
     instantiateTy ::
       (PirouetteReadDefs BuiltinsOfPIR m) =>
@@ -412,8 +413,8 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
         Just i ->
           case Map.lookup i m of
             Nothing -> throwError' $ PEOther $ "Variable " ++ show i ++ " appears on the right hand side, but not on the left-hand side."
-            Just (SystF.TyArg t) ->
-              SystF.appN (shift (toInteger nTy) t) <$> mapM (instantiateTy nTy m) args
+            Just (SystF.TyArg tm) ->
+              SystF.appN (shift (toInteger nTy) tm) <$> mapM (instantiateTy nTy m) args
             Just (SystF.TermArg _) -> throwError' $ PEOther $ "Variable " ++ show i ++ " is at a type position on the right hand side, but was a term on the left-hand side."
     instantiateTy nTy m (SystF.TyApp v args) =
       SystF.TyApp v <$> mapM (instantiateTy nTy m) args
@@ -431,7 +432,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       Map.Map String (Arg BuiltinsOfPIR) ->
       Arg BuiltinsOfPIR ->
       m (Arg BuiltinsOfPIR)
-    instantiateArg nTe nTy m (SystF.TermArg t) = SystF.TermArg <$> instantiateUnder nTe nTy m t
+    instantiateArg nTe nTy m (SystF.TermArg tm) = SystF.TermArg <$> instantiateUnder nTe nTy m tm
     instantiateArg _ nTy m (SystF.TyArg ty) = SystF.TyArg <$> instantiateTy nTy m ty
 
     isHole :: Name -> Maybe String

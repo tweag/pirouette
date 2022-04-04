@@ -119,8 +119,8 @@ tyApp TyAll {} _ = error "Can't apply TyAll"
 tyApp TyFun {} _ = error "Can't apply TyFun"
 
 tyAfterTermApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
-tyAfterTermApp (TyApp n args) u = error "Terms of type TyApp are not supposed to be applied."
-tyAfterTermApp (TyLam _ _ t) u = error "Terms of type TyLam cannot be applied."
+tyAfterTermApp (TyApp _n _args) _u = error "Terms of type TyApp are not supposed to be applied."
+tyAfterTermApp (TyLam _ _ _t) _u = error "Terms of type TyLam cannot be applied."
 tyAfterTermApp (TyAll _ _ t) u = subst (singleSub u) t
 tyAfterTermApp (TyFun _ t) _ = t -- Here we do not check that the term of the provided argument is the one expected by the function.
 
@@ -230,8 +230,8 @@ data Arg ty v
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Data, Typeable)
 
 argElim :: (ty -> a) -> (v -> a) -> Arg ty v -> a
-argElim f g (TermArg x) = g x
-argElim f g (TyArg x) = f x
+argElim _ g (TermArg x) = g x
+argElim f _ (TyArg x) = f x
 
 fromArg :: Arg ty v -> Maybe v
 fromArg = argElim (const Nothing) Just
@@ -246,8 +246,8 @@ isTyArg :: Arg ty v -> Bool
 isTyArg = argElim (const True) (const False)
 
 argMapM :: (Monad m) => (ty -> m ty') -> (v -> m v') -> Arg ty v -> m (Arg ty' v')
-argMapM f g (TyArg x) = TyArg <$> f x
-argMapM f g (TermArg x) = TermArg <$> g x
+argMapM f _ (TyArg x) = TyArg <$> f x
+argMapM _ g (TermArg x) = TermArg <$> g x
 
 argMap :: (ty -> ty') -> (v -> v') -> Arg ty v -> Arg ty' v'
 argMap f g = runIdentity . argMapM (return . f) (return . g)
@@ -303,22 +303,22 @@ instance (Show v, Show ty, Show ann, IsVar v, HasSubst ty) => HasApp (AnnTerm ty
   -- Single pass substitution;
   -- This function does not work for "hetereogeneous" list of arguments.
   -- All the arguments must be either terms or types.
-  appN t [] = t
+  appN tm [] = tm
   appN (App n args) us = App n (args ++ us)
-  appN t us@(u : _) =
-    case (t, u) of
-      (Lam {}, TermArg _) -> goTerm t us
-      (Abs {}, TyArg _) -> goType t us
-      (_, _) -> error $ "Mismatched Term/Type application " <> show t <> " and " <> show u
+  appN tm us@(u : _) =
+    case (tm, u) of
+      (Lam {}, TermArg _) -> goTerm tm us
+      (Abs {}, TyArg _) -> goType tm us
+      (_, _) -> error $ "Mismatched Term/Type application " <> show tm <> " and " <> show u
     where
-      go getHead getNHead from sub t us =
+      go getHead getNHead from sub t vs =
         -- first we decide whether we have more lambdas or more arguments;
         let (arity, _) = first length $ getHead t
-            n = min arity (length us)
+            n = min arity (length vs)
             -- Now we know we'll be applying n arguments at once.
             (_, body) = getNHead n t
-            (args, excess) = splitAt n us
-            sigma xs = foldl' (\s t -> Just t :< s) (Inc 0) xs
+            (args, excess) = splitAt n vs
+            sigma xs = foldl' (\x y -> Just y :< x) (Inc 0) xs
          in case mapM from args of
               Just as -> appN (sub (sigma as) body) excess
               Nothing -> error "Mismatched Term/Type application"

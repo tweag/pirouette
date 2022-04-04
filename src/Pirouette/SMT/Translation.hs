@@ -43,10 +43,12 @@ translateType ::
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
   TypeMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateType (Raw.TyApp (Raw.Free ty) args) = SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
+translateType (Raw.TyApp (Raw.Free ty) args) = 
+  SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
 translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) _index) args) =
   SmtLib.app (SmtLib.symbol (toSmtName ann)) <$> mapM translateType args
-translateType x = throwError $ "Translate type to smtlib: cannot handle " <> show x
+translateType x = 
+  throwError $ "Translate type to smtlib: cannot handle " <> show x
 
 -- TODO: The translation of term is still to be worked on,
 -- since it does not allow to use lang or defined functions,
@@ -57,9 +59,12 @@ translateTerm ::
   [Name] ->
   TermMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateTerm knownNames (Raw.App var args) = SmtLib.app <$> translateVar knownNames var <*> mapM (translateArg knownNames) args
-translateTerm _ (Raw.Lam ann ty term) = throwError "Translate term to smtlib: Lambda abstraction in term"
-translateTerm _ (Raw.Abs ann kind term) = throwError "Translate term to smtlib: Type abstraction in term"
+translateTerm knownNames (Raw.App var args) = 
+  SmtLib.app <$> translateVar knownNames var <*> mapM (translateArg knownNames) args
+translateTerm _ (Raw.Lam _ann _ty _term) = 
+  throwError "Translate term to smtlib: Lambda abstraction in term"
+translateTerm _ (Raw.Abs _ann _kind _term) = 
+  throwError "Translate term to smtlib: Type abstraction in term"
 
 translateVar ::
   forall builtins meta m.
@@ -73,8 +78,10 @@ translateVar knownNames (Raw.Free (TermSig name)) = do
   return $ SmtLib.symbol (toSmtName name)
 translateVar _ (Raw.Free (Constant c)) = return $ translateConstant @builtins c
 translateVar _ (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @builtins b
-translateVar _ (Raw.Bound (Raw.Ann name) _) = throwError "translateVar: Bound variable; did you forget to apply something?"
-translateVar _ (Raw.Free Bottom) = throwError "translateVar: Bottom; unclear how to translate that. WIP"
+translateVar _ (Raw.Bound (Raw.Ann _name) _) = 
+  throwError "translateVar: Bound variable; did you forget to apply something?"
+translateVar _ (Raw.Free Bottom) = 
+  throwError "translateVar: Bottom; unclear how to translate that. WIP"
 
 translateArg ::
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
@@ -96,9 +103,9 @@ constructorFromPIR ::
   ExceptT String m (String, [(String, SmtLib.SExpr)])
 constructorFromPIR (name, constructorType) = do
   -- Fields of product types must be named: we append ids to the constructor name
-  let fieldNames = map (((toSmtName name ++ "_") ++) . show) [1 ..]
-  constructors <- zip fieldNames <$> aux constructorType
-  return (toSmtName name, constructors)
+  let fieldNames = map (((toSmtName name ++ "_") ++) . show) [1 :: Int ..]
+  cstrs <- zip fieldNames <$> aux constructorType
+  return (toSmtName name, cstrs)
   where
     aux :: TypeMeta builtins meta -> ExceptT String m [SmtLib.SExpr]
     aux x = let (args, _) = Raw.tyFunArgs x in mapM translateType args

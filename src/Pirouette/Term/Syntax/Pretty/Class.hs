@@ -56,12 +56,12 @@ assoclBinder ::
   Doc dann
 assoclBinder binder f d x = case go x of
   (ns, b) ->
-    let parens = parensIf (length ns > 1)
+    let parens1 = parensIf (length ns > 1)
      in parensIf (d > 10) $
           align $
             fillSep
               [ binder,
-                align (fillSep $ map (\(ann, ty) -> parens $ pretty ann <+> ":" <+> pretty ty) ns),
+                align (fillSep $ map (\(ann, ty) -> parens1 $ pretty ann <+> ":" <+> pretty ty) ns),
                 "." <+> pretty b
               ]
   where

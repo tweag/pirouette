@@ -232,6 +232,7 @@ ppSExpr = go 0
 
     new n e = showChar '\n' . tab n . go n e
 
+    small :: Int -> [SExpr] -> Maybe [ShowS]
     small n es =
       case es of
         [] -> Just []
@@ -259,7 +260,7 @@ readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
 readSExpr ('|' : more) = do
-  (sym, '|' : rest) <- pure (span ((/=) '|') more)
+  (sym, '|' : rest) <- pure (span ('|' /=) more)
   Just (Atom ('|' : sym ++ ['|']), rest)
 readSExpr ('(' : more) = do
   (xs, more1) <- list more
@@ -272,7 +273,7 @@ readSExpr ('(' : more) = do
       (vs, txt2) <- list txt1
       return (v : vs, txt2)
 readSExpr txt = case break end txt of
-  (as, bs) | P.not (null as) -> Just (Atom as, bs)
+  (atom, rest) | P.not (null atom) -> Just (Atom atom, rest)
   _ -> Nothing
   where
     end x = x == ')' || isSpace x
@@ -398,7 +399,7 @@ loadString s str = go (dropComments str)
 
     dropComments = unlines . map dropComment . lines
     dropComment xs = case break (== ';') xs of
-      (as, _ : _) -> as
+      (content, _ : _) -> content
       _ -> xs
 
 -- | A command with no interesting result.
@@ -484,14 +485,14 @@ inNewScope s m =
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
 declare :: Solver -> String -> SExpr -> IO SExpr
-declare proc f t = declareFun proc f [] t
+declare proc f = declareFun proc f []
 
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
 declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
-declareFun proc f as r =
+declareFun proc f args r =
   do
-    ackCommand proc $ fun "declare-fun" [Atom f, List as, r]
+    ackCommand proc $ fun "declare-fun" [Atom f, List args, r]
     return (const f)
 
 -- | Declare an ADT using the format introduced in SmtLib 2.6.
@@ -506,15 +507,15 @@ declareDatatype ::
   IO ()
 declareDatatype proc t [] cs =
   ackCommand proc $
-    fun "declare-datatype" $
+    fun "declare-datatype"
       [ Atom t,
         List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
       ]
 declareDatatype proc t ps cs =
   ackCommand proc $
-    fun "declare-datatype" $
+    fun "declare-datatype"
       [ Atom t,
-        fun "par" $
+        fun "par"
           [ List (map Atom ps),
             List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
           ]
@@ -531,7 +532,7 @@ define ::
   -- | Symbol definition
   SExpr ->
   IO SExpr
-define proc f t e = defineFun proc f [] t e
+define proc f = defineFun proc f []
 
 -- | Define a function or a constant.
 -- For convenience, returns an the defined name as a constant expression.
@@ -546,11 +547,11 @@ defineFun ::
   -- | Definition
   SExpr ->
   IO SExpr
-defineFun proc f as t e =
+defineFun proc f args t e =
   do
     ackCommand proc $
-      fun "define-fun" $
-        [Atom f, List [List [const x, a] | (x, a) <- as], t, e]
+      fun "define-fun"
+        [Atom f, List [List [const x, arg] | (x, arg) <- args], t, e]
     return (const f)
 
 -- | Define a recursive function or a constant.  For convenience,
@@ -567,12 +568,12 @@ defineFunRec ::
   -- | Definition
   (SExpr -> SExpr) ->
   IO SExpr
-defineFunRec proc f as t e =
+defineFunRec proc f args t e =
   do
     let fs = const f
     ackCommand proc $
-      fun "define-fun-rec" $
-        [Atom f, List [List [const x, a] | (x, a) <- as], t, e fs]
+      fun "define-fun-rec"
+        [Atom f, List [List [const x, arg] | (x, arg) <- args], t, e fs]
     return fs
 
 -- | Define a recursive function or a constant.  For convenience,
@@ -714,8 +715,8 @@ fam f is = List (Atom "_" : Atom f : map (Atom . show) is)
 
 -- | An SMT function.
 fun :: String -> [SExpr] -> SExpr
-fun f [] = Atom f
-fun f as = List (Atom f : as)
+fun f []   = Atom f
+fun f args = List (Atom f : args)
 
 -- | An SMT constant.  A special case of 'fun'.
 const :: String -> SExpr
@@ -1181,7 +1182,7 @@ newLogger l =
           do
             let ls = lines x
             t <- readIORef tab
-            putStr $ unlines [replicate t ' ' ++ l | l <- ls]
+            putStr $ unlines $ map (replicate t ' ' ++) ls
             hFlush stdout
 
         logTab = shouldLog (modifyIORef' tab (+ 2))

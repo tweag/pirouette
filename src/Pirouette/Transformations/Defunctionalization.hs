@@ -271,7 +271,7 @@ rewriteHofType = go 0
                _ -> (dom, Nothing)
     go _    ty@SystF.TyApp{} = (ty, []) -- this doesn't defun things like `List (foo -> bar)`, which is fine for now
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
-    go pos (SystF.TyLam ann k ty) = error "unexpected arg type" -- TODO mention the type
+    go _pos SystF.TyLam { } = error "unexpected arg type" -- TODO mention the type
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
 -- Dis-assuming this is merely about recursing on `App` ctor as well.

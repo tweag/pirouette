@@ -98,16 +98,16 @@ solverPop = do
 
 -- | Declare a single datatype in the current solver session.
 declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) [Name]
-declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
+declareDatatype typeName (Datatype _ typeVariabes _ cstrs) = do
   solver <- ask
-  constr' <- mapM constructorFromPIR constructors
+  constr' <- mapM constructorFromPIR cstrs
   liftIO $ do
     SimpleSMT.declareDatatype
       solver
       (toSmtName typeName)
       (map (toSmtName . fst) typeVariabes)
       constr'
-  return $ typeName : map fst constructors
+  return $ typeName : map fst cstrs
 
 -- | Declare a set of datatypes in the current solver session, in the order specified by
 -- the dependency order passed as the second argument. You can generally get its value
@@ -115,13 +115,12 @@ declareDatatype typeName typeDef@(Datatype _ typeVariabes _ constructors) = do
 declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> ExceptT String (SolverT m) [Name]
 declareDatatypes decls orderedNames = do
-  usedNames <- forM typeNames $ \tyname ->
+  let tyNames = mapMaybe (R.argElim Just (const Nothing)) orderedNames
+  usedNames <- forM tyNames $ \tyname ->
     case M.lookup tyname decls of
       Just (DTypeDef tdef) -> declareDatatype tyname tdef
       _ -> return []
   return $ concat usedNames
-  where
-    typeNames = mapMaybe (R.argElim Just (const Nothing)) orderedNames
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.

@@ -281,13 +281,13 @@ trTerm ::
     (Decls BuiltinsOfPIR)
     (TrM loc)
     (Term BuiltinsOfPIR, Type BuiltinsOfPIR -> Type BuiltinsOfPIR)
-trTerm mn t = do
+trTerm mn term = do
   deps <- get
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
-  t' <- local (pushNames $ reverse vs) (go t)
+  term' <- local (pushNames $ reverse vs) (go term)
   let adjustType = flip (foldr (\(_, t) r -> SystF.TyFun t r)) vs
   return
-    ( foldr (\(n, t) r -> SystF.Lam (SystF.Ann n) t r) t' vs,
+    ( foldr (\(n, t) r -> SystF.Lam (SystF.Ann n) t r) term' vs,
       adjustType
     )
   where

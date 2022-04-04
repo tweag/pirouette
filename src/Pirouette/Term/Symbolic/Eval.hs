@@ -128,7 +128,7 @@ runSymEvalT st symEvalT =
       declData <- runExceptT (SMT.declareDatatypes decls dependencyOrder)
       case declData of
         Right usedNames -> return usedNames
-        Left s -> error s
+        Left e -> error e
 
 instance (Monad m) => Alternative (SymEvalT lang m) where
   empty = SymEvalT $ StateT $ const empty
@@ -283,7 +283,7 @@ symeval' t@(R.App hd args) = do
         term' <- symeval term
         asum $
           for2 consList cases $ \(consName, consTy) caseTerm -> do
-            let instantiatedTy = subst (foldl' (\s t -> Just t :< s) (Inc 0) tyParams') consTy
+            let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
             let (consArgs, _) = R.tyFunArgs instantiatedTy
             svars <- freshSymVars consArgs
             let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
@@ -425,7 +425,7 @@ symEvalOneStep t@(R.App hd args) = do
         then
           asum $
             for2 consList cases $ \(consName, consTy) caseTerm -> do
-              let instantiatedTy = subst (foldl' (\s t -> Just t :< s) (Inc 0) tyParams') consTy
+              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
               let (consArgs, _) = R.tyFunArgs instantiatedTy
               svars <- freshSymVars consArgs
               let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars

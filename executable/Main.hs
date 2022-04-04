@@ -131,9 +131,9 @@ mainOpts opts uDefs = do
         uncurry symbolicExec (head relDecls')
       ToTerm -> mapM_ (uncurry printDef) relDecls'
   where
-    printDef name def = do
+    printDef nm def = do
       let pdef = pretty def
-      putStrLn' $ show $ vsep [pretty name <+> ":=", indent 2 pdef]
+      putStrLn' $ show $ vsep [pretty nm <+> ":=", indent 2 pdef]
       putStrLn' ""
 
     symbolicExec n (DFunction _ t _) =

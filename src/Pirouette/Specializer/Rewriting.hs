@@ -22,7 +22,7 @@ data RewritingRule l r = RewritingRule
   deriving (Show)
 
 instance Bifunctor RewritingRule where
-  bimap f g (RewritingRule name l r) = RewritingRule name (f l) (g r)
+  bimap f g (RewritingRule nm l r) = RewritingRule nm (f l) (g r)
 
 parseRewRule :: RewritingRule T.Text T.Text -> RewritingRule (Term BuiltinsOfPIR) (Term BuiltinsOfPIR)
 parseRewRule r@(RewritingRule n _ _) =
