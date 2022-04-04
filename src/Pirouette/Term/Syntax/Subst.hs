@@ -7,6 +7,7 @@ module Pirouette.Term.Syntax.Subst where
 
 import Control.Monad.Identity
 import Data.Maybe (fromMaybe)
+import GHC.Stack (HasCallStack)
 
 class IsVar v where
   type VarAnn v :: *
@@ -55,10 +56,10 @@ class (IsVar (SubstVar term)) => HasSubst term where
   type SubstVar term :: *
 
   -- | How to construct an annotatd bound variable
-  var :: SubstVar term -> term
+  var :: HasCallStack => SubstVar term -> term
 
   -- | How to apply a substitution
-  subst :: Sub term -> term -> term
+  subst :: HasCallStack => Sub term -> term -> term
 
 shiftCutoff :: (HasSubst term) => Integer -> Integer -> term -> term
 shiftCutoff cutoff k = subst $ foldr (\_ r -> Nothing :< r) (Inc k) [0 .. cutoff - 1]

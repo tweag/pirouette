@@ -38,12 +38,14 @@ dependencies:
   - tasty-hspec
   - tasty-quickcheck
   - tasty-expected-failure
+  - haskell-stack-trace-plugin
 
 library:
   source-dirs: src
   ghc-options:
     -Wall
     -Wno-orphans
+    -fplugin=StackTrace.Plugin
 
 executable:
   main: Main.hs

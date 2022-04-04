@@ -18,6 +18,7 @@ import Data.Maybe (mapMaybe)
 import Data.String
 import Data.Void
 import Pirouette.Term.Syntax.Subst
+import GHC.Stack (HasCallStack)
 
 -- * System F
 
@@ -340,9 +341,9 @@ mapNameScoped f = go 0
 
 class (HasSubst term) => HasApp term where
   type AppArg term :: *
-  appN :: (IsVar (SubstVar term)) => term -> [AppArg term] -> term
+  appN :: (IsVar (SubstVar term), HasCallStack) => term -> [AppArg term] -> term
 
-app :: (HasApp term) => term -> AppArg term -> term
+app :: (HasApp term, HasCallStack) => term -> AppArg term -> term
 app t arg = appN t [arg]
 
 -- ** Proof-Irrelevant Annotations
