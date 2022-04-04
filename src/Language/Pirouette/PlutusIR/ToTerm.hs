@@ -193,7 +193,9 @@ termCtxDeps vs deps (PIR.Let _ _ bs t) =
 termCtxDeps _ _ _ = S.empty
 
 -- | Handles a data/type binding by creating a number of declarations for the constructors
---  and desctructors involved.
+--  and desctructors involved. The type variables declared within a type get duplicated into
+--  the 'typeVariables' field of 'Datatype' and into the actual type of constructors.
+--  Check the comments for 'Datatype' for an example.
 trDataOrTypeBinding ::
   forall tyname name loc.
   (PIRConstraint tyname name P.DefaultFun) =>
@@ -218,12 +220,20 @@ trKind :: PIR.Kind loc -> SystF.Kind
 trKind (PIR.Type _) = SystF.KStar
 trKind (PIR.KindArrow _ t u) = SystF.KTo (trKind t) (trKind u)
 
+-- | Translates a type with a certain number of arguments pre-declared. These
+-- arguments get added as a 'TyAll' to return a well-scoped closed type.
+--
+-- > trTypeWithArgs [(t1, *), (t2, * -> *)] t
+-- >    = TyAll t1 * $ TyAll t2 (* -> *) $ trType t
+--
 trTypeWithArgs ::
   (ToName tyname) =>
   [(Name, SystF.Kind)] ->
   PIR.Type tyname DefaultUni loc ->
   TrM loc (Type BuiltinsOfPIR)
-trTypeWithArgs env = local (pushTypes $ reverse $ map fst env) . trType
+trTypeWithArgs env ty = do
+  ty' <- local (pushTypes $ reverse $ map fst env) $ trType ty
+  return $ L.foldl' (\t (v, k) -> SystF.TyAll (SystF.Ann v) k t) ty' env
 
 trType ::
   (ToName tyname) =>
@@ -281,13 +291,13 @@ trTerm ::
     (Decls BuiltinsOfPIR)
     (TrM loc)
     (Term BuiltinsOfPIR, Type BuiltinsOfPIR -> Type BuiltinsOfPIR)
-trTerm mn term = do
+trTerm mn t = do
   deps <- get
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
-  term' <- local (pushNames $ reverse vs) (go term)
-  let adjustType = flip (foldr (\(_, t) r -> SystF.TyFun t r)) vs
+  t' <- local (pushNames $ reverse vs) (go t)
+  let adjustType = flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) vs
   return
-    ( foldr (\(n, t) r -> SystF.Lam (SystF.Ann n) t r) term' vs,
+    ( foldr (\(n, t0) r -> SystF.Lam (SystF.Ann n) t0 r) t' vs,
       adjustType
     )
   where
@@ -303,22 +313,22 @@ trTerm mn term = do
       return $ SystF.termPure $ SystF.Free $ Constant $ defUniToConstant tx x
     go (PIR.Builtin _ f) = return $ SystF.termPure $ SystF.Free $ Builtin f
     go (PIR.Error _ _) = return $ SystF.termPure $ SystF.Free Bottom
-    go (PIR.IWrap _ _ _ t) = go t -- VCM: are we sure we don't neet to
-    go (PIR.Unwrap _ t) = go t --      preserve the wrap/unwraps?
-    go (PIR.TyInst _ t ty) = SystF.app <$> go t <*> lift (SystF.TyArg <$> trType ty)
-    go (PIR.TyAbs _ ty k t) = do
-      SystF.Abs (SystF.Ann $ toName ty) (trKind k) <$> local (pushType $ toName ty) (go t)
-    go (PIR.LamAbs _ n tyd t) = do
+    go (PIR.IWrap _ _ _ t0) = go t0 -- VCM: are we sure we don't neet to
+    go (PIR.Unwrap _ t0) = go t0 --      preserve the wrap/unwraps?
+    go (PIR.TyInst _ t0 ty) = SystF.app <$> go t0 <*> lift (SystF.TyArg <$> trType ty)
+    go (PIR.TyAbs _ ty k t0) = do
+      SystF.Abs (SystF.Ann $ toName ty) (trKind k) <$> local (pushType $ toName ty) (go t0)
+    go (PIR.LamAbs _ n tyd t0) = do
       ty <- lift $ trType tyd
-      SystF.Lam (SystF.Ann $ toName n) ty <$> local (pushName (toName n) ty) (go t)
+      SystF.Lam (SystF.Ann $ toName n) ty <$> local (pushName (toName n) ty) (go t0)
     go (PIR.Apply _ tfun targ) = SystF.app <$> go tfun <*> (SystF.TermArg <$> go targ)
     -- For let-statements, we will push the (translated) definitions to the top level;
     -- we must be careful and push the variables we've seen so far as a local context
     -- to those definitions.
-    go (PIR.Let _ r bs t) = do
+    go (PIR.Let _ r bs t0) = do
       bs' <- lift (trBindings $ map (r,) $ NE.toList bs)
       tell bs'
-      go t
+      go t0
 
     checkIfDep :: Name -> [Name] -> TrM loc (Term BuiltinsOfPIR)
     checkIfDep n vs = do
