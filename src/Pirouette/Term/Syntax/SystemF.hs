@@ -112,17 +112,24 @@ instance (IsVar tyVar) => HasSubst (AnnType ann tyVar) where
   subst s (TyLam v k t) = TyLam v k (subst (liftSub s) t)
   subst s (TyAll v k t) = TyAll v k (subst (liftSub s) t)
 
+-- |Type-level application (not to be confused with type _instantiation_, 'tyInstantiate').
 tyApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
 tyApp (TyApp n args) u = TyApp n (args ++ [u])
 tyApp (TyLam _ _ t) u = subst (singleSub u) t
-tyApp TyAll {} _ = error "Can't apply TyAll"
+tyApp TyAll {} _ = error "Can't apply TyAll: did you mean tyInstantiate?"
 tyApp TyFun {} _ = error "Can't apply TyFun"
 
-tyAfterTermApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
-tyAfterTermApp (TyApp n args) u = error "Terms of type TyApp are not supposed to be applied."
-tyAfterTermApp (TyLam _ _ t) u = error "Terms of type TyLam cannot be applied."
-tyAfterTermApp (TyAll _ _ t) u = subst (singleSub u) t
-tyAfterTermApp (TyFun _ t) _ = t -- Here we do not check that the term of the provided argument is the one expected by the function.
+-- |Instantiates a universally quantified type. This is /different/ from type application.
+-- Only works if the left argument is a 'TyAll'.
+tyInstantiate :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
+tyInstantiate (TyAll _ _ t) u = subst (singleSub u) t
+tyInstantiate TyApp {} _ = error "Can't instantiate TyApp"
+tyInstantiate TyLam {} _ = error "Can't instantiate TyLam: did you mean tyApp?"
+tyInstantiate TyFun {} _ = error "Can't instantiate TyFun"
+
+-- |Instantiates a number of 'TyAll's at once.
+tyInstantiateN :: (IsVar v) => AnnType ann v -> [AnnType ann v] -> AnnType ann v
+tyInstantiateN = foldl' tyInstantiate
 
 -- TODO: write an efficient appN that substitutes multiple variables in one go
 instance (IsVar tyVar) => HasApp (AnnType ann tyVar) where
