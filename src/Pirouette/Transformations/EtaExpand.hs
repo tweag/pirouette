@@ -9,7 +9,6 @@ module Pirouette.Transformations.EtaExpand (etaExpandAll, etaExpandTerm) where
 
 import Data.Generics.Uniplate.Data
 import qualified Data.Map as M
-import Data.Maybe
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -47,7 +46,7 @@ instantiateType _ _ = error "instantiateType: type-checking would fail"
 
 -- Auxiliar function, supposed to be used as an argument to 'transformBi' to
 -- eta expand terms. Check 'etaExpandTerm' or 'etaExpandAll'.
-etaExpandAux :: Decls lang -> Term lang -> Term lang
+etaExpandAux :: (LanguageBuiltins lang) => Decls lang -> Term lang -> Term lang
 etaExpandAux decls (SystF.Free (TermSig name) `SystF.App` args)
   | Just nameType <- lookupNameType decls name,
     specNamePartialApp <- nameType `instantiateType` args,
@@ -91,7 +90,7 @@ wrapInLambdas types term = foldr f term types
     f (FlatTermArg ty) = SystF.Lam (SystF.Ann "η") ty
 
 -- TODO have a proper @instance HasSubst (Arg lang)@ or smth similar
-shiftArg :: Integer -> Integer -> Arg lang -> Arg lang
+shiftArg :: (LanguageBuiltins lang) => Integer -> Integer -> Arg lang -> Arg lang
 shiftArg kTy kTerm (SystF.TermArg e) = SystF.TermArg $ SystF.termTyMap (shift kTy) $ shift kTerm e
 shiftArg kTy _ (SystF.TyArg t) = SystF.TyArg $ shift kTy t
 

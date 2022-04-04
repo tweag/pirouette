@@ -19,12 +19,10 @@ import Data.Maybe
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Control.Monad
-import Control.Monad.State (StateT(..))
 import Control.Monad.Except
 import qualified Text.Megaparsec.Char.Lexer as L
 import Pirouette.Term.Syntax.Pretty ( Pretty(pretty) )
 import Control.Monad.Reader
-import Pirouette.Term.Builtins (BuiltinTypes)
 
 type Parser = Parsec Void String
 
