@@ -19,6 +19,7 @@ import Data.Generics.Uniplate.Data
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
+import Data.List (foldl')
 
 import Pirouette.Monad
 import Pirouette.Term.Syntax
@@ -115,8 +116,9 @@ type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => Type lang -
 executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
 executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   case hofDefBody of
-       HDBFun FunDef{..} -> let newDef = DFunction funIsRec (funBody `SystF.appN` map SystF.TyArg specArgs) (funTy `SystF.appN` specArgs)
-                            in [(fixName hofDefName, newDef)]
+       HDBFun FunDef{..} ->
+        let newDef = DFunction funIsRec (funBody `SystF.appN` map SystF.TyArg specArgs) (foldl' SystF.tyAfterTermApp funTy specArgs)
+        in [(fixName hofDefName, newDef)]
        HDBType Datatype{..} -> let tyName = fixName hofDefName
                                    dtorName = fixName destructor
                                    ctors = [ (fixName ctorName, foldr (\(n, k) -> SystF.TyLam (SystF.Ann n) k) ctorTy typeVariables `SystF.appN` specArgs)
