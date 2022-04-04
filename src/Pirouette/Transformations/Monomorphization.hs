@@ -1,35 +1,33 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MonoLocalBinds #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ParallelListComp #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ParallelListComp #-}
 
-module Pirouette.Transformations.Monomorphization (monomorphize) where
+module Pirouette.Transformations.Monomorphization
+  (monomorphize, hofsClosure, findPolyHOFDefs, specFunApp, SpecRequest(..))
+  where
 
 import Control.Monad.Writer.Strict
-import Data.Bifunctor
 import Data.Data
 import Data.Generics.Uniplate.Data
-import Data.List
-import qualified Data.Map as Map
+import qualified Data.Map as M
 import Data.Maybe
-import qualified Data.Set as Set
-import qualified Data.Text as Text
-import Debug.Trace
+import qualified Data.Set as S
+
 import Pirouette.Monad
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
-import Pirouette.Term.Syntax.SystemF hiding (Var)
-import Prettyprinter hiding (Pretty, pretty)
+import qualified Pirouette.Term.Syntax.SystemF as SystF
+
+import Pirouette.Transformations.Utils
 
 -- * Monomorphization
-
 --
 -- tl;dr: `monomorphize` exported from this module turns (in Haskell syntax)
 --
@@ -84,220 +82,136 @@ import Prettyprinter hiding (Pretty, pretty)
 -- And, since SMTLIB does support polymorphism, we can leave type variables not occuring in a higher-order context,
 -- potentially reducing the number of extra specialized terms.
 
-traceDefsId :: (PrettyLang builtins) => PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
-traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
-
-monomorphize ::
-  forall builtins.
-  (PrettyLang builtins, Pretty (FunDef builtins), LanguageBuiltins builtins) =>
-  PrtUnorderedDefs builtins ->
-  PrtUnorderedDefs builtins
-monomorphize defs0 = traceDefsId (prune $ go mempty defs0)
+monomorphize :: forall lang. (Language lang)
+             => PrtUnorderedDefs lang
+             -> PrtUnorderedDefs lang
+monomorphize defs0 = prune $ go mempty defs0
   where
-    hofDefsRoots = findHOFDefs $ prtUODecls defs0
+    hofDefsRoots = findPolyHOFDefs $ prtUODecls defs0
     hofDefs = hofsClosure (prtUODecls defs0) hofDefsRoots
 
-    go :: Set.Set (SpecRequest builtins) -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
+    go :: S.Set (SpecRequest lang) -> PrtUnorderedDefs lang -> PrtUnorderedDefs lang
     go prevOrders defs
-      | Map.null newDefs && defs == defs' = defs'
-      | otherwise -- renderSingleLineStr (pretty (head $ Map.elems $ head $ executeSpecRequest <$> specOrders)) `trace`
-        =
-        go (prevOrders <> Set.fromList newOrders) $ addDecls newDefs defs'
+      | M.null newDefs && defs == defs' = defs'
+      | otherwise = go (prevOrders <> S.fromList newOrders) $ addDecls newDefs defs'
       where
-        (defs', specOrders) =
-          runWriter $
-            transformBiM (specFunApp hofDefs :: SpecFunApp builtins) defs
-              >>= transformBiM (specTyApp hofDefs :: SpecTyApp builtins)
-        newOrders = filter (`Set.notMember` prevOrders) specOrders
+        (defs', specOrders) = runWriter $ transformBiM (specFunApp hofDefs :: SpecFunApp lang) defs
+                                      >>= transformBiM (specTyApp  hofDefs :: SpecTyApp  lang)
+        newOrders = filter (`S.notMember` prevOrders) specOrders
         newDefs = foldMap executeSpecRequest newOrders
 
-    prune :: PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
-    prune defs = defs {prtUODecls = Map.filterWithKey (\n _ -> n `Map.notMember` hofDefs) $ prtUODecls defs}
+    prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+    prune defs = defs { prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` hofDefs) $ prtUODecls defs }
 
-data SpecRequest builtins = SpecRequest
-  { origDef :: HofDef builtins,
-    specArgs :: [Type builtins]
+data SpecRequest lang = SpecRequest
+  { origDef :: HofDef lang
+  , specArgs :: [Type lang]
   }
   deriving (Show, Eq, Ord)
 
-type SpecFunApp builtins = forall m. MonadWriter [SpecRequest builtins] m => Term builtins -> m (Term builtins)
+type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => Term lang -> m (Term lang)
+type SpecTyApp  lang = forall m. MonadWriter [SpecRequest lang] m => Type lang -> m (Type lang)
 
-type SpecTyApp builtins = forall m. MonadWriter [SpecRequest builtins] m => Type builtins -> m (Type builtins)
-
-executeSpecRequest :: (LanguageBuiltins builtins) => SpecRequest builtins -> Decls builtins
-executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = Map.fromList $
+executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequest SpecRequest {origDef = HofDef{..}, ..} = M.fromList $
   case hofDefBody of
-    HDBFun FunDef {..} ->
-      let newDef = DFunction funIsRec (funBody `appN` map TyArg specArgs) (funTy `appN` specArgs)
-       in [(fixName hofDefName, newDef)]
-    HDBType Datatype {..} ->
-      let tyName = fixName hofDefName
-          dtorName = fixName destructor
-          ctors =
-            [ (fixName ctorName, foldr (\(n, k) -> TyLam (Ann n) k) ctorTy typeVariables `appN` specArgs)
-              | (ctorName, ctorTy) <- constructors
-            ]
-          newDef = DTypeDef $ Datatype kind [] (fixName destructor) ctors -- TODO does this only apply to `kind ~ *`?
-       in [ (tyName, newDef),
-            (dtorName, DDestructor tyName)
-          ]
-            <> [ (ctorName, DConstructor i tyName)
-                 | (ctorName, _) <- ctors
-                 | i <- [0 ..]
-               ]
+       HDBFun FunDef{..} -> let newDef = DFunction funIsRec (funBody `SystF.appN` map SystF.TyArg specArgs) (funTy `SystF.appN` specArgs)
+                            in [(fixName hofDefName, newDef)]
+       HDBType Datatype{..} -> let tyName = fixName hofDefName
+                                   dtorName = fixName destructor
+                                   ctors = [ (fixName ctorName, foldr (\(n, k) -> SystF.TyLam (SystF.Ann n) k) ctorTy typeVariables `SystF.appN` specArgs)
+                                           | (ctorName, ctorTy) <- constructors
+                                           ]
+                                   newDef = DTypeDef $ Datatype kind [] (fixName destructor) ctors    -- TODO does this only apply to `kind ~ *`?
+                                in [ (tyName, newDef)
+                                   , (dtorName, DDestructor tyName)
+                                   ]
+                                <> [ (ctorName, DConstructor i tyName) | (ctorName, _) <- ctors
+                                                                       | i <- [0..]
+                                   ]
   where
     fixName = genSpecName specArgs
 
-specFunApp :: forall builtins. (LanguageBuiltins builtins) => HOFDefs builtins -> SpecFunApp builtins
-specFunApp hofDefs (App (Free (TermSig name)) args)
-  | Just someDef <- name `Map.lookup` hofDefs, -- TODO should just the nameString be compared?
-    all isSpecArg $ take (hofPolyVarsCount someDef) tyArgs = do
-    let (specArgs, remainingArgs) = splitArgs (hofPolyVarsCount someDef) args
+-- |Specilizes a function application of the form:
+--
+-- > hof @Integer x y z
+--
+-- Where @hof@ has been identified as a higher-order function and
+-- its type argument contains no bound-variables: in other words,
+-- we can substitute that call with @hof_Integer@ while creating a monomorphic
+-- definition for @hof@.
+specFunApp :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
+specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
+  | Just someDef <- name `M.lookup` hofDefs -- We compare the entire name, not just the nameString part: x0 /= x1.
+  , all isSpecArg $ take hofPolyVarsCount tyArgs = do
+    let (specArgs, remainingArgs) = splitArgs hofPolyVarsCount args
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
-    pure $ Free (TermSig speccedName) `App` remainingArgs
+    pure $ SystF.Free (TermSig speccedName) `SystF.App` remainingArgs
   where
-    tyArgs = mapMaybe fromTyArg args
-    splitArgs 0 args = ([], args)
-    splitArgs n (TyArg tyArg : args) = first (tyArg :) $ splitArgs (n - 1) args
-    splitArgs n (arg : args) = second (arg :) $ splitArgs n args
-    splitArgs _ [] = error "Less args than poly args count"
+    tyArgs = mapMaybe SystF.fromTyArg args
+    hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specFunApp _ x = pure x
 
-specTyApp :: (LanguageBuiltins builtins) => HOFDefs builtins -> SpecTyApp builtins
-specTyApp hofDefs (TyApp (Free (TySig name)) tyArgs)
-  | Just someDef <- name `Map.lookup` hofDefs,
-    all isSpecArg $ take (hofPolyVarsCount someDef) tyArgs = do
-    let (specArgs, remainingArgs) = splitAt (hofPolyVarsCount someDef) tyArgs
+specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
+specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
+  | Just someDef <- name `M.lookup` hofDefs
+  , all isSpecArg $ take hofPolyVarsCount tyArgs = do
+    let (specArgs, remainingArgs) = splitAt hofPolyVarsCount tyArgs
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
-    pure $ Free (TySig speccedName) `TyApp` remainingArgs
+    pure $ SystF.Free (TySig speccedName) `SystF.TyApp` remainingArgs
+  where
+    hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specTyApp _ x = pure x
-
-argsToStr :: (LanguageBuiltins builtins) => [Type builtins] -> Text.Text
-argsToStr = Text.intercalate "@" . map f
-  where
-    f (Free (TySig n) `TyApp` []) = nameString n
-    f (Free (TySig n) `TyApp` args) = nameString n <> "<" <> argsToStr args <> ">"
-    f arg = error $ "unexpected specializing arg " <> show arg
-
-genSpecName :: (LanguageBuiltins builtins) => [Type builtins] -> Name -> Name
-genSpecName args name = Name (nameString name <> "@" <> argsToStr args) Nothing
-
--- A type argument is fully specialized if it has no bound variables
-isSpecArg :: forall builtins. LanguageBuiltins builtins => Type builtins -> Bool
-isSpecArg arg = null bounds
-  where
-    bounds :: [Var builtins]
-    bounds = filter (isJust . isBound) $ universeBi arg
-
--- Types can't depend on terms, so it's safe to move all type applications to the front.
--- Also, this function is obviously broken right now.
-reorderAppTys ::
-  forall builtins.
-  LanguageBuiltins builtins =>
-  PrtUnorderedDefs builtins ->
-  PrtUnorderedDefs builtins
-reorderAppTys = transformBi f . error "this is currently broken"
-  where
-    f :: Term builtins -> Term builtins
-    f (App vm args) = App vm (reorder args)
-    f t = t
-
-    -- TODO fix de Bruijn indices
-    reorder = uncurry (<>) . partition isTyArg
-
-data HofDefBody builtins
-  = HDBType (TypeDef builtins)
-  | HDBFun (FunDef builtins)
-  deriving (Show, Eq, Ord)
-
-data HofDef builtins = HofDef
-  { hofDefName :: Name,
-    hofPolyVarsCount :: Int,
-    hofDefBody :: HofDefBody builtins
-  }
-  deriving (Show, Eq, Ord)
-
 -- TODO the above definition shouldn't have hofPolyVarsCount as the _count_,
 -- since the HOF-involved type args aren't necessarily at the front of the application.
 -- A smarter approach would be to keep a list of type variables need to be monomorphized,
 -- but this kludge together with hardcoding it to be `1` gets us far enough
 -- to work with SMT on some realistic examples.
 
-type HOFDefs builtins = Map.Map Name (HofDef builtins)
+genSpecName :: (LanguageBuiltins lang) => [Type lang] -> Name -> Name
+genSpecName args name = Name (nameString name <> "@" <> argsToStr args) Nothing
 
--- Returns the definitions containing higher-order functions,
+-- A type argument is fully specialized if it has no bound variables
+isSpecArg :: forall lang. LanguageBuiltins lang => Type lang -> Bool
+isSpecArg arg = null bounds
+  where
+    bounds :: [TyVar lang]
+    bounds = filter (isJust . isBound) $ universeBi arg
+
+-- Returns the definitions containing (polymorphic) higher-order functions,
 -- be it functions or types.
 --
 -- The returned Map maps any name that contains higher-order stuff.
 -- In particular, for a type it contains the type itself as well as
 -- the type's constructors and destructor.
-findHOFDefs :: LanguageBuiltins builtins => Decls builtins -> HOFDefs builtins
-findHOFDefs decls = Map.fromList $ hofTypes <> hofFuns
-  where
-    hofTypes = mkTypeHofDefs declsPairs $ \_ typeDef -> (hasHOFuns . snd) `any` constructors typeDef
-    hofFuns =
-      [ (name, HofDef name 1 $ HDBFun funDef) -- TODO don't hardcode 1
-        | (name, DFunDef funDef) <- declsPairs,
-          hasHOFuns $ funTy funDef
-      ]
-    declsPairs = Map.toList decls
+findPolyHOFDefs :: LanguageBuiltins lang => Decls lang -> HOFDefs lang
+findPolyHOFDefs = findHOFDefs (isPolyType . funTy) (const $ const True) . M.toList
 
-mkTypeHofDefs ::
-  LanguageBuiltins builtins =>
-  [(Name, Definition builtins)] ->
-  (Name -> TypeDef builtins -> Bool) ->
-  [(Name, HofDef builtins)]
-mkTypeHofDefs declsPairs pred =
-  [ (name, HofDef tyName 1 $ HDBType typeDef) -- TODO don't hardcode 1
-    | (tyName, DTypeDef typeDef) <- declsPairs,
-      pred tyName typeDef,
-      name <- tyName : destructor typeDef : (fst <$> constructors typeDef)
-  ]
+findPolyFuns :: LanguageBuiltins lang
+             => (FunDef lang -> Bool)
+             -> [(Name, Definition lang)]
+             -> [(Name, HofDef lang)]
+findPolyFuns predi = flip findFuns (\f -> isPolyType (funTy f) && predi f)
 
-hasHOFuns :: (Data ann, Data ty) => AnnType ann ty -> Bool
-hasHOFuns ty = isHOFTy `any` [f | f@TyFun {} <- universe ty]
+isPolyType :: SystF.AnnType ann ty -> Bool
+isPolyType SystF.TyAll {} = True
+isPolyType _ = False
 
-isHOFTy :: AnnType ann ty -> Bool
-isHOFTy (TyFun TyFun {} _) = True
-isHOFTy _ = False
-
-hofsClosure :: forall builtins. (LanguageBuiltins builtins, PrettyLang builtins) => Decls builtins -> HOFDefs builtins -> HOFDefs builtins
+hofsClosure :: forall lang. (Language lang) => Decls lang -> HOFDefs lang -> HOFDefs lang
 hofsClosure decls = go
   where
-    declsPairs = Map.toList decls
+    declsPairs = M.toList decls
 
     go hofs
       | hofs == hofs' = hofs
-      | otherwise = hofs'
+      | otherwise = go hofs'
       where
-        hofs' = hofs <> Map.fromList (hofTypes' <> hofFuns')
-        hofTypes' = mkTypeHofDefs declsPairs $ \tyName typeDef ->
-          tyName `Map.notMember` hofs
-            && hasHofName typeDef
-        hofFuns' =
-          [ (name, HofDef name 1 $ HDBFun funDef) -- TODO don't hardcode 1
-            | (name, DFunDef funDef) <- declsPairs,
-              name `Map.notMember` hofs,
-              hasHofName funDef,
-              case funTy funDef of -- we only want to monomorphize polymorphic functions
-                TyAll {} -> True
-                _ -> False
-          ]
+        hofs' = hofs <> M.fromList (hofTypes' <> hofFuns')
+        hofTypes' = findTypes declsPairs $ \_ typeDef -> hasHofName typeDef
+        hofFuns' = findPolyFuns hasHofName declsPairs
 
         hasHofName :: (Data a) => a -> Bool
-        hasHofName entity =
-          not (null [() | TySig name <- universeBi entity :: [TypeBase builtins], name `Map.member` hofs])
-            || not (null [() | TermSig name <- universeBi entity :: [TermBase builtins], name `Map.member` hofs])
-
--- This really belongs to a Pretty module, but we need them here for nicer debugging anyway for now.
-instance (Pretty (BuiltinTypes builtins), Pretty (FunDef builtins)) => Pretty (HofDefBody builtins) where
-  pretty (HDBType defn) = "<typ>" <+> pretty defn
-  pretty (HDBFun defn) = "<fun>" <+> pretty defn
-
-instance (Pretty (BuiltinTypes builtins), Pretty (FunDef builtins)) => Pretty (HofDef builtins) where
-  pretty = pretty . hofDefBody
-
-instance (Pretty (BuiltinTypes builtins), Pretty (FunDef builtins)) => Pretty (HOFDefs builtins) where
-  pretty = align . vsep . map (\(n, d) -> pretty n <+> pretty d) . Map.toList
+        hasHofName entity = not (null [ () | TySig name   <- universeBi entity :: [TypeBase lang], name `M.member` hofs ])
+                         || not (null [ () | TermSig name <- universeBi entity :: [TermBase lang], name `M.member` hofs ])

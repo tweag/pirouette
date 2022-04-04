@@ -31,19 +31,19 @@ import Options.Applicative ((<**>))
 import qualified Options.Applicative as Opt
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.PlutusIR.SMT ()
-import Pirouette.PlutusIR.Builtins
-import Pirouette.PlutusIR.ToTerm
-import Pirouette.Term.Builtins
+import Language.Pirouette.PlutusIR.SMT ()
+import Language.Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.ToTerm
 import Pirouette.Term.Symbolic.Eval as SymbolicEval
 import Pirouette.Term.Symbolic.Interface as SymbolicEval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 import Pirouette.Transformations
+import qualified Pirouette.Transformations.Defunctionalization as SFD
 import Pirouette.Transformations.Monomorphization
 import qualified PlutusCore as P
-import PlutusIR.Core.Type (Program)
+import qualified PlutusIR.Core.Type as PIR (Program)
 import qualified PlutusIR.Parser as PIR
 import Prettyprinter hiding (Pretty (..))
 import System.Exit
@@ -144,7 +144,7 @@ mainOpts opts uDefs = do
         SymbolicEval.runIncorrectness (constraintFile opts) t
     symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
-processDecls :: (LanguageBuiltins lang, PrettyLang lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
+processDecls :: (LanguageBuiltins lang, LanguagePretty lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
   -- If the user wishes, we can perform checks on the sanity of the translation
   -- from PlutusIR to PrtDefs
@@ -152,7 +152,7 @@ processDecls opts uDefs = do
     runReaderT checkDeBruijnIndices uDefs
 
   -- Otherwise, we proceed normally
-  noMutDefs <- elimEvenOddMutRec $ monomorphize uDefs
+  noMutDefs <- elimEvenOddMutRec $ SFD.defunctionalize $ monomorphize uDefs
   let oDefs =
         if noInlining opts
           then noMutDefs
@@ -192,7 +192,7 @@ pirouette pir opts f =
 
 withDecls ::
   (MonadIO m, Show l) =>
-  Program P.TyName P.Name P.DefaultUni P.DefaultFun l ->
+  PIR.Program P.TyName P.Name P.DefaultUni P.DefaultFun l ->
   (Term BuiltinsOfPIR -> Decls BuiltinsOfPIR -> m a) ->
   m a
 withDecls pir cont = do
@@ -210,7 +210,7 @@ putStrLn' = liftIO . putStrLn
 withParsedPIR ::
   (MonadIO m) =>
   FilePath ->
-  (forall l. Show l => Program P.TyName P.Name P.DefaultUni P.DefaultFun l -> m a) ->
+  (forall l. Show l => PIR.Program P.TyName P.Name P.DefaultUni P.DefaultFun l -> m a) ->
   m a
 withParsedPIR fileName f = do
   res <-
@@ -229,19 +229,19 @@ data Showable (f :: * -> *) :: * where
 openAndDecodeFlat ::
   (MonadIO m) =>
   FilePath ->
-  m (Either String (Showable (Program P.TyName P.Name P.DefaultUni P.DefaultFun)))
+  m (Either String (Showable (PIR.Program P.TyName P.Name P.DefaultUni P.DefaultFun)))
 openAndDecodeFlat fileName = do
   content <- liftIO $ BS.readFile fileName
   return . either (Left . show) (Right . Showable) $
     pirDecoder content
   where
-    pirDecoder :: BS.ByteString -> Flat.Decoded (Program P.TyName P.Name P.DefaultUni P.DefaultFun ())
+    pirDecoder :: BS.ByteString -> Flat.Decoded (PIR.Program P.TyName P.Name P.DefaultUni P.DefaultFun ())
     pirDecoder = Flat.unflat
 
 openAndParsePIR ::
   (MonadIO m) =>
   FilePath ->
-  m (Either String (Showable (Program P.TyName P.Name P.DefaultUni P.DefaultFun)))
+  m (Either String (Showable (PIR.Program P.TyName P.Name P.DefaultUni P.DefaultFun)))
 openAndParsePIR fileName = do
   content <- liftIO $ T.readFile fileName
   return . either (Left . show) (Right . Showable) $

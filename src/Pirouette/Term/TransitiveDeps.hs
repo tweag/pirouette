@@ -25,8 +25,8 @@ sortAllDeps = do
   let funOrTyDefs = mapMaybe (uncurry funOrType) . M.toList $ allDefs
   evalStateT (sortDepsCached funOrTyDefs) (TranDepsCache M.empty)
   where
-    funOrType n (DFunction {}) = Just $ R.TermArg n
-    funOrType n (DTypeDef {}) = Just $ R.TyArg n
+    funOrType n DFunction {} = Just $ R.TermArg n
+    funOrType n DTypeDef {} = Just $ R.TyArg n
     funOrType _ _ = Nothing
 
 -- | Returns the type and term-level transitive dependencies associated with a name.
@@ -54,31 +54,31 @@ transitiveDepsOfCached ::
 transitiveDepsOfCached n = pushCtx ("transitiveDepsOf " ++ show n) $ go S.empty n
   where
     go :: S.Set Name -> Name -> m (S.Set (R.Arg Name Name))
-    go stack n = do
-      mr <- gets (M.lookup n . trDepsOf)
+    go stack n0 = do
+      mr <- gets (M.lookup n0 . trDepsOf)
       case mr of
         Just ds -> return ds
         Nothing -> do
-          r <- computeDeps stack n
-          modify (TranDepsCache . M.insert n r . trDepsOf)
+          r <- computeDeps stack n0
+          modify (TranDepsCache . M.insert n0 r . trDepsOf)
           return r
 
-    computeDeps stack n
-      | n `S.member` stack = return S.empty
+    computeDeps stack n0
+      | n0 `S.member` stack = return S.empty
       | otherwise = do
-        deps0 <- directDepsOf n
-        let stack' = S.insert n stack
+        deps0 <- directDepsOf n0
+        let stack' = S.insert n0 stack
         let deps1 = S.map (R.argElim id id) deps0
         S.unions . (deps0 :) <$> mapM (go stack') (S.toList deps1)
 
 -- *** Utility Functions
 
 partitionM :: (Monad m) => (a -> m Bool) -> [a] -> m ([a], [a])
-partitionM f [] = return ([], [])
+partitionM _ [] = return ([], [])
 partitionM f (x : xs) = f x >>= (<$> partitionM f xs) . ite (first (x :)) (second (x :))
   where
-    ite t e True = t
-    ite t e False = e
+    ite t _ True = t
+    ite _ e False = e
 
 -- | Given a preorder relation @depM@, 'equivClassesM' computes
 --  the equivalence classes of @depM@, on @xs@ such that if
@@ -88,7 +88,7 @@ partitionM f (x : xs) = f x >>= (<$> partitionM f xs) . ite (first (x :)) (secon
 --  Then each @m, n@ in @ri@ for some @i@ is mutually dependent @depOn m n && depOn n m@
 --  and if there exists @m@ in @ri@ and @n@ in @rj@, then @i >= j@ iff @depOn m n@.
 equivClassesM :: (Monad m) => (a -> a -> m Bool) -> [a] -> m [NonEmpty a]
-equivClassesM depM [] = return []
+equivClassesM _depM [] = return []
 equivClassesM depM (d : ds) = do
   -- we start by splitting the dependencies of d from the rest,
   (depsOfD, aft) <- partitionM (depM d) ds

@@ -3,7 +3,7 @@ set -uo pipefail
 
 show_help() {
   cat <<EOF
-usage: ./ci/run-tests.sh [--ci]
+usage: ./tests/run-tests.sh [--ci]
   Note the script is ran from the repo root; Running without --ci
   will run "ormolu --mode inplace" and fix offending files.
   Options:
@@ -44,10 +44,6 @@ run_ormolu() {
     ormolu_res=$?
   fi
 
-  if $ci && [[ "$ormolu_res" -eq "0" ]]; then
-    rm "./${proj}-ormolu.artifact"
-  fi
-
   return $ormolu_res
 }
 
@@ -63,10 +59,6 @@ run_cabal_test() {
   else
     cabal run tests
     cabal_res=$?
-  fi
-
-  if $ci && [[ "$cabal_res" -eq "0" ]]; then
-    rm "./$proj-cabal-test.artifact"
   fi
 
   return $cabal_res
@@ -88,10 +80,6 @@ run_hlint() {
     hlint_res=$?
   fi
 
-  if $ci && [[ "$hlint_res" -eq "0" ]]; then
-    rm "./$proj-hlint.artifact"
-  fi
-
   return $hlint_res
 }
 
@@ -105,11 +93,13 @@ for p in ${projects[*]}; do
 done
 
 for p in ${projects[*]}; do
-  run_ormolu "$p"
-  if [[ "$?" -ne "0" ]]; then
-    echo "[FAILURE] 'ormolu --check' failed for $p; check the respective artifact."
-    ormolu_ok=false
-  fi
+  ## Disable ormolu for the time being; re-enable back before merging into main.
+  ##
+  ## run_ormolu "$p"
+  ## if [[ "$?" -ne "0" ]]; then
+  ##   echo "[FAILURE] 'ormolu --check' failed for $p; check the respective artifact."
+  ##   ormolu_ok=false
+  ## fi
 
   run_cabal_test "$p"
   if [[ "$?" -ne "0" ]]; then

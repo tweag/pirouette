@@ -15,7 +15,6 @@ import Data.Maybe (mapMaybe)
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
-import Pirouette.Term.Builtins (PrettyLang)
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
 import Prettyprinter hiding (Pretty (..))
@@ -61,7 +60,7 @@ andConstr Bot _ = Bot
 andConstr _ Bot = Bot
 andConstr (And l) (And m) = And (l ++ m)
 
-instance (PrettyLang lang, Pretty meta) => Pretty (AtomicConstraint lang meta) where
+instance (LanguagePretty lang, Pretty meta) => Pretty (AtomicConstraint lang meta) where
   pretty (Assign n term) =
     pretty n <+> "↦" <+> pretty term
   pretty (VarEq a b) =
@@ -73,7 +72,7 @@ instance (PrettyLang lang, Pretty meta) => Pretty (AtomicConstraint lang meta) w
   pretty (Native expr) =
     pretty $ show expr
 
-instance (PrettyLang lang, Pretty meta) => Pretty (Constraint lang meta) where
+instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
   pretty Bot =
     "⊥"
   pretty (And []) =
@@ -126,7 +125,7 @@ atomicConstraintToSExpr env knownNames (Assign name term) = do
   let (Just ty) = Map.lookup name env
   d <- translateData knownNames (typeToMeta ty) term
   return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
-atomicConstraintToSExpr _ knownNames (VarEq a b) = do
+atomicConstraintToSExpr _ _knownNames (VarEq a b) = do
   let aName = toSmtName a
   let bName = toSmtName b
   return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
@@ -138,7 +137,7 @@ atomicConstraintToSExpr _ knownNames (OutOfFuelEq term1 term2) = do
   t1 <- translateTerm knownNames term1
   t2 <- translateTerm knownNames term2
   return $ t1 `SimpleSMT.eq` t2
-atomicConstraintToSExpr _ knownNames (Native expr) =
+atomicConstraintToSExpr _ _knownNames (Native expr) =
   return expr
 
 -- Since the translation of atomic constraints can fail,

@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 
 -- | Translation of Pirouette syntactical categories into
@@ -14,7 +13,6 @@ import qualified Data.Map as Map
 import Pirouette.Monad
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as Raw
 
@@ -24,10 +22,10 @@ import qualified Pirouette.Term.Syntax.SystemF as Raw
 --  the type of each term is amenable to translation. We won't try translating the terms
 --  because these will contain bound variables that will need to be substituted by
 --  the symbolic execution engine.
-checkDefsToSMT :: (PirouetteReadDefs builtins m, PrettyLang builtins, LanguageSMT builtins) => ExceptT String m ()
+checkDefsToSMT :: (PirouetteReadDefs builtins m, LanguagePretty builtins, LanguageSMT builtins) => ExceptT String m ()
 checkDefsToSMT = do
   allDefs <- lift prtAllDefs
-  forM_ (Map.toList allDefs) $ \(n, def) -> do
+  forM_ (Map.toList allDefs) $ \(_n, def) -> do
     case def of
       DFunction _red _term ty -> void $ translateType ty
       DTypeDef (Datatype _ _ _ constr) -> mapM_ constructorFromPIR constr
@@ -46,12 +44,12 @@ translateType ::
   TypeMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
 translateType (Raw.TyApp (Raw.Free ty) args) = SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
-translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) index) args) =
+translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) _index) args) =
   SmtLib.app (SmtLib.symbol (toSmtName ann)) <$> mapM translateType args
 translateType x = throwError $ "Translate type to smtlib: cannot handle " <> show x
 
 -- TODO: The translation of term is still to be worked on,
--- since it does not allow to use builtins or defined functions,
+-- since it does not allow to use lang or defined functions,
 -- and it contains application of term to types,
 -- A frequent situation in system F, but not allowed in the logic of SMT solvers.
 translateTerm ::

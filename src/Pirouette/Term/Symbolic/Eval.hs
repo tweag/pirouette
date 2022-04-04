@@ -30,7 +30,6 @@ import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT as SMT
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as R
@@ -73,7 +72,7 @@ data SymEvalSt lang = SymEvalSt
     sestKnownNames :: [Name] -- The list of names the SMT solver is aware of
   }
 
-instance (PrettyLang lang) => Pretty (SymEvalSt lang) where
+instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt{..} =
     "Constraints are" <+> pretty sestConstraint <> "\n" <>
     "in environnement" <+> pretty (M.toList sestGamma) <> "\n" <>
@@ -97,7 +96,7 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
-type SymEvalConstr lang m = (PirouetteDepOrder lang m, PrettyLang lang, SMT.LanguageSMT lang, MonadIO m)
+type SymEvalConstr lang m = (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMT lang, MonadIO m)
 
 symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
 symevalT = runSymEvalT st0
@@ -327,7 +326,7 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 --- TMP CODE
 
-instance (PrettyLang lang, Pretty a) => Pretty (Path lang a) where
+instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds gamma ps res) =
     vsep
       [ "With:" <+> pretty (M.toList gamma),
@@ -343,7 +342,7 @@ instance Pretty PathStatus where
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
-runFor :: (PrettyLang lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
+runFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
 runFor _ t = do
   paths <- symevalT (runEvaluation t)
   mapM_ (liftIO . print . pretty) paths
@@ -496,6 +495,6 @@ checkProperty cOut cIn axioms env = do
       else return SMT.Unknown
     _ -> return result
 
-instance PrettyLang lang => Pretty (EvaluationWitness lang) where
+instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"
   pretty (CounterExample t) = "COUNTER-EXAMPLE: The result is\n" <> pretty t

@@ -22,7 +22,6 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
-import Pirouette.Term.Builtins
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
@@ -282,7 +281,7 @@ runPrtT opts = runLoggerT . runExceptT . flip runReaderT opts . unPirouette
 mockPrtT :: (Monad m) => PrtT m a -> m (Either String a, [LogMessage])
 mockPrtT f = first (either (Left . show) Right) <$> runPrtT opts f
   where
-    opts = PrtOpts TRACE []
+    opts = PrtOpts CRIT []
 
 -- | Pure variant of 'mockPrtT', over the Identity monad
 mockPrt :: PrtT Identity a -> Either String a

@@ -33,7 +33,7 @@ data VarMeta meta ann f
 
 varMapMetaM :: (Monad m) => (meta -> m meta') -> VarMeta meta ann f -> m (VarMeta meta' ann f)
 varMapMetaM f (Meta x) = Meta <$> f x
-varMapMetaM _ (Bound ann i) = return $ Bound ann i
+varMapMetaM _ (Bound ann0 i) = return $ Bound ann0 i
 varMapMetaM _ (Free x) = return $ Free x
 
 varMapMeta :: (meta -> meta') -> VarMeta meta ann f -> VarMeta meta' ann f
@@ -52,7 +52,7 @@ instance IsVar (VarMeta meta ann f) where
   isBound (Bound _ i) = Just i
   isBound _ = Nothing
 
-  varMapM f (Bound ann i) = Bound ann <$> f i
+  varMapM f (Bound ann0 i) = Bound ann0 <$> f i
   varMapM _ v = return v
 
   annMap f (Bound (Ann a) i) = Bound (Ann (f a)) i
@@ -193,7 +193,7 @@ preserveLamsM ::
   (Integer -> AnnTerm ty ann v -> m (AnnTerm ty ann v)) ->
   AnnTerm ty ann v ->
   m (AnnTerm ty ann v)
-preserveLamsM f (Lam ann ty t) = Lam ann ty <$> preserveLamsM (\n -> f (n + 1)) t
+preserveLamsM f (Lam ann0 ty t) = Lam ann0 ty <$> preserveLamsM (\n -> f (n + 1)) t
 preserveLamsM f t = f 0 t
 
 preserveLams ::

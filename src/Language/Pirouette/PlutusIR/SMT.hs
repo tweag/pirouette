@@ -1,6 +1,6 @@
-module Pirouette.PlutusIR.SMT where
+module Language.Pirouette.PlutusIR.SMT where
 
-import Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.Builtins
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 
