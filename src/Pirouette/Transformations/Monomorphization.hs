@@ -103,9 +103,11 @@ import Pirouette.Transformations.Utils
 --    (which presumably might not exist for arbitrary System Fω, but shall exist for the subset of programs we care about).
 -- 5. Having done that, all the higher-order definitions from (2) are subject to @prune@.
 --    If step (3) works correctly, then they are not used transitively from the modified main term.
-monomorphize :: forall lang. (Language lang)
-             => PrtUnorderedDefs lang
-             -> PrtUnorderedDefs lang
+monomorphize ::
+  forall lang.
+  (Language lang) =>
+  PrtUnorderedDefs lang ->
+  PrtUnorderedDefs lang
 monomorphize defs0 = prune $ go mempty defs0
   where
     hofDefsRoots = findPolyHOFDefs $ prtUODecls defs0
@@ -194,18 +196,18 @@ specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
     hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specFunApp _ x = pure x
 
--- |Specializes a type application of the form
+-- | Specializes a type application of the form
 --
--- > HOFType @Integer
+--  > HOFType @Integer
 --
--- where @HOFType a@ has at least one constructor having a higher-order argument mentioning @a@,
--- perhaps, transitively.
--- For example, both these definitions would be specialized:
+--  where @HOFType a@ has at least one constructor having a higher-order argument mentioning @a@,
+--  perhaps, transitively.
+--  For example, both these definitions would be specialized:
 --
--- > data Semigroup a = MkSemigroup (a -> a -> a)
--- > data Monoid a = MkMonoid (Semigroup a) a
+--  > data Semigroup a = MkSemigroup (a -> a -> a)
+--  > data Monoid a = MkMonoid (Semigroup a) a
 --
--- See the docs for 'specFunApp' for more details.
+--  See the docs for 'specFunApp' for more details.
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
   | Just someDef <- name `M.lookup` hofDefs,
