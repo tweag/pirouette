@@ -9,6 +9,7 @@ runs:
         # about permission errors.
         sudo mkdir -p /nix/store
         sudo chmod -R 777 /nix
+    shell: bash
 
   - name: Cache nix env
     uses: actions/cache@v2
