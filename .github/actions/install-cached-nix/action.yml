@@ -28,7 +28,7 @@ runs:
         !/nix/var/nix/db/reserved
       key: ${{ runner.os }}-nix-cache-${{ hashFiles('**/.nix') }}
       restore-keys: |
-      ${{ runner.os }}-nix-cache
+        ${{ runner.os }}-nix-cache
 
   - name: Install nix
     uses: cachix/install-nix-action@v15
