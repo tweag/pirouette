@@ -1,0 +1,67 @@
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository code.
+      uses: actions/checkout@v2.4.0
+
+    - name: Installs nix and restores cache
+      uses: ./.github/actions/install-cached-nix
+
+    - name: Accessing the cabal cache.
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cabal/store
+          dist-newstyle
+        key: cabal-cache-${{ github.sha }}
+        restore-keys: |
+          cabal-cache
+
+    - name: Build pirouette
+      uses: ./github/actions/nix-run
+      with:
+        command: cabal build
+
+  test:
+    needs: build
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository code.
+      uses: actions/checkout@v2.4.0
+
+    - name: Installs nix and restores cache
+      uses: ./.github/actions/install-cached-nix
+
+    - name: Accessing the cabal cache.
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cabal/store
+          dist-newstyle
+        key: cabal-cache-${{ github.sha }}
+        restore-keys: |
+          cabal-cache
+
+    - name: Chmod test script
+      run: |
+        chmod u+x tests/run-tests.sh
+
+    - name: Add pwd to PATH
+      run: |
+        echo "$(pwd)" >> $GITHUB_PATH
+
+    - name: Build pirouette
+      uses: ./github/actions/nix-run
+      with:
+        command: ./tests/run-tests.sh --ci
+
