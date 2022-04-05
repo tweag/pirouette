@@ -27,7 +27,7 @@ jobs:
           cabal-cache
 
     - name: Build pirouette
-      uses: ./github/actions/nix-run
+      uses: ./.github/actions/nix-run
       with:
         command: cabal build
 
@@ -61,7 +61,7 @@ jobs:
         echo "$(pwd)" >> $GITHUB_PATH
 
     - name: Build pirouette
-      uses: ./github/actions/nix-run
+      uses: ./.github/actions/nix-run
       with:
         command: ./tests/run-tests.sh --ci
 
