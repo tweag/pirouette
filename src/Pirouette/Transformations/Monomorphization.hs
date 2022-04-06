@@ -230,15 +230,13 @@ specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
   | Just someDef <- name `M.lookup` hofDefs,
     -- Now we ensure that there is something to specialize and that the type arguments we've
     -- gathered are specializable arguments (ie, no bound type-variables)
-    hofPolyVarsCount >= 1,
+    let tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args,
+    not (null tyArgs),
     all isSpecArg tyArgs = do
-    let (specArgs, remainingArgs) = splitArgs hofPolyVarsCount args
+    let (specArgs, remainingArgs) = splitArgs (length tyArgs) args
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
     pure $ SystF.Free (TermSig speccedName) `SystF.App` remainingArgs
-  where
-    tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args
-    hofPolyVarsCount = length tyArgs
 specFunApp _ x = pure x
 
 -- | Specializes a type application of the form
@@ -256,18 +254,13 @@ specFunApp _ x = pure x
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
   | Just someDef <- name `M.lookup` hofDefs,
-    hofPolyVarsCount >= 1,
+    not (null tyArgs),
     all isSpecArg tyArgs = do
-    let (specArgs, remainingArgs) = splitAt hofPolyVarsCount tyArgs
+    let (specArgs, remainingArgs) = splitAt (length tyArgs) tyArgs
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
     pure $ SystF.Free (TySig speccedName) `SystF.TyApp` remainingArgs
-  where
-    hofPolyVarsCount = length tyArgs
 specTyApp _ x = pure x
-
-genSpecName :: (LanguageBuiltins lang) => [Type lang] -> Name -> Name
-genSpecName args name = Name (nameString name <> "@" <> argsToStr args) Nothing
 
 -- A type argument is fully specialized if it has no bound variables
 isSpecArg :: forall lang. LanguageBuiltins lang => Type lang -> Bool
