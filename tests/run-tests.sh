@@ -61,7 +61,7 @@ run_cabal_test() {
   if $ci; then
     cabal run tests | tee "./${proj}-cabal-test.out"
     cabal_res=$?
-    echo "run_cabal_test: $cabal_res" >> "./${proj}-cabal-test.res"
+    echo "run_cabal_test:$cabal_res" >> "./${proj}-cabal-test.res"
   else
     cabal run tests
     cabal_res=$?
@@ -81,7 +81,7 @@ run_hlint() {
   if $ci; then
     hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs" | tee "./${proj}-hlint.out"
     hlint_res=$?
-    echo "run_hlint: $hlint_res" >> "./${proj}-hlint.res"
+    echo "run_hlint:$hlint_res" >> "./${proj}-hlint.res"
   else
     hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs"
     hlint_res=$?
