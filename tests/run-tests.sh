@@ -81,7 +81,7 @@ run_hlint() {
   if $ci; then
     hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs" | tee "./${proj}-hlint.out"
     hlint_res=$?
-    echo "run_hlint: $cabal_res" >> "./${proj}-hlint.res"
+    echo "run_hlint: $hlint_res" >> "./${proj}-hlint.res"
   else
     hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs"
     hlint_res=$?
