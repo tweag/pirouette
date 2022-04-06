@@ -64,6 +64,16 @@ instance IsVar (VarMeta meta ann f) where
 data Kind = KStar | KTo Kind Kind
   deriving (Eq, Ord, Show, Data, Typeable)
 
+-- | Drop the n first arguments of a kind:
+--
+-- > kindDrop 1 (* -> (* -> *) -> * -> *) == (* -> *) -> * -> *
+-- > kindDrop 2 (* -> (* -> *) -> * -> *) == * -> *
+-- > kindDrop 3 (* -> (* -> *) -> * -> *) == *
+kindDrop :: Int -> Kind -> Kind
+kindDrop 0 k = k
+kindDrop n (KTo _ k) = kindDrop (n-1) k
+kindDrop _ _ = error "kindDrop: KStar has no arguments to drop"
+
 -- ** Types
 
 data AnnType ann tyVar

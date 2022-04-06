@@ -101,9 +101,22 @@ splitArgs n (TyArg tyArg : args) = first (tyArg :) $ splitArgs (n - 1) args
 splitArgs n (arg : args) = second (arg :) $ splitArgs n args
 splitArgs _ [] = error "Less args than poly args count"
 
-argsToStr :: (LanguageBuiltins lang) => [Type lang] -> T.Text
-argsToStr = T.intercalate "@" . map f
+-- |This is the character used to separate the type arguments and the term or type name
+-- when monomorphizing. Because we need to be able to test monomorphization, this
+-- is also recognized by the "Language.Pirouette.Example" as a valid part of an identifier
+monoNameSep :: Char
+monoNameSep = '!'
+
+genSpecName :: (LanguageBuiltins lang) => [Type lang] -> Name -> Name
+genSpecName args name = Name (nameString name <> msep <> argsToStr args) Nothing
   where
+    msep = T.pack [monoNameSep]
+
+argsToStr :: (LanguageBuiltins lang) => [Type lang] -> T.Text
+argsToStr = T.intercalate msep . map f
+  where
+    msep = T.pack [monoNameSep]
+
     f (SystF.Free n `TyApp` args) =
       tyBaseString n <> if null args then mempty else "<" <> argsToStr args <> ">"
     f arg = error $ "unexpected specializing arg" <> show arg

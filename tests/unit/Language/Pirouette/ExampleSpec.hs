@@ -27,8 +27,8 @@ tests =
       canParseType [ty| all a : Type . a -> all b : Type . a -> Integer |]
       canParseType [ty| all a : Type . a -> all b : (Type -> Type) . Integer -> b a -> Integer |],
      testCase "Type binders with or without parenthesis" $ do
-          let t1 = [ty| \(x : Type) (y : Type) . F x y |]
-              t2 = [ty| \(x : Type) . \(y : Type) . F x y |]
+          let t1 = [ty| \(x : Type) (y : Type) (z : Type) . F x y |]
+              t2 = [ty| \(x : Type) . \(y : Type) . \(z : Type) . F x y |]
            in (t1 :: Type Ex) @?= t2 ,
     testGroup
       "Can parse terms"

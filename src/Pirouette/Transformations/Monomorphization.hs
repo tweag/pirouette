@@ -8,8 +8,21 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
-module Pirouette.Transformations.Monomorphization (monomorphize, hofsClosure, findPolyHOFDefs, specFunApp, SpecRequest (..)) where
+module Pirouette.Transformations.Monomorphization
+  (
+    -- * Actual functionality
+    monomorphize,
+    -- * Exported for testing
+    hofsClosure,
+    findPolyHOFDefs,
+    specFunApp,
+    specTyApp,
+    executeSpecRequest,
+    SpecRequest (..),
+  )
+where
 
 import Control.Monad.Writer.Strict
 import Data.Data
@@ -22,6 +35,9 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Utils
+
+import Debug.Trace
+import Data.List (isPrefixOf)
 
 -- * Monomorphization
 
@@ -156,11 +172,17 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
       let tyName = fixName hofDefName
           dtorName = fixName destructor
           ctors =
-            [ (fixName ctorName, ctorTy `SystF.tyInstantiateN` specArgs)
+            [ (fixName ctorName, fixType $ ctorTy `SystF.tyInstantiateN` specArgs)
               | (ctorName, ctorTy) <- constructors
             ]
-          newDef = DTypeDef $ Datatype kind [] (fixName destructor) ctors -- TODO does this only apply to `kind ~ *`?
-       in [ (tyName, newDef),
+          newDef =
+            DTypeDef $
+              Datatype
+                (SystF.kindDrop specArgsLen kind)
+                (drop specArgsLen typeVariables)
+                (fixName destructor)
+                ctors -- TODO does this only apply to `kind ~ *`?
+       in trace (show specArgs) $ [ (tyName, newDef),
             (dtorName, DDestructor tyName)
           ]
             <> [ (ctorName, DConstructor i tyName)
@@ -169,31 +191,52 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
                ]
   where
     fixName = genSpecName specArgs
+    specArgsLen = length specArgs
+
+    -- When specializing constructor types, we need to substitute occurences of
+    -- the un-specialized type with the fixed name. For instance, if we're specializing
+    -- a constructor:
+    --
+    -- > Bin : all a : Type . Bin a -> Bin a -> Bin a
+    --
+    -- that was applied to TyBool, the result has to be:
+    --
+    -- > Bin@TyBool : Bin@TyBool -> Bin@TyBool -> Bin@TyBool
+    --
+    fixType = rewrite $ \case
+      SystF.TyApp (SystF.Free (TySig n)) xs -> do
+        guard (n == hofDefName && specArgs `isPrefixOf` xs)
+        return $ SystF.Free (TySig $ fixName n) `SystF.TyApp` drop specArgsLen xs
+      _ -> Nothing
 
 -- | Specializes a function application of the form:
 --
---  > hof @Integer x y z
+--  > hof @Integer @Bool x y z
 --
 -- at call site, where @hof@ has been identified as
 -- 1. either a higher-order function itself,
 -- 2. or invoking a polymorphic higher-order function, perhaps, transitively;
 -- and its type argument contains no bound-variables: in other words,
--- we can substitute that call with @hof_Integer@ while creating a monomorphic
+-- we can substitute that call with @hof\@Integer\@Bool@ while creating a monomorphic
 -- definition for @hof@.
+--
+-- We only specialize type arguments that appear /before/ the first term-argument.
 --
 -- This function only does the substitution _at call site_ and emits a 'SpecRequest' denoting that the corresponding
 -- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
 specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
-  | Just someDef <- name `M.lookup` hofDefs, -- We compare the entire name, not just the nameString part: x0 /= x1.
-    all isSpecArg $ take hofPolyVarsCount tyArgs = do
-    let (specArgs, remainingArgs) = splitArgs hofPolyVarsCount args
+  -- We compare the entire name, not just the nameString part: x0 /= x1.
+  | Just someDef <- name `M.lookup` hofDefs,
+    -- Now we ensure that there is something to specialize and that the type arguments we've
+    -- gathered are specializable arguments (ie, no bound type-variables)
+    let tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args,
+    not (null tyArgs),
+    all isSpecArg tyArgs = do
+    let (specArgs, remainingArgs) = splitArgs (length tyArgs) args
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
     pure $ SystF.Free (TermSig speccedName) `SystF.App` remainingArgs
-  where
-    tyArgs = mapMaybe SystF.fromTyArg args
-    hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specFunApp _ x = pure x
 
 -- | Specializes a type application of the form
@@ -211,23 +254,13 @@ specFunApp _ x = pure x
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
   | Just someDef <- name `M.lookup` hofDefs,
-    all isSpecArg $ take hofPolyVarsCount tyArgs = do
-    let (specArgs, remainingArgs) = splitAt hofPolyVarsCount tyArgs
+    not (null tyArgs),
+    all isSpecArg tyArgs = do
+    let (specArgs, remainingArgs) = splitAt (length tyArgs) tyArgs
         speccedName = genSpecName specArgs name
     tell $ pure $ SpecRequest someDef specArgs
     pure $ SystF.Free (TySig speccedName) `SystF.TyApp` remainingArgs
-  where
-    hofPolyVarsCount = 1 -- TODO don't hardcode 1
 specTyApp _ x = pure x
-
--- TODO the above definition shouldn't have hofPolyVarsCount as the _count_,
--- since the HOF-involved type args aren't necessarily at the front of the application.
--- A smarter approach would be to keep a list of type variables need to be monomorphized,
--- but this kludge together with hardcoding it to be `1` gets us far enough
--- to work with SMT on some realistic examples.
-
-genSpecName :: (LanguageBuiltins lang) => [Type lang] -> Name -> Name
-genSpecName args name = Name (nameString name <> "@" <> argsToStr args) Nothing
 
 -- A type argument is fully specialized if it has no bound variables
 isSpecArg :: forall lang. LanguageBuiltins lang => Type lang -> Bool

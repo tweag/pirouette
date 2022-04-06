@@ -41,6 +41,7 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import Pirouette.Transformations.Utils (monoNameSep)
 
 -- * AST
 
@@ -295,8 +296,7 @@ parseBinder binder parseVars parseBody = do
   vars <- parseVars
   guard (not $ null vars)
   b <- parseBody
-  let (n0, k0) : rest = reverse vars
-  return $ foldr (\(n, k) b' -> binder n k b') (binder n0 k0 b) rest
+  return $ foldr (uncurry binder) b vars
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
@@ -309,7 +309,7 @@ symbol = void . L.symbol spaceConsumer
 
 ident :: Parser String
 ident = label "identifier" $ do
-  i <- lexeme ((:) <$> lowerChar <*> many (alphaNumChar <|> char '_'))
+  i <- lexeme ((:) <$> lowerChar <*> restOfName)
   guard (i `S.notMember` reservedNames)
   return i
   where
@@ -318,9 +318,12 @@ ident = label "identifier" $ do
 
 typeName :: Parser String
 typeName = label "type-identifier" $ do
-  t <- lexeme ((:) <$> upperChar <*> many (alphaNumChar <|> char '_'))
+  t <- lexeme ((:) <$> upperChar <*> restOfName)
   guard (t `S.notMember` reservedTypeNames)
   return t
   where
     reservedTypeNames :: S.Set String
     reservedTypeNames = S.fromList ["Integer", "Bool", "Type"]
+
+restOfName :: Parser String
+restOfName = many (alphaNumChar <|> char '_' <|> char monoNameSep)
