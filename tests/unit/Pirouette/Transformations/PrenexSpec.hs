@@ -20,28 +20,49 @@ import Test.Tasty.ExpectedFailure
 import Test.Tasty.HUnit
 import Pirouette.Transformations.Prenex
 
-beforePrenex, afterPrenex :: Program Ex
-beforePrenex =
-  [prog|
+beforePrenex1, afterPrenex1 :: Program Ex
+(beforePrenex1, afterPrenex1) =
+  ([prog|
 fun example : all a : Type . a -> all b : Type . b -> a
-  = /\ a : Type . \(x : a) . /\ b : Type . \(y : b) . a
+  = /\ a : Type . \(x : a) . /\ b : Type . \(y : b) . x
 
 fun main : Integer = example @Integer 3 @Integer 4
-|]
-
-afterPrenex =
-  [prog|
+|], [prog|
 fun example : all a : Type . all b : Type . a -> b -> a
-  = /\ a : Type . /\ b : Type . \(x : a) (y : b) . a
+  = /\ a : Type . /\ b : Type . \(x : a) (y : b) . x
 
 fun main : Integer = example @Integer @Integer 3 4
-|]
+|])
+
+beforePrenex2, afterPrenex2 :: Program Ex
+(beforePrenex2, afterPrenex2) =
+  ([prog|
+fun f : all a : Type . a -> all b : Type . b -> a
+  = /\ a : Type . \(x : a) . /\ b : Type . \(y : b) . x
+fun g : all a : Type . all b : Type . a -> b -> all c : Type . c
+  = /\ a : Type . /\ b : Type . \(x : a) (y : b) . /\ c : Type . \(z : c) . x
+
+fun main : Integer = f @Integer 3 @Integer (g @Integer @Integer 4 @Integer 5)
+|], [prog|
+fun f : all a : Type . all b : Type . a -> b -> a
+  = /\ a : Type . /\ b : Type . \(x : a) . \(y : b) . x
+fun g : all a : Type . all b : Type . all c : Type . a -> b -> c
+  = /\ a : Type . /\ b : Type . /\ c : Type . \(x : a) (y : b) . \(z : c) . x
+
+fun main : Integer = f @Integer @Integer 3 (g @Integer @Integer @Integer 4 5)
+|])
 
 uDefs :: Program Ex -> PrtUnorderedDefs Ex
 uDefs = uncurry PrtUnorderedDefs
 
 tests :: [TestTree]
 tests =
-  [ testCase "prenex example" $
-      prenex (uDefs beforePrenex) @=? uDefs afterPrenex
+  [ testCase "prenex example #1" $
+      prenex (uDefs beforePrenex1) @=? uDefs afterPrenex1,
+    testCase "prenex example #1, unchanged" $
+      prenex (uDefs afterPrenex1) @=? uDefs afterPrenex1,
+    testCase "prenex example #1" $
+      prenex (uDefs beforePrenex2) @=? uDefs afterPrenex2,
+    testCase "prenex example #2, unchanged" $
+      prenex (uDefs afterPrenex2) @=? uDefs afterPrenex2
   ]
