@@ -100,7 +100,7 @@ hpack
 cabal build
 cabal_build_ok=$?
 
-if ! $cabal_build_ok; then
+if [[ "$cabal_build_ok" -ne "0" ]]; then
   echo "[FAILURE] 'cabal build' failed, will exit with 1"
   exit 1
 fi
