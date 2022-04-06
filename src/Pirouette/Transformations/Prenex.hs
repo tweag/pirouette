@@ -56,8 +56,13 @@ switchLambdas :: Type lang -> Term lang -> (Type lang, Term lang)
 -- \ x . /\ a . ty --> /\ a . \x . ty
 switchLambdas (SystemF.TyFun ty1 (SystemF.TyAll annTy kindTy restOfType)) 
               (SystemF.Lam arg1 tyTm1 (SystemF.Abs annTm kindTm body))
-  = case switchLambdas (SystemF.TyFun ty1 restOfType) (SystemF.Lam arg1 tyTm1 body) of
-      (newTy, newBody) -> (SystemF.TyAll annTy kindTy newTy, SystemF.Abs annTm kindTm newBody)
+  = let -- since we are going to have an additional /\ on front,
+        -- we need to shift the bound variables by 1
+        shiftedTy1 = shiftTyBy1 0 ty1
+        shiftedTyTm1 = shiftTyBy1 0 tyTm1
+        (newTy, newBody) = switchLambdas (SystemF.TyFun shiftedTy1 restOfType)
+                           (SystemF.Lam arg1 shiftedTyTm1 body)
+    in (SystemF.TyAll annTy kindTy newTy, SystemF.Abs annTm kindTm newBody)
 -- case of small lambda, we just need to keep the invariant (see *)
 switchLambdas (SystemF.TyFun ty1 ty2) (SystemF.Lam arg1 tyTm1 body)
   = let (newTy, newBody) = switchLambdas ty2 body
@@ -74,6 +79,26 @@ switchLambdas (SystemF.TyAll annTy kindTy restOfType)
   = let (newTy, newBody) = switchLambdas restOfType body
     in (SystemF.TyAll annTy kindTy newTy, SystemF.Abs annTm kindTm newBody)
 switchLambdas otherTy otherTm = (otherTy, otherTm)
+
+-- | Shift all the bound type variables,
+-- starting from 'from' upwards.
+shiftTyBy1 :: Integer -> Type lang -> Type lang
+shiftTyBy1 from = go
+  where
+    oneMore = shiftTyBy1 (from + 1)
+
+    go (SystemF.TyFun ty1 ty2) 
+      = SystemF.TyFun (go ty1) (go ty2)
+    go (SystemF.TyLam ann ki rest)
+      = SystemF.TyLam ann ki (oneMore rest)
+    go (SystemF.TyAll ann ki rest)
+      = SystemF.TyAll ann ki (oneMore rest)
+    go (SystemF.TyApp hd args)
+      = let shiftedArgs = map go args
+        in case hd of
+             SystemF.Bound ann i | i >= from
+               -> SystemF.TyApp (SystemF.Bound ann (i + 1)) shiftedArgs
+             _ -> SystemF.TyApp hd shiftedArgs
 
 -- | Update the body of a definition
 -- with the prenex-ed types from 'newDecls'.
