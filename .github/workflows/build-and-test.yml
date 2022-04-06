@@ -6,17 +6,19 @@ on:
   pull_request:
 
 jobs:
-  build:
-    name: build
+  build-and-test:
+    name: build-and-test
     runs-on: ubuntu-latest
     steps:
     - name: Check out repository code.
       uses: actions/checkout@v2.4.0
 
-    - name: Installs nix and restores cache
-      uses: ./.github/actions/install-cached-nix
+    - name: Install nix
+      uses: cachix/install-nix-action@v15
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
 
-    - name: Accessing the cabal cache.
+    - name: Accessing the cabal cache
       uses: actions/cache@v2
       with:
         path: |
@@ -26,42 +28,45 @@ jobs:
         restore-keys: |
           cabal-cache
 
-    - name: Build pirouette
-      uses: ./.github/actions/nix-run
-      with:
-        command: cabal update && cabal build
-
-  test:
-    needs: build
-    name: test
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out repository code.
-      uses: actions/checkout@v2.4.0
-
-    - name: Installs nix and restores cache
-      uses: ./.github/actions/install-cached-nix
-
-    - name: Accessing the cabal cache.
+    - name: Accessing the result cache
       uses: actions/cache@v2
       with:
         path: |
-          ~/.cabal/store
-          dist-newstyle
-        key: cabal-cache-${{ github.sha }}
-        restore-keys: |
-          cabal-cache
+          ./*.out
+          ./*.res
+        key: result-cache-${{ github.sha }}
 
     - name: Chmod test script
       run: |
         chmod u+x tests/run-tests.sh
 
-    - name: Add pwd to PATH
-      run: |
-        echo "$(pwd)" >> $GITHUB_PATH
-
-    - name: Build pirouette
+    - name: Build and test pirouette
       uses: ./.github/actions/nix-run
       with:
         command: ./tests/run-tests.sh --ci
+
+  check-result:
+    needs: build-and-test
+    name: check-result
+    runs-on: ubuntu-latest
+    steps:
+    - name: Accessing the result cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ./*.out
+          ./*.res
+        key: result-cache-${{ github.sha }}
+
+    - name: Check result
+      run: |
+        echo "!! CABAL TEST OUTPUT:"
+        cat pirouette-cabal-test.out
+        echo "!! HLINT OUTPUT:"
+        cat pirouette-hlint.out
+        cabal_res=$(cat pirouette-cabal-test.res | cut -d':' -f2)
+        hlint_res=$(cat pirouette-hlint.res | cut -d':' -f2)
+        if [[ "$cabal_res" != "0" ]] || [[ "$hlint_res" != "0" ]]; then
+          exit 1
+        fi
 
