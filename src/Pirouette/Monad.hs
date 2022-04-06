@@ -189,7 +189,7 @@ data PrtUnorderedDefs lang = PrtUnorderedDefs
   { prtUODecls :: Decls lang,
     prtUOMainTerm :: Term lang
   }
-  deriving (Eq, Data)
+  deriving (Eq, Data, Show)
 
 addDecls :: Decls builtins -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
 addDecls decls defs = defs {prtUODecls = prtUODecls defs <> decls}

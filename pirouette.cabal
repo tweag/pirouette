@@ -48,6 +48,7 @@ library
       Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.EtaExpand
       Pirouette.Transformations.Monomorphization
+      Pirouette.Transformations.Prenex
       Pirouette.Transformations.Utils
   other-modules:
       Paths_pirouette
@@ -140,6 +141,7 @@ test-suite spec
       Pirouette.Term.TransformationsSpec
       Pirouette.Transformations.EtaExpandSpec
       Pirouette.Transformations.MonomorphizationSpec
+      Pirouette.Transformations.PrenexSpec
       Paths_pirouette
   hs-source-dirs:
       tests/unit
