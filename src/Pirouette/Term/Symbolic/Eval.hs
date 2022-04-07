@@ -62,11 +62,26 @@ data Path lang res = Path
   }
   deriving (Functor, Traversable, Foldable)
 
+data AvailableFuel = Fuel Int | InfiniteFuel
+  deriving (Eq, Show)
+
+fuelExhausted :: AvailableFuel -> Bool
+fuelExhausted (Fuel n) = n <= 0
+fuelExhausted InfiniteFuel = False
+
+consumeOneUnitOfFuel :: AvailableFuel -> AvailableFuel
+consumeOneUnitOfFuel (Fuel n) = Fuel (n - 1)
+consumeOneUnitOfFuel i = i
+
+instance Pretty AvailableFuel where
+  pretty InfiniteFuel = "infinite"
+  pretty (Fuel n) = pretty n
+
 data SymEvalSt lang = SymEvalSt
   { sestConstraint :: Constraint lang,
     sestGamma :: M.Map Name (Type lang),
     sestFreshCounter :: Int,
-    sestFuel :: Int,
+    sestFuel :: AvailableFuel,
     -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
     sestValidated :: Bool,
     sestKnownNames :: [Name] -- The list of names the SMT solver is aware of
@@ -85,7 +100,7 @@ path x st =
   Path
     { pathConstraint = sestConstraint st,
       pathGamma = sestGamma st,
-      pathStatus = if sestFuel st <= 0 then OutOfFuel else Completed,
+      pathStatus = if fuelExhausted (sestFuel st) then OutOfFuel else Completed,
       pathResult = x
     }
 
@@ -101,7 +116,7 @@ type SymEvalConstr lang m = (PirouetteDepOrder lang m, LanguagePretty lang, SMT.
 symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
 symevalT = runSymEvalT st0
   where
-    st0 = SymEvalSt mempty M.empty 0 10 False []
+    st0 = SymEvalSt mempty M.empty 0 (Fuel 10) False []
 
 runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
@@ -204,11 +219,11 @@ runEvaluation t = do
   svars <- declSymVars lams
   symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
 
-consumeGas :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
-consumeGas f = modify (\st -> st {sestFuel = sestFuel st - 1}) >> f
+consumeFuel :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+consumeFuel f = modify (\st -> st {sestFuel = consumeOneUnitOfFuel (sestFuel st)}) >> f
 
-currentGas :: (SymEvalConstr lang m) => SymEvalT lang m Int
-currentGas = gets sestFuel
+currentFuel :: (SymEvalConstr lang m) => SymEvalT lang m AvailableFuel
+currentFuel = gets sestFuel
 
 normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar -> m (TermMeta lang SymVar)
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
@@ -216,8 +231,8 @@ normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 symeval :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
 symeval t = do
   t' <- lift $ normalizeTerm t
-  fuelLeft <- currentGas
-  if fuelLeft <= 0
+  fuelLeft <- currentFuel
+  if fuelExhausted fuelLeft
     then return t'
     else prune $ symeval' t'
 
@@ -245,7 +260,7 @@ symeval' t@(R.App hd args) = do
       -- If hd is a defined function, we inline its definition and symbolically evaluate
       -- the result consuming one gas.
       DFunction _rec body _ ->
-        consumeGas . symeval $ termToMeta body `R.appN` args
+        consumeFuel . symeval $ termToMeta body `R.appN` args
       -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term
       -- by combining the paths with (>>>=), conjuncts all of the constraints. For instance,
       --
@@ -256,7 +271,7 @@ symeval' t@(R.App hd args) = do
       -- >       | (cx, rx) <- x' , (cxs, rxs) <- xs'
       -- >       , isSAT (cx && cxs) ]
       --
-      DConstructor _ _18' -> R.App hd <$> mapM (R.argMapM return symeval) args
+      DConstructor _ _ -> R.App hd <$> mapM (R.argMapM return symeval) args
       -- If hd is a destructor, we have more work to do: we have to expand the term
       -- being destructed, then combine it with all possible destructor cases.
       -- Say we're looking at:
@@ -291,7 +306,7 @@ symeval' t@(R.App hd args) = do
             let mconstr = unify term' symbCons
             case mconstr of
               Nothing -> empty
-              Just constr -> learn constr >> consumeGas (symeval $ caseTerm `R.appN` symbArgs)
+              Just constr -> learn constr >> consumeFuel (symeval $ caseTerm `R.appN` symbArgs)
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) t = Just (s =:= t)
