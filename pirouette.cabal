@@ -48,6 +48,7 @@ library
       Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.EtaExpand
       Pirouette.Transformations.Monomorphization
+      Pirouette.Transformations.Prenex
       Pirouette.Transformations.Utils
   other-modules:
       Paths_pirouette
@@ -70,6 +71,8 @@ library
     , list-t
     , megaparsec
     , mtl >=2.2.2
+    , optics-core
+    , optics-th
     , optparse-applicative
     , parser-combinators
     , plutus-core
@@ -111,6 +114,8 @@ executable pirouette
     , list-t
     , megaparsec
     , mtl >=2.2.2
+    , optics-core
+    , optics-th
     , optparse-applicative
     , parser-combinators
     , pirouette
@@ -140,6 +145,7 @@ test-suite spec
       Pirouette.Term.TransformationsSpec
       Pirouette.Transformations.EtaExpandSpec
       Pirouette.Transformations.MonomorphizationSpec
+      Pirouette.Transformations.PrenexSpec
       Paths_pirouette
   hs-source-dirs:
       tests/unit
@@ -159,6 +165,8 @@ test-suite spec
     , list-t
     , megaparsec
     , mtl >=2.2.2
+    , optics-core
+    , optics-th
     , optparse-applicative
     , parser-combinators
     , pirouette

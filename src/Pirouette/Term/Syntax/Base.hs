@@ -5,6 +5,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- |Provides the base syntactical elements for the languages supported by Pirouette.
@@ -22,6 +23,7 @@ import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as Text
 import Data.Void
+import Optics.TH
 import Pirouette.Term.Syntax.Pretty.Class
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
@@ -302,3 +304,9 @@ type LanguagePretty lang =
 
 -- | Auxiliary constraint grouping everything we know about @lang@.
 type Language lang = (LanguageBuiltins lang, LanguagePretty lang)
+
+-- These must go at the end because of Template Haskell restrictions
+
+makePrisms ''Definition
+makePrisms ''TypeBase
+makePrisms ''TermBase

@@ -39,6 +39,8 @@ dependencies:
   - tasty-quickcheck
   - tasty-expected-failure
   - haskell-stack-trace-plugin
+  - optics-core
+  - optics-th
 
 library:
   source-dirs: src
