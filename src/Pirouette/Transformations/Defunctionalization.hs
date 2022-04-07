@@ -34,7 +34,7 @@ import Control.Monad.Writer.Strict
 defunctionalize :: (LanguagePretty lang, LanguageBuiltins lang)
                 => PrtUnorderedDefs lang
                 -> PrtUnorderedDefs lang
-defunctionalize defs = traceDefsId defs' { prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls }
+defunctionalize defs = defs' { prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls }
   where
     (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpandAll defs) mempty (DefunState mempty)
 
