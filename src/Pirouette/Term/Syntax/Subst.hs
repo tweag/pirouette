@@ -61,9 +61,11 @@ class (IsVar (SubstVar term)) => HasSubst term where
   -- | How to apply a substitution
   subst :: HasCallStack => Sub term -> term -> term
 
+-- |Shift all bound variables from @from@ by @k@
 shiftFrom :: (HasSubst term) => Integer -> Integer -> term -> term
-shiftFrom cutoff k = subst $ foldr (\_ r -> Nothing :< r) (Inc k) [0 .. cutoff - 1]
+shiftFrom from k = subst $ foldr (\_ r -> Nothing :< r) (Inc k) [0 .. from - 1]
 
+-- |Shift all bound variables by @k@
 shift :: (HasSubst term) => Integer -> term -> term
 shift = shiftFrom 0
 
