@@ -1,11 +1,11 @@
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Pirouette.Transformations.Prenex (prenex) where
 
 import qualified Data.Map as Map
+import Optics.Core (over)
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystemF
@@ -46,7 +46,7 @@ prenex PrtUnorderedDefs { prtUODecls, prtUOMainTerm } = do
 prenexDefinitionLambdas ::
   Definition lang ->
   Definition lang
-prenexDefinitionLambdas = onlyOnFunDef $ \FunDef { .. } ->
+prenexDefinitionLambdas = over _DFunDef $ \FunDef { .. } ->
   let (newTy, newBody) = switchLambdas funTy funBody
   in FunDef { funIsRec, funTy = newTy, funBody = newBody }
 
@@ -106,7 +106,7 @@ prenexDefinitionBody ::
   Decls lang ->
   Definition lang ->
   Definition lang
-prenexDefinitionBody newDecls = onlyOnFunDef $ \funDef ->
+prenexDefinitionBody newDecls = over _DFunDef $ \funDef ->
   funDef { funBody = prenexExpr newDecls (funBody funDef) } 
 
 prenexExpr ::
@@ -133,31 +133,10 @@ prenexExpr newDecls = goTerm
 
     -- no more arguments
     zipArgs [] _ = []
-    zipArgs args (SystemF.TyAll _ _ restOfTy) = case firstTyArg args of
+    zipArgs args (SystemF.TyAll _ _ restOfTy) = case SystemF.firstTyArg args of
       Nothing -> args -- none was found, just use arg as is
       Just (ty, moreArgs) -> ty : zipArgs moreArgs restOfTy
-    zipArgs args (SystemF.TyFun _ restOfTy) = case firstTermArg args of
+    zipArgs args (SystemF.TyFun _ restOfTy) = case SystemF.firstTermArg args of
       Nothing -> args -- none was found, just use arg as is
       Just (ty, moreArgs) -> ty : zipArgs moreArgs restOfTy
     zipArgs args _ = args
-
-    firstTyArg [] = Nothing
-    firstTyArg (ty@SystemF.TyArg {} : rest) = Just (ty, rest)
-    firstTyArg (other : rest) = do
-      (ty, args) <- firstTyArg rest
-      pure (ty, other : args)
-
-    firstTermArg [] = Nothing
-    firstTermArg (ty@SystemF.TermArg {} : rest) = Just (ty, rest)
-    firstTermArg (other : rest) = do
-      (ty, args) <- firstTermArg rest
-      pure (ty, other : args)
-
--- | Apply a function only to 'FunDef's
--- and leave the rest of definitions unchanged.
-onlyOnFunDef ::
-  (FunDef lang -> FunDef lang) ->
-  Definition lang -> Definition lang
-onlyOnFunDef f = \case
-  DFunDef funDef -> DFunDef (f funDef)
-  other          -> other

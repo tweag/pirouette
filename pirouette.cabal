@@ -71,6 +71,8 @@ library
     , list-t
     , megaparsec
     , mtl >=2.2.2
+    , optics-core
+    , optics-th
     , optparse-applicative
     , parser-combinators
     , plutus-core
@@ -112,6 +114,8 @@ executable pirouette
     , list-t
     , megaparsec
     , mtl >=2.2.2
+    , optics-core
+    , optics-th
     , optparse-applicative
     , parser-combinators
     , pirouette
@@ -161,6 +165,8 @@ test-suite spec
     , list-t
     , megaparsec
     , mtl >=2.2.2
+    , optics-core
+    , optics-th
     , optparse-applicative
     , parser-combinators
     , pirouette

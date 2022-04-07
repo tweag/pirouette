@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Pirouette.Term.Syntax.SystemF where
@@ -17,6 +18,7 @@ import Data.Generics.Uniplate.Operations (transform)
 import Data.Maybe (mapMaybe)
 import Data.String
 import Data.Void
+import Optics.TH
 import Pirouette.Term.Syntax.Subst
 import GHC.Stack (HasCallStack)
 
@@ -269,6 +271,20 @@ argMapM _ g (TermArg x) = TermArg <$> g x
 argMap :: (ty -> ty') -> (v -> v') -> Arg ty v -> Arg ty' v'
 argMap f g = runIdentity . argMapM (return . f) (return . g)
 
+firstTyArg :: [Arg ty v] -> Maybe (Arg ty v, [Arg ty v])
+firstTyArg [] = Nothing
+firstTyArg (ty@TyArg {} : rest) = Just (ty, rest)
+firstTyArg (other : rest) = do
+  (ty, args) <- firstTyArg rest
+  pure (ty, other : args)
+
+firstTermArg :: [Arg ty v] -> Maybe (Arg ty v, [Arg ty v])
+firstTermArg [] = Nothing
+firstTermArg (ty@TermArg {} : rest) = Just (ty, rest)
+firstTermArg (other : rest) = do
+  (ty, args) <- firstTermArg rest
+  pure (ty, other : args)
+
 instance (Show v, Show ty, Show ann, HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
   type SubstVar (AnnTerm ty ann v) = v
   var = termPure
@@ -376,3 +392,10 @@ instance Ord (Ann x) where
 
 instance IsString x => IsString (Ann x) where
   fromString = Ann . fromString
+
+-- These must go at the end because of Template Haskell restrictions
+
+makePrisms ''VarMeta
+makePrisms ''AnnType
+makePrisms ''AnnTerm
+makePrisms ''Arg
