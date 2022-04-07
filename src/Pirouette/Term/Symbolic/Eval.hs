@@ -219,8 +219,8 @@ runEvaluation t = do
   svars <- declSymVars lams
   symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
 
-consumeFuel :: (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
-consumeFuel f = modify (\st -> st {sestFuel = consumeOneUnitOfFuel (sestFuel st)}) >> f
+consumeFuel :: (SymEvalConstr lang m) => SymEvalT lang m ()
+consumeFuel = modify (\st -> st {sestFuel = consumeOneUnitOfFuel (sestFuel st)})
 
 currentFuel :: (SymEvalConstr lang m) => SymEvalT lang m AvailableFuel
 currentFuel = gets sestFuel
@@ -233,34 +233,40 @@ symeval t = do
   t' <- lift $ normalizeTerm t
   fuelLeft <- currentFuel
   if fuelExhausted fuelLeft
-    then return t'
-    else prune $ symeval' t'
+    then pure t'
+    else do tOneStepMore <- prune $ symEvalOneStep t'
+            symeval tOneStepMore
 
 prtMaybeDefOf :: (PirouetteReadDefs lang m) => VarMeta lang meta -> m (Maybe (Definition lang))
 prtMaybeDefOf (R.Free (TermSig n)) = Just <$> prtDefOf n
 prtMaybeDefOf _ = pure Nothing
 
-symeval' :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
+symEvalOneStep :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
-symeval' R.Abs {} = error "Can't symbolically evaluate polymorphic things"
+symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
 -- and evaluate the corresponding application.
-symeval' t@(R.Lam (R.Ann x) ty _) = do
+symEvalOneStep t@(R.Lam (R.Ann x) ty _) = do
   let ty' = typeFromMeta ty
   [svars] <- declSymVars [(x, ty')]
-  symeval' $ t `R.app` R.TermArg (R.App (R.Meta svars) [])
+  body <- symEvalOneStep (t `R.app` R.TermArg (R.App (R.Meta svars) []))
+  pure $ R.Lam (R.Ann x) ty body
 -- If we're evaluating an applcation, we distinguish between a number
 -- of constituent cases:
-symeval' t@(R.App hd args) = do
+symEvalOneStep t@(R.App hd args) = do
   mDefHead <- lift $ prtMaybeDefOf hd
   case mDefHead of
-    Nothing -> return t
+    -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
+    Nothing -> do
+      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
+      pure $ R.App hd evaluatedArgs
     Just def -> case def of
       DTypeDef _ -> error "Can't evaluate typedefs"
       -- If hd is a defined function, we inline its definition and symbolically evaluate
       -- the result consuming one gas.
-      DFunction _rec body _ ->
-        consumeFuel . symeval $ termToMeta body `R.appN` args
+      DFunction _rec body _ -> do
+        consumeFuel
+        pure $ termToMeta body `R.appN` args
       -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term
       -- by combining the paths with (>>>=), conjuncts all of the constraints. For instance,
       --
@@ -271,7 +277,9 @@ symeval' t@(R.App hd args) = do
       -- >       | (cx, rx) <- x' , (cxs, rxs) <- xs'
       -- >       , isSAT (cx && cxs) ]
       --
-      DConstructor _ _ -> R.App hd <$> mapM (R.argMapM return symeval) args
+      DConstructor _ _ -> do
+        evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
+        pure $ R.App hd evaluatedArgs
       -- If hd is a destructor, we have more work to do: we have to expand the term
       -- being destructed, then combine it with all possible destructor cases.
       -- Say we're looking at:
@@ -289,24 +297,31 @@ symeval' t@(R.App hd args) = do
       -- Naturally, the first path is already impossible so we do not need to
       -- move on to evaluate N.
       DDestructor tyName -> do
-        Just (UnDestMeta _ _ tyParams term _ cases _) <- lift $ runMaybeT (unDest t)
+        Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
         Datatype _ _ _ consList <- lift $ prtTypeDefOf tyName
         -- We know what is the type of all the possible term results, its whatever
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
         let tyParams' = map typeFromMeta tyParams
-        term' <- symeval term
-        asum $
-          for2 consList cases $ \(consName, consTy) caseTerm -> do
-            let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
-            let (consArgs, _) = R.tyFunArgs instantiatedTy
-            svars <- freshSymVars consArgs
-            let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-            let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-            let mconstr = unify term' symbCons
-            case mconstr of
-              Nothing -> empty
-              Just constr -> learn constr >> consumeFuel (symeval $ caseTerm `R.appN` symbArgs)
+        term' <- symEvalOneStep term
+        if term == term'
+        then
+          asum $
+            for2 consList cases $ \(consName, consTy) caseTerm -> do
+              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
+              let (consArgs, _) = R.tyFunArgs instantiatedTy
+              svars <- freshSymVars consArgs
+              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+              let mconstr = unify term' symbCons
+              case mconstr of
+                Nothing -> empty
+                Just constr -> do
+                  learn constr
+                  consumeFuel
+                  return (caseTerm `R.appN` symbArgs)
+        else
+          return $ R.App hd (map R.TyArg tyParams ++ R.TermArg term' : R.TyArg tyRes : map R.TermArg cases ++ excess)
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) t = Just (s =:= t)
@@ -377,82 +392,14 @@ data UniversalAxiom lang = UniversalAxiom {
 
 conditionalEval :: (SymEvalConstr lang m, MonadIO m) => TermMeta lang SymVar -> OutCond lang -> InCond lang -> [UniversalAxiom lang]-> SymEvalT lang m (EvaluationWitness lang)
 conditionalEval t (OutCond q) (InCond p) axioms = do
-  toEvaluateMore <- pruneAndValidate (q t) p axioms
+  normalizedT <- lift $ normalizeTerm t
+  toEvaluateMore <- pruneAndValidate (q normalizedT) p axioms
   if toEvaluateMore
   then do
-    t' <- symEvalOneStep t
+    t' <- symEvalOneStep normalizedT
     conditionalEval t' (OutCond q) (InCond p) axioms
   else
     return (CounterExample t)
-
-symEvalOneStep :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
--- We cannot symbolic-evaluate polymorphic terms
-symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
--- If we're forced to symbolic evaluate a lambda, we create a new metavariable
--- and evaluate the corresponding application.
-symEvalOneStep t@(R.Lam (R.Ann x) ty _) = do
-  let ty' = typeFromMeta ty
-  [svars] <- declSymVars [(x, ty')]
-  R.Lam (R.Ann x) ty <$> symEvalOneStep (t `R.app` R.TermArg (R.App (R.Meta svars) []))
--- If we're evaluating an applcation, we distinguish between a number
--- of constituent cases:
-symEvalOneStep t@(R.App hd args) = do
-  mDefHead <- lift $ prtMaybeDefOf hd
-  case mDefHead of
-    -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
-    Nothing -> do
-      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
-      return $ R.App hd evaluatedArgs
-    Just def -> case def of
-      DTypeDef _ -> error "Can't evaluate typedefs"
-      -- If hd is a defined function, we inline its definition.
-      DFunction _rec body _ ->
-        return $ termToMeta body `R.appN` args
-      -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term.
-      DConstructor _ _ -> do
-        evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
-        return $ R.App hd evaluatedArgs
-      -- If hd is a destructor, we have more work to do: we have to expand the term
-      -- being destructed, then combine it with all possible destructor cases.
-      -- Say we're looking at:
-      --
-      -- > symeval (Nil_match @Int l N (\x xs -> M))
-      --
-      -- Then say that symeval l == [(c1, Cons sv1 sv2)]; we now create a fresh
-      -- symbolic variable S to connect the result of l and each of the branches.
-      -- The overall result should be something like:
-      --
-      -- > [ (c1 && S = Cons sv1 sv2 && S = Nil , N)
-      -- > , (c1 && S = Cons sv1 sv2 && S = Cons sv3 sv4 , M)
-      -- > ]
-      --
-      -- Naturally, the first path is already impossible so we do not need to
-      -- move on to evaluate N.
-      DDestructor tyName -> do
-        Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
-        Datatype _ _ _ consList <- lift $ prtTypeDefOf tyName
-        -- We know what is the type of all the possible term results, its whatever
-        -- type we're destructing applied to its arguments, making sure it contains
-        -- no meta variables.
-        let tyParams' = map typeFromMeta tyParams
-        term' <- symEvalOneStep term
-        if term == term'
-        then
-          asum $
-            for2 consList cases $ \(consName, consTy) caseTerm -> do
-              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
-              let (consArgs, _) = R.tyFunArgs instantiatedTy
-              svars <- freshSymVars consArgs
-              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-              let mconstr = unify term' symbCons
-              case mconstr of
-                Nothing -> empty
-                Just constr -> do
-                  learn constr
-                  return (caseTerm `R.appN` symbArgs)
-        else
-          return $ R.App hd (map R.TyArg tyParams ++ R.TermArg term' : R.TyArg tyRes : map R.TermArg cases ++ excess)
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m Bool
