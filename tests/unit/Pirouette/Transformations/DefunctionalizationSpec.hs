@@ -72,7 +72,7 @@ fun three : Integer
     = apply (const 3) 10
 
 fun four : Integer
-   = apply (apply add 2) 2
+   = apply (apply (add 2)) 2
 
 fun main : Integer = 42
 |], [prog|
@@ -82,14 +82,14 @@ data Closure!!TyInteger_TyInteger
   | Closure!!TyInteger_TyInteger_ctor_2 : Closure!!TyInteger_TyInteger
   | Closure!!TyInteger_TyInteger_ctor_3 : Closure!!TyInteger_TyInteger
 
-fun _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
+fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
     = \(cls : Closure!!TyInteger_TyInteger) .
       match_Closure!!TyInteger_TyInteger cls @Integer 
-        (\(η : Integer) . add 2 η) 
-        (\(η : Integer) . apply Closure!!TyInteger_TyInteger_ctor_1 2 η)
-        (\(η : Integer) . const 3 η)
         (\(η : Integer) . add 1 η)
-
+        (\(η : Integer) . const 3 η)
+        (\(η : Integer) . apply Closure!!TyInteger_TyInteger_ctor_0 η)
+        (\(η : Integer) . add 2 η) 
+        
 fun add : Integer -> Integer -> Integer
     = \(x : Integer) (y : Integer) . x + y
 
@@ -110,6 +110,33 @@ fun two : Integer
 
 fun main : Integer = 42
 |])
+
+dataType, dataTypeDefunc :: Program Ex
+(dataType, dataTypeDefunc) =
+  ([prog|
+data IntHomo
+  = IntHomoC : (Integer -> Integer) -> IntHomo
+
+fun applyIntHomoToOne : IntHomo -> Integer
+  = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Integer -> Integer) . f 1)
+
+fun main : Integer = applyIntHomoToOne (IntHomoC (\(x : Integer) . x + 2))
+|], [prog|
+data Closure!!TyInteger_TyInteger
+  = Closure!!TyInteger_TyInteger_ctor_0 : Closure!!TyInteger_TyInteger
+
+data IntHomo
+  = IntHomoC : Closure!!TyInteger_TyInteger -> IntHomo
+
+fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
+    = \(cls : Closure!!TyInteger_TyInteger) .
+      match_Closure!!TyInteger_TyInteger cls @Integer (\(η : Integer) . η + 2)
+
+fun applyIntHomoToOne : IntHomo -> Integer
+  = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Closure!!TyInteger_TyInteger) . _Apply!!TyInteger_TyInteger f 1)
+
+fun main : Integer = applyIntHomoToOne (IntHomoC Closure!!TyInteger_TyInteger_ctor_0)
+|]) 
 
 addAndApplyPoly :: Program Ex
 addAndApplyPoly =
@@ -145,7 +172,7 @@ fun three : Integer
     = apply @Integer @Integer (const @Integer @Integer 3) 10
 
 fun four : Integer
-   = apply @Integer @Integer (apply @Integer @Integer add 2) 2
+   = apply @Integer @Integer (apply @Integer @Integer (add 2)) 2
 
 fun main : Integer = 42
 |]
@@ -165,7 +192,9 @@ tests =
   [ testCase "add and apply, monomorphic" $
       defunctionalize (uDefs addAndApply) `equalModuloDestructors` uDefs addAndApplyDefunc,
     testCase "add and const, monomorphic" $
-      defunctionalize (uDefs addConst) `equalModuloDestructors` uDefs addConstDefunc
+      defunctionalize (uDefs addConst) `equalModuloDestructors` uDefs addConstDefunc,
+    testCase "data type, monomorphic" $
+      defunctionalize (uDefs dataType) `equalModuloDestructors` uDefs dataTypeDefunc
     -- testCase "add and apply, polymorphic" $
     --   monoDefunc (uDefs addAndApplyPoly) `equalModuloDestructors` uDefs addAndApplyPoly,
     -- testCase "add and const, polymorphic" $
