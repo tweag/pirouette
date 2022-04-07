@@ -9,9 +9,10 @@ import Optics.Core (over)
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystemF
+import Pirouette.Term.Syntax.Subst (shift)
 
 -- | * Prenex form of types
--- 
+--
 -- This transformation tries to push the type abstractions
 -- (big lambdas @/\ x : Type .@ ) to the front of terms,
 -- before any term abstractions (small lambdas @\ x : Int .@ )
@@ -26,7 +27,7 @@ import qualified Pirouette.Term.Syntax.SystemF as SystemF
 -- out on non-prenex types in other transformations, because
 -- those cases are quite rare and difficult to handle
 -- (usually involving some impredicative types.)
-prenex :: 
+prenex ::
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
 prenex PrtUnorderedDefs { prtUODecls, prtUOMainTerm } = do
@@ -54,12 +55,12 @@ prenexDefinitionLambdas = over _DFunDef $ \FunDef { .. } ->
 switchLambdas :: Type lang -> Term lang -> (Type lang, Term lang)
 -- this case pushes lambdas inwards
 -- \ x . /\ a . ty --> /\ a . \x . ty
-switchLambdas (SystemF.TyFun ty1 (SystemF.TyAll annTy kindTy restOfType)) 
+switchLambdas (SystemF.TyFun ty1 (SystemF.TyAll annTy kindTy restOfType))
               (SystemF.Lam arg1 tyTm1 (SystemF.Abs annTm kindTm body))
   = let -- since we are going to have an additional /\ on front,
         -- we need to shift the bound variables by 1
-        shiftedTy1 = shiftTyBy1 0 ty1
-        shiftedTyTm1 = shiftTyBy1 0 tyTm1
+        shiftedTy1 = shift 1 ty1
+        shiftedTyTm1 = shift 1 tyTm1
         (newTy, newBody) = switchLambdas (SystemF.TyFun shiftedTy1 restOfType)
                            (SystemF.Lam arg1 shiftedTyTm1 body)
     in (SystemF.TyAll annTy kindTy newTy, SystemF.Abs annTm kindTm newBody)
@@ -80,26 +81,6 @@ switchLambdas (SystemF.TyAll annTy kindTy restOfType)
     in (SystemF.TyAll annTy kindTy newTy, SystemF.Abs annTm kindTm newBody)
 switchLambdas otherTy otherTm = (otherTy, otherTm)
 
--- | Shift all the bound type variables,
--- starting from @from@ upwards.
-shiftTyBy1 :: Integer -> Type lang -> Type lang
-shiftTyBy1 from = go
-  where
-    oneMore = shiftTyBy1 (from + 1)
-
-    go (SystemF.TyFun ty1 ty2) 
-      = SystemF.TyFun (go ty1) (go ty2)
-    go (SystemF.TyLam ann ki rest)
-      = SystemF.TyLam ann ki (oneMore rest)
-    go (SystemF.TyAll ann ki rest)
-      = SystemF.TyAll ann ki (oneMore rest)
-    go (SystemF.TyApp hd args)
-      = let shiftedArgs = map go args
-        in case hd of
-             SystemF.Bound ann i | i >= from
-               -> SystemF.TyApp (SystemF.Bound ann (i + 1)) shiftedArgs
-             _ -> SystemF.TyApp hd shiftedArgs
-
 -- | Update the body of a definition
 -- with the prenex-ed types from 'newDecls'.
 prenexDefinitionBody ::
@@ -107,7 +88,7 @@ prenexDefinitionBody ::
   Definition lang ->
   Definition lang
 prenexDefinitionBody newDecls = over _DFunDef $ \funDef ->
-  funDef { funBody = prenexExpr newDecls (funBody funDef) } 
+  funDef { funBody = prenexExpr newDecls (funBody funDef) }
 
 prenexExpr ::
   forall lang.
@@ -115,7 +96,7 @@ prenexExpr ::
   Term lang ->
   Term lang
 prenexExpr newDecls = goTerm
-  where 
+  where
     goTerm :: Term lang -> Term lang
     goTerm (SystemF.Lam ann ty body) = SystemF.Lam ann ty (goTerm body)
     goTerm (SystemF.Abs ann ki body) = SystemF.Abs ann ki (goTerm body)
