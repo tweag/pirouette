@@ -120,7 +120,7 @@ mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
     dtorDecls = [ (dtorName tyName, DDestructor tyName) | tyName <- fst <$> types ]
 
 dtorName :: Name -> Name
-dtorName tyName = [i|#{tyName}_match|]
+dtorName tyName = [i|match_#{tyName}|]
 
 -- * Apply function generation
 
@@ -302,16 +302,16 @@ replaceApply applyFun = go 0
         recurArg (SystF.TermArg arg) = SystF.TermArg $ go idx arg
 
 closureTypeName :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> Name
-closureTypeName ty = [i|Closure[#{funTyStr ty}]|]
+closureTypeName ty = [i|Closure!!#{funTyStr ty}|]
 
 applyFunName :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> Name
-applyFunName ty = [i|Apply[#{funTyStr ty}]|]
+applyFunName ty = [i|_Apply!!#{funTyStr ty}|]
 
 closureType :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> B.Type lang
 closureType ty = SystF.Free (TySig $ closureTypeName ty) `SystF.TyApp` []
 
 funTyStr :: (LanguagePretty lang, LanguageBuiltins lang) => B.Type lang -> T.Text
-funTyStr (dom `SystF.TyFun` cod) = funTyStr dom <> " => " <> funTyStr cod
+funTyStr (dom `SystF.TyFun` cod) = funTyStr dom <> "_" <> funTyStr cod
 funTyStr app@SystF.TyApp{} = argsToStr [app]
 funTyStr ty = error $ "unexpected arg type during defunctionalization:\n"
                    <> renderSingleLineStr (pretty ty)
