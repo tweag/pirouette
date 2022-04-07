@@ -24,7 +24,7 @@ trProgram ::
   M.Map String (Either DataDecl FunDecl) ->
   FunDecl ->
   TrM (M.Map Name (Definition Ex), Term Ex)
-trProgram env (FunDecl _ main) =
+trProgram env (FunDecl _ _ main) =
   let decls =
         mapM (uncurry (\s -> either (trDataDecl s) (fmap ((: []) . (fromString s,)) . trFunDecl))) $
           M.toList env
@@ -39,8 +39,8 @@ trProgram env (FunDecl _ main) =
             else throwError $ "Repeaded definitions: " ++ show repeated
 
 trFunDecl :: FunDecl -> TrM (Definition Ex)
-trFunDecl (FunDecl ty expr) =
-  DFunDef <$> (FunDef Rec <$> trTerm [] [] expr <*> trType [] ty)
+trFunDecl (FunDecl rec ty expr) =
+  DFunDef <$> (FunDef rec <$> trTerm [] [] expr <*> trType [] ty)
 
 trDataDecl :: String -> DataDecl -> TrM [(Name, Definition Ex)]
 trDataDecl sName (DataDecl vars cons) = do

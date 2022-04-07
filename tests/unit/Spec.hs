@@ -2,6 +2,7 @@ import qualified Language.Pirouette.ExampleSpec as Ex
 import qualified Language.Pirouette.PlutusIR.ToTermSpec as FP
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Term.TransformationsSpec as Tr
+import qualified Pirouette.Transformations.DefunctionalizationSpec as Defunc
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
 import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
 import qualified Pirouette.Transformations.PrenexSpec as Prenex
@@ -17,7 +18,8 @@ tests =
     [ testGroup "SystemF" SF.tests,
       testGroup
         "Transformations"
-        [testGroup "EtaExpand" Eta.tests,
+        [testGroup "Defunctionalization" Defunc.tests,
+         testGroup "EtaExpand" Eta.tests,
          testGroup "Monomorphization" Mono.tests,
          testGroup "Prenex" Prenex.tests],
       testGroup "Term" [testGroup "Transformations" Tr.tests],
