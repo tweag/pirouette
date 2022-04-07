@@ -13,13 +13,13 @@ import qualified Pirouette.Term.Syntax.SystemF as SystemF
 -- | * Prenex form of types
 -- 
 -- This transformation tries to push the type abstractions
--- (big lambdas /\ x : Type . ) to the front of terms,
--- before any term abstractions (small lambdas \ x : Int . )
+-- (big lambdas @/\ x : Type .@ ) to the front of terms,
+-- before any term abstractions (small lambdas @\ x : Int .@ )
 --
 -- For example,
---   /\ a : Type . \ x : a . /\ b : Type . \ y : b . ...
+-- >  /\ a : Type . \ x : a . /\ b : Type . \ y : b . ...
 -- is transformed to
---   /\ a : Type . /\ b : Type . \ x : a . \ y : b . ...
+-- >  /\ a : Type . /\ b : Type . \ x : a . \ y : b . ...
 --
 -- This makes it easier for later transformations to apply
 -- on type abstractions. In fact, it's common to just bail
@@ -81,7 +81,7 @@ switchLambdas (SystemF.TyAll annTy kindTy restOfType)
 switchLambdas otherTy otherTm = (otherTy, otherTm)
 
 -- | Shift all the bound type variables,
--- starting from 'from' upwards.
+-- starting from @from@ upwards.
 shiftTyBy1 :: Integer -> Type lang -> Type lang
 shiftTyBy1 from = go
   where
