@@ -138,6 +138,7 @@ test-suite spec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec
+      Pirouette.Transformations.DefunctionalizationSpec
       Pirouette.Transformations.EtaExpandSpec
       Pirouette.Transformations.MonomorphizationSpec
       Paths_pirouette

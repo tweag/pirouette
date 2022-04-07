@@ -100,7 +100,7 @@ instance LanguageBuiltins Ex where
 data DataDecl = DataDecl [(String, SystF.Kind)] [(String, Ty)]
   deriving (Show)
 
-data FunDecl = FunDecl Ty Expr
+data FunDecl = FunDecl Rec Ty Expr
   deriving (Show)
 
 data Ty
@@ -163,12 +163,13 @@ parseDataDecl = label "Data declaration" $ do
 parseFunDecl :: Parser (String, FunDecl)
 parseFunDecl = label "Function declaration" $ do
   try (symbol "fun")
+  r <- NonRec <$ symbol "nonrec" <|> pure Rec
   i <- ident
   parseTyOf
   t <- parseType
   symbol "="
   x <- parseTerm
-  return (i, FunDecl t x)
+  return (i, FunDecl r t x)
 
 parseKind :: Parser SystF.Kind
 parseKind =
@@ -309,7 +310,7 @@ symbol = void . L.symbol spaceConsumer
 
 ident :: Parser String
 ident = label "identifier" $ do
-  i <- lexeme ((:) <$> lowerChar <*> restOfName)
+  i <- lexeme ((:) <$> (lowerChar <|> char '_') <*> restOfName)
   guard (i `S.notMember` reservedNames)
   return i
   where

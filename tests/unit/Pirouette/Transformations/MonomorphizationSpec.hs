@@ -73,7 +73,7 @@ tests =
     -- we rely on 'hofsClosure':
     testCase "hofsClosure picks the expected defs" $
       let ds = prtUODecls sampleUDefs
-       in M.keys (hofsClosure ds (findPolyHOFDefs ds)) @?= ["Mon", "Monoid", "fold", "match_Monoid"],
+       in M.keys (hofsClosure ds (findPolyHOFDefs ds)) @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
