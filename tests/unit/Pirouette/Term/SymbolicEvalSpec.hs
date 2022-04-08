@@ -26,6 +26,19 @@ symbolicExec program term = fmap fst $ mockPrtT $ do
   flip runReaderT orderedDecls $ do
     pathsFor (Fuel 10) "main" term
 
+incorrectnessExec :: Program Ex -> Term Ex -> InCond Ex -> OutCond Ex -> IO (Either String [Path Ex (EvaluationWitness Ex)])
+incorrectnessExec program term inC outC = fmap fst $ mockPrtT $ do
+  let decls = uncurry PrtUnorderedDefs program
+  orderedDecls <- elimEvenOddMutRec decls
+  flip runReaderT orderedDecls $ do
+    pathsIncorrectness UserDeclaredConstraints {
+      udcInputs = [], 
+      udcOutputCond = outC, 
+      udcInputCond = inC, 
+      udcAdditionalDefs = pure [], 
+      udcAxioms = [] } 
+      term
+
 (*=*) :: (Eq a, Show a) => IO (Either String a) -> a -> Assertion
 thing *=* expected = do
   given <- thing

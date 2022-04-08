@@ -23,6 +23,7 @@ module Pirouette.Term.Symbolic.Eval (
   -- ** Incorrectness logic
   runIncorrectness, pathsIncorrectness, pathsIncorrectness_,
   UserDeclaredConstraints(..), UniversalAxiom(..), InCond(..), OutCond(..),
+  EvaluationWitness(..),
   -- * Internal, used to build on top of 'SymEvalT'
   SymEvalConstr, SymEvalT, runSymEvalT
 ) where
@@ -414,6 +415,7 @@ newtype InCond lang = InCond (Constraint lang)
 
 data EvaluationWitness lang =
   Verified | CounterExample (TermMeta lang SymVar)
+  deriving (Eq, Show)
 
 data UniversalAxiom lang = UniversalAxiom {
   boundVars :: [(Name, Type lang)],
@@ -421,7 +423,7 @@ data UniversalAxiom lang = UniversalAxiom {
 }
 
 
-runIncorrectness :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+runIncorrectness :: (SymEvalConstr lang  m, MonadIO m)
                  => UserDeclaredConstraints lang -> Term lang  -> m ()
 runIncorrectness udc t = do
   paths <- pathsIncorrectness udc t
@@ -429,11 +431,11 @@ runIncorrectness udc t = do
   then liftIO $ putStrLn "Condition VERIFIED"
   else mapM_ (liftIO . print . pretty) paths
 
-pathsIncorrectness :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+pathsIncorrectness :: (SymEvalConstr lang  m, MonadIO m)
                    => UserDeclaredConstraints lang -> Term lang  -> m [Path lang (EvaluationWitness lang)]
 pathsIncorrectness udc t = symevalT InfiniteFuel $ pathsIncorrectnessWorker udc t
 
-pathsIncorrectness_ :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+pathsIncorrectness_ :: (SymEvalConstr lang  m, MonadIO m)
                     => (SimpleSMT.Solver -> m (UserDeclaredConstraints lang)) -> Term lang
                     -> m [Path lang (EvaluationWitness lang)]
 pathsIncorrectness_ getUdc t = symevalT InfiniteFuel $ do
@@ -441,7 +443,7 @@ pathsIncorrectness_ getUdc t = symevalT InfiniteFuel $ do
   udc <- lift $ getUdc solver
   pathsIncorrectnessWorker udc t
 
-pathsIncorrectnessWorker :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+pathsIncorrectnessWorker :: (SymEvalConstr lang  m, MonadIO m)
                          => UserDeclaredConstraints lang -> Term lang  -> SymEvalT lang m (EvaluationWitness lang)
 pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
     void $ liftIO udcAdditionalDefs
