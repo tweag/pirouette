@@ -4,5 +4,5 @@
 let
   ourpkgs = import ./packages.nix {};
 in pkgs.mkShell {
-    buildInputs = ourpkgs.build-deps ++ runtime-deps;
+    buildInputs = ourpkgs.build-deps;
 }
