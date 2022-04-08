@@ -10,11 +10,6 @@
     haskellNix.nixpkgsArgs
 }:
 let
-  # updated haskell.nix to get the latest haskell-language-server
-  # idea obtained from https://input-output-hk.github.io/haskell.nix/tutorials/development.html#how-to-get-an-ad-hoc-development-shell-including-certain-packages
-  updatedHaskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/82832676a10a5a0d73eab60e58cc8f1bb591c214.tar.gz) {};
-  updatedNixpkgs = import updatedHaskellNix.sources.nixpkgs updatedHaskellNix.nixpkgsArgs;
-  updatedHaskell = updatedNixpkgs.haskell-nix;
   # The only difficulty we face is making sure to build the haskell-language-server
   # with the same version of GHC that is used for plutus; doing so, however,
   # requires patching ghcide, a dependency of haskell-language-server.
@@ -23,7 +18,7 @@ let
   # inside its 'modules' key:
   custom-hls =
     with
-    (updatedHaskell.hackage-package {
+    (iohkpkgs.haskell-nix.hackage-package {
       compiler-nix-name = "ghc810420210212";
       name = "haskell-language-server";
       version = "1.6.1.1";
