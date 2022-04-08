@@ -43,8 +43,6 @@ deriving instance Data P.DefaultFun
 
 deriving instance Lift P.DefaultFun
 
-deriving instance Data P.Data
-
 deriving instance Lift P.Data
 
 instance LanguageBuiltins BuiltinsOfPIR where
