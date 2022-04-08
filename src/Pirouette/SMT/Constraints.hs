@@ -43,10 +43,12 @@ data AtomicConstraint lang meta
   | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
   | Native SimpleSMT.SExpr
+  deriving (Eq, Show)
 
 data Constraint lang meta
   = And [AtomicConstraint lang meta]
   | Bot
+  deriving (Eq, Show)
 
 instance Semigroup (Constraint lang meta) where
   (<>) = andConstr

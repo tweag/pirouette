@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -47,7 +48,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 import Prettyprinter hiding (Pretty (..))
 
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable)
@@ -63,7 +64,7 @@ symVarEq a b = SMT.And [SMT.VarEq (symVar a) (symVar b)]
 (=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
 a =:= t = SMT.And [SMT.Assign (symVar a) t]
 
-data PathStatus = Completed | OutOfFuel
+data PathStatus = Completed | OutOfFuel deriving (Eq, Show)
 
 data Path lang res = Path
   { pathConstraint :: Constraint lang,
@@ -72,6 +73,9 @@ data Path lang res = Path
     pathResult :: res
   }
   deriving (Functor, Traversable, Foldable)
+
+deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lang res)
+deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
 
 data AvailableFuel = Fuel Int | InfiniteFuel
   deriving (Eq, Show)
@@ -174,8 +178,8 @@ prune :: forall lang m a. (Pretty a, SymEvalConstr lang m) => SymEvalT lang m a 
 prune xs = SymEvalT $
   StateT $ \st -> do
     (x, st') <- runSymEvalTRaw st xs
-    trace ("  X is " ++ show (pretty x)) $ return ()
-    trace ("  in the context " ++ show (pretty st')) $ return ()
+    -- trace ("  X is " ++ show (pretty x)) $ return ()
+    -- trace ("  in the context " ++ show (pretty st')) $ return ()
     ok <- pathIsPlausible st'
     guard ok
     return (x, st')
@@ -225,7 +229,7 @@ freshSymVars tys = do
 
 runEvaluation :: (SymEvalConstr lang m) => Term lang -> SymEvalT lang m (TermMeta lang SymVar)
 runEvaluation t = do
-  liftIO $ putStrLn $ "evaluating: " ++ show (pretty t)
+  -- liftIO $ putStrLn $ "evaluating: " ++ show (pretty t)
   let (lams, _) = R.getHeadLams t
   svars <- declSymVars lams
   symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
@@ -246,7 +250,9 @@ symeval t = do
   if fuelExhausted fuelLeft
     then pure t'
     else do tOneStepMore <- prune $ symEvalOneStep t'
-            symeval tOneStepMore
+            if tOneStepMore == t'
+               then pure tOneStepMore
+               else symeval tOneStepMore
 
 prtMaybeDefOf :: (PirouetteReadDefs lang m) => VarMeta lang meta -> m (Maybe (Definition lang))
 prtMaybeDefOf (R.Free (TermSig n)) = Just <$> prtDefOf n
