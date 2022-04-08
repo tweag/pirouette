@@ -449,7 +449,7 @@ pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
     void $ liftIO udcAdditionalDefs
     svars <- declSymVars udcInputs
     let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-    -- liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+    liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
     conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
 
 conditionalEval :: (SymEvalConstr lang m, MonadIO m)
@@ -457,7 +457,9 @@ conditionalEval :: (SymEvalConstr lang m, MonadIO m)
                 -> SymEvalT lang m (EvaluationWitness lang)
 conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
+  liftIO $ putStrLn $ "normalized: " ++ show (pretty normalizedT)
   toEvaluateMore <- pruneAndValidate (q normalizedT) p axioms
+  liftIO $ putStrLn $ "to evaluate more? " ++ show toEvaluateMore
   if toEvaluateMore
   then do
     t' <- symEvalOneStep normalizedT
@@ -470,6 +472,7 @@ pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang
 pruneAndValidate cOut cIn axioms =
   SymEvalT $ StateT $ \st -> do
     contradictProperty <- checkProperty cOut cIn axioms st
+    liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
     case contradictProperty of
       SMT.Unsat -> empty
       SMT.Sat -> return (False, st)

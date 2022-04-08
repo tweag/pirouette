@@ -71,17 +71,21 @@ fun main : Integer = 42
   [term| \(z : Integer) . sumar z 1 |])
 
 botConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
-botConditions = (SMT.And [], const SMT.Bot)
+botConditions = (SMT.Bot, const mempty)
 
 topConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
-topConditions = (SMT.And [], const (SMT.And []))
+topConditions = (mempty, const mempty)
+
+isSingleton :: [a] -> Bool
+isSingleton [_] = True
+isSingleton _ = False
 
 tests :: [TestTree]
 tests = [ 
   testCase "add 1" $
-    symbolicExec' add1 `satisfies` (\r -> length r == 1),
+    symbolicExec' add1 `satisfies` isSingleton,
   testCase "add 1, bot" $
-    incorrectnessExec' add1 botConditions `satisfies` null,
+    incorrectnessExec' add1 botConditions `satisfies` isSingleton,
   testCase "add 1, top" $
     incorrectnessExec' add1 topConditions `satisfies` null
   ]
