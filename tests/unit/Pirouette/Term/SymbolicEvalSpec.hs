@@ -38,7 +38,7 @@ thing `satisfies` property = do
   given <- thing
   case given of
     Left e -> assertFailure $ "finished with errors: " <> e
-    Right x -> assertBool "property is not satisfied" $ property x
+    Right x -> assertBool ("property not satisfied: " <> show x) (property x)
 
 add1 :: (Program Ex, Term Ex)
 add1 = (
