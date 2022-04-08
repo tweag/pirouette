@@ -142,6 +142,7 @@ test-suite spec
   other-modules:
       Language.Pirouette.ExampleSpec
       Language.Pirouette.PlutusIR.ToTermSpec
+      Pirouette.Term.SymbolicEvalSpec
       Pirouette.Term.Syntax.BaseSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec

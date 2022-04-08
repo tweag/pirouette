@@ -22,7 +22,6 @@ import Control.Monad
 import Control.Monad.Except
 import qualified Text.Megaparsec.Char.Lexer as L
 import Pirouette.Term.Syntax.Pretty ( Pretty(pretty) )
-import Control.Monad.Reader
 
 type Parser = Parsec Void String
 
@@ -83,14 +82,6 @@ data ConstraintDescription = ConstraintDescription {
 }
   deriving (Generic, Show)
 instance FromJSON ConstraintDescription
-
-data UserDeclaredConstraints lang = UserDeclaredConstraints {
-  udcInputs :: [(Name, Type lang)],
-  udcOutputCond :: OutCond lang,
-  udcInputCond :: InCond lang,
-  udcAdditionalDefs :: IO [SimpleSMT.SExpr],
-  udcAxioms :: [UniversalAxiom lang]
-}
 
 parseConstraintDescription :: (Read (BuiltinTypes lang)) => SimpleSMT.Solver -> ConstraintDescription -> UserDeclaredConstraints lang
 parseConstraintDescription
@@ -464,20 +455,14 @@ parsePairAsFun p q = do
   void $ char ')'
   return $ \t -> (resA t, resB t)
 
-runIncorrectness :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang)) => FilePath -> Term lang  -> m ()
+runIncorrectness :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+                 => FilePath -> Term lang  -> m ()
 runIncorrectness fil t = do
-  paths <- symevalT $ do
-    solver <- SymEvalT $ lift $ SMT.SolverT ask
+  paths <- flip pathsIncorrectness_ t $ \solver -> do
     constrDescription <- liftIO $ eitherDecodeFileStrict fil
     case constrDescription of
       Left l -> error $ "Impossible to parse this file\n" ++ l
-      Right cstDescr -> do
-        let !UserDeclaredConstraints {..} = parseConstraintDescription solver cstDescr
-        void $ liftIO udcAdditionalDefs
-        svars <- declSymVars udcInputs
-        let tApplied = SystF.appN (termToMeta t) $ map (SystF.TermArg . (`SystF.App` []) . SystF.Meta) svars
-        liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
-        conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
+      Right cstDescr -> pure $ parseConstraintDescription solver cstDescr
   if null paths
   then liftIO $ putStrLn "Condition VERIFIED"
   else mapM_ (liftIO . print . pretty) paths

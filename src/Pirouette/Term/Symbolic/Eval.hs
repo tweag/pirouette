@@ -13,7 +13,18 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Pirouette.Term.Symbolic.Eval where
+module Pirouette.Term.Symbolic.Eval (
+  -- * Runners
+  -- ** General inputs and outputs
+  AvailableFuel(..), Path(..), PathStatus(..), Constraint, SymVar,
+  -- ** Base symbolic evaluation
+  runFor, pathsFor,
+  -- ** Incorrectness logic
+  runIncorrectness, pathsIncorrectness, pathsIncorrectness_,
+  UserDeclaredConstraints(..), UniversalAxiom(..), InCond(..), OutCond(..),
+  -- * Internal, used to build on top of 'SymEvalT'
+  SymEvalConstr, SymEvalT, runSymEvalT
+) where
 
 import Control.Applicative
 import Control.Monad
@@ -113,10 +124,10 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
 
 type SymEvalConstr lang m = (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMT lang, MonadIO m)
 
-symevalT :: (SymEvalConstr lang m) => SymEvalT lang m a -> m [Path lang a]
-symevalT = runSymEvalT st0
+symevalT :: (SymEvalConstr lang m) => AvailableFuel -> SymEvalT lang m a -> m [Path lang a]
+symevalT initialFuel = runSymEvalT st0
   where
-    st0 = SymEvalSt mempty M.empty 0 (Fuel 10) False []
+    st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
 runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
@@ -200,8 +211,8 @@ declSymVars vs = do
   modify (\st -> st {sestGamma = M.union (sestGamma st) (M.fromList vs)})
   return $ map (SymVar . fst) vs
 
-freshSymVar :: (SymEvalConstr lang m) => Type lang -> SymEvalT lang m SymVar
-freshSymVar ty = head <$> freshSymVars [ty]
+-- freshSymVar :: (SymEvalConstr lang m) => Type lang -> SymEvalT lang m SymVar
+-- freshSymVar ty = head <$> freshSymVars [ty]
 
 freshSymVars :: (SymEvalConstr lang m) => [Type lang] -> SymEvalT lang m [SymVar]
 freshSymVars [] = return []
@@ -372,12 +383,25 @@ instance Pretty PathStatus where
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
-runFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) => Name -> Term lang -> m ()
-runFor _ t = do
-  paths <- symevalT (runEvaluation t)
+runFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m)
+       => AvailableFuel -> Name -> Term lang -> m ()
+runFor initialFuel nm t = do
+  paths <- pathsFor initialFuel nm t
   mapM_ (liftIO . print . pretty) paths
 
+pathsFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m)
+         => AvailableFuel -> Name -> Term lang -> m [Path lang (TermMeta lang SymVar)]
+pathsFor initialFuel _ t = symevalT initialFuel (runEvaluation t)
+
 -- * All the functions related to symbolic execution guarded by user written predicates rather than fuel.
+
+data UserDeclaredConstraints lang = UserDeclaredConstraints {
+  udcInputs :: [(Name, Type lang)],
+  udcOutputCond :: OutCond lang,
+  udcInputCond :: InCond lang,
+  udcAdditionalDefs :: IO [SimpleSMT.SExpr],
+  udcAxioms :: [UniversalAxiom lang]
+}
 
 newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
 newtype InCond lang = InCond (Constraint lang)
@@ -390,7 +414,39 @@ data UniversalAxiom lang = UniversalAxiom {
   axiomBody :: [SimpleSMT.SExpr] -> SimpleSMT.SExpr
 }
 
-conditionalEval :: (SymEvalConstr lang m, MonadIO m) => TermMeta lang SymVar -> OutCond lang -> InCond lang -> [UniversalAxiom lang]-> SymEvalT lang m (EvaluationWitness lang)
+
+runIncorrectness :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+                 => UserDeclaredConstraints lang -> Term lang  -> m ()
+runIncorrectness udc t = do
+  paths <- pathsIncorrectness udc t
+  if null paths
+  then liftIO $ putStrLn "Condition VERIFIED"
+  else mapM_ (liftIO . print . pretty) paths
+
+pathsIncorrectness :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+                   => UserDeclaredConstraints lang -> Term lang  -> m [Path lang (EvaluationWitness lang)]
+pathsIncorrectness udc t = symevalT InfiniteFuel $ pathsIncorrectnessWorker udc t
+
+pathsIncorrectness_ :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+                    => (SimpleSMT.Solver -> m (UserDeclaredConstraints lang)) -> Term lang
+                    -> m [Path lang (EvaluationWitness lang)]
+pathsIncorrectness_ getUdc t = symevalT InfiniteFuel $ do
+  solver <- SymEvalT $ lift $ SMT.SolverT ask
+  udc <- lift $ getUdc solver
+  pathsIncorrectnessWorker udc t
+
+pathsIncorrectnessWorker :: (SymEvalConstr lang  m, MonadIO m, Read (BuiltinTypes lang))
+                         => UserDeclaredConstraints lang -> Term lang  -> SymEvalT lang m (EvaluationWitness lang)
+pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
+    void $ liftIO udcAdditionalDefs
+    svars <- declSymVars udcInputs
+    let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
+    liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+    conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
+
+conditionalEval :: (SymEvalConstr lang m, MonadIO m)
+                => TermMeta lang SymVar -> OutCond lang -> InCond lang -> [UniversalAxiom lang]
+                -> SymEvalT lang m (EvaluationWitness lang)
 conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
   toEvaluateMore <- pruneAndValidate (q normalizedT) p axioms

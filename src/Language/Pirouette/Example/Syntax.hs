@@ -36,6 +36,8 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
+import Pirouette.SMT
+import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Text.Megaparsec
@@ -111,6 +113,17 @@ instance LanguageBuiltinTypes Ex where
 tInt, tBool :: Type Ex
 tInt = SystF.tyPure $ SystF.Free $ TyBuiltin TyInteger
 tBool = SystF.tyPure $ SystF.Free $ TyBuiltin TyBool
+
+instance LanguageSMT Ex where
+  translateBuiltinType TyInteger = SimpleSMT.tInt
+  translateBuiltinType TyBool = SimpleSMT.tBool
+  translateBuiltinTerm TermAdd = SimpleSMT.Atom "+"
+  translateBuiltinTerm TermSub = SimpleSMT.Atom "-"
+  translateBuiltinTerm TermLt = SimpleSMT.Atom "<"
+  translateBuiltinTerm TermEq = SimpleSMT.Atom "="
+  translateBuiltinTerm TermIte = SimpleSMT.Atom "ite"
+  translateConstant (ConstInt n) = SimpleSMT.int n
+  translateConstant (ConstBool b) = SimpleSMT.bool b
 
 -- ** Syntactical Categories
 
