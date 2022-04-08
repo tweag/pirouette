@@ -449,7 +449,7 @@ pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
     void $ liftIO udcAdditionalDefs
     svars <- declSymVars udcInputs
     let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-    liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+    -- liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
     conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
 
 conditionalEval :: (SymEvalConstr lang m, MonadIO m)

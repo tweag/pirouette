@@ -15,6 +15,8 @@ import Pirouette.Term.Symbolic.Eval
 import Pirouette.Transformations ( elimEvenOddMutRec )
 import Test.Tasty
 import Test.Tasty.HUnit
+import qualified Pirouette.SMT as SMT
+import qualified Pirouette.SMT.SimpleSMT as SMT
 
 symbolicExec' :: (Program Ex, Term Ex) -> IO (Either String [Path Ex (TermMeta Ex SymVar)])
 symbolicExec' = uncurry symbolicExec
@@ -26,7 +28,12 @@ symbolicExec program term = fmap fst $ mockPrtT $ do
   flip runReaderT orderedDecls $ do
     pathsFor (Fuel 10) "main" term
 
-incorrectnessExec :: Program Ex -> Term Ex -> InCond Ex -> OutCond Ex -> IO (Either String [Path Ex (EvaluationWitness Ex)])
+incorrectnessExec' :: (Program Ex, Term Ex) -> (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
+                   -> IO (Either String [Path Ex (EvaluationWitness Ex)])
+incorrectnessExec' (p, t) (i, o) = incorrectnessExec p t (InCond i) (OutCond o)
+
+incorrectnessExec :: Program Ex -> Term Ex -> InCond Ex -> OutCond Ex
+                  -> IO (Either String [Path Ex (EvaluationWitness Ex)])
 incorrectnessExec program term inC outC = fmap fst $ mockPrtT $ do
   let decls = uncurry PrtUnorderedDefs program
   orderedDecls <- elimEvenOddMutRec decls
@@ -63,8 +70,18 @@ fun main : Integer = 42
   |],
   [term| \(z : Integer) . sumar z 1 |])
 
+botConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
+botConditions = (SMT.And [], const SMT.Bot)
+
+topConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
+topConditions = (SMT.And [], const (SMT.And []))
+
 tests :: [TestTree]
 tests = [ 
   testCase "add 1" $
-    symbolicExec' add1 `satisfies` (\r -> length r == 1)
+    symbolicExec' add1 `satisfies` (\r -> length r == 1),
+  testCase "add 1, bot" $
+    incorrectnessExec' add1 botConditions `satisfies` null,
+  testCase "add 1, top" $
+    incorrectnessExec' add1 topConditions `satisfies` null
   ]
