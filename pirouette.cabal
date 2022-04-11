@@ -44,6 +44,7 @@ library
       Pirouette.Term.Syntax.SystemF
       Pirouette.Term.Transformations
       Pirouette.Term.TransitiveDeps
+      Pirouette.Term.TypeChecker
       Pirouette.Transformations
       Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.EtaExpand
