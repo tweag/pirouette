@@ -97,7 +97,7 @@ typeOfFree nm = do
     Just (DFunction _ _ ty) -> pure ty
     Just (DDestructor t) -> do
       tdef <- typeDef nm t
-      pure $ destructorTypeFor tdef
+      pure $ destructorTypeFor t tdef
     Just (DConstructor i t) -> do
       tdef <- typeDef nm t
       case safeIx (constructors tdef) i of
