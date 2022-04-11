@@ -8,7 +8,7 @@
 -- | Provides the quasiquoters to be able to write @Ex@ programs
 --  directly into Haskell source files. Using the functions
 --  exported by this module requires the @-XQuasiQuotes@ extension.
-module Language.Pirouette.Example.QuasiQuoter (prog, term, ty) where
+module Language.Pirouette.Example.QuasiQuoter (prog, progNoTC, term, ty) where
 
 import Control.Monad.Except (runExcept)
 import qualified Data.Map as M
@@ -18,10 +18,18 @@ import Language.Pirouette.Example.Syntax
 import Language.Pirouette.Example.ToTerm
 import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 
 prog :: QuasiQuoter
 prog = quoter $ \str -> do
+  p0 <- parseQ (spaceConsumer *> lexeme parseProgram <* eof) str
+  p1@(decls, _) <- trQ (uncurry trProgram p0)
+  _ <- maybeQ (typeCheckDecls decls)
+  [e|p1|]
+
+progNoTC :: QuasiQuoter
+progNoTC = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme parseProgram <* eof) str
   p1 <- trQ (uncurry trProgram p0)
   [e|p1|]
@@ -49,6 +57,11 @@ trQ :: TrM a -> Q a
 trQ f = case runExcept f of
   Left err -> fail err
   Right r -> return r
+
+maybeQ :: (Show e) => Either e a -> Q a
+maybeQ (Left e)  = fail (show e)
+maybeQ (Right x) = return x
+
 
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   liftTyped m = unsafeTExpCoerce [e|M.fromList $(lift (M.toList m))|]

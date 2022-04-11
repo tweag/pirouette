@@ -11,6 +11,18 @@ import Control.Monad.Reader
 import Pirouette.Term.Syntax.Base hiding (Var, TyVar)
 import Pirouette.Term.Syntax.SystemF
 
+-- | Checks an entire set of declarations.
+typeCheckDecls
+  :: LanguageBuiltinTypes lang
+  => Decls lang -> Either (TypeError lang) ()
+typeCheckDecls decls = do
+  _ <- flip Map.traverseWithKey decls $ \name decl -> case decl of
+    DFunDef FunDef { funBody, funTy } ->
+      flip runReaderT ((decls, []), [DeclPath name]) $
+        void $ typeCheckTerm funTy funBody
+    _ -> pure ()
+  pure ()
+
 class (LanguageBuiltins lang)
       => LanguageBuiltinTypes lang where
   typeOfConstant :: Constants lang    -> Type lang
@@ -122,18 +134,6 @@ extendBound ty = do
   where
     f ((decls, bounds), path) =
       ((decls, ty : bounds), path)
-
--- | Checks an entire set of declarations.
-typeCheckDecls
-  :: LanguageBuiltinTypes lang
-  => Decls lang -> Either (TypeError lang) ()
-typeCheckDecls decls = do
-  _ <- flip Map.traverseWithKey decls $ \name decl -> case decl of
-    DFunDef FunDef { funBody, funTy } ->
-      flip runReaderT ((decls, []), [DeclPath name]) $
-        void $ typeCheckTerm funTy funBody
-    _ -> pure ()
-  pure ()
 
 -- | Check that the given term has the given type.
 -- Errors are given using the 'MonadError' interface.
