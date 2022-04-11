@@ -37,7 +37,6 @@ in {
         libsodium
         lzma
         zlib
-        stdenv.cc.cc.lib
 
         # required to build in a pure nix shell
         git
