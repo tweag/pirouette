@@ -28,7 +28,7 @@ jobs:
         ## We can use the counter to invalidate the cache whenever necessary
         key: cabal-cache-0-${{ github.sha }}
         restore-keys: |
-          cabal-cache-0
+          cabal-cache-0-
 
     - name: Accessing the result cache
       uses: actions/cache@v2
