@@ -6,6 +6,7 @@ import qualified Pirouette.Transformations.DefunctionalizationSpec as Defunc
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
 import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
 import qualified Pirouette.Transformations.PrenexSpec as Prenex
+import qualified Pirouette.Term.Syntax.BaseSpec as Base
 import Test.Tasty
 
 main :: IO ()
@@ -22,7 +23,10 @@ tests =
          testGroup "EtaExpand" Eta.tests,
          testGroup "Monomorphization" Mono.tests,
          testGroup "Prenex" Prenex.tests],
-      testGroup "Term" [testGroup "Transformations" Tr.tests],
+      testGroup "Term"
+        [testGroup "Transformations" Tr.tests,
+         testGroup "Base" Base.tests
+        ],
       testGroup
         "Language"
         [ testGroup "PlutusIR" FP.tests,

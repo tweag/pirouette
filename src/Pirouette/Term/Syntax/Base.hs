@@ -4,15 +4,16 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
--- |Provides the base syntactical elements for the languages supported by Pirouette.
--- This module /does not/ expose the underlying System F implementation. In case
--- you're interested in manipulating terms at the Systm F level make sure
--- to bring in "Pirouette.Term.Syntax.SystemF", which is meant to be
--- imported qualified.
+-- | Provides the base syntactical elements for the languages supported by Pirouette.
+--  This module /does not/ expose the underlying System F implementation. In case
+--  you're interested in manipulating terms at the Systm F level make sure
+--  to bring in "Pirouette.Term.Syntax.SystemF", which is meant to be
+--  imported qualified.
 module Pirouette.Term.Syntax.Base where
 
 import Control.Arrow ((&&&))
@@ -25,6 +26,7 @@ import qualified Data.Text as Text
 import Data.Void
 import Optics.TH
 import Pirouette.Term.Syntax.Pretty.Class
+import Pirouette.Term.Syntax.Subst (shift)
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
 -- * Names
@@ -139,9 +141,44 @@ data TypeDef lang = -- | Define a new datatype. For example:
 --
 --  The type for the PlutusIR destructor of Either would be:
 --
---  > TyAll a b . Either a b -> TyAll c -> (a -> c) -> (b -> c) -> c
-destructorTypeFor :: TypeDef lang -> Type lang
-destructorTypeFor Datatype {} = undefined
+--  > TyAll a b . Either a b -> TyAll c . (a -> c) -> (b -> c) -> c
+destructorTypeFor :: Name -> TypeDef lang -> Type lang
+destructorTypeFor tname Datatype {..} =
+  foldr
+    -- TyAll a b .
+    (\(n, k) -> SystF.TyAll (SystF.Ann n) k)
+    ( SystF.TyFun
+        -- Either a b
+        (SystF.Free (TySig tname) `SystF.TyApp` tyArgs)
+        -- TyAll c .
+        ( SystF.TyAll (SystF.Ann $ fromString "res") SystF.KStar $
+            foldr
+              -- (a -> c) -> (b -> c)
+              (SystF.TyFun . mkConstructorType . snd)
+              -- c
+              res
+              constructors
+        )
+    )
+    typeVariables
+  where
+    arity = length typeVariables
+
+    res = SystF.tyPure $ SystF.Bound (SystF.Ann $ fromString "res") 0
+
+    mkConstructorType :: Type lang -> Type lang
+    mkConstructorType =
+      foldr (SystF.TyFun . shift 1) res
+        . fst
+        . SystF.tyFunArgs
+        . (`SystF.tyInstantiateN` tyArgs)
+
+    tyArgs :: [Type lang]
+    tyArgs =
+      zipWith
+        (\(n, _) ix -> SystF.tyPure $ SystF.Bound (SystF.Ann n) (fromIntegral ix))
+        typeVariables
+        (reverse [0 .. arity - 1])
 
 -- * Terms
 

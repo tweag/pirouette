@@ -44,16 +44,19 @@ trFunDecl (FunDecl rec ty expr) =
 
 trDataDecl :: String -> DataDecl -> TrM [(Name, Definition Ex)]
 trDataDecl sName (DataDecl vars cons) = do
-  let (vNames, vKinds) = unzip vars
-  let ki = foldr SystF.KTo SystF.KStar vKinds
-  let tyEnv = reverse vNames
+  let ki = foldr (SystF.KTo . snd) SystF.KStar vars
   let name = fromString sName
   let destName = fromString $ "match_" ++ sName
-  constrs <- mapM (\(n, ty) -> (fromString n,) <$> trType tyEnv ty) cons
+  constrs <- mapM (\(n, ty) -> (fromString n,) <$> trTypeWithEnv vars ty) cons
   return $
     (name, DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs) :
     (destName, DDestructor name) :
     zipWith (\n i -> (fst n, DConstructor i name)) constrs [0 ..]
+
+trTypeWithEnv :: [(String, SystF.Kind)] -> Ty -> TrM (Type Ex)
+trTypeWithEnv env ty = do
+  ty' <- trType (map fst env) ty
+  return $ foldr (\(s, ki) -> SystF.TyAll (SystF.Ann $ fromString s) ki) ty' env
 
 trType :: Env -> Ty -> TrM (Type Ex)
 trType env (TyLam s ki ty) = SystF.TyLam (SystF.Ann $ fromString s) ki <$> trType (s : env) ty
