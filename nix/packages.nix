@@ -47,6 +47,7 @@ in {
         hpack
         hlint
         ormolu
+        haskellPackages.happy
      ] ++ [
         # iohk-specific stuff that we require
         iohkpkgs.haskell-nix.internal-cabal-install
