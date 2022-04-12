@@ -47,7 +47,7 @@ trDataDecl sName (DataDecl vars cons) = do
   let ki = foldr (SystF.KTo . snd) SystF.KStar vars
   let name = fromString sName
   let destName = fromString $ "match_" ++ sName
-  constrs <- mapM (\(n, ty) -> (fromString n,) <$> trTypeWithEnv vars ty) cons
+  constrs <- mapM (\(n, ty) -> (fromString n,) <$> trTypeWithEnv (reverse vars) ty) cons
   return $
     (name, DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs) :
     (destName, DDestructor name) :

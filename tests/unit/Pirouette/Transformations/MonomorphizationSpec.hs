@@ -40,7 +40,7 @@ fun fold : all a : Type . Monoid a -> List a -> a
       . match_Monoid @a m @a
           (\(zero : a) (mplus : a -> a -> a)
             . match_List @a xs @a
-                (\(x : a) (xs2 : List a) . mplus a (fold m xs2))
+                (\(x : a) (xs2 : List a) . mplus x (fold @a m xs2))
                 zero
           )
 

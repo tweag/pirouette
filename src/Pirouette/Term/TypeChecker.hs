@@ -10,6 +10,7 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Pirouette.Term.Syntax.Base hiding (Var, TyVar)
 import Pirouette.Term.Syntax.SystemF
+import Pirouette.Term.Syntax.Subst (shift)
 
 -- | Checks an entire set of declarations.
 typeCheckDecls
@@ -29,9 +30,9 @@ class (LanguageBuiltins lang)
   typeOfBuiltin  :: BuiltinTerms lang -> Type lang
   typeOfBottom   :: Type lang
 
-data TypeError lang 
+data TypeError lang
   = TypeError {
-    typeErrorPath :: ErrorPath, 
+    typeErrorPath :: ErrorPath,
     typeErrorKind :: TypeErrorKind lang
   }
   deriving (Eq, Show)
@@ -41,11 +42,13 @@ type ErrorPath = [ErrorPathElement]
 data ErrorPathElement
   = TypePathAppHead
   | TypePathAppArg Int
-  | TypePathKind     
+  | TypePathKind
   | TypePathBody
   | DeclPath Name
   | TermPathLambdaArg (Ann Name)
   | TermPathLambdaBody (Ann Name)
+  | TermPathAbsArg (Ann Name)
+  | TermPathAbsBody (Ann Name)
   | TermPathTyAppHead
   | TermPathTyAppArg Int
   | TermPathAppHead
@@ -73,7 +76,7 @@ type TypeCheckerCtx lang m =
    , MonadReader ((Decls lang, [Type lang]), ErrorPath) m )
 
 -- | Go within certain element during type checking.
-within 
+within
   :: MonadReader (defs, ErrorPath) m
   => ErrorPathElement -> m a -> m a
 within elt = local $ second (elt :)
@@ -135,6 +138,22 @@ extendBound ty = do
     f ((decls, bounds), path) =
       ((decls, ty : bounds), path)
 
+-- |When type-checking something like:
+--
+-- > /\ a : Type . \ x : a . /\ b : Type . \ y : b . M
+--
+-- The first time we see the @\x : a@ we register @x@ of
+-- type @Bound 0@; but when we enter @M@, the type of @x@
+-- is, in reality, @Bound 1@: passing through the second
+-- 'Abs' needs to shift our declared bound variables accordingly.
+shiftBoundTyVars
+  :: TypeCheckerCtx lang m
+  => m a -> m a
+shiftBoundTyVars = local f
+  where
+    f ((decls, bounds), path) =
+      ((decls, map (shift 1) bounds), path)
+
 -- | Check that the given term has the given type.
 -- Errors are given using the 'MonadError' interface.
 typeCheckTerm
@@ -143,7 +162,7 @@ typeCheckTerm
 typeCheckTerm ty (Lam x xTy body) =
   case ty of
     TyFun argTy resTy -> do
-      within (TermPathLambdaArg x) $ 
+      within (TermPathLambdaArg x) $
         eqType argTy xTy
       within (TermPathLambdaBody x) $ do
         extendBound xTy $
@@ -152,10 +171,11 @@ typeCheckTerm ty (Lam x xTy body) =
 typeCheckTerm ty (Abs x ki body) =
   case ty of
     TyAll _ tyKi tyRest -> do
-      within (TermPathLambdaArg x) $
+      within (TermPathAbsArg x) $
         eqKind tyKi ki
-      within (TermPathLambdaBody x) $
-        typeCheckTerm tyRest body
+      within (TermPathAbsBody x) $
+        shiftBoundTyVars $
+          typeCheckTerm tyRest body
     _ -> err TermLambdaButNoFunction
 typeCheckTerm ty (App hd args) = do
   hdTy <- within TermPathAppHead $ findType hd
@@ -166,7 +186,7 @@ typeCheckTerm ty (App hd args) = do
     typeCheckArgs (TyArg appliedTy : more) current n = do
       new <- within (TermPathAppArg n) $
         case current of
-          goodTy@TyAll {} -> 
+          goodTy@TyAll {} ->
             pure $ tyInstantiate goodTy appliedTy
           _ -> err $ TermAppExpectedTyAll current
       typeCheckArgs more new (n + 1)
@@ -202,8 +222,8 @@ eqType
   :: TypeCheckerCtx lang m
   => Type lang -> Type lang -> m ()
 eqType (TyApp h1 args1) (TyApp h2 args2) = do
-  within TypePathAppHead $ 
-    unless (eqVar h1 h2) $ 
+  within TypePathAppHead $
+    unless (eqVar h1 h2) $
       err $ TypeAppDifferentHeads h1 h2
   unless (length args1 == length args2) $
       err TypeAppArgumentLength
@@ -213,14 +233,14 @@ eqType (TyApp h1 args1) (TyApp h2 args2) = do
 eqType (TyFun arg1 res1) (TyFun arg2 res2) = do
   within (TypePathAppArg 1) $ eqType arg1 arg2
   within (TypePathAppArg 2) $ eqType res1 res2
-eqType (TyLam _ ki1 ty1) (TyLam _ ki2 ty2) = 
+eqType (TyLam _ ki1 ty1) (TyLam _ ki2 ty2) =
   eqTypeThatBinds ki1 ty1 ki2 ty2
 eqType (TyAll _ ki1 ty1) (TyAll _ ki2 ty2) = do
   eqTypeThatBinds ki1 ty1 ki2 ty2
 eqType _ _ = err TypeJustDifferent
 
 -- | Common code for TyLam and TyAll.
-eqTypeThatBinds 
+eqTypeThatBinds
   :: TypeCheckerCtx lang m
   => Kind -> Type lang -> Kind -> Type lang -> m ()
 eqTypeThatBinds ki1 ty1 ki2 ty2 = do
@@ -232,7 +252,7 @@ eqTypeThatBinds ki1 ty1 ki2 ty2 = do
 eqKind
   :: TypeCheckerCtx lang m
   => Kind -> Kind -> m ()
-eqKind ki1 ki2 = 
+eqKind ki1 ki2 =
   within TypePathKind $
     unless (ki1 == ki2) $
       err KindJustDifferent

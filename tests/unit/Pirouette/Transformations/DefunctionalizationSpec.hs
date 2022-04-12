@@ -36,7 +36,7 @@ fun main : Integer = 42
 |], [prog|
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
     = \(cls : Closure!!TyInteger_TyInteger) .
-      match_Closure!!TyInteger_TyInteger cls @Integer (\(η : Integer) . add 1 η)
+      match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer) (\(η : Integer) . add 1 η)
 
 data Closure!!TyInteger_TyInteger
   = Closure!!TyInteger_TyInteger_ctor_0 : Closure!!TyInteger_TyInteger
@@ -84,7 +84,7 @@ data Closure!!TyInteger_TyInteger
 
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
     = \(cls : Closure!!TyInteger_TyInteger) .
-      match_Closure!!TyInteger_TyInteger cls @Integer
+      match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer)
         (\(η : Integer) . add 1 η)
         (\(η : Integer) . const 3 η)
         (\(η : Integer) . apply Closure!!TyInteger_TyInteger_ctor_0 η)
@@ -130,7 +130,7 @@ data IntHomo
 
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
     = \(cls : Closure!!TyInteger_TyInteger) .
-      match_Closure!!TyInteger_TyInteger cls @Integer (\(k : Integer) (η : Integer) . η + k)
+      match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer) (\(k : Integer) (η : Integer) . η + k)
 
 fun applyIntHomoToOne : IntHomo -> Integer
   = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Closure!!TyInteger_TyInteger) . _Apply!!TyInteger_TyInteger f 1)
