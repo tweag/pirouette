@@ -145,10 +145,9 @@ mkApplyFuns infos = M.fromList funDecls
           let DefunHofArgInfo {..} = hofArgInfo $ head infos',
           let closTy = closureType hofType,
           let funTy = closTy `SystF.TyFun` hofType,
-          let (_, resTy) = flattenType hofType,
           let funBody =
                 let closArgIdx = SystF.TermArg $ SystF.Bound (SystF.Ann "cls") 0 `SystF.App` []
-                    dtorResTy = SystF.TyArg resTy
+                    dtorResTy = SystF.TyArg hofType
                     dtor = SystF.Free (TermSig $ dtorName $ closureTypeName hofType)
                  in SystF.Lam (SystF.Ann "cls") closTy $ dtor `SystF.App` (closArgIdx : dtorResTy : (SystF.TermArg . mkDtorBranch <$> infos'))
       ]
