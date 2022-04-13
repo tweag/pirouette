@@ -342,6 +342,13 @@ type LanguagePretty lang =
 -- | Auxiliary constraint grouping everything we know about @lang@.
 type Language lang = (LanguageBuiltins lang, LanguagePretty lang)
 
+-- | Defines the types for the builtins of a language.
+class (LanguageBuiltins lang)
+      => LanguageBuiltinTypes lang where
+  typeOfConstant :: Constants lang    -> Type lang
+  typeOfBuiltin  :: BuiltinTerms lang -> Type lang
+  typeOfBottom   :: Type lang
+
 -- These must go at the end because of Template Haskell restrictions
 
 makePrisms ''Definition

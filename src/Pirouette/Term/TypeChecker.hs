@@ -24,12 +24,6 @@ typeCheckDecls decls = do
     _ -> pure ()
   pure ()
 
-class (LanguageBuiltins lang)
-      => LanguageBuiltinTypes lang where
-  typeOfConstant :: Constants lang    -> Type lang
-  typeOfBuiltin  :: BuiltinTerms lang -> Type lang
-  typeOfBottom   :: Type lang
-
 data TypeError lang
   = TypeError {
     typeErrorPath :: ErrorPath,
