@@ -95,6 +95,23 @@ instance LanguageBuiltins Ex where
   type BuiltinTerms Ex = ExTerm
   type Constants Ex = ExConstant
 
+instance LanguageBuiltinTypes Ex where
+  typeOfBottom = error "no bottom type in Ex"
+  typeOfConstant (ConstInt _)  = tInt
+  typeOfConstant (ConstBool _) = tBool
+  typeOfBuiltin TermAdd = SystF.TyFun tInt (SystF.TyFun tInt tInt)
+  typeOfBuiltin TermSub = SystF.TyFun tInt (SystF.TyFun tInt tInt)
+  typeOfBuiltin TermLt = SystF.TyFun tInt (SystF.TyFun tInt tBool)
+  typeOfBuiltin TermEq = SystF.TyFun tInt (SystF.TyFun tInt tBool)
+  typeOfBuiltin TermIte = SystF.TyAll (SystF.Ann "a") SystF.KStar $
+    SystF.TyFun tBool (SystF.TyFun a (SystF.TyFun a a))
+    where
+      a = SystF.tyPure $ SystF.Bound (SystF.Ann "a") 0
+
+tInt, tBool :: Type Ex
+tInt = SystF.tyPure $ SystF.Free $ TyBuiltin TyInteger
+tBool = SystF.tyPure $ SystF.Free $ TyBuiltin TyBool
+
 -- ** Syntactical Categories
 
 data DataDecl = DataDecl [(String, SystF.Kind)] [(String, Ty)]

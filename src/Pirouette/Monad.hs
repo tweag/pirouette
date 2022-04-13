@@ -133,7 +133,7 @@ typeOfIdent n = do
   case dn of
     (DFunction _ _ ty) -> return ty
     (DConstructor i t) -> snd . (!! i) . constructors <$> prtTypeDefOf t
-    (DDestructor t) -> destructorTypeFor <$> prtTypeDefOf t
+    (DDestructor t) -> destructorTypeFor n <$> prtTypeDefOf t
     (DTypeDef _) -> throwError' $ PEOther $ show n ++ " is a type"
 
 -- | Returns the direct dependencies of a term. This is never cached and
