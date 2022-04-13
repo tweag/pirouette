@@ -33,6 +33,7 @@ import Control.Monad
 import Control.Monad.Reader (ask)
 import Control.Monad.Except
 import Control.Monad.State
+import Control.Monad.Writer
 import Data.Data hiding (eqT)
 import Data.Foldable
 import qualified Data.List as List
@@ -127,14 +128,17 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
-type SymEvalConstr lang m = (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMT lang, MonadIO m)
+type SymEvalConstr lang m = 
+  (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMT lang, MonadIO m)
 
 symevalT :: (SymEvalConstr lang m) => AvailableFuel -> SymEvalT lang m a -> m [Path lang a]
 symevalT initialFuel = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
-runSymEvalTRaw :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
+runSymEvalTRaw 
+  :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a
+  -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
@@ -235,44 +239,71 @@ runEvaluation t = do
   svars <- declSymVars lams
   symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
 
-consumeFuel :: (SymEvalConstr lang m) => SymEvalT lang m ()
-consumeFuel = modify (\st -> st {sestFuel = consumeOneUnitOfFuel (sestFuel st)})
-
 currentFuel :: (SymEvalConstr lang m) => SymEvalT lang m AvailableFuel
 currentFuel = gets sestFuel
 
 normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar -> m (TermMeta lang SymVar)
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
-symeval :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
+-- | Top level symbolic evaluation loop.
+symeval :: (SymEvalConstr lang m)
+        => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
 symeval t = do
-  t' <- lift $ normalizeTerm t
   fuelLeft <- currentFuel
   if fuelExhausted fuelLeft
-    then pure t'
-    else do tOneStepMore <- prune $ symEvalOneStep t'
-            if tOneStepMore == t'
-               then pure tOneStepMore
-               else symeval tOneStepMore
+    then pure t
+    else do
+      t' <- lift $ normalizeTerm t
+      (tOneStepMore, somethingWasEvaluated) <- prune $ runWriterT (symEvalOneStep t')
+      if somethingWasEvaluated == Any False
+         then pure tOneStepMore
+         else symeval tOneStepMore
 
 prtMaybeDefOf :: (PirouetteReadDefs lang m) => VarMeta lang meta -> m (Maybe (Definition lang))
 prtMaybeDefOf (R.Free (TermSig n)) = Just <$> prtDefOf n
 prtMaybeDefOf _ = pure Nothing
 
-symEvalOneStep :: (SymEvalConstr lang m) => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
+-- | Take one step of evaluation.
+-- We wrap everything in an additional 'Writer' which tells us
+-- whether a step was taken at all.
+symEvalOneStep 
+  :: (SymEvalConstr lang m) 
+  => TermMeta lang SymVar -> WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
 -- and evaluate the corresponding application.
-symEvalOneStep t@(R.Lam (R.Ann x) ty _) = do
+symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
+  {-
+  This is the case in which there's a lambda as argument to a function
+  (if it has the head of a function it would have been reduced by normalizeTerm).
+  We have two options at this point:
+  -}
+  {-
+  # option 1: evaluate under lambda
+  
+  This can give us a bit of better results, but in most cases it seems
+  to win us nothing. For example, if we are evaluating:
+  > map (\x -> x + 1) l
+  then going into (\x -> x + 1) would only lead to reconstructing it,
+  the real work happens on the definition of 'map'.
+  We have decided to *not* go under lambdas, but here's the implementation
+  in case we need it in the future.
+  -}
+  {-
   let ty' = typeFromMeta ty
   [svars] <- declSymVars [(x, ty')]
   body <- symEvalOneStep (t `R.app` R.TermArg (R.App (R.Meta svars) []))
   pure $ R.Lam (R.Ann x) ty body
--- If we're evaluating an applcation, we distinguish between a number
+  -}
+  {-
+  # option 2: do nothing to lambdas
+  -}
+  pure t
+-- If we're evaluating an application, we distinguish between a number
 -- of constituent cases:
 symEvalOneStep t@(R.App hd args) = do
-  mDefHead <- lift $ prtMaybeDefOf hd
+  mDefHead <- lift $ lift $ prtMaybeDefOf hd
   case mDefHead of
     -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
     Nothing -> do
@@ -315,31 +346,44 @@ symEvalOneStep t@(R.App hd args) = do
       -- Naturally, the first path is already impossible so we do not need to
       -- move on to evaluate N.
       DDestructor tyName -> do
-        Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
-        Datatype _ _ _ consList <- lift $ prtTypeDefOf tyName
+        Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
+        Datatype _ _ _ consList <- lift $ lift $ prtTypeDefOf tyName
         -- We know what is the type of all the possible term results, its whatever
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
         let tyParams' = map typeFromMeta tyParams
-        term' <- symEvalOneStep term
-        if term == term'
+        (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
+        -- We only do the case distinction if we haven't taken any step
+        -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
+        if somethingWasEvaluated == Any False
         then
           asum $
             for2 consList cases $ \(consName, consTy) caseTerm -> do
               let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
               let (consArgs, _) = R.tyFunArgs instantiatedTy
-              svars <- freshSymVars consArgs
+              svars <- lift $ freshSymVars consArgs
               let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
               let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
               let mconstr = unify term' symbCons
               case mconstr of
                 Nothing -> empty
                 Just constr -> do
-                  learn constr
+                  lift $ learn constr
                   consumeFuel
-                  return (caseTerm `R.appN` symbArgs)
+                  pure $ caseTerm `R.appN` symbArgs
         else
-          return $ R.App hd (map R.TyArg tyParams ++ R.TermArg term' : R.TyArg tyRes : map R.TermArg cases ++ excess)
+          let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
+          in pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
+
+-- | Consume one unit of fuel.
+-- This also tells the symbolic evaluator that a step was taken.
+consumeFuel :: (SymEvalConstr lang m) => WriterT Any (SymEvalT lang m) ()
+consumeFuel = do
+  modify (\st -> st {sestFuel = consumeOneUnitOfFuel (sestFuel st)})
+  tell (Any True)
+
+-- | Required to run 'prune'
+instance Pretty Any
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) t = Just (s =:= t)
@@ -460,12 +504,13 @@ conditionalEval t (OutCond q) (InCond p) axioms = do
   liftIO $ putStrLn $ "normalized: " ++ show (pretty normalizedT)
   toEvaluateMore <- pruneAndValidate (q normalizedT) p axioms
   liftIO $ putStrLn $ "to evaluate more? " ++ show toEvaluateMore
-  if toEvaluateMore
-  then do
-    t' <- symEvalOneStep normalizedT
-    conditionalEval t' (OutCond q) (InCond p) axioms
-  else
-    return (CounterExample t)
+  if not toEvaluateMore
+  then pure (CounterExample t)
+  else do
+    (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
+    if somethingWasDone == Any False
+       then pure (CounterExample t) -- cannot check more
+       else conditionalEval t' (OutCond q) (InCond p) axioms
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m Bool
