@@ -275,8 +275,10 @@ symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- and evaluate the corresponding application.
 symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
   {-
-  This is the case in which there's a lambda as argument to a function
-  (if it has the head of a function it would have been reduced by normalizeTerm).
+  Note that our AST only represents terms in normal form,
+  so it cannot be the case that we have:
+  > App (Lam ...) ...
+  So beta-reduction does not enter the game here.
   We have two options at this point:
   -}
   {-
