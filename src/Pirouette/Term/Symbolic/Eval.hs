@@ -513,27 +513,24 @@ conditionalEval :: (SymEvalConstr lang m, MonadIO m)
                 -> SymEvalT lang m (EvaluationWitness lang)
 conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
-  liftIO $ putStrLn $ "normalized: " ++ show (pretty normalizedT)
-  toEvaluateMore <- pruneAndValidate (q normalizedT) p axioms
-  liftIO $ putStrLn $ "to evaluate more? " ++ show toEvaluateMore
-  if not toEvaluateMore
-  then pure (CounterExample t)
-  else do
-    (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
-    if somethingWasDone == Any False
-       then pure (CounterExample t) -- cannot check more
-       else conditionalEval t' (OutCond q) (InCond p) axioms
+  (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
+  liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
+  result <- pruneAndValidate (q t') p axioms
+  liftIO $ putStrLn $ "result? " ++ show result
+  case result of
+    SMT.Unsat -> pure Verified
+    SMT.Sat -> pure (CounterExample t)
+    _ -> if somethingWasDone == Any False
+            then pure (CounterExample t) -- cannot check more
+            else conditionalEval t' (OutCond q) (InCond p) axioms    
 
 -- | Prune the set of paths in the current set.
-pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m Bool
+pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m SimpleSMT.Result
 pruneAndValidate cOut cIn axioms =
   SymEvalT $ StateT $ \st -> do
     contradictProperty <- checkProperty cOut cIn axioms st
     liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
-    case contradictProperty of
-      SMT.Unsat -> empty
-      SMT.Sat -> return (False, st)
-      SMT.Unknown -> return (True, st)
+    return (contradictProperty, st)
 
 instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
 instantiateAxiomWithVars axioms env =

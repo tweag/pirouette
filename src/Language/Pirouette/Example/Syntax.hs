@@ -125,11 +125,11 @@ instance LanguageSMT Ex where
   translateBuiltinTerm TermSub [x, y] = Just $ SimpleSMT.sub x y
   translateBuiltinTerm TermLt [x, y] = Just $ SimpleSMT.lt x y
   translateBuiltinTerm TermEq [x, y] = Just $ SimpleSMT.eq x y
-  translateBuiltinTerm TermIte [c, t, e] = Just $ SimpleSMT.ite c t e
+  translateBuiltinTerm TermIte [_, c, t, e] = Just $ SimpleSMT.ite c t e
   translateBuiltinTerm _ _ = Nothing
 
 instance LanguageSMTBranches Ex where
-  branchesBuiltinTerm TermIte [SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
+  branchesBuiltinTerm TermIte [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
     case runExcept $ translateTerm [] c of
       Left _ -> Nothing
       Right cond -> Just [ Branch (And [Native cond]) t  -- c holds => t is executed
@@ -163,7 +163,7 @@ data Expr
   | ExprVar String
   | ExprLit ExConstant
   | ExprBase ExTerm
-  | ExprIf Expr Expr Expr
+  | ExprIf Ty Expr Expr Expr
   deriving (Show)
 
 -- * Parsers
@@ -306,11 +306,12 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
     parseIf :: Parser Expr
     parseIf = do
       try (symbol "if")
+      ty <- symbol "@" >> parseTypeAtom
       c <- parseTerm
       symbol "then"
       t <- parseTerm
       symbol "else"
-      ExprIf c t <$> parseTerm
+      ExprIf ty c t <$> parseTerm
 
     pAtom :: Parser Expr
     pAtom =

@@ -60,6 +60,21 @@ thing `satisfies` property = do
     Left e -> assertFailure $ "finished with errors: " <> e
     Right x -> assertBool ("property not satisfied: " <> show x) (property x)
 
+pathSatisfies :: (LanguageBuiltins lang, Show res) => IO (Either String [Path lang res]) -> ([Path lang res] -> Bool) -> Assertion
+thing `pathSatisfies` property = do
+  given <- thing
+  case given of
+    Left e -> assertFailure $ "finished with errors: " <> e
+    Right paths -> assertBool ("property not satisfied: " <> show paths) (property paths)
+
+singleVerified :: [Path lang (EvaluationWitness lang)] -> Bool
+singleVerified [Path { pathResult = Verified }] = True
+singleVerified _ = False
+
+singleCounter :: [Path lang (EvaluationWitness lang)] -> Bool
+singleCounter [Path { pathResult = CounterExample _ }] = True
+singleCounter _ = False 
+
 add1 :: (Program Ex, Term Ex)
 add1 = (
   [prog|
@@ -69,6 +84,26 @@ fun sumar : Integer -> Integer -> Integer
 fun main : Integer = 42
   |],
   [term| \(z : Integer) . sumar z 1 |])
+
+oneFake :: (Program Ex, Term Ex)
+oneFake = (
+  [prog|
+fun oneFake : Integer -> Integer -> Integer
+  = \(x : Integer) (y : Integer) . if @Integer 1 < 0 then x else y
+
+fun main : Integer = 42
+  |],
+  [term| \(x : Integer) (y : Integer) . oneFake x y |])
+
+whoKnows :: (Program Ex, Term Ex)
+whoKnows = (
+  [prog|
+fun whoKnows : Integer -> Integer -> Integer -> Integer
+  = \(n : Integer) (x : Integer) (y : Integer) . if @Integer n < 0 then x else y
+
+fun main : Integer = 42
+  |],
+  [term| \(n : Integer) (x : Integer) (y : Integer) . whoKnows n x y |])
 
 botConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
 botConditions = (SMT.Bot, const mempty)
@@ -85,7 +120,11 @@ tests = [
   testCase "add 1" $
     symbolicExec' add1 `satisfies` isSingleton,
   testCase "add 1, bot" $
-    incorrectnessExec' add1 botConditions `satisfies` isSingleton,
+    incorrectnessExec' add1 botConditions `pathSatisfies` singleCounter,
   testCase "add 1, top" $
-    incorrectnessExec' add1 topConditions `satisfies` null
+    incorrectnessExec' add1 topConditions `pathSatisfies` singleVerified,
+  testCase "one fake branch" $
+    incorrectnessExec' oneFake botConditions `pathSatisfies` singleCounter
+  -- testCase "who knows should have two branches" $
+  --   incorrectnessExec' whoKnows botConditions `pathSatisfies` (\x -> length x == 2)
   ]
