@@ -23,12 +23,12 @@ type Env = [String]
 trProgram ::
   M.Map String (Either DataDecl FunDecl) ->
   FunDecl ->
-  TrM (M.Map Name (Definition Ex), Term Ex)
-trProgram env (FunDecl _ _ main) =
+  TrM (M.Map Name (Definition Ex), Definition Ex)
+trProgram env main@FunDecl {} =
   let decls =
         mapM (uncurry (\s -> either (trDataDecl s) (fmap ((: []) . (fromString s,)) . trFunDecl))) $
           M.toList env
-   in (,) <$> (decls >>= toDecls . concat) <*> trTerm [] [] main
+   in (,) <$> (decls >>= toDecls . concat) <*> trFunDecl main
   where
     toDecls :: [(Name, Definition Ex)] -> TrM (Decls Ex)
     toDecls ds =

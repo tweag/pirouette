@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -18,21 +19,22 @@ import Language.Pirouette.Example.Syntax
 import Language.Pirouette.Example.ToTerm
 import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Term.TypeChecker (typeCheckDecls)
+import Pirouette.Term.TypeChecker (typeCheckDecls, typeCheckFunDef)
 import Text.Megaparsec
 
 prog :: QuasiQuoter
 prog = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme parseProgram <* eof) str
-  p1@(decls, _) <- trQ (uncurry trProgram p0)
+  (decls, DFunDef main@(FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
   _ <- maybeQ (typeCheckDecls decls)
-  [e|p1|]
+  _ <- maybeQ (typeCheckFunDef decls "main" main)
+  [e|(decls, mainTm)|]
 
 progNoTC :: QuasiQuoter
 progNoTC = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme parseProgram <* eof) str
-  p1 <- trQ (uncurry trProgram p0)
-  [e|p1|]
+  (decls, DFunDef (FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
+  [e|(decls, mainTm)|]
 
 term :: QuasiQuoter
 term = quoter $ \str -> do

@@ -24,6 +24,14 @@ typeCheckDecls decls = do
     _ -> pure ()
   pure ()
 
+-- | Checks a single function definition.
+typeCheckFunDef
+  :: LanguageBuiltinTypes lang
+  => Decls lang -> Name -> FunDef lang -> Either (TypeError lang) ()
+typeCheckFunDef decls nm FunDef { funBody, funTy } =
+  flip runReaderT ((decls, []), [DeclPath nm]) $
+    void $ typeCheckTerm funTy funBody
+
 data TypeError lang
   = TypeError {
     typeErrorPath :: ErrorPath,

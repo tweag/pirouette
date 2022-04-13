@@ -42,14 +42,14 @@ fun f : all a : Type . a -> all b : Type . b -> a
 fun g : all a : Type . all b : Type . a -> b -> all c : Type . c -> a
   = /\ a : Type . /\ b : Type . \(x : a) (y : b) . /\ c : Type . \(z : c) . x
 
-fun main : Integer = f @Integer 3 @Integer (g @Integer @Integer 4 @Integer 5)
+fun main : Integer = f @Integer 3 @Integer (g @Integer @Integer 4 5 @Integer 6)
 |], [prog|
 fun f : all a : Type . all b : Type . a -> b -> a
   = /\ a : Type . /\ b : Type . \(x : a) . \(y : b) . x
 fun g : all a : Type . all b : Type . all c : Type . a -> b -> c -> a
   = /\ a : Type . /\ b : Type . /\ c : Type . \(x : a) (y : b) . \(z : c) . x
 
-fun main : Integer = f @Integer @Integer 3 (g @Integer @Integer @Integer 4 5)
+fun main : Integer = f @Integer @Integer 3 (g @Integer @Integer @Integer 4 5 6)
 |])
 
 uDefs :: Program Ex -> PrtUnorderedDefs Ex
