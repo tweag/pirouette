@@ -13,6 +13,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Pirouette.Term.Symbolic.Eval (
   -- * Runners
@@ -129,7 +130,7 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
 type SymEvalConstr lang m = 
-  (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMT lang, MonadIO m)
+  (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMTBranches lang, MonadIO m)
 
 symevalT :: (SymEvalConstr lang m) => AvailableFuel -> SymEvalT lang m a -> m [Path lang a]
 symevalT initialFuel = runSymEvalT st0
@@ -259,15 +260,11 @@ symeval t = do
          then pure tOneStepMore
          else symeval tOneStepMore
 
-prtMaybeDefOf :: (PirouetteReadDefs lang m) => VarMeta lang meta -> m (Maybe (Definition lang))
-prtMaybeDefOf (R.Free (TermSig n)) = Just <$> prtDefOf n
-prtMaybeDefOf _ = pure Nothing
-
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
 -- whether a step was taken at all.
 symEvalOneStep 
-  :: (SymEvalConstr lang m) 
+  :: forall lang m. (SymEvalConstr lang m) 
   => TermMeta lang SymVar -> WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
@@ -304,18 +301,28 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
   pure t
 -- If we're evaluating an application, we distinguish between a number
 -- of constituent cases:
-symEvalOneStep t@(R.App hd args) = do
-  mDefHead <- lift $ lift $ prtMaybeDefOf hd
-  case mDefHead of
-    -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
-    Nothing -> do
-      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
-      pure $ R.App hd evaluatedArgs
-    Just def -> case def of
-      DTypeDef _ -> error "Can't evaluate typedefs"
+symEvalOneStep t@(R.App hd args) = case hd of
+  R.Free (Builtin builtin) -> do
+    (evaluatedArgs, somethingWasEvaluated) <- listen $ mapM (R.argMapM return symEvalOneStep) args
+    if somethingWasEvaluated == Any True
+       then pure $ R.App hd evaluatedArgs
+       else -- we could not evaluate arguments more,
+            -- so go on and evaluate the built-in
+         case SMT.branchesBuiltinTerm @lang builtin evaluatedArgs of
+           Just branches -> asum $ flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+              lift $ learn additionalInfo
+              consumeFuel
+              pure newTerm
+           _ -> pure $ R.App hd evaluatedArgs  -- no branching info.
+  R.Free (TermSig n) -> do
+    mDefHead <- Just <$> lift (lift $ prtDefOf n)
+    case mDefHead of
+      -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
+      Nothing -> justEvaluateArgs
+      Just (DTypeDef _) -> error "Can't evaluate typedefs"
       -- If hd is a defined function, we inline its definition and symbolically evaluate
       -- the result consuming one gas.
-      DFunction _rec body _ -> do
+      Just (DFunction _rec body _) -> do
         consumeFuel
         pure $ termToMeta body `R.appN` args
       -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term
@@ -328,9 +335,7 @@ symEvalOneStep t@(R.App hd args) = do
       -- >       | (cx, rx) <- x' , (cxs, rxs) <- xs'
       -- >       , isSAT (cx && cxs) ]
       --
-      DConstructor _ _ -> do
-        evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
-        pure $ R.App hd evaluatedArgs
+      Just (DConstructor _ _) -> justEvaluateArgs
       -- If hd is a destructor, we have more work to do: we have to expand the term
       -- being destructed, then combine it with all possible destructor cases.
       -- Say we're looking at:
@@ -347,7 +352,7 @@ symEvalOneStep t@(R.App hd args) = do
       --
       -- Naturally, the first path is already impossible so we do not need to
       -- move on to evaluate N.
-      DDestructor tyName -> do
+      Just (DDestructor tyName) -> do
         Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
         Datatype _ _ _ consList <- lift $ lift $ prtTypeDefOf tyName
         -- We know what is the type of all the possible term results, its whatever
@@ -357,25 +362,30 @@ symEvalOneStep t@(R.App hd args) = do
         (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
         -- We only do the case distinction if we haven't taken any step
         -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
-        if somethingWasEvaluated == Any False
-        then
-          asum $
-            for2 consList cases $ \(consName, consTy) caseTerm -> do
-              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
-              let (consArgs, _) = R.tyFunArgs instantiatedTy
-              svars <- lift $ freshSymVars consArgs
-              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-              let mconstr = unify term' symbCons
-              case mconstr of
-                Nothing -> empty
-                Just constr -> do
-                  lift $ learn constr
-                  consumeFuel
-                  pure $ caseTerm `R.appN` symbArgs
-        else
-          let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
-          in pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
+        if somethingWasEvaluated == Any True
+        then do let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
+                pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
+        else asum $ -- traverse every possibility
+          for2 consList cases $ \(consName, consTy) caseTerm -> do
+            let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
+            let (consArgs, _) = R.tyFunArgs instantiatedTy
+            svars <- lift $ freshSymVars consArgs
+            let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+            let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+            let mconstr = unify term' symbCons
+            case mconstr of
+              Nothing -> empty
+              Just constr -> do
+                lift $ learn constr
+                consumeFuel
+                pure $ caseTerm `R.appN` symbArgs
+          
+  -- in any other case don't try too hard
+  _ -> justEvaluateArgs
+  where
+    justEvaluateArgs = do
+      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
+      pure $ R.App hd evaluatedArgs
 
 -- | Consume one unit of fuel.
 -- This also tells the symbolic evaluator that a step was taken.

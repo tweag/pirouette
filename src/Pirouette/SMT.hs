@@ -31,6 +31,8 @@ module Pirouette.SMT
     AtomicConstraint (..),
     SimpleSMT.Result (..),
     module Base,
+    Branch(..),
+    LanguageSMTBranches(..)
   )
 where
 

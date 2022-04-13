@@ -3,6 +3,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Replace case with maybe" #-}
 
 -- | Translation of Pirouette syntactical categories into
 -- smtlib through our copy of the SimpleSMT library.
@@ -59,28 +61,41 @@ translateTerm ::
   [Name] ->
   TermMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateTerm knownNames (Raw.App var args) = 
-  SmtLib.app <$> translateVar knownNames var <*> mapM (translateArg knownNames) args
+translateTerm knownNames (Raw.App var args) = do
+  translatedArgs <- mapM (translateArg knownNames) args
+  translateApp knownNames var translatedArgs
 translateTerm _ (Raw.Lam _ann _ty _term) = 
   throwError "Translate term to smtlib: Lambda abstraction in term"
 translateTerm _ (Raw.Abs _ann _kind _term) = 
   throwError "Translate term to smtlib: Type abstraction in term"
 
-translateVar ::
+translateApp ::
   forall builtins meta m.
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
   [Name] ->
   VarMeta builtins meta ->
+  [SmtLib.SExpr] ->
   ExceptT String m SmtLib.SExpr
-translateVar _ (Raw.Meta h) = return $ translate h
-translateVar knownNames (Raw.Free (TermSig name)) = do
+translateApp _ (Raw.Meta h) args = 
+  pure $ SmtLib.app (translate h) args
+
+translateApp knownNames (Raw.Free (TermSig name)) args = do
   guard (name `elem` knownNames)
-  return $ SmtLib.symbol (toSmtName name)
-translateVar _ (Raw.Free (Constant c)) = return $ translateConstant @builtins c
-translateVar _ (Raw.Free (Builtin b)) = return $ translateBuiltinTerm @builtins b
-translateVar _ (Raw.Bound (Raw.Ann _name) _) = 
+  pure $ SmtLib.app (SmtLib.symbol (toSmtName name)) args
+
+translateApp _ (Raw.Free (Constant c)) [] = 
+  return $ translateConstant @builtins c
+translateApp _ (Raw.Free (Constant _)) _ =
+  throwError "translateVar: Constant applied to arguments"
+
+translateApp _ (Raw.Free (Builtin b)) args =
+  case translateBuiltinTerm @builtins b args of
+    Nothing -> throwError "translateVar: Built-in term applied to wrong # of args"
+    Just t  -> return t
+
+translateApp _ (Raw.Bound (Raw.Ann _name) _) _ = 
   throwError "translateVar: Bound variable; did you forget to apply something?"
-translateVar _ (Raw.Free Bottom) = 
+translateApp _ (Raw.Free Bottom) _ = 
   throwError "translateVar: Bottom; unclear how to translate that. WIP"
 
 translateArg ::

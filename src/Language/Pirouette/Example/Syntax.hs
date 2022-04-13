@@ -29,6 +29,7 @@ module Language.Pirouette.Example.Syntax where
 
 import Control.Arrow (second)
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.Combinators.Expr
 import Data.Data
 import Data.Foldable
@@ -38,6 +39,7 @@ import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.SMT
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Text.Megaparsec
@@ -117,13 +119,23 @@ tBool = SystF.tyPure $ SystF.Free $ TyBuiltin TyBool
 instance LanguageSMT Ex where
   translateBuiltinType TyInteger = SimpleSMT.tInt
   translateBuiltinType TyBool = SimpleSMT.tBool
-  translateBuiltinTerm TermAdd = SimpleSMT.Atom "+"
-  translateBuiltinTerm TermSub = SimpleSMT.Atom "-"
-  translateBuiltinTerm TermLt = SimpleSMT.Atom "<"
-  translateBuiltinTerm TermEq = SimpleSMT.Atom "="
-  translateBuiltinTerm TermIte = SimpleSMT.Atom "ite"
   translateConstant (ConstInt n) = SimpleSMT.int n
   translateConstant (ConstBool b) = SimpleSMT.bool b
+  translateBuiltinTerm TermAdd [x, y] = Just $ SimpleSMT.add x y
+  translateBuiltinTerm TermSub [x, y] = Just $ SimpleSMT.sub x y
+  translateBuiltinTerm TermLt [x, y] = Just $ SimpleSMT.lt x y
+  translateBuiltinTerm TermEq [x, y] = Just $ SimpleSMT.eq x y
+  translateBuiltinTerm TermIte [c, t, e] = Just $ SimpleSMT.ite c t e
+  translateBuiltinTerm _ _ = Nothing
+
+instance LanguageSMTBranches Ex where
+  branchesBuiltinTerm TermIte [SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
+    case runExcept $ translateTerm [] c of
+      Left _ -> Nothing
+      Right cond -> Just [ Branch (And [Native cond]) t  -- c holds => t is executed
+                         , Branch (And [Native (SimpleSMT.not cond)]) e
+                         ]                               -- (not c) holds => e is executed
+  branchesBuiltinTerm _ _ = Nothing
 
 -- ** Syntactical Categories
 
