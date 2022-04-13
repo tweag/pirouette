@@ -2,6 +2,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Pirouette.Term.TypeChecker where
 
 import Data.Bifunctor
@@ -9,8 +11,10 @@ import qualified Data.Map as Map
 import Control.Monad.Except
 import Control.Monad.Reader
 import Pirouette.Term.Syntax.Base hiding (Var, TyVar)
+import Pirouette.Term.Syntax.Pretty
 import Pirouette.Term.Syntax.SystemF
 import Pirouette.Term.Syntax.Subst (shift)
+import Prettyprinter hiding (Pretty, pretty)
 
 -- | Checks an entire set of declarations.
 typeCheckDecls
@@ -51,10 +55,9 @@ data ErrorPathElement
   | TermPathLambdaBody (Ann Name)
   | TermPathAbsArg (Ann Name)
   | TermPathAbsBody (Ann Name)
-  | TermPathTyAppHead
-  | TermPathTyAppArg Int
   | TermPathAppHead
-  | TermPathAppArg Int
+  | TermPathAppTyArg Int
+  | TermPathAppTermArg Int
   | TermPathAppResult
   deriving (Eq, Show)
 
@@ -62,13 +65,13 @@ type TyVar lang = Var Name (TypeBase lang)
 type TermVar lang = Var Name (TermBase lang)
 
 data TypeErrorKind lang
-  = TypeAppDifferentHeads (TyVar lang) (TyVar lang)
-  | TypeAppArgumentLength
-  | TypeJustDifferent
-  | KindJustDifferent
+  = TypeAppDifferentHeads (Type lang) (Type lang)
+  | TypeAppArgumentLength (Type lang) (Type lang)
+  | TypeJustDifferent (Type lang) (Type lang)
+  | KindJustDifferent Kind Kind
   | NameUnknown Name
   | BoundUnknown Integer
-  | TermLambdaButNoFunction
+  | TermLambdaButNoFunction (Type lang)
   | TermAppExpectedTyFun (Type lang)
   | TermAppExpectedTyAll (Type lang)
   deriving (Eq, Show)
@@ -169,7 +172,7 @@ typeCheckTerm ty (Lam x xTy body) =
       within (TermPathLambdaBody x) $ do
         extendBound xTy $
           typeCheckTerm resTy body
-    _ -> err TermLambdaButNoFunction
+    _ -> err $ TermLambdaButNoFunction ty
 typeCheckTerm ty (Abs x ki body) =
   case ty of
     TyAll _ tyKi tyRest -> do
@@ -178,7 +181,7 @@ typeCheckTerm ty (Abs x ki body) =
       within (TermPathAbsBody x) $
         shiftBoundTyVars $
           typeCheckTerm tyRest body
-    _ -> err TermLambdaButNoFunction
+    _ -> err $ TermLambdaButNoFunction ty
 typeCheckTerm ty (App hd args) = do
   hdTy <- within TermPathAppHead $ findType hd
   finalTy <- typeCheckArgs args hdTy 1
@@ -186,14 +189,14 @@ typeCheckTerm ty (App hd args) = do
   where
     typeCheckArgs [] current _ = pure current
     typeCheckArgs (TyArg appliedTy : more) current n = do
-      new <- within (TermPathAppArg n) $
+      new <- within (TermPathAppTyArg n) $
         case current of
           goodTy@TyAll {} ->
             pure $ tyInstantiate goodTy appliedTy
           _ -> err $ TermAppExpectedTyAll current
       typeCheckArgs more new (n + 1)
     typeCheckArgs (TermArg tm : more) current n = do
-      new <- within (TermPathAppArg n) $
+      new <- within (TermPathAppTermArg n) $
         case current of
           TyFun tyArg tyRes -> do
             typeCheckTerm tyArg tm
@@ -223,12 +226,12 @@ findType (Meta _) =
 eqType
   :: TypeCheckerCtx lang m
   => Type lang -> Type lang -> m ()
-eqType (TyApp h1 args1) (TyApp h2 args2) = do
+eqType ty1@(TyApp h1 args1) ty2@(TyApp h2 args2) = do
   within TypePathAppHead $
     unless (eqVar h1 h2) $
-      err $ TypeAppDifferentHeads h1 h2
+      err $ TypeAppDifferentHeads ty1 ty2
   unless (length args1 == length args2) $
-      err TypeAppArgumentLength
+      err $ TypeAppArgumentLength ty1 ty2
   forM_ (zip3 [1 ..] args1 args2) $ \(i, arg1, arg2) ->
     within (TypePathAppArg i) $
       eqType arg1 arg2
@@ -239,7 +242,7 @@ eqType (TyLam _ ki1 ty1) (TyLam _ ki2 ty2) =
   eqTypeThatBinds ki1 ty1 ki2 ty2
 eqType (TyAll _ ki1 ty1) (TyAll _ ki2 ty2) = do
   eqTypeThatBinds ki1 ty1 ki2 ty2
-eqType _ _ = err TypeJustDifferent
+eqType ty1 ty2 = err $ TypeJustDifferent ty1 ty2
 
 -- | Common code for TyLam and TyAll.
 eqTypeThatBinds
@@ -257,7 +260,7 @@ eqKind
 eqKind ki1 ki2 =
   within TypePathKind $
     unless (ki1 == ki2) $
-      err KindJustDifferent
+      err $ KindJustDifferent ki1 ki2
 
 -- | Check equality of variables.
 -- Annotations on bound variables are not checked,
@@ -280,3 +283,60 @@ safeIx (x : rest) n
   | n == 0    = pure x
   | n > 0     = safeIx rest (n - 1)
   | otherwise = Nothing
+
+instance
+  (LanguagePretty lang) =>
+  Pretty (TypeError lang) where
+  pretty TypeError { typeErrorPath, typeErrorKind } =
+    vsep [ pretty typeErrorKind,
+           "at" <+> encloseSep "" "" " -> " (map pretty path) ]
+    where
+      path = reverse $ dropWhile (== TermPathAppHead) typeErrorPath
+
+instance Pretty ErrorPathElement where
+  pretty TypePathAppHead = "cstr"
+  pretty (TypePathAppArg n) = "arg" <+> pretty n
+  pretty TypePathKind = "kind"
+  pretty TypePathBody = "body"
+  pretty (DeclPath na) = "definition of" <+> quoted na
+  pretty (TermPathLambdaArg ann) = "\\" <> pretty ann
+  pretty (TermPathLambdaBody ann) = "\\" <> pretty ann
+  pretty (TermPathAbsArg ann) = "/\\" <> pretty ann
+  pretty (TermPathAbsBody ann) = "/\\" <> pretty ann
+  pretty TermPathAppHead = "fn"
+  pretty (TermPathAppTyArg n) = "@arg" <+> pretty n
+  pretty (TermPathAppTermArg n) = "arg" <+> pretty n
+  pretty TermPathAppResult = "app result"
+
+instance 
+  (LanguagePretty lang) => 
+  Pretty (TypeErrorKind lang) where
+  pretty (TypeAppDifferentHeads ty1 ty2) = 
+    prettyCouldNotMatchError ty1 ty2
+  pretty (TypeAppArgumentLength ty1 ty2) = 
+    prettyCouldNotMatchError ty1 ty2
+  pretty (TypeJustDifferent ty1 ty2) =
+    prettyCouldNotMatchError ty1 ty2
+  pretty (KindJustDifferent ki1 ki2) = 
+    prettyCouldNotMatchError ki1 ki2
+  pretty (NameUnknown na) =
+    "Unknown name" <+> quoted na
+  pretty (BoundUnknown n) =
+    "Unbound variable with level" <+> pretty n
+  pretty (TermLambdaButNoFunction at) =
+    "Expected function type but got" <+> quoted at
+  pretty (TermAppExpectedTyFun at) =
+    "Expected function type but got" <+> quoted at
+  pretty (TermAppExpectedTyAll at) =
+    "Expected quantified type but got" <+> quoted at
+
+prettyCouldNotMatchError
+  :: (Pretty a)
+  => a -> a -> Doc ann
+prettyCouldNotMatchError thing1 thing2 =
+  "Couldn't match" <+> quoted thing1 <+> "with" <+> quoted thing2
+
+quoted
+  :: (Pretty a)
+  => a -> Doc ann
+quoted x = squotes (pretty x)

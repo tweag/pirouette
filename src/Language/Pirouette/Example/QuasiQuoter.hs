@@ -18,6 +18,7 @@ import Language.Haskell.TH.Syntax hiding (Name, Type)
 import Language.Pirouette.Example.Syntax
 import Language.Pirouette.Example.ToTerm
 import Pirouette.Term.Syntax.Base
+import Pirouette.Term.Syntax.Pretty.Class (Pretty(..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls, typeCheckFunDef)
 import Text.Megaparsec
@@ -60,8 +61,8 @@ trQ f = case runExcept f of
   Left err -> fail err
   Right r -> return r
 
-maybeQ :: (Show e) => Either e a -> Q a
-maybeQ (Left e)  = fail (show e)
+maybeQ :: (Pretty e) => Either e a -> Q a
+maybeQ (Left e)  = fail $ show $ pretty e
 maybeQ (Right x) = return x
 
 
