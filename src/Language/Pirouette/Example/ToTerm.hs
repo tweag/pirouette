@@ -80,11 +80,12 @@ trTerm tyEnv termEnv (ExprLam s ty ex) =
   SystF.Lam (SystF.Ann $ fromString s) <$> trType tyEnv ty <*> trTerm tyEnv (s : termEnv) ex
 trTerm tyEnv termEnv (ExprAbs s ki ex) =
   SystF.Abs (SystF.Ann $ fromString s) ki <$> trTerm (s : tyEnv) termEnv ex
-trTerm tyEnv termEnv (ExprIf c t e) = do
+trTerm tyEnv termEnv (ExprIf ty c t e) = do
+  ty' <- trType tyEnv ty
   c' <- trTerm tyEnv termEnv c
   t' <- trTerm tyEnv termEnv t
   e' <- trTerm tyEnv termEnv e
-  return $ SystF.App (SystF.Free $ Builtin TermIte) $ map SystF.TermArg [c', t', e']
+  return $ SystF.App (SystF.Free $ Builtin TermIte) $ SystF.TyArg ty' : map SystF.TermArg [c', t', e']
 trTerm _ termEnv (ExprVar s) =
   case s `elemIndex` termEnv of
     Just i -> return $ SystF.termPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)

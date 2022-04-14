@@ -33,7 +33,7 @@ tests =
     testGroup
       "Can parse terms"
       [ testCase "Example 1" $
-          canParseTerm [term| if 3 < 5 then 42 + 1 else 0 |],
+          canParseTerm [term| if @Integer 3 < 5 then 42 + 1 else 0 |],
         testCase "Example 2" $
           canParseTerm [term| /\ (f : Type -> Type) (x : Type) . \k : f (Either x Bool) . fmap whatever k |]
       ],

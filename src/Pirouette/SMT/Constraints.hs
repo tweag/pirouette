@@ -43,16 +43,32 @@ data AtomicConstraint lang meta
   | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
   | Native SimpleSMT.SExpr
+  deriving (Eq, Show)
 
 data Constraint lang meta
   = And [AtomicConstraint lang meta]
   | Bot
+  deriving (Eq, Show)
 
 instance Semigroup (Constraint lang meta) where
   (<>) = andConstr
 
 instance Monoid (Constraint lang meta) where
   mempty = And []
+
+data Branch lang meta =
+  Branch { additionalInfo :: Constraint lang meta 
+         , newTerm :: TermMeta lang meta }
+
+class (LanguageSMT lang) => LanguageSMTBranches lang where
+  -- | Injection of different cases in the symbolic evaluator.
+  -- For example, one can introduce a 'if_then_else' built-in
+  -- and implement this method to look at both possibilities.
+  branchesBuiltinTerm 
+    :: ToSMT meta
+    => BuiltinTerms lang -> [ArgMeta lang meta]
+    -> Maybe [Branch lang meta]
+  branchesBuiltinTerm _ _ = Nothing
 
 -- Essentially list concatenation, with the specificity that `Bot` is absorbing.
 andConstr :: Constraint lang meta -> Constraint lang meta -> Constraint lang meta
@@ -168,7 +184,7 @@ translateData ::
   TypeMeta lang meta ->
   TermMeta lang meta ->
   ExceptT String m SimpleSMT.SExpr
-translateData knownNames _ (App var []) = translateVar knownNames var
+translateData knownNames _ (App var []) = translateApp knownNames var []
 translateData knownNames ty (App (Free (TermSig name)) args) = do
   guard (name `elem` knownNames)
   SimpleSMT.app

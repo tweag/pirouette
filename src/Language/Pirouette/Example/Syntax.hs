@@ -29,6 +29,7 @@ module Language.Pirouette.Example.Syntax where
 
 import Control.Arrow (second)
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.Combinators.Expr
 import Data.Data
 import Data.Foldable
@@ -36,6 +37,9 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
+import Pirouette.SMT
+import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Text.Megaparsec
@@ -112,6 +116,27 @@ tInt, tBool :: Type Ex
 tInt = SystF.tyPure $ SystF.Free $ TyBuiltin TyInteger
 tBool = SystF.tyPure $ SystF.Free $ TyBuiltin TyBool
 
+instance LanguageSMT Ex where
+  translateBuiltinType TyInteger = SimpleSMT.tInt
+  translateBuiltinType TyBool = SimpleSMT.tBool
+  translateConstant (ConstInt n) = SimpleSMT.int n
+  translateConstant (ConstBool b) = SimpleSMT.bool b
+  translateBuiltinTerm TermAdd [x, y] = Just $ SimpleSMT.add x y
+  translateBuiltinTerm TermSub [x, y] = Just $ SimpleSMT.sub x y
+  translateBuiltinTerm TermLt [x, y] = Just $ SimpleSMT.lt x y
+  translateBuiltinTerm TermEq [x, y] = Just $ SimpleSMT.eq x y
+  translateBuiltinTerm TermIte [_, c, t, e] = Just $ SimpleSMT.ite c t e
+  translateBuiltinTerm _ _ = Nothing
+
+instance LanguageSMTBranches Ex where
+  branchesBuiltinTerm TermIte [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
+    case runExcept $ translateTerm [] c of
+      Left _ -> Nothing
+      Right cond -> Just [ Branch (And [Native cond]) t  -- c holds => t is executed
+                         , Branch (And [Native (SimpleSMT.not cond)]) e
+                         ]                               -- (not c) holds => e is executed
+  branchesBuiltinTerm _ _ = Nothing
+
 -- ** Syntactical Categories
 
 data DataDecl = DataDecl [(String, SystF.Kind)] [(String, Ty)]
@@ -138,7 +163,7 @@ data Expr
   | ExprVar String
   | ExprLit ExConstant
   | ExprBase ExTerm
-  | ExprIf Expr Expr Expr
+  | ExprIf Ty Expr Expr Expr
   deriving (Show)
 
 -- * Parsers
@@ -281,11 +306,12 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
     parseIf :: Parser Expr
     parseIf = do
       try (symbol "if")
+      ty <- symbol "@" >> parseTypeAtom
       c <- parseTerm
       symbol "then"
       t <- parseTerm
       symbol "else"
-      ExprIf c t <$> parseTerm
+      ExprIf ty c t <$> parseTerm
 
     pAtom :: Parser Expr
     pAtom =

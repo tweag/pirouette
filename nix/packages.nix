@@ -48,6 +48,7 @@ in {
         hlint
         ormolu
         haskellPackages.happy
+        cvc4 # required to run pirouette once its built
      ] ++ [
         # iohk-specific stuff that we require
         iohkpkgs.haskell-nix.internal-cabal-install

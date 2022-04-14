@@ -7,6 +7,7 @@ import Data.Void
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
 
+
 -- | Captures the languages that can be translated to SMTLIB; namelly,
 -- we need to be able to translate each individual base syntactical category.
 --
@@ -14,7 +15,7 @@ import Pirouette.Term.Syntax
 -- should be used with @-XTypeApplications@ whenever necessary.
 class (LanguageBuiltins lang) => LanguageSMT lang where
   translateBuiltinType :: BuiltinTypes lang -> SimpleSMT.SExpr
-  translateBuiltinTerm :: BuiltinTerms lang -> SimpleSMT.SExpr
+  translateBuiltinTerm :: BuiltinTerms lang -> [SimpleSMT.SExpr] -> Maybe SimpleSMT.SExpr
   translateConstant :: Constants lang -> SimpleSMT.SExpr
 
 -- | Captures arbitrary types that can be translated to SMTLIB.

@@ -57,6 +57,7 @@ executable:
   ghc-options:
     -Wall
     -Wno-orphans
+    -fplugin=StackTrace.Plugin
 
 tests:
   spec:

@@ -2,8 +2,6 @@
 let
   ourpkgs = import ./nix/packages.nix {};
   runtime-deps = [
-      ourpkgs.nixPkgsProxy.cvc4
-
       # graphmod is a nice tool to visualize the project module structure; run:
       # $ graphmod -p --no-cluster | xdot -
       # to see it in action!
