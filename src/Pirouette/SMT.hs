@@ -149,6 +149,7 @@ assert ::
 assert env knownNames c =
   SolverT $ ReaderT $ \solver -> do
     (isTotal,expr) <- constraintToSExpr env knownNames c
+    -- liftIO $ putStrLn $ "asserting " ++ show expr
     liftIO $ SimpleSMT.assert solver expr
     return isTotal
 
@@ -161,5 +162,6 @@ assertNot ::
 assertNot env knownNames c =
   SolverT $ ReaderT $ \solver -> do
     (isTotal, expr) <- constraintToSExpr env knownNames c
+    -- liftIO $ putStrLn $ "asserting not " ++ show expr
     liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
     return isTotal

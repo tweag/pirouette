@@ -6,6 +6,8 @@
 
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
+
+import Control.Applicative ((<|>))
 import Control.Monad.Except
 import Data.Either
 import Data.List (intersperse)
@@ -139,7 +141,7 @@ atomicConstraintToSExpr ::
 atomicConstraintToSExpr env knownNames (Assign name term) = do
   let smtName = toSmtName name
   let (Just ty) = Map.lookup name env
-  d <- translateData knownNames (typeToMeta ty) term
+  d <- translateData knownNames (typeToMeta ty) term <|> translateTerm knownNames term
   return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
 atomicConstraintToSExpr _ _knownNames (VarEq a b) = do
   let aName = toSmtName a
@@ -169,7 +171,6 @@ constraintToSExpr env knownNames (And constraints) = do
   atomTrads <- mapM (runExceptT . atomicConstraintToSExpr env knownNames) constraints
   return (all isRight atomTrads, SimpleSMT.andMany (rights atomTrads))
 constraintToSExpr _ _ Bot = return (True, SimpleSMT.bool False)
-
 
 
 -- | In `Assign` constraints, the assigned terms are always fully-applied

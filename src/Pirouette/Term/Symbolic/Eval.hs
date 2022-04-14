@@ -26,7 +26,9 @@ module Pirouette.Term.Symbolic.Eval (
   UserDeclaredConstraints(..), UniversalAxiom(..), InCond(..), OutCond(..),
   EvaluationWitness(..),
   -- * Internal, used to build on top of 'SymEvalT'
-  SymEvalConstr, SymEvalT, runSymEvalT
+  SymEvalConstr, SymEvalT, symevalT, runSymEvalT,
+  declSymVars, symVar, learn,
+  prune, symEvalOneStep, pruneAndValidate
 ) where
 
 import Control.Applicative
@@ -529,7 +531,7 @@ pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang
 pruneAndValidate cOut cIn axioms =
   SymEvalT $ StateT $ \st -> do
     contradictProperty <- checkProperty cOut cIn axioms st
-    liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
+    -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
     return (contradictProperty, st)
 
 instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
@@ -555,7 +557,9 @@ instantiateAxiomWithVars axioms env =
 -- (pathConstraints /\ cOut) => cIn.
 -- This is equivalent to the unsatisfiability of
 -- pathConstraints /\ cOut /\ (not cIn).
-checkProperty :: (SMT.LanguageSMT lang, MonadIO m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m SMT.Result
+checkProperty 
+  :: (SMT.LanguageSMT lang, MonadIO m, LanguagePretty lang)
+  => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m SMT.Result
 checkProperty cOut cIn axioms env = do
   SMT.solverPush
   let vars = sestGamma env

@@ -36,6 +36,7 @@ library
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Symbolic.Interface
+      Pirouette.Term.Symbolic.Prover
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
@@ -143,6 +144,8 @@ test-suite spec
       Language.Pirouette.ExampleSpec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Term.SymbolicEvalSpec
+      Pirouette.Term.SymbolicEvalUtils
+      Pirouette.Term.SymbolicProveSpec
       Pirouette.Term.Syntax.BaseSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec

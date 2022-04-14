@@ -2,6 +2,7 @@ import qualified Language.Pirouette.ExampleSpec as Ex
 import qualified Language.Pirouette.PlutusIR.ToTermSpec as FP
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Term.SymbolicEvalSpec as SymbolicEval
+import qualified Pirouette.Term.SymbolicProveSpec as SymbolicProve
 import qualified Pirouette.Term.TransformationsSpec as Tr
 import qualified Pirouette.Transformations.DefunctionalizationSpec as Defunc
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
@@ -28,7 +29,8 @@ tests =
         "Term" 
         [testGroup "Base" Base.tests,
          testGroup "Transformations" Tr.tests,
-         testGroup "Symbolic evaluation" SymbolicEval.tests],
+         testGroup "Symbolic evaluation" SymbolicEval.tests,
+         testGroup "Symbolic prove" SymbolicProve.tests],
       testGroup
         "Language"
         [ testGroup "PlutusIR" FP.tests,

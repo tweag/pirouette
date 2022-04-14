@@ -1,4 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -17,6 +16,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Pirouette.SMT as SMT
 import qualified Pirouette.SMT.SimpleSMT as SMT
+
+import Pirouette.Term.SymbolicEvalUtils
 
 symbolicExec' :: (Program Ex, Term Ex) -> IO (Either String [Path Ex (TermMeta Ex SymVar)])
 symbolicExec' = uncurry symbolicExec
@@ -45,35 +46,6 @@ incorrectnessExec program term inC outC = fmap fst $ mockPrtT $ do
       udcAdditionalDefs = pure [], 
       udcAxioms = [] } 
       term
-
-(*=*) :: (Eq a, Show a) => IO (Either String a) -> a -> Assertion
-thing *=* expected = do
-  given <- thing
-  case given of
-    Left e -> assertFailure $ "finished with errors: " <> e
-    Right x -> x @=? expected
-
-satisfies :: (Eq a, Show a) => IO (Either String a) -> (a -> Bool) -> Assertion
-thing `satisfies` property = do
-  given <- thing
-  case given of
-    Left e -> assertFailure $ "finished with errors: " <> e
-    Right x -> assertBool ("property not satisfied: " <> show x) (property x)
-
-pathSatisfies :: (LanguageBuiltins lang, Show res) => IO (Either String [Path lang res]) -> ([Path lang res] -> Bool) -> Assertion
-thing `pathSatisfies` property = do
-  given <- thing
-  case given of
-    Left e -> assertFailure $ "finished with errors: " <> e
-    Right paths -> assertBool ("property not satisfied: " <> show paths) (property paths)
-
-singleVerified :: [Path lang (EvaluationWitness lang)] -> Bool
-singleVerified [Path { pathResult = Verified }] = True
-singleVerified _ = False
-
-singleCounter :: [Path lang (EvaluationWitness lang)] -> Bool
-singleCounter [Path { pathResult = CounterExample _ }] = True
-singleCounter _ = False 
 
 add1 :: (Program Ex, Term Ex)
 add1 = (
@@ -110,10 +82,6 @@ botConditions = (SMT.Bot, const mempty)
 
 topConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
 topConditions = (mempty, const mempty)
-
-isSingleton :: [a] -> Bool
-isSingleton [_] = True
-isSingleton _ = False
 
 tests :: [TestTree]
 tests = [ 
