@@ -6,7 +6,6 @@ module Pirouette.Term.Symbolic.Prover where
 
 import Control.Monad.Except
 import Control.Monad.Writer
-import qualified Pirouette.SMT as SMT
 import Pirouette.SMT.Constraints
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
@@ -73,16 +72,17 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     (Right assumeCond, Right proveCond) -> do
       -- liftIO $ print (pretty bodyTerm)
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
-    _ -> pure SMT.Unknown
+    _ -> pure PruneUnknown 
   -- step 2. depending on the result, stop or keep going
   case result of
-    SMT.Unsat -> pure Verified
-    SMT.Sat -> pure $ CounterExample bodyTerm
+    PruneInconsistentAssumptions -> pure Discharged 
+    PruneImplicationHolds -> pure Verified
+    PruneCounterFound model -> pure $ CounterExample bodyTerm model
     _ -> do -- one step of evaluation on each
       (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
       (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
       (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
       if somethingWasEval == Any False
-        then pure $ CounterExample bodyTerm'
+        then pure $ CounterExample bodyTerm' []
         else worker resultVar bodyTerm' assumeTerm' proveTerm'

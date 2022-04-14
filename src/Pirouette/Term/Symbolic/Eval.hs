@@ -28,7 +28,7 @@ module Pirouette.Term.Symbolic.Eval (
   -- * Internal, used to build on top of 'SymEvalT'
   SymEvalConstr, SymEvalT, symevalT, runSymEvalT,
   declSymVars, symVar, learn,
-  prune, symEvalOneStep, pruneAndValidate
+  prune, symEvalOneStep, pruneAndValidate, PruneResult(..)
 ) where
 
 import Control.Applicative
@@ -471,8 +471,12 @@ data UserDeclaredConstraints lang = UserDeclaredConstraints {
 newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
 newtype InCond lang = InCond (Constraint lang)
 
+type Model = [(SimpleSMT.SExpr, SimpleSMT.Value)]
+
 data EvaluationWitness lang =
-  Verified | CounterExample (TermMeta lang SymVar)
+  Verified | 
+  Discharged | 
+  CounterExample (TermMeta lang SymVar) Model
   deriving (Eq, Show)
 
 data UniversalAxiom lang = UniversalAxiom {
@@ -520,14 +524,25 @@ conditionalEval t (OutCond q) (InCond p) axioms = do
   result <- pruneAndValidate (q t') p axioms
   liftIO $ putStrLn $ "result? " ++ show result
   case result of
-    SMT.Unsat -> pure Verified
-    SMT.Sat -> pure (CounterExample t)
+    PruneInconsistentAssumptions -> pure Discharged
+    PruneImplicationHolds -> pure Verified
+    PruneCounterFound m -> pure (CounterExample t m)
     _ -> if somethingWasDone == Any False
-            then pure (CounterExample t) -- cannot check more
+            then pure (CounterExample t []) -- cannot check more
             else conditionalEval t' (OutCond q) (InCond p) axioms    
 
+data PruneResult
+  = PruneInconsistentAssumptions
+  | PruneImplicationHolds
+  | PruneCounterFound Model
+  | PruneUnknown
+  deriving (Eq, Show)
+
 -- | Prune the set of paths in the current set.
-pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m SimpleSMT.Result
+pruneAndValidate 
+  :: (SymEvalConstr lang m)
+  => Constraint lang -> Constraint lang -> [UniversalAxiom lang]
+  -> SymEvalT lang m PruneResult
 pruneAndValidate cOut cIn axioms =
   SymEvalT $ StateT $ \st -> do
     contradictProperty <- checkProperty cOut cIn axioms st
@@ -559,7 +574,8 @@ instantiateAxiomWithVars axioms env =
 -- pathConstraints /\ cOut /\ (not cIn).
 checkProperty 
   :: (SMT.LanguageSMT lang, MonadIO m, LanguagePretty lang)
-  => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m SMT.Result
+  => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang
+  -> SMT.SolverT m PruneResult
 checkProperty cOut cIn axioms env = do
   SMT.solverPush
   let vars = sestGamma env
@@ -568,20 +584,25 @@ checkProperty cOut cIn axioms env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  cstrTotal <- SMT.assert vars (sestKnownNames env) (sestConstraint env)
-  outTotal <- SMT.assert vars (sestKnownNames env) cOut
+  _cstrTotal <- SMT.assert vars (sestKnownNames env) (sestConstraint env)
+  _outTotal <- SMT.assert vars (sestKnownNames env) cOut
+  inconsistent <- SMT.checkSat
   inTotal <- SMT.assertNot vars (sestKnownNames env) cIn
   result <- SMT.checkSat
+  finalResult <- case (inconsistent, result) of
+    (SMT.Unsat, _) -> return PruneInconsistentAssumptions
+    (_, SMT.Unsat) -> return PruneImplicationHolds
+    -- If a partial translation of the constraints is SAT,
+    -- it does not guarantee us that the full set of constraints is satisfiable.
+    -- Only in the case in which we could translate the entire thing to prove.
+    (_, SMT.Sat) | {- cstrTotal && outTotal && -} inTotal
+      -> do m <- if null vars then pure [] else SMT.getModel (M.keys vars)
+            pure $ PruneCounterFound m
+    (_, _) -> return PruneUnknown
   SMT.solverPop
-  case result of
-    SMT.Sat ->
-      if cstrTotal && outTotal && inTotal
-      then return SMT.Sat
-      -- If a partial translation of the constraints is SAT,
-      -- it does not guarantee us that the full set of constraints is satisfiable.
-      else return SMT.Unknown
-    _ -> return result
+  return finalResult
 
 instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"
-  pretty (CounterExample t) = "COUNTER-EXAMPLE: The result is\n" <> pretty t
+  pretty Discharged = "Discharged"
+  pretty (CounterExample t _) = "COUNTER-EXAMPLE: The result is\n" <> pretty t

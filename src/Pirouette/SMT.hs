@@ -25,6 +25,8 @@ module Pirouette.SMT
     declareVariable,
     assert,
     assertNot,
+    getUnsatCore,
+    getModel,
 
     -- * Convenient re-exports
     Constraint (..),
@@ -165,3 +167,17 @@ assertNot env knownNames c =
     -- liftIO $ putStrLn $ "asserting not " ++ show expr
     liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
     return isTotal
+
+getUnsatCore ::
+  (MonadIO m) =>
+  SolverT m [String]
+getUnsatCore = SolverT $ ReaderT $ \solver -> 
+  liftIO $ SimpleSMT.getUnsatCore solver
+
+getModel ::
+  (MonadIO m) =>
+  [Name] ->
+  SolverT m [(SimpleSMT.SExpr, SimpleSMT.Value)]
+getModel names = SolverT $ ReaderT $ \solver -> do
+  let exprs = map (SimpleSMT.symbol . toSmtName) names
+  liftIO $ SimpleSMT.getExprs solver exprs

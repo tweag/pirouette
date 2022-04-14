@@ -269,8 +269,8 @@ parseExConstants :: Parser ExConstant
 parseExConstants =
   label "Constant" $
     asum
-      [ ConstInt <$> integer,
-        ConstBool <$> parseBoolean
+      [ ConstInt <$> try integer,
+        ConstBool <$> try parseBoolean
       ]
   where
     parseBoolean = (True <$ symbol "True") <|> (False <$ symbol "False")
@@ -321,8 +321,8 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           parens parseTerm,
           parseIf,
           ExprTy <$> (try (symbol "@") >> parseTypeAtom),
-          ExprVar <$> try (ident <|> typeName),
-          ExprLit <$> try parseExConstants
+          ExprLit <$> try parseExConstants,
+          ExprVar <$> try (ident <|> typeName)
         ]
 
 parseTyOf :: Parser ()
@@ -358,7 +358,7 @@ ident = label "identifier" $ do
   return i
   where
     reservedNames :: S.Set String
-    reservedNames = S.fromList ["abs", "all", "data", "if", "then", "else", "fun"]
+    reservedNames = S.fromList ["abs", "all", "data", "if", "then", "else", "fun", "True", "False"]
 
 typeName :: Parser String
 typeName = label "type-identifier" $ do

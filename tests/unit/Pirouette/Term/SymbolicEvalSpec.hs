@@ -88,11 +88,11 @@ tests = [
   testCase "add 1" $
     symbolicExec' add1 `satisfies` isSingleton,
   testCase "add 1, bot" $
-    incorrectnessExec' add1 botConditions `pathSatisfies` singleCounter,
+    incorrectnessExec' add1 botConditions `pathSatisfies` (isSingleton .&. all isCounter),
   testCase "add 1, top" $
-    incorrectnessExec' add1 topConditions `pathSatisfies` singleVerified,
+    incorrectnessExec' add1 topConditions `pathSatisfies` (isSingleton .&. all isVerified),
   testCase "one fake branch" $
-    incorrectnessExec' oneFake botConditions `pathSatisfies` singleCounter
+    incorrectnessExec' oneFake botConditions `pathSatisfies` (isSingleton .&. all isCounter)
   -- testCase "who knows should have two branches" $
   --   incorrectnessExec' whoKnows botConditions `pathSatisfies` (\x -> length x == 2)
   ]

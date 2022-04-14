@@ -43,15 +43,33 @@ fun main : Integer = 42
   [ty|Integer|],
   [term| \(x : Integer) . add1 x |])
 
-add1TripleWrong :: (Term Ex, Term Ex)
-add1TripleWrong = (
+input0Output0 :: (Term Ex, Term Ex)
+input0Output0 = (
   [term| \(result : Integer) (x : Integer) . greaterThan0 result |],
   [term| \(result : Integer) (x : Integer) . greaterThan0 x |])
 
-add1TripleOk :: (Term Ex, Term Ex)
-add1TripleOk = (
+input0Output1 :: (Term Ex, Term Ex)
+input0Output1 = (
   [term| \(result : Integer) (x : Integer) . greaterThan1 result |],
   [term| \(result : Integer) (x : Integer) . greaterThan0 x |])
+
+maybes :: Program Ex
+maybes = [prog|
+data MaybeInt
+  = JustInt : Integer -> Maybe Int
+  | NothingInt : Maybe Int
+
+fun isNothing : MaybeInt -> Bool
+  = \(m : MaybeInt) . match_MaybeInt m @Bool (\(n : Integer) . False) True
+
+fun isJust : MaybeInt -> Bool
+  = \(m : MaybeInt) . match_MaybeInt m @Bool (\(n : Integer) . True) False
+
+fun not : Bool -> Bool
+  = \(b : Bool) . if @Bool b then False else True
+
+fun main : Integer = 42
+|]
 
 switchSides :: (Term Ex, Term Ex) -> (Term Ex, Term Ex)
 switchSides (assume, prove) = (prove, assume)
@@ -59,15 +77,23 @@ switchSides (assume, prove) = (prove, assume)
 tests :: [TestTree]
 tests = [
   testGroup "incorrectness triples" 
-    [ testCase "[input > 0] add 1 [result > 0] fails" $
-        exec add1 add1TripleWrong `pathSatisfies` singleCounter,
-      testCase "[input > 0] add 1 [result > 1] ok" $
-        exec add1 add1TripleOk `pathSatisfies` singleVerified 
+    [ testCase "[input > 0] add 1 [result > 0] counter" $
+        exec add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
+      testCase "[input > 0] add 1 [result > 1] verified" $
+        exec add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
+      testCase "[isNothing x] isJust x [not result] verified" $
+        exec (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|]) 
+             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isNothing x|])
+          `pathSatisfies` (all isNoCounter .&. any isVerified),
+      testCase "[isJust x] isJust x [not result] counter" $
+        exec (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|]) 
+             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isJust x|])
+          `pathSatisfies` any isCounter
     ],
   testGroup "Hoare triples" 
-    [ testCase "{input > 0} add 1 {result > 0} ok" $
-        exec add1 (switchSides add1TripleWrong) `pathSatisfies` singleVerified,
-      testCase "{input > 0} add 1 {result > 1} ok" $
-        exec add1 (switchSides add1TripleOk) `pathSatisfies` singleVerified
+    [ testCase "{input > 0} add 1 {result > 0} verified" $
+        exec add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
+      testCase "{input > 0} add 1 {result > 1} verified" $
+        exec add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
     ]
   ]

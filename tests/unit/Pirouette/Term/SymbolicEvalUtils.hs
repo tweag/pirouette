@@ -25,13 +25,21 @@ thing `pathSatisfies` property = do
     Left e -> assertFailure $ "finished with errors: " <> e
     Right paths -> assertBool ("property not satisfied: " <> show paths) (property paths)
 
-singleVerified :: [Path lang (EvaluationWitness lang)] -> Bool
-singleVerified [Path { pathResult = Verified }] = True
-singleVerified _ = False
+(.&.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
+p .&. q = \x -> p x && q x
 
-singleCounter :: [Path lang (EvaluationWitness lang)] -> Bool
-singleCounter [Path { pathResult = CounterExample _ }] = True
-singleCounter _ = False 
+isVerified, isDischarged, isCounter, isNoCounter :: Path lang (EvaluationWitness lang) -> Bool
+
+isVerified Path { pathResult = Verified } = True
+isVerified _ = False
+
+isDischarged Path { pathResult = Discharged } = True
+isDischarged _ = False
+
+isCounter Path { pathResult = CounterExample _ _ } = True
+isCounter _ = False
+
+isNoCounter = not . isCounter
 
 isSingleton :: [a] -> Bool
 isSingleton [_] = True
