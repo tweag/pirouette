@@ -24,7 +24,7 @@ module Pirouette.Term.Symbolic.Eval (
   -- ** Incorrectness logic
   runIncorrectness, pathsIncorrectness, pathsIncorrectness_,
   UserDeclaredConstraints(..), UniversalAxiom(..), InCond(..), OutCond(..),
-  EvaluationWitness(..),
+  EvaluationWitness(..), Model,
   -- * Internal, used to build on top of 'SymEvalT'
   SymEvalConstr, SymEvalT, symevalT, runSymEvalT,
   declSymVars, symVar, learn,
@@ -131,7 +131,7 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
-type SymEvalConstr lang m = 
+type SymEvalConstr lang m =
   (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMTBranches lang, MonadIO m)
 
 symevalT :: (SymEvalConstr lang m) => AvailableFuel -> SymEvalT lang m a -> m [Path lang a]
@@ -139,7 +139,7 @@ symevalT initialFuel = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
-runSymEvalTRaw 
+runSymEvalTRaw
   :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a
   -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
@@ -157,7 +157,7 @@ runSymEvalT st symEvalT =
     return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    s = SMT.cvc4_ALL_SUPPORTED False
+    s = SMT.cvc4_ALL_SUPPORTED True
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
@@ -265,8 +265,8 @@ symeval t = do
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
 -- whether a step was taken at all.
-symEvalOneStep 
-  :: forall lang m. (SymEvalConstr lang m) 
+symEvalOneStep
+  :: forall lang m. (SymEvalConstr lang m)
   => TermMeta lang SymVar -> WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
@@ -282,7 +282,7 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
   -}
   {-
   # option 1: evaluate under lambda
-  
+
   This can give us a bit of better results, but in most cases it seems
   to win us nothing. For example, if we are evaluating:
   > map (\x -> x + 1) l
@@ -381,7 +381,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
                 lift $ learn constr
                 consumeFuel
                 pure $ caseTerm `R.appN` symbArgs
-          
+
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
   where
@@ -435,10 +435,10 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds gamma ps res) =
     vsep
-      [ "With:" <+> pretty (M.toList gamma),
-        "If:" <+> indent 2 (pretty conds),
+      [ "Env:" <+> hsep (map pretty (M.toList gamma)),
+        "Path:" <+> indent 2 (pretty conds),
         "Status:" <+> pretty ps,
-        "Result:" <+> indent 2 (pretty res)
+        "Tip:" <+> indent 2 (pretty res)
       ]
 
 instance Pretty PathStatus where
@@ -474,8 +474,8 @@ newtype InCond lang = InCond (Constraint lang)
 type Model = [(SimpleSMT.SExpr, SimpleSMT.Value)]
 
 data EvaluationWitness lang =
-  Verified | 
-  Discharged | 
+  Verified |
+  Discharged |
   CounterExample (TermMeta lang SymVar) Model
   deriving (Eq, Show)
 
@@ -529,7 +529,7 @@ conditionalEval t (OutCond q) (InCond p) axioms = do
     PruneCounterFound m -> pure (CounterExample t m)
     _ -> if somethingWasDone == Any False
             then pure (CounterExample t []) -- cannot check more
-            else conditionalEval t' (OutCond q) (InCond p) axioms    
+            else conditionalEval t' (OutCond q) (InCond p) axioms
 
 data PruneResult
   = PruneInconsistentAssumptions
@@ -539,7 +539,7 @@ data PruneResult
   deriving (Eq, Show)
 
 -- | Prune the set of paths in the current set.
-pruneAndValidate 
+pruneAndValidate
   :: (SymEvalConstr lang m)
   => Constraint lang -> Constraint lang -> [UniversalAxiom lang]
   -> SymEvalT lang m PruneResult
@@ -572,7 +572,7 @@ instantiateAxiomWithVars axioms env =
 -- (pathConstraints /\ cOut) => cIn.
 -- This is equivalent to the unsatisfiability of
 -- pathConstraints /\ cOut /\ (not cIn).
-checkProperty 
+checkProperty
   :: (SMT.LanguageSMT lang, MonadIO m, LanguagePretty lang)
   => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang
   -> SMT.SolverT m PruneResult
@@ -605,4 +605,8 @@ checkProperty cOut cIn axioms env = do
 instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"
   pretty Discharged = "Discharged"
-  pretty (CounterExample t _) = "COUNTER-EXAMPLE: The result is\n" <> pretty t
+  pretty (CounterExample t m) =
+    vsep [ "COUNTER-EXAMPLE"
+         , "Result:" <+> pretty t
+         , "Model:" <+> viaShow m
+         ]

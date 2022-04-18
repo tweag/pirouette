@@ -20,6 +20,7 @@ import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
 import Prettyprinter hiding (Pretty (..))
+import Debug.Trace (trace)
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
@@ -59,14 +60,14 @@ instance Monoid (Constraint lang meta) where
   mempty = And []
 
 data Branch lang meta =
-  Branch { additionalInfo :: Constraint lang meta 
+  Branch { additionalInfo :: Constraint lang meta
          , newTerm :: TermMeta lang meta }
 
 class (LanguageSMT lang) => LanguageSMTBranches lang where
   -- | Injection of different cases in the symbolic evaluator.
   -- For example, one can introduce a 'if_then_else' built-in
   -- and implement this method to look at both possibilities.
-  branchesBuiltinTerm 
+  branchesBuiltinTerm
     :: ToSMT meta
     => BuiltinTerms lang -> [ArgMeta lang meta]
     -> Maybe [Branch lang meta]
@@ -188,6 +189,8 @@ translateData ::
 translateData knownNames _ (App var []) = translateApp knownNames var []
 translateData knownNames ty (App (Free (TermSig name)) args) = do
   guard (name `elem` knownNames)
+  ty' <- translateType ty
+  _ <- trace ("translateData: " ++ show name ++ "; " ++ show ty') (return ())
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're

@@ -17,6 +17,7 @@ import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SmtLib
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as Raw
+import Debug.Trace (trace)
 
 -- * Translating Terms and Types to SMTLIB
 
@@ -45,11 +46,11 @@ translateType ::
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
   TypeMeta builtins meta ->
   ExceptT String m SmtLib.SExpr
-translateType (Raw.TyApp (Raw.Free ty) args) = 
+translateType (Raw.TyApp (Raw.Free ty) args) =
   SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
 translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) _index) args) =
   SmtLib.app (SmtLib.symbol (toSmtName ann)) <$> mapM translateType args
-translateType x = 
+translateType x =
   throwError $ "Translate type to smtlib: cannot handle " <> show x
 
 -- TODO: The translation of term is still to be worked on,
@@ -64,9 +65,9 @@ translateTerm ::
 translateTerm knownNames (Raw.App var args) = do
   translatedArgs <- mapM (translateArg knownNames) args
   translateApp knownNames var translatedArgs
-translateTerm _ (Raw.Lam _ann _ty _term) = 
+translateTerm _ (Raw.Lam _ann _ty _term) =
   throwError "Translate term to smtlib: Lambda abstraction in term"
-translateTerm _ (Raw.Abs _ann _kind _term) = 
+translateTerm _ (Raw.Abs _ann _kind _term) =
   throwError "Translate term to smtlib: Type abstraction in term"
 
 translateApp ::
@@ -76,14 +77,15 @@ translateApp ::
   VarMeta builtins meta ->
   [SmtLib.SExpr] ->
   ExceptT String m SmtLib.SExpr
-translateApp _ (Raw.Meta h) args = 
+translateApp _ (Raw.Meta h) args =
   pure $ SmtLib.app (translate h) args
 
 translateApp knownNames (Raw.Free (TermSig name)) args = do
+  _ <- trace ("translateApp: " ++ show name) (return ())
   guard (name `elem` knownNames)
   pure $ SmtLib.app (SmtLib.symbol (toSmtName name)) args
 
-translateApp _ (Raw.Free (Constant c)) [] = 
+translateApp _ (Raw.Free (Constant c)) [] =
   return $ translateConstant @builtins c
 translateApp _ (Raw.Free (Constant _)) _ =
   throwError "translateVar: Constant applied to arguments"
@@ -93,9 +95,9 @@ translateApp _ (Raw.Free (Builtin b)) args =
     Nothing -> throwError "translateVar: Built-in term applied to wrong # of args"
     Just t  -> return t
 
-translateApp _ (Raw.Bound (Raw.Ann _name) _) _ = 
+translateApp _ (Raw.Bound (Raw.Ann _name) _) _ =
   throwError "translateVar: Bound variable; did you forget to apply something?"
-translateApp _ (Raw.Free Bottom) _ = 
+translateApp _ (Raw.Free Bottom) _ =
   throwError "translateVar: Bottom; unclear how to translate that. WIP"
 
 translateArg ::
