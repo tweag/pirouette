@@ -95,32 +95,55 @@ fun main : Integer = 42
 -- from s0 by f and s0 satisfies @P@. With that in mind, the state @[(z, 42), (x, 3), (y, 2)]@ satisfies @Q@
 -- and, albeit reachable, it is not reachable from a state satisfying the precondition @z == 11@.
 -- Therefore the IL triple is falsifiable and we'd expect such a counterexample from our tool.
--- A IL triple really /means/:
+-- A IL triple really /means/ (def 1 from the IL paper):
 --
--- > [P] f [Q] <=> { s' | s' \in post f && Q s' } \subseteq { f s | P s }
+-- > [P] f [Q] <=> { s' | s' \in Q } \subseteq { s' | exists s \in P . (s, s') \in f }
 --
--- Which makes it obvious that, @[(z, 42), (x, 3), (y, 2)]@ is both a post state and satisfies Q,
--- but its not an element of { f s | P s } because all elements of that set satisfy z == 11.
---
+-- Which makes it obvious that the IL triple above is not sat. The state @[(z, 42), (x, 3), (y, 2)]@ satisfies Q,
+-- but its not an element of { s' | exists s \in P . (s, s') \in f } because all elements of that set satisfy z == 11.
 -- If we enrich our postcondition to read:
 --
 -- > [z == 42 && even x && odd y]
 --
 -- Now we have a valid IL triple, and this provides an interesting test case for pirouette.
 -- Firstly, though, we have to translate the semantics of triples. In a pure setting we have
--- no notion of reachability, only termination. Hence,
+-- no notion of reachability, only termination. In fact, say that @f@ is a purely functional
+-- expression (i.e., only reads from the state and returns a value), now assume @o@ is a fresh
+-- name; the program @o = f@ can be seen as a binary relation of states: @{ (s , (o , valof s f):s) | forall s }@
+-- Where @valof s f@ denotes the value of @f@ evaluated at state @s@.
 --
--- [P] f [Q] <=> { o | \Ex i . o = f i && Q o } \subseteq { f i | P i }
+-- Now, lets look at what a IL triple over @res = f@ would /mean/:
 --
--- Which translates to:
+-- > [P] o = f [Q] <=> { s' | s' \in Q } \subseteq { s' | exists s \in P . (s, s') \in "o = f" }
+-- >               <=> { s' | s' \in Q } \subseteq { (o, valof s f) : s | s \in P }
 --
--- >    forall x . x \in { o | \Ex i . o = f i && Q o } `implies` x \in { f i | P i }
--- > == forall x . (\Ex i1 . x = f i1 && Q x) `implies` (\Ex i2 . P i2 && x = f i2)
+-- Note, in particular, that @Q@ makes no attempt to estabilish that its argument @s'@ has
+-- any connection whatsoever with the state in which @f@ is computed. If @Q@ does not mention
+-- the @o@ variable at all, then it is reasonable to weaken the above inequality to:
 --
--- (TODO: Exercise for the writer: double check these statements!)
+-- > { (o, valof s f):s | s \in Q } \subseteq { (o, valof s f):s | s \in P } <=> Q `implies` P
 --
--- To translate the code block given by O'Hearn on their paper to Haskell, we could get
--- something like:
+-- Which gets further simplified to @Q `implies` P@.
+--
+-- If @Q@ does mention the result, @Q@ can be seen as a relation between
+-- the input @s@ and the output @valof s f@, which would let us write:
+--
+-- > { (o, valof s f):s | forall s . Q s (valof f s) } \subseteq { (o, valof r f):r | r \in P }
+--
+-- (We alpha-converted one of the sets to avoid name clashing)
+-- Now, expanding the meaning of @\subseteq@:
+--
+-- >     forall s . Q s (valof f s) `implies` (o, valof s f):s \in { (o, valof r f):r | r \in P }
+-- > <=> forall s . Q s (valof f s) `implies` (exists r . r \in P && r == s && valof s f == valof r f)
+-- > <=> forall s . Q s (valof f s) `implies` s \in P
+--
+-- Now, we rename @s@ to @i@ to make it clear that it is, in a way, the input to the pure function @f@,
+-- we arrive at:
+--
+-- > SEM1: [P] f [Q] <=> forall i . Q i (f i) `implies` P i
+--
+-- With a purely functional characterization, we can craft an example similar to
+-- the code block given by O'Hearn on their paper to Haskell:
 --
 -- > ohearn :: (Integer, Integer) -> (Integer, Integer)
 -- > ohearn x y
@@ -133,14 +156,39 @@ fun main : Integer = 42
 --
 -- Or, in other words:
 --
--- > forall rx ry . (\Ex x y . (rx, ry) == f (x, y) && ry == 42) `implies` (\Ex x y . (rx, ry) == f (x, y) && y == 11)
+-- > forall (x, y) . (_, 42) = ohearn (x, y) `implies` y == 11
 --
--- It's still not valid! A similar model gives us a counterexample: f (3, 42) == (3, 42) && y /= 11
--- In fact, any choice of an odd value for the first component of the input pair will yield a counterexample.
+-- We can easily find a counterexample with a similar model, take @x@ to be an odd
+-- number and @y@ to be 42: f (3, 42) = (3, 42) && y /= 11
 -- Again, strengthtening the postcondition gives us a valid triple:
 --
 -- > [\(x, y) -> y == 11] ohearn [\(rx, ry) (x, y) -> even x && ry == 42]
 --
+-- # A Pitfal: forgetting infromation about the input
+--
+-- Curiously enough, the SEM1 formulation above that we derived above is suspiciously
+-- similar to another one, which we could have used instead:
+--
+-- > SEM2: [P] f [Q] <=> { o | exists i . o = f i && Q i o } \subseteq { f i | P i }
+--
+-- Yet SEM2 expands to
+--
+-- >    forall x . x \in { o | exists i . o = f i && Q i o } `implies` x \in { f i | P i }
+-- > == forall x . (exists i1 . x = f i1 && Q i1 x) `implies` (exists i2 . P i2 && x = f i2)
+-- > == forall x i1 . x = f i1 && Q i1 x `implies` (exists i2 . P i2 && x = f i2)
+-- > == forall i1 . Q i1 (f i1) `implies` (exists i2 . P i2 && f i1 = f i2)
+--
+-- We have that SEM1 implies SEM2 but not the other way around, only for injective functions.
+-- This happened because we dropped information about which inputs originated which outputs
+-- when we restricted ourselves to sets of outputs. Because both post and pre-conditions are represented as
+-- sets of states in the stateful calculus, the subset relation forces the variables not
+-- modified from pre to post state to remain the same, in other words, the pre and post-conditions
+-- are sets of outputs AND inputs:
+--
+-- > SEM3: [P] f [Q] <=> { (f i, i) | Q i (f i) } \subseteq { (f i, i) | P i }
+--
+-- Now we have that SEM1 is equivalent to SEM3
+
 
 conditionals1 :: (Program Ex, Type Ex, Term Ex)
 conditionals1 =
