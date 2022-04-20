@@ -20,7 +20,6 @@ import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF
 import Prettyprinter hiding (Pretty (..))
-import Debug.Trace (trace)
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
@@ -190,7 +189,7 @@ translateData knownNames _ (App var []) = translateApp knownNames var []
 translateData knownNames ty (App (Free (TermSig name)) args) = do
   guard (name `elem` knownNames)
   ty' <- translateType ty
-  _ <- trace ("translateData: " ++ show name ++ "; " ++ show ty') (return ())
+  _ <- traceMe ("translateData: " ++ show name ++ "; " ++ show ty') (return ())
   SimpleSMT.app
     <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
     -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're

@@ -157,7 +157,9 @@ runSymEvalT st symEvalT =
     return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    s = SMT.cvc4_ALL_SUPPORTED True
+    -- s = SMT.cvc4_ALL_SUPPORTED True
+    -- no debug messages
+    s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do

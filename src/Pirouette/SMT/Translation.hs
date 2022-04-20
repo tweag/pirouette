@@ -19,6 +19,12 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as Raw
 import Debug.Trace (trace)
 
+
+-- useful during debugging
+traceMe :: String -> a -> a
+traceMe _ = id
+-- traceMe = trace
+
 -- * Translating Terms and Types to SMTLIB
 
 -- | Checks whether we can translate the current datatype definitions and whether
@@ -81,7 +87,7 @@ translateApp _ (Raw.Meta h) args =
   pure $ SmtLib.app (translate h) args
 
 translateApp knownNames (Raw.Free (TermSig name)) args = do
-  _ <- trace ("translateApp: " ++ show name) (return ())
+  _ <- traceMe ("translateApp: " ++ show name) (return ())
   guard (name `elem` knownNames)
   pure $ SmtLib.app (SmtLib.symbol (toSmtName name)) args
 
