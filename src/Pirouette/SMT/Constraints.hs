@@ -13,12 +13,11 @@ import Data.Either
 import Data.List (intersperse)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import Pirouette.Monad
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.SystemF
 import Prettyprinter hiding (Pretty (..))
 
 -- TODO: this module should probably be refactored somewhere;
@@ -58,19 +57,22 @@ instance Semigroup (Constraint lang meta) where
 instance Monoid (Constraint lang meta) where
   mempty = And []
 
-data Branch lang meta =
-  Branch { additionalInfo :: Constraint lang meta
-         , newTerm :: TermMeta lang meta }
+data Branch lang meta = Branch
+  { additionalInfo :: Constraint lang meta,
+    newTerm :: TermMeta lang meta
+  }
 
 class (LanguageSMT lang) => LanguageSMTBranches lang where
   -- | Injection of different cases in the symbolic evaluator.
   -- For example, one can introduce a 'if_then_else' built-in
   -- and implement this method to look at both possibilities.
-  branchesBuiltinTerm
-    :: ToSMT meta
-    => BuiltinTerms lang -> [ArgMeta lang meta]
-    -> Maybe [Branch lang meta]
-  branchesBuiltinTerm _ _ = Nothing
+  branchesBuiltinTerm ::
+    (ToSMT meta, Monad m) =>
+    BuiltinTerms lang ->
+    (TermMeta lang meta -> m (Maybe SimpleSMT.SExpr)) ->
+    [ArgMeta lang meta] ->
+    m (Maybe [Branch lang meta])
+  branchesBuiltinTerm _ _ _ = pure Nothing
 
 -- Essentially list concatenation, with the specificity that `Bot` is absorbing.
 andConstr :: Constraint lang meta -> Constraint lang meta -> Constraint lang meta
@@ -133,7 +135,7 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) whe
 --
 -- Hence, we chose solution #2
 atomicConstraintToSExpr ::
-  (LanguageSMT lang, ToSMT meta, MonadIO m) =>
+  (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   Env lang ->
   [Name] ->
   AtomicConstraint lang meta ->
@@ -141,19 +143,21 @@ atomicConstraintToSExpr ::
 atomicConstraintToSExpr env knownNames (Assign name term) = do
   let smtName = toSmtName name
   let (Just ty) = Map.lookup name env
-  d <- translateData knownNames (typeToMeta ty) term <|> translateTerm knownNames term
+  d <-
+    translateTerm knownNames (Just $ typeToMeta ty) term
+      <|> translateTerm knownNames Nothing term
   return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
 atomicConstraintToSExpr _ _knownNames (VarEq a b) = do
   let aName = toSmtName a
   let bName = toSmtName b
   return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
 atomicConstraintToSExpr _ knownNames (NonInlinableSymbolEq term1 term2) = do
-  t1 <- translateTerm knownNames term1
-  t2 <- translateTerm knownNames term2
+  t1 <- translateTerm knownNames Nothing term1
+  t2 <- translateTerm knownNames Nothing term2
   return $ t1 `SimpleSMT.eq` t2
 atomicConstraintToSExpr _ knownNames (OutOfFuelEq term1 term2) = do
-  t1 <- translateTerm knownNames term1
-  t2 <- translateTerm knownNames term2
+  t1 <- translateTerm knownNames Nothing term1
+  t2 <- translateTerm knownNames Nothing term2
   return $ t1 `SimpleSMT.eq` t2
 atomicConstraintToSExpr _ _knownNames (Native expr) =
   return expr
@@ -162,7 +166,8 @@ atomicConstraintToSExpr _ _knownNames (Native expr) =
 -- the translation of constraints does not always carry all the information it could.
 -- So the boolean indicates if every atomic constraint have been translated.
 -- A 'False' indicates that some have been forgotten during the translation.
-constraintToSExpr :: (LanguageSMT lang, ToSMT meta, MonadIO m) =>
+constraintToSExpr ::
+  (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   Env lang ->
   [Name] ->
   Constraint lang meta ->
@@ -171,28 +176,3 @@ constraintToSExpr env knownNames (And constraints) = do
   atomTrads <- mapM (runExceptT . atomicConstraintToSExpr env knownNames) constraints
   return (all isRight atomTrads, SimpleSMT.andMany (rights atomTrads))
 constraintToSExpr _ _ Bot = return (True, SimpleSMT.bool False)
-
-
--- | In `Assign` constraints, the assigned terms are always fully-applied
--- constructors. This dedicated translation function provides required type
--- annotation for the SMT. For example Nil may have a List Int annotation (the
--- `as` term in smtlib). Besides, this function removes applications of types
--- to terms ; they do not belong in the term world of the resulting smtlib
--- term.
-translateData ::
-  (LanguageSMT lang, ToSMT meta, Monad m) =>
-  [Name] ->
-  TypeMeta lang meta ->
-  TermMeta lang meta ->
-  ExceptT String m SimpleSMT.SExpr
-translateData knownNames _ (App var []) = translateApp knownNames var []
-translateData knownNames ty (App (Free (TermSig name)) args) = do
-  guard (name `elem` knownNames)
-  ty' <- translateType ty
-  _ <- traceMe ("translateData: " ++ show name ++ "; " ++ show ty') (return ())
-  SimpleSMT.app
-    <$> (SimpleSMT.as (SimpleSMT.symbol (toSmtName name)) <$> translateType ty)
-    -- VCM: Isn't this a bug? We're translating the arguments with the same type as we're
-    -- translating the overall term.
-    <*> mapM (translateData knownNames ty) (mapMaybe fromArg args)
-translateData _ _ _ = throwError "Illegal term in translate data"

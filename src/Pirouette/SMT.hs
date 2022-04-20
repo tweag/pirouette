@@ -33,8 +33,8 @@ module Pirouette.SMT
     AtomicConstraint (..),
     SimpleSMT.Result (..),
     module Base,
-    Branch(..),
-    LanguageSMTBranches(..)
+    Branch (..),
+    LanguageSMTBranches (..),
   )
 where
 
@@ -44,6 +44,8 @@ import Control.Monad.Reader
 import Control.Monad.State.Class
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
+import Pirouette.Monad
+import Pirouette.Monad.Logger
 import Pirouette.SMT.Base as Base
 import Pirouette.SMT.Constraints
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
@@ -56,7 +58,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 --  solver-specific operations, such as initialization
 newtype SolverT m a = SolverT {unSolverT :: ReaderT SimpleSMT.Solver m a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO)
+  deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO, MonadLogger, MonadFail)
 
 instance MonadTrans SolverT where
   lift = SolverT . lift
@@ -66,6 +68,8 @@ deriving instance MonadState s m => MonadState s (SolverT m)
 deriving instance MonadError e m => MonadError e (SolverT m)
 
 deriving instance Alternative m => Alternative (SolverT m)
+
+deriving instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SolverT m)
 
 -- | Runs a computation that requires a session with a solver. The first parameter is
 -- an action that launches a solver. Check 'cvc4_ALL_SUPPORTED' for an example.
@@ -143,41 +147,36 @@ declareVariable varName varTy = do
 -- stating if the constraint was fully passed to the SMT solver,
 -- or if a part was lost during the translation process.
 assert ::
-  (LanguageSMT lang, ToSMT meta, MonadIO m) =>
-  M.Map Name (Type lang) ->
-  [Name] ->
-  Constraint lang meta ->
-  SolverT m Bool
-assert env knownNames c =
-  SolverT $ ReaderT $ \solver -> do
-    (isTotal,expr) <- constraintToSExpr env knownNames c
-    -- liftIO $ putStrLn $ "asserting " ++ show expr
-    liftIO $ SimpleSMT.assert solver expr
-    return isTotal
+  (MonadIO m) =>
+  SimpleSMT.SExpr ->
+  SolverT m ()
+assert expr =
+  SolverT $
+    ReaderT $ \solver -> do
+      liftIO $ SimpleSMT.assert solver expr
 
 assertNot ::
-  (LanguageSMT lang, ToSMT meta, MonadIO m) =>
-  M.Map Name (Type lang) ->
-  [Name] ->
-  Constraint lang meta ->
-  SolverT m Bool
-assertNot env knownNames c =
-  SolverT $ ReaderT $ \solver -> do
-    (isTotal, expr) <- constraintToSExpr env knownNames c
-    -- liftIO $ putStrLn $ "asserting not " ++ show expr
-    liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
-    return isTotal
+  (MonadIO m) =>
+  SimpleSMT.SExpr ->
+  SolverT m ()
+assertNot expr =
+  SolverT $
+    ReaderT $ \solver -> do
+      -- liftIO $ putStrLn $ "asserting not " ++ show expr
+      liftIO $ SimpleSMT.assert solver (SimpleSMT.not expr)
 
 getUnsatCore ::
   (MonadIO m) =>
   SolverT m [String]
-getUnsatCore = SolverT $ ReaderT $ \solver -> 
-  liftIO $ SimpleSMT.getUnsatCore solver
+getUnsatCore = SolverT $
+  ReaderT $ \solver ->
+    liftIO $ SimpleSMT.getUnsatCore solver
 
 getModel ::
   (MonadIO m) =>
   [Name] ->
   SolverT m [(SimpleSMT.SExpr, SimpleSMT.Value)]
-getModel names = SolverT $ ReaderT $ \solver -> do
-  let exprs = map (SimpleSMT.symbol . toSmtName) names
-  liftIO $ SimpleSMT.getExprs solver exprs
+getModel names = SolverT $
+  ReaderT $ \solver -> do
+    let exprs = map (SimpleSMT.symbol . toSmtName) names
+    liftIO $ SimpleSMT.getExprs solver exprs

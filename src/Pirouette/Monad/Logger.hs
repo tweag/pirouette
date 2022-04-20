@@ -74,6 +74,8 @@ class (Monad m) => MonadLogger m where
   logError :: String -> m ()
   logError = logMsg ERROR
 
+  {-# MINIMAL logMsg, pushCtx, context #-}
+
 newtype LoggerT m a = LoggerT {unLogger :: WriterT LogMessages (ReaderT [String] m) a}
   deriving newtype (Functor, Applicative, Monad, MonadIO)
 

@@ -18,9 +18,9 @@ import Data.Generics.Uniplate.Operations (transform)
 import Data.Maybe (mapMaybe)
 import Data.String
 import Data.Void
+import GHC.Stack (HasCallStack)
 import Optics.TH
 import Pirouette.Term.Syntax.Subst
-import GHC.Stack (HasCallStack)
 
 -- * System F
 
@@ -73,7 +73,7 @@ data Kind = KStar | KTo Kind Kind
 -- > kindDrop 3 (* -> (* -> *) -> * -> *) == *
 kindDrop :: Int -> Kind -> Kind
 kindDrop 0 k = k
-kindDrop n (KTo _ k) = kindDrop (n-1) k
+kindDrop n (KTo _ k) = kindDrop (n -1) k
 kindDrop _ _ = error "kindDrop: KStar has no arguments to drop"
 
 -- ** Types
@@ -124,22 +124,22 @@ instance (IsVar tyVar) => HasSubst (AnnType ann tyVar) where
   subst s (TyLam v k t) = TyLam v k (subst (liftSub s) t)
   subst s (TyAll v k t) = TyAll v k (subst (liftSub s) t)
 
--- |Type-level application (not to be confused with type _instantiation_, 'tyInstantiate').
+-- | Type-level application (not to be confused with type _instantiation_, 'tyInstantiate').
 tyApp :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
 tyApp (TyApp n args) u = TyApp n (args ++ [u])
 tyApp (TyLam _ _ t) u = subst (singleSub u) t
 tyApp TyAll {} _ = error "Can't apply TyAll: did you mean tyInstantiate?"
 tyApp TyFun {} _ = error "Can't apply TyFun"
 
--- |Instantiates a universally quantified type. This is /different/ from type application.
--- Only works if the left argument is a 'TyAll'.
+-- | Instantiates a universally quantified type. This is /different/ from type application.
+--  Only works if the left argument is a 'TyAll'.
 tyInstantiate :: (IsVar v) => AnnType ann v -> AnnType ann v -> AnnType ann v
 tyInstantiate (TyAll _ _ t) u = subst (singleSub u) t
 tyInstantiate TyApp {} _ = error "Can't instantiate TyApp"
 tyInstantiate TyLam {} _ = error "Can't instantiate TyLam: did you mean tyApp?"
 tyInstantiate TyFun {} _ = error "Can't instantiate TyFun"
 
--- |Instantiates a number of 'TyAll's at once.
+-- | Instantiates a number of 'TyAll's at once.
 tyInstantiateN :: (IsVar v) => AnnType ann v -> [AnnType ann v] -> AnnType ann v
 tyInstantiateN = foldl' tyInstantiate
 

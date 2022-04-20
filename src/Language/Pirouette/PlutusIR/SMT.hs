@@ -11,7 +11,7 @@ instance LanguageSMT BuiltinsOfPIR where
   translateConstant = error "translateConstant (t :: Constants PlutusIR): not yet impl"
 
 instance LanguageSMTBranches BuiltinsOfPIR where
-  branchesBuiltinTerm _tm _args = Nothing
+  branchesBuiltinTerm _tm _translator _args = pure Nothing
 
 trPIRType :: PIRBuiltinType -> SimpleSMT.SExpr
 trPIRType PIRTypeInteger = SimpleSMT.tInt

@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ParallelListComp #-}
@@ -8,12 +9,11 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Pirouette.Transformations.Monomorphization
-  (
-    -- * Actual functionality
+  ( -- * Actual functionality
     monomorphize,
+
     -- * Exported for testing
     hofsClosure,
     findPolyHOFDefs,
@@ -27,17 +27,16 @@ where
 import Control.Monad.Writer.Strict
 import Data.Data
 import Data.Generics.Uniplate.Data
+import Data.List (isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Utils
-
-import Debug.Trace
-import Data.List (isPrefixOf)
 
 -- * Monomorphization
 
@@ -182,13 +181,14 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
                 (drop specArgsLen typeVariables)
                 (fixName destructor)
                 ctors -- TODO does this only apply to `kind ~ *`?
-       in trace (show specArgs) $ [ (tyName, newDef),
-            (dtorName, DDestructor tyName)
-          ]
-            <> [ (ctorName, DConstructor i tyName)
-                 | (ctorName, _) <- ctors
-                 | i <- [0 ..]
-               ]
+       in trace (show specArgs) $
+            [ (tyName, newDef),
+              (dtorName, DDestructor tyName)
+            ]
+              <> [ (ctorName, DConstructor i tyName)
+                   | (ctorName, _) <- ctors
+                   | i <- [0 ..]
+                 ]
   where
     fixName = genSpecName specArgs
     specArgsLen = length specArgs

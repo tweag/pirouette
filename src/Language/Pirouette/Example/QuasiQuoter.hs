@@ -18,7 +18,7 @@ import Language.Haskell.TH.Syntax hiding (Name, Type)
 import Language.Pirouette.Example.Syntax
 import Language.Pirouette.Example.ToTerm
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.Pretty.Class (Pretty(..))
+import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls, typeCheckFunDef)
 import Text.Megaparsec
@@ -62,9 +62,8 @@ trQ f = case runExcept f of
   Right r -> return r
 
 maybeQ :: (Pretty e) => Either e a -> Q a
-maybeQ (Left e)  = fail $ show $ pretty e
+maybeQ (Left e) = fail $ show $ pretty e
 maybeQ (Right x) = return x
-
 
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   liftTyped m = unsafeTExpCoerce [e|M.fromList $(lift (M.toList m))|]

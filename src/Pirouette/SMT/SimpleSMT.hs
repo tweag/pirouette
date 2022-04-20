@@ -507,15 +507,18 @@ declareDatatype ::
   IO ()
 declareDatatype proc t [] cs =
   ackCommand proc $
-    fun "declare-datatype"
+    fun
+      "declare-datatype"
       [ Atom t,
         List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
       ]
 declareDatatype proc t ps cs =
   ackCommand proc $
-    fun "declare-datatype"
+    fun
+      "declare-datatype"
       [ Atom t,
-        fun "par"
+        fun
+          "par"
           [ List (map Atom ps),
             List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
           ]
@@ -550,7 +553,8 @@ defineFun ::
 defineFun proc f args t e =
   do
     ackCommand proc $
-      fun "define-fun"
+      fun
+        "define-fun"
         [Atom f, List [List [const x, arg] | (x, arg) <- args], t, e]
     return (const f)
 
@@ -572,7 +576,8 @@ defineFunRec proc f args t e =
   do
     let fs = const f
     ackCommand proc $
-      fun "define-fun-rec"
+      fun
+        "define-fun-rec"
         [Atom f, List [List [const x, arg] | (x, arg) <- args], t, e fs]
     return fs
 
@@ -715,7 +720,7 @@ fam f is = List (Atom "_" : Atom f : map (Atom . show) is)
 
 -- | An SMT function.
 fun :: String -> [SExpr] -> SExpr
-fun f []   = Atom f
+fun f [] = Atom f
 fun f args = List (Atom f : args)
 
 -- | An SMT constant.  A special case of 'fun'.
@@ -731,14 +736,14 @@ match t cases =
   List
     [ Atom "match",
       t,
-      List $ map (\(a,b) -> List [a,b]) cases
+      List $ map (\(a, b) -> List [a, b]) cases
     ]
 
 forall :: [(String, SExpr)] -> SExpr -> SExpr
 forall vars prop =
   List
     [ Atom "forall",
-      List (map (\(s,e) -> List [symbol s, e]) vars),
+      List (map (\(s, e) -> List [symbol s, e]) vars),
       prop
     ]
 

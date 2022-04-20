@@ -29,7 +29,6 @@ module Language.Pirouette.Example.Syntax where
 
 import Control.Arrow (second)
 import Control.Monad
-import Control.Monad.Except
 import Control.Monad.Combinators.Expr
 import Data.Data
 import Data.Foldable
@@ -39,13 +38,12 @@ import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.SMT
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
-import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Transformations.Utils (monoNameSep)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Pirouette.Transformations.Utils (monoNameSep)
 
 -- * AST
 
@@ -90,7 +88,6 @@ instance Pretty ExConstant where
   prettyPrec _ (ConstInt n) = pretty n
   prettyPrec _ (ConstBool b) = pretty b
 
-
 -- | The language builtins definition
 data Ex deriving (Data)
 
@@ -101,14 +98,15 @@ instance LanguageBuiltins Ex where
 
 instance LanguageBuiltinTypes Ex where
   typeOfBottom = error "no bottom type in Ex"
-  typeOfConstant (ConstInt _)  = tInt
+  typeOfConstant (ConstInt _) = tInt
   typeOfConstant (ConstBool _) = tBool
   typeOfBuiltin TermAdd = SystF.TyFun tInt (SystF.TyFun tInt tInt)
   typeOfBuiltin TermSub = SystF.TyFun tInt (SystF.TyFun tInt tInt)
   typeOfBuiltin TermLt = SystF.TyFun tInt (SystF.TyFun tInt tBool)
   typeOfBuiltin TermEq = SystF.TyFun tInt (SystF.TyFun tInt tBool)
-  typeOfBuiltin TermIte = SystF.TyAll (SystF.Ann "a") SystF.KStar $
-    SystF.TyFun tBool (SystF.TyFun a (SystF.TyFun a a))
+  typeOfBuiltin TermIte =
+    SystF.TyAll (SystF.Ann "a") SystF.KStar $
+      SystF.TyFun tBool (SystF.TyFun a (SystF.TyFun a a))
     where
       a = SystF.tyPure $ SystF.Bound (SystF.Ann "a") 0
 
@@ -129,13 +127,17 @@ instance LanguageSMT Ex where
   translateBuiltinTerm _ _ = Nothing
 
 instance LanguageSMTBranches Ex where
-  branchesBuiltinTerm TermIte [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
-    case runExcept $ translateTerm [] c of
-      Left _ -> Nothing
-      Right cond -> Just [ Branch (And [Native cond]) t  -- c holds => t is executed
-                         , Branch (And [Native (SimpleSMT.not cond)]) e
-                         ]                               -- (not c) holds => e is executed
-  branchesBuiltinTerm _ _ = Nothing
+  branchesBuiltinTerm TermIte translator [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] = do
+    cond <- translator c
+    case cond of
+      Nothing -> pure Nothing
+      Just smtCond ->
+        return $
+          Just
+            [ Branch (And [Native smtCond]) t, -- c holds => t is executed
+              Branch (And [Native (SimpleSMT.not smtCond)]) e
+            ] -- (not c) holds => e is executed
+  branchesBuiltinTerm _ _ _ = pure Nothing
 
 -- ** Syntactical Categories
 
@@ -248,12 +250,13 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
       try (symbol "\\")
       parseBinder TyLam (parseBinderNames ident (parseTyOf >> parseKind)) (symbol "." >> parseType)
 
-    pAtom = try $
-      asum
-        [ pLam,
-          pAll,
-          parseTypeAtom
-        ]
+    pAtom =
+      try $
+        asum
+          [ pLam,
+            pAll,
+            parseTypeAtom
+          ]
 
 parseTypeAtom :: Parser Ty
 parseTypeAtom =

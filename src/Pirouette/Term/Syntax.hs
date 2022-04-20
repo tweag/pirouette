@@ -1,6 +1,6 @@
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module Pirouette.Term.Syntax
   ( module EXPORT,
@@ -78,7 +78,7 @@ separateBoundFrom u t =
 -- https://github.com/input-output-hk/plutus/issues/3445
 
 -- | Exported interface function to uniquely naming declarations.
-declsUniqueNames :: forall lang . Decls lang -> Term lang -> (Decls lang, Term lang)
+declsUniqueNames :: forall lang. Decls lang -> Term lang -> (Decls lang, Term lang)
 declsUniqueNames decls mainFun = first Map.fromList (go (Map.toList decls))
   where
     onPairM f g (x, y) = (,) <$> f x <*> g y
