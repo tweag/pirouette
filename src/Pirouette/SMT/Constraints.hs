@@ -8,7 +8,6 @@
 module Pirouette.SMT.Constraints where
 
 import Control.Applicative ((<|>))
-import Control.Monad.Except
 import Data.Either
 import Data.List (intersperse)
 import Data.Map (Map)
@@ -139,7 +138,7 @@ atomicConstraintToSExpr ::
   Env lang ->
   [Name] ->
   AtomicConstraint lang meta ->
-  ExceptT String m SimpleSMT.SExpr
+  TranslatorT m SimpleSMT.SExpr
 atomicConstraintToSExpr env knownNames (Assign name term) = do
   let smtName = toSmtName name
   let (Just ty) = Map.lookup name env
@@ -171,8 +170,9 @@ constraintToSExpr ::
   Env lang ->
   [Name] ->
   Constraint lang meta ->
-  m (Bool, SimpleSMT.SExpr)
+  m (Bool, UsedAnyUFs, SimpleSMT.SExpr)
 constraintToSExpr env knownNames (And constraints) = do
-  atomTrads <- mapM (runExceptT . atomicConstraintToSExpr env knownNames) constraints
-  return (all isRight atomTrads, SimpleSMT.andMany (rights atomTrads))
-constraintToSExpr _ _ Bot = return (True, SimpleSMT.bool False)
+  atomTrads <- mapM (runTranslator . atomicConstraintToSExpr env knownNames) constraints
+  let (translations, usedUFs) = unzip (rights atomTrads)
+  return (all isRight atomTrads, mconcat usedUFs, SimpleSMT.andMany translations)
+constraintToSExpr _ _ Bot = return (True, NotUsedAnyUFs, SimpleSMT.bool False)

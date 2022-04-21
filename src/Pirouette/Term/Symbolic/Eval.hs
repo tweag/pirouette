@@ -198,16 +198,19 @@ runSymEvalT st symEvalT =
     return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    -- s = SMT.cvc4_ALL_SUPPORTED True
+    s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    s = SMT.cvc4_ALL_SUPPORTED False
+    -- s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
-      declData <- runExceptT (SMT.declareDatatypes decls dependencyOrder)
-      case declData of
+      declNames <- runExceptT $ do
+        dts <- SMT.declareDatatypes decls dependencyOrder
+        fns <- SMT.declareUninterpretedFunctions decls dependencyOrder
+        pure (dts ++ fns)
+      case declNames of
         Right usedNames -> return usedNames
         Left e -> error e
 
@@ -230,15 +233,15 @@ assertConstraint,
     C.Env lang ->
     [Name] ->
     C.Constraint lang meta ->
-    SMT.SolverT m Bool
+    SMT.SolverT m (Bool, UsedAnyUFs)
 assertConstraint env knownNames c = do
-  (done, expr) <- C.constraintToSExpr env knownNames c
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr env knownNames c
   SMT.assert expr
-  pure done
+  pure (done, usedAnyUFs)
 assertNotConstraint env knownNames c = do
-  (done, expr) <- C.constraintToSExpr env knownNames c
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr env knownNames c
   SMT.assertNot expr
-  pure done
+  pure (done, usedAnyUFs)
 
 -- | Prune the set of paths in the current set.
 prune :: forall lang m a. (Pretty a, SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
@@ -375,10 +378,10 @@ symEvalOneStep t@(R.App hd args) = case hd of
         -- we could not evaluate arguments more,
         -- so go on and evaluate the built-in
         let translator c = WriterT $ do
-              c' <- runExceptT $ translateTerm [] Nothing c
+              c' <- runTranslator $ translateTerm [] Nothing c
               case c' of
                 Left _ -> pure (Nothing, Any False)
-                Right d -> pure (Just d, Any False)
+                Right (d, _) -> pure (Just d, Any False)
         mayBranches <- SMT.branchesBuiltinTerm @lang builtin translator evaluatedArgs
         case mayBranches of
           Just branches -> asum $
@@ -685,10 +688,12 @@ checkProperty cOut cIn axioms env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  cstrTotal <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
-  outTotal <- assertConstraint vars (sestKnownNames env) cOut
+  (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
+  (outTotal, _outUsedAnyUFs) <- assertConstraint vars (sestKnownNames env) cOut
   inconsistent <- SMT.checkSat
-  inTotal <- assertNotConstraint vars (sestKnownNames env) cIn
+  (inTotal, _inUsedAnyUFs) <- assertNotConstraint vars (sestKnownNames env) cIn
+  let everythingWasTranslated = cstrTotal && outTotal && inTotal
+  -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
   result <- SMT.checkSat
   finalResult <- case (inconsistent, result) of
     (SMT.Unsat, _) -> return PruneInconsistentAssumptions
@@ -696,7 +701,7 @@ checkProperty cOut cIn axioms env = do
     -- If a partial translation of the constraints is SAT,
     -- it does not guarantee us that the full set of constraints is satisfiable.
     -- Only in the case in which we could translate the entire thing to prove.
-    (_, SMT.Sat) | cstrTotal && outTotal && inTotal ->
+    (_, SMT.Sat) | everythingWasTranslated {- && not usedAnyUFs -} ->
       do
         m <- if null vars then pure [] else SMT.getModel (M.keys vars)
         pure $ PruneCounterFound m

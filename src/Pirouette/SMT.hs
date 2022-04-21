@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -21,6 +22,8 @@ module Pirouette.SMT
     solverPop,
     declareDatatype,
     declareDatatypes,
+    declareUninterpretedFunction,
+    declareUninterpretedFunctions,
     declareVariables,
     declareVariable,
     assert,
@@ -42,8 +45,9 @@ import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State.Class
+import Control.Monad.Writer
 import qualified Data.Map as M
-import Data.Maybe (mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe)
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.SMT.Base as Base
@@ -108,7 +112,7 @@ solverPop = do
 declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) [Name]
 declareDatatype typeName (Datatype _ typeVariabes _ cstrs) = do
   solver <- ask
-  constr' <- mapM constructorFromPIR cstrs
+  (constr', _) <- runWriterT $ mapM constructorFromPIR cstrs
   liftIO $ do
     SimpleSMT.declareDatatype
       solver
@@ -124,11 +128,34 @@ declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> ExceptT String (SolverT m) [Name]
 declareDatatypes decls orderedNames = do
   let tyNames = mapMaybe (R.argElim Just (const Nothing)) orderedNames
-  usedNames <- forM tyNames $ \tyname ->
+  concatForM tyNames $ \tyname ->
     case M.lookup tyname decls of
       Just (DTypeDef tdef) -> declareDatatype tyname tdef
       _ -> return []
-  return $ concat usedNames
+
+-- | Declare a single function signature as uninterpreted
+-- in the current solver session.
+declareUninterpretedFunction ::
+  (LanguageSMT lang, MonadIO m) => Name -> FunDef lang -> ExceptT String (SolverT m) Name
+declareUninterpretedFunction fnName FunDef {funTy} = do
+  solver <- ask
+  let (args, result) = R.tyFunArgs funTy
+  (args', _) <- runWriterT $ mapM translateType args
+  (result', _) <- runWriterT $ translateType result
+  _ <- liftIO $ SimpleSMT.declareFun solver (toSmtName fnName) args' result'
+  return fnName
+
+declareUninterpretedFunctions ::
+  (LanguageSMT lang, MonadIO m) =>
+  M.Map Name (Definition lang) ->
+  [R.Arg Name Name] ->
+  ExceptT String (SolverT m) [Name]
+declareUninterpretedFunctions decls orderedNames = do
+  let fnNames = mapMaybe (R.argElim (const Nothing) Just) orderedNames
+  forMaybeM fnNames $ \fnName ->
+    case M.lookup fnName decls of
+      Just (DFunDef fdef) -> Just <$> declareUninterpretedFunction fnName fdef
+      _ -> return Nothing
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.
@@ -139,7 +166,7 @@ declareVariables = mapM_ (uncurry declareVariable) . M.toList
 declareVariable :: (LanguageSMT lang, MonadIO m) => Name -> Type lang -> ExceptT String (SolverT m) ()
 declareVariable varName varTy = do
   solver <- ask
-  tySExpr <- translateType varTy
+  (tySExpr, _) <- runWriterT $ translateType varTy
   liftIO $ void (SimpleSMT.declare solver (toSmtName varName) tySExpr)
 
 -- | Asserts a constraint; check 'Constraint' for more information
@@ -180,3 +207,11 @@ getModel names = SolverT $
   ReaderT $ \solver -> do
     let exprs = map (SimpleSMT.symbol . toSmtName) names
     liftIO $ SimpleSMT.getExprs solver exprs
+
+-- Utility functions
+
+concatForM :: (Traversable t, Monad f) => t a -> (a -> f [b]) -> f [b]
+concatForM xs action = concat <$> forM xs action
+
+forMaybeM :: (Monad f) => [a] -> (a -> f (Maybe b)) -> f [b]
+forMaybeM xs action = catMaybes <$> forM xs action

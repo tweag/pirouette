@@ -76,11 +76,11 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   -- step 1. try to prune the thing
   -- introduce the assumption about the result
   learn $ And [Assign (symVar resultVar) bodyTerm]
-  mayAssumeCond <- runExceptT $ translateTerm [] Nothing assumeTerm
-  mayProveCond <- runExceptT $ translateTerm [] Nothing proveTerm
+  mayAssumeCond <- runTranslator $ translateTerm [] Nothing assumeTerm
+  mayProveCond <- runTranslator $ translateTerm [] Nothing proveTerm
   result <- case (mayAssumeCond, mayProveCond) of
     -- if the assumption and thing-to-prove can be translated, try to prune with it
-    (Right assumeCond, Right proveCond) -> do
+    (Right (assumeCond, _), Right (proveCond, _)) -> do
       -- liftIO $ print (pretty bodyTerm)
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
     _ -> pure PruneUnknown
@@ -94,6 +94,10 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
       (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
       (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
+      -- liftIO $ print (pretty bodyTerm')
+      -- liftIO $ print (pretty assumeTerm')
+      -- liftIO $ print (pretty proveTerm')
+      -- _ <- liftIO getLine
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
       if somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' []
