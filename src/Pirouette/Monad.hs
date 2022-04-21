@@ -20,6 +20,7 @@ import Data.Data (Data)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import ListT (ListT)
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
@@ -104,11 +105,21 @@ class (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang m | m -
   prtIsConst :: Name -> MaybeT m (Int, TyName)
   prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf n
 
+  {-# MINIMAL prtAllDefs, prtMain #-}
+
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Lazy.StateT s m) where
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Strict.StateT s m) where
+  prtAllDefs = lift prtAllDefs
+  prtMain = lift prtMain
+
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (ReaderT s m) where
+  prtAllDefs = lift prtAllDefs
+  prtMain = lift prtMain
+
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (ListT m) where
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 

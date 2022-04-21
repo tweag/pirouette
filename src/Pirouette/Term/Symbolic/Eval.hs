@@ -9,30 +9,56 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module Pirouette.Term.Symbolic.Eval (
-  -- * Runners
-  -- ** General inputs and outputs
-  AvailableFuel(..), Path(..), PathStatus(..), Constraint, SymVar,
-  -- ** Base symbolic evaluation
-  runFor, pathsFor,
-  -- ** Incorrectness logic
-  runIncorrectness, pathsIncorrectness, pathsIncorrectness_,
-  UserDeclaredConstraints(..), UniversalAxiom(..), InCond(..), OutCond(..),
-  EvaluationWitness(..),
-  -- * Internal, used to build on top of 'SymEvalT'
-  SymEvalConstr, SymEvalT, runSymEvalT
-) where
+module Pirouette.Term.Symbolic.Eval
+  ( -- * Runners
+
+    -- ** General inputs and outputs
+    AvailableFuel (..),
+    Path (..),
+    PathStatus (..),
+    Constraint,
+    SymVar,
+
+    -- ** Base symbolic evaluation
+    runFor,
+    pathsFor,
+
+    -- ** Incorrectness logic
+    runIncorrectness,
+    pathsIncorrectness,
+    pathsIncorrectness_,
+    UserDeclaredConstraints (..),
+    UniversalAxiom (..),
+    InCond (..),
+    OutCond (..),
+    EvaluationWitness (..),
+    Model,
+
+    -- * Internal, used to build on top of 'SymEvalT'
+    SymEvalConstr,
+    SymEvalT,
+    symevalT,
+    runSymEvalT,
+    declSymVars,
+    symVar,
+    learn,
+    prune,
+    symEvalOneStep,
+    pruneAndValidate,
+    PruneResult (..),
+  )
+where
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Reader (ask)
 import Control.Monad.Except
+import Control.Monad.Reader (ask)
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Data hiding (eqT)
@@ -42,9 +68,12 @@ import qualified Data.Map.Strict as M
 import ListT (ListT)
 import qualified ListT
 import Pirouette.Monad
+import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT as SMT
+import qualified Pirouette.SMT.Constraints as C
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as R
@@ -78,6 +107,7 @@ data Path lang res = Path
   deriving (Functor, Traversable, Foldable)
 
 deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lang res)
+
 deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
 
 data AvailableFuel = Fuel Int | InfiniteFuel
@@ -106,11 +136,16 @@ data SymEvalSt lang = SymEvalSt
   }
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
-  pretty SymEvalSt{..} =
-    "Constraints are" <+> pretty sestConstraint <> "\n" <>
-    "in environnement" <+> pretty (M.toList sestGamma) <> "\n" <>
-    "with a counter at" <+> pretty sestFreshCounter <+>
-    "and" <+> pretty sestFuel <+> "fuel remaining"
+  pretty SymEvalSt {..} =
+    "Constraints are" <+> pretty sestConstraint <> "\n"
+      <> "in environnement"
+      <+> pretty (M.toList sestGamma)
+      <> "\n"
+      <> "with a counter at"
+      <+> pretty sestFreshCounter
+      <+> "and"
+      <+> pretty sestFuel
+      <+> "fuel remaining"
 
 -- | Given a result and a resulting state, returns a 'Path' representing it.
 path :: a -> SymEvalSt lang -> Path lang a
@@ -129,7 +164,13 @@ newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.S
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
-type SymEvalConstr lang m = 
+deriving instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SymEvalT lang m)
+
+deriving instance MonadError e m => MonadError e (SymEvalT lang m)
+
+deriving instance MonadLogger m => MonadLogger (SymEvalT lang m)
+
+type SymEvalConstr lang m =
   (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMTBranches lang, MonadIO m)
 
 symevalT :: (SymEvalConstr lang m) => AvailableFuel -> SymEvalT lang m a -> m [Path lang a]
@@ -137,9 +178,11 @@ symevalT initialFuel = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
-runSymEvalTRaw 
-  :: (Monad m) => SymEvalSt lang -> SymEvalT lang m a
-  -> SMT.SolverT (ListT m) (a, SymEvalSt lang)
+runSymEvalTRaw ::
+  (Monad m) =>
+  SymEvalSt lang ->
+  SymEvalT lang m a ->
+  SMT.SolverT (ListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
@@ -155,6 +198,8 @@ runSymEvalT st symEvalT =
     return paths
   where
     -- we'll rely on cvc4 with dbg messages
+    -- s = SMT.cvc4_ALL_SUPPORTED True
+    -- no debug messages
     s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
@@ -179,6 +224,22 @@ instance (MonadFail m) => MonadFail (SymEvalT lang m) where
 instance (MonadIO m) => MonadIO (SymEvalT lang m) where
   liftIO = lift . liftIO
 
+assertConstraint,
+  assertNotConstraint ::
+    (PirouetteReadDefs lang m, SMT.LanguageSMT lang, SMT.ToSMT meta, MonadIO m) =>
+    C.Env lang ->
+    [Name] ->
+    C.Constraint lang meta ->
+    SMT.SolverT m Bool
+assertConstraint env knownNames c = do
+  (done, expr) <- C.constraintToSExpr env knownNames c
+  SMT.assert expr
+  pure done
+assertNotConstraint env knownNames c = do
+  (done, expr) <- C.constraintToSExpr env knownNames c
+  SMT.assertNot expr
+  pure done
+
 -- | Prune the set of paths in the current set.
 prune :: forall lang m a. (Pretty a, SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
 prune xs = SymEvalT $
@@ -190,7 +251,7 @@ prune xs = SymEvalT $
     guard ok
     return (x, st')
   where
-    pathIsPlausible :: (MonadIO n) => SymEvalSt lang -> SMT.SolverT n Bool
+    pathIsPlausible :: (PirouetteReadDefs lang n, MonadIO n) => SymEvalSt lang -> SMT.SolverT n Bool
     pathIsPlausible env
       | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
       | otherwise = do
@@ -203,7 +264,7 @@ prune xs = SymEvalT $
         -- since we want to prune unsatisfiable path.
         -- And if a partial translation is already unsat,
         -- so is the translation of the whole set of constraints.
-        void $ SMT.assert (sestGamma env) (sestKnownNames env) (sestConstraint env)
+        void $ assertConstraint (sestGamma env) (sestKnownNames env) (sestConstraint env)
         res <- SMT.checkSat
         SMT.solverPop
         return $ case res of
@@ -247,8 +308,10 @@ normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar -> m (TermMeta l
 normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
 -- | Top level symbolic evaluation loop.
-symeval :: (SymEvalConstr lang m)
-        => TermMeta lang SymVar -> SymEvalT lang m (TermMeta lang SymVar)
+symeval ::
+  (SymEvalConstr lang m) =>
+  TermMeta lang SymVar ->
+  SymEvalT lang m (TermMeta lang SymVar)
 symeval t = do
   fuelLeft <- currentFuel
   if fuelExhausted fuelLeft
@@ -257,15 +320,17 @@ symeval t = do
       t' <- lift $ normalizeTerm t
       (tOneStepMore, somethingWasEvaluated) <- prune $ runWriterT (symEvalOneStep t')
       if somethingWasEvaluated == Any False
-         then pure tOneStepMore
-         else symeval tOneStepMore
+        then pure tOneStepMore
+        else symeval tOneStepMore
 
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
 -- whether a step was taken at all.
-symEvalOneStep 
-  :: forall lang m. (SymEvalConstr lang m) 
-  => TermMeta lang SymVar -> WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
+symEvalOneStep ::
+  forall lang m.
+  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  TermMeta lang SymVar ->
+  WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
@@ -280,7 +345,7 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
   -}
   {-
   # option 1: evaluate under lambda
-  
+
   This can give us a bit of better results, but in most cases it seems
   to win us nothing. For example, if we are evaluating:
   > map (\x -> x + 1) l
@@ -305,15 +370,23 @@ symEvalOneStep t@(R.App hd args) = case hd of
   R.Free (Builtin builtin) -> do
     (evaluatedArgs, somethingWasEvaluated) <- listen $ mapM (R.argMapM return symEvalOneStep) args
     if somethingWasEvaluated == Any True
-       then pure $ R.App hd evaluatedArgs
-       else -- we could not evaluate arguments more,
-            -- so go on and evaluate the built-in
-         case SMT.branchesBuiltinTerm @lang builtin evaluatedArgs of
-           Just branches -> asum $ flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+      then pure $ R.App hd evaluatedArgs
+      else do
+        -- we could not evaluate arguments more,
+        -- so go on and evaluate the built-in
+        let translator c = WriterT $ do
+              c' <- runExceptT $ translateTerm [] Nothing c
+              case c' of
+                Left _ -> pure (Nothing, Any False)
+                Right d -> pure (Just d, Any False)
+        mayBranches <- SMT.branchesBuiltinTerm @lang builtin translator evaluatedArgs
+        case mayBranches of
+          Just branches -> asum $
+            flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
               lift $ learn additionalInfo
               consumeFuel
               pure newTerm
-           _ -> pure $ R.App hd evaluatedArgs  -- no branching info.
+          _ -> pure $ R.App hd evaluatedArgs -- no branching info.
   R.Free (TermSig n) -> do
     mDefHead <- Just <$> lift (lift $ prtDefOf n)
     case mDefHead of
@@ -363,23 +436,24 @@ symEvalOneStep t@(R.App hd args) = case hd of
         -- We only do the case distinction if we haven't taken any step
         -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
         if somethingWasEvaluated == Any True
-        then do let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
-                pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
-        else asum $ -- traverse every possibility
-          for2 consList cases $ \(consName, consTy) caseTerm -> do
-            let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
-            let (consArgs, _) = R.tyFunArgs instantiatedTy
-            svars <- lift $ freshSymVars consArgs
-            let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-            let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-            let mconstr = unify term' symbCons
-            case mconstr of
-              Nothing -> empty
-              Just constr -> do
-                lift $ learn constr
-                consumeFuel
-                pure $ caseTerm `R.appN` symbArgs
-          
+          then do
+            let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
+            pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
+          else asum $ -- traverse every possibility
+            for2 consList cases $ \(consName, consTy) caseTerm -> do
+              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
+              let (consArgs, _) = R.tyFunArgs instantiatedTy
+              svars <- lift $ freshSymVars consArgs
+              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+              let mconstr = unify term' symbCons
+              case mconstr of
+                Nothing -> empty
+                Just constr -> do
+                  lift $ learn constr
+                  consumeFuel
+                  pure $ caseTerm `R.appN` symbArgs
+
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
   where
@@ -433,10 +507,10 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds gamma ps res) =
     vsep
-      [ "With:" <+> pretty (M.toList gamma),
-        "If:" <+> indent 2 (pretty conds),
+      [ "Env:" <+> hsep (map pretty (M.toList gamma)),
+        "Path:" <+> indent 2 (pretty conds),
         "Status:" <+> pretty ps,
-        "Result:" <+> indent 2 (pretty res)
+        "Tip:" <+> indent 2 (pretty res)
       ]
 
 instance Pretty PathStatus where
@@ -446,71 +520,98 @@ instance Pretty PathStatus where
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
-runFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m)
-       => AvailableFuel -> Name -> Term lang -> m ()
+runFor ::
+  (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) =>
+  AvailableFuel ->
+  Name ->
+  Term lang ->
+  m ()
 runFor initialFuel nm t = do
   paths <- pathsFor initialFuel nm t
   mapM_ (liftIO . print . pretty) paths
 
-pathsFor :: (LanguagePretty lang, SymEvalConstr lang m, MonadIO m)
-         => AvailableFuel -> Name -> Term lang -> m [Path lang (TermMeta lang SymVar)]
+pathsFor ::
+  (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) =>
+  AvailableFuel ->
+  Name ->
+  Term lang ->
+  m [Path lang (TermMeta lang SymVar)]
 pathsFor initialFuel _ t = symevalT initialFuel (runEvaluation t)
 
 -- * All the functions related to symbolic execution guarded by user written predicates rather than fuel.
 
-data UserDeclaredConstraints lang = UserDeclaredConstraints {
-  udcInputs :: [(Name, Type lang)],
-  udcOutputCond :: OutCond lang,
-  udcInputCond :: InCond lang,
-  udcAdditionalDefs :: IO [SimpleSMT.SExpr],
-  udcAxioms :: [UniversalAxiom lang]
-}
+data UserDeclaredConstraints lang = UserDeclaredConstraints
+  { udcInputs :: [(Name, Type lang)],
+    udcOutputCond :: OutCond lang,
+    udcInputCond :: InCond lang,
+    udcAdditionalDefs :: IO [SimpleSMT.SExpr],
+    udcAxioms :: [UniversalAxiom lang]
+  }
 
 newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
+
 newtype InCond lang = InCond (Constraint lang)
 
-data EvaluationWitness lang =
-  Verified | CounterExample (TermMeta lang SymVar)
+type Model = [(SimpleSMT.SExpr, SimpleSMT.Value)]
+
+data EvaluationWitness lang
+  = Verified
+  | Discharged
+  | CounterExample (TermMeta lang SymVar) Model
   deriving (Eq, Show)
 
-data UniversalAxiom lang = UniversalAxiom {
-  boundVars :: [(Name, Type lang)],
-  axiomBody :: [SimpleSMT.SExpr] -> SimpleSMT.SExpr
-}
+data UniversalAxiom lang = UniversalAxiom
+  { boundVars :: [(Name, Type lang)],
+    axiomBody :: [SimpleSMT.SExpr] -> SimpleSMT.SExpr
+  }
 
-
-runIncorrectness :: (SymEvalConstr lang  m, MonadIO m)
-                 => UserDeclaredConstraints lang -> Term lang  -> m ()
+runIncorrectness ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  UserDeclaredConstraints lang ->
+  Term lang ->
+  m ()
 runIncorrectness udc t = do
   paths <- pathsIncorrectness udc t
   if null paths
-  then liftIO $ putStrLn "Condition VERIFIED"
-  else mapM_ (liftIO . print . pretty) paths
+    then liftIO $ putStrLn "Condition VERIFIED"
+    else mapM_ (liftIO . print . pretty) paths
 
-pathsIncorrectness :: (SymEvalConstr lang  m, MonadIO m)
-                   => UserDeclaredConstraints lang -> Term lang  -> m [Path lang (EvaluationWitness lang)]
+pathsIncorrectness ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  UserDeclaredConstraints lang ->
+  Term lang ->
+  m [Path lang (EvaluationWitness lang)]
 pathsIncorrectness udc t = symevalT InfiniteFuel $ pathsIncorrectnessWorker udc t
 
-pathsIncorrectness_ :: (SymEvalConstr lang  m, MonadIO m)
-                    => (SimpleSMT.Solver -> m (UserDeclaredConstraints lang)) -> Term lang
-                    -> m [Path lang (EvaluationWitness lang)]
+pathsIncorrectness_ ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  (SimpleSMT.Solver -> m (UserDeclaredConstraints lang)) ->
+  Term lang ->
+  m [Path lang (EvaluationWitness lang)]
 pathsIncorrectness_ getUdc t = symevalT InfiniteFuel $ do
   solver <- SymEvalT $ lift $ SMT.SolverT ask
   udc <- lift $ getUdc solver
   pathsIncorrectnessWorker udc t
 
-pathsIncorrectnessWorker :: (SymEvalConstr lang  m, MonadIO m)
-                         => UserDeclaredConstraints lang -> Term lang  -> SymEvalT lang m (EvaluationWitness lang)
+pathsIncorrectnessWorker ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  UserDeclaredConstraints lang ->
+  Term lang ->
+  SymEvalT lang m (EvaluationWitness lang)
 pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
-    void $ liftIO udcAdditionalDefs
-    svars <- declSymVars udcInputs
-    let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-    liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
-    conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
+  void $ liftIO udcAdditionalDefs
+  svars <- declSymVars udcInputs
+  let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
+  liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+  conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
 
-conditionalEval :: (SymEvalConstr lang m, MonadIO m)
-                => TermMeta lang SymVar -> OutCond lang -> InCond lang -> [UniversalAxiom lang]
-                -> SymEvalT lang m (EvaluationWitness lang)
+conditionalEval ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  TermMeta lang SymVar ->
+  OutCond lang ->
+  InCond lang ->
+  [UniversalAxiom lang] ->
+  SymEvalT lang m (EvaluationWitness lang)
 conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
   (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
@@ -518,19 +619,34 @@ conditionalEval t (OutCond q) (InCond p) axioms = do
   result <- pruneAndValidate (q t') p axioms
   liftIO $ putStrLn $ "result? " ++ show result
   case result of
-    SMT.Unsat -> pure Verified
-    SMT.Sat -> pure (CounterExample t)
-    _ -> if somethingWasDone == Any False
-            then pure (CounterExample t) -- cannot check more
-            else conditionalEval t' (OutCond q) (InCond p) axioms    
+    PruneInconsistentAssumptions -> pure Discharged
+    PruneImplicationHolds -> pure Verified
+    PruneCounterFound m -> pure (CounterExample t m)
+    _ ->
+      if somethingWasDone == Any False
+        then pure (CounterExample t []) -- cannot check more
+        else conditionalEval t' (OutCond q) (InCond p) axioms
+
+data PruneResult
+  = PruneInconsistentAssumptions
+  | PruneImplicationHolds
+  | PruneCounterFound Model
+  | PruneUnknown
+  deriving (Eq, Show)
 
 -- | Prune the set of paths in the current set.
-pruneAndValidate :: (SymEvalConstr lang m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalT lang m SimpleSMT.Result
+pruneAndValidate ::
+  (SymEvalConstr lang m) =>
+  Constraint lang ->
+  Constraint lang ->
+  [UniversalAxiom lang] ->
+  SymEvalT lang m PruneResult
 pruneAndValidate cOut cIn axioms =
-  SymEvalT $ StateT $ \st -> do
-    contradictProperty <- checkProperty cOut cIn axioms st
-    liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
-    return (contradictProperty, st)
+  SymEvalT $
+    StateT $ \st -> do
+      contradictProperty <- checkProperty cOut cIn axioms st
+      -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
+      return (contradictProperty, st)
 
 instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
 instantiateAxiomWithVars axioms env =
@@ -538,16 +654,15 @@ instantiateAxiomWithVars axioms env =
     solver <- ask
     liftIO $
       mapM_
-        (\(name, ty) ->
-          mapM_
-            (\UniversalAxiom{..} ->
-              when (List.any (\(_,tyV) -> tyV == ty) boundVars) $
-                if length boundVars == 1
-                then
-                  void $ SimpleSMT.assert solver (axiomBody [SimpleSMT.symbol (SMT.toSmtName name)])
-                else error "Several universally bound variables not handled yet" -- TODO
-            )
-            axioms
+        ( \(name, ty) ->
+            mapM_
+              ( \UniversalAxiom {..} ->
+                  when (List.any (\(_, tyV) -> tyV == ty) boundVars) $
+                    if length boundVars == 1
+                      then void $ SimpleSMT.assert solver (axiomBody [SimpleSMT.symbol (SMT.toSmtName name)])
+                      else error "Several universally bound variables not handled yet" -- TODO
+              )
+              axioms
         )
         (M.toList $ sestGamma env)
 
@@ -555,7 +670,13 @@ instantiateAxiomWithVars axioms env =
 -- (pathConstraints /\ cOut) => cIn.
 -- This is equivalent to the unsatisfiability of
 -- pathConstraints /\ cOut /\ (not cIn).
-checkProperty :: (SMT.LanguageSMT lang, MonadIO m) => Constraint lang -> Constraint lang -> [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m SMT.Result
+checkProperty ::
+  (SMT.LanguageSMT lang, MonadIO m, LanguagePretty lang, PirouetteReadDefs lang m) =>
+  Constraint lang ->
+  Constraint lang ->
+  [UniversalAxiom lang] ->
+  SymEvalSt lang ->
+  SMT.SolverT m PruneResult
 checkProperty cOut cIn axioms env = do
   SMT.solverPush
   let vars = sestGamma env
@@ -564,20 +685,31 @@ checkProperty cOut cIn axioms env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  cstrTotal <- SMT.assert vars (sestKnownNames env) (sestConstraint env)
-  outTotal <- SMT.assert vars (sestKnownNames env) cOut
-  inTotal <- SMT.assertNot vars (sestKnownNames env) cIn
+  cstrTotal <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
+  outTotal <- assertConstraint vars (sestKnownNames env) cOut
+  inconsistent <- SMT.checkSat
+  inTotal <- assertNotConstraint vars (sestKnownNames env) cIn
   result <- SMT.checkSat
+  finalResult <- case (inconsistent, result) of
+    (SMT.Unsat, _) -> return PruneInconsistentAssumptions
+    (_, SMT.Unsat) -> return PruneImplicationHolds
+    -- If a partial translation of the constraints is SAT,
+    -- it does not guarantee us that the full set of constraints is satisfiable.
+    -- Only in the case in which we could translate the entire thing to prove.
+    (_, SMT.Sat) | cstrTotal && outTotal && inTotal ->
+      do
+        m <- if null vars then pure [] else SMT.getModel (M.keys vars)
+        pure $ PruneCounterFound m
+    (_, _) -> return PruneUnknown
   SMT.solverPop
-  case result of
-    SMT.Sat ->
-      if cstrTotal && outTotal && inTotal
-      then return SMT.Sat
-      -- If a partial translation of the constraints is SAT,
-      -- it does not guarantee us that the full set of constraints is satisfiable.
-      else return SMT.Unknown
-    _ -> return result
+  return finalResult
 
 instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"
-  pretty (CounterExample t) = "COUNTER-EXAMPLE: The result is\n" <> pretty t
+  pretty Discharged = "Discharged"
+  pretty (CounterExample t m) =
+    vsep
+      [ "COUNTER-EXAMPLE",
+        "Result:" <+> pretty t,
+        "Model:" <+> viaShow m
+      ]

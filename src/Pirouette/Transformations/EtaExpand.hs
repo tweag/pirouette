@@ -33,15 +33,15 @@ etaExpandTerm t = do
   decls <- prtAllDefs
   return $ transformBi (etaExpandAux decls) t
 
--- |Given a type @t@ and a list of arguments @a1 ... aN@,
--- returns the type of a term @x : t@ partially applied to @a1 ... aN@.
--- This is different from type application because we need to instantiate
--- the 'SystF.TyAll's and drop the 'SystF.TyFun's.
+-- | Given a type @t@ and a list of arguments @a1 ... aN@,
+--  returns the type of a term @x : t@ partially applied to @a1 ... aN@.
+--  This is different from type application because we need to instantiate
+--  the 'SystF.TyAll's and drop the 'SystF.TyFun's.
 instantiateType :: Type lang -> [Arg lang] -> Type lang
 instantiateType t [] = t
 instantiateType (SystF.TyFun _ u) (SystF.TermArg _ : args) = instantiateType u args
-instantiateType (SystF.TyAll _ _ t) (SystF.TyArg arg : args)
-  = instantiateType (subst (singleSub arg) t) args
+instantiateType (SystF.TyAll _ _ t) (SystF.TyArg arg : args) =
+  instantiateType (subst (singleSub arg) t) args
 instantiateType _ _ = error "instantiateType: type-checking would fail"
 
 -- Auxiliar function, supposed to be used as an argument to 'transformBi' to
@@ -70,11 +70,11 @@ etaExpandAux decls (SystF.Free (TermSig name) `SystF.App` args)
     mkExpIndices :: Integer -> Integer -> [FlatArgType lang] -> [Arg lang]
     mkExpIndices _ _ [] = []
     mkExpIndices mTy mTerm (FlatTyArg _ : as) =
-      SystF.TyArg (SystF.tyPure $ SystF.Bound (SystF.Ann "H") (mTy - 1)) -- H is capital η :)
-        : mkExpIndices (mTy - 1) mTerm as
+      SystF.TyArg (SystF.tyPure $ SystF.Bound (SystF.Ann "H") (mTy - 1)) : -- H is capital η :)
+      mkExpIndices (mTy - 1) mTerm as
     mkExpIndices mTy mTerm (FlatTermArg _ : as) =
-      SystF.TermArg (SystF.termPure $ SystF.Bound (SystF.Ann "η") (mTerm - 1))
-        : mkExpIndices mTy (mTerm - 1) as
+      SystF.TermArg (SystF.termPure $ SystF.Bound (SystF.Ann "η") (mTerm - 1)) :
+      mkExpIndices mTy (mTerm - 1) as
 -- Any other term that is neither an application nor does it satisfy the guards above needs
 -- no intervention; we just return it as is.
 etaExpandAux _ term = term

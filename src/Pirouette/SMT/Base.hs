@@ -7,7 +7,6 @@ import Data.Void
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
 
-
 -- | Captures the languages that can be translated to SMTLIB; namelly,
 -- we need to be able to translate each individual base syntactical category.
 --

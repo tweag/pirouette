@@ -292,7 +292,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
       RewritingRule (Term BuiltinsOfPIR) (Term BuiltinsOfPIR) ->
       Term BuiltinsOfPIR ->
       m (Term BuiltinsOfPIR)
-    applyOneRule RewritingRule { lhs, rhs } tm =
+    applyOneRule RewritingRule {lhs, rhs} tm =
       deshadowBoundNames <$> rewriteM (traverse (`instantiate` rhs) . isInstance lhs) tm
 
     isInstance :: Term BuiltinsOfPIR -> Term BuiltinsOfPIR -> Maybe (Map.Map String (Arg BuiltinsOfPIR))

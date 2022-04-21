@@ -225,7 +225,6 @@ trKind (PIR.KindArrow _ t u) = SystF.KTo (trKind t) (trKind u)
 --
 -- > trTypeWithArgs [(t1, *), (t2, * -> *)] t
 -- >    = TyAll t1 * $ TyAll t2 (* -> *) $ trType t
---
 trTypeWithArgs ::
   (ToName tyname) =>
   [(Name, SystF.Kind)] ->
