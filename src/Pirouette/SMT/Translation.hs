@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
@@ -111,7 +112,7 @@ translateTerm knownNames ty (Raw.App var args) = case var of
             (\_ -> return $ Left $ "translateApp: Unknown name: " <> show name)
 
       case defn of
-        DConstructor _ tname -> do
+        DConstructor ix tname -> do
           tdef <- ExceptT $ catchError (Right . Just <$> prtTypeDefOf tname) (\_ -> return $ Right Nothing)
           -- we first need to figure out the real type
           let actualTy = case (ty, tdef) of
@@ -119,8 +120,21 @@ translateTerm knownNames ty (Raw.App var args) = case var of
                 -- if there are no variables, we know the type in its entirety too
                 (_, Just Datatype {typeVariables = []}) -> Just $ Raw.TyApp (Raw.Free (TySig name)) []
                 _ -> Nothing
+          -- then we need to figure out the type of the constructor
+          let cstrArgTys = do
+                Raw.TyApp _ tyArgs <- actualTy
+                Datatype {constructors} <- tdef
+                let cstrTy = snd (constructors !! ix)
+                    -- instantiate the type with the given variables
+                    instTy = Raw.tyInstantiateN (typeToMeta cstrTy) tyArgs
+                    -- there must be exactly 'length args' argument types
+                    (argTys, _) = Raw.tyFunArgs instTy
+                guard (length argTys == length args)
+                return argTys
+              -- create a list of nothings if we don't get back anything interesting
+              cstrArgTys' = maybe (replicate (length args) Nothing) (map Just) cstrArgTys
           -- now we push the types of the arguments, if known
-          translatedArgs <- mapM (translateArg knownNames Nothing) args
+          translatedArgs <- zipWithM (translateArg knownNames) cstrArgTys' args
           -- finally we build the
           case actualTy of
             Just ty' ->
