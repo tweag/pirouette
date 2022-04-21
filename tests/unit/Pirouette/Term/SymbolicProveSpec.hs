@@ -346,6 +346,6 @@ tests =
         testCase "{input > 0} add 1 {result > 1} verified" $
           exec add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
       ]
-    -- ohearnTest,
+    -- ohearnTest
     -- ohearnTestPeano
   ]

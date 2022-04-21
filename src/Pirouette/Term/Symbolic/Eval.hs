@@ -685,8 +685,8 @@ checkProperty cOut cIn axioms env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  _cstrTotal <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
-  _outTotal <- assertConstraint vars (sestKnownNames env) cOut
+  cstrTotal <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
+  outTotal <- assertConstraint vars (sestKnownNames env) cOut
   inconsistent <- SMT.checkSat
   inTotal <- assertNotConstraint vars (sestKnownNames env) cIn
   result <- SMT.checkSat
@@ -696,7 +696,7 @@ checkProperty cOut cIn axioms env = do
     -- If a partial translation of the constraints is SAT,
     -- it does not guarantee us that the full set of constraints is satisfiable.
     -- Only in the case in which we could translate the entire thing to prove.
-    (_, SMT.Sat) | {- cstrTotal && outTotal && -} inTotal ->
+    (_, SMT.Sat) | cstrTotal && outTotal && inTotal ->
       do
         m <- if null vars then pure [] else SMT.getModel (M.keys vars)
         pure $ PruneCounterFound m
