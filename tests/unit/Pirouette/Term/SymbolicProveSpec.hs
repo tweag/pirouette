@@ -20,27 +20,16 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 exec ::
+  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
   (Program Ex, Type Ex, Term Ex) ->
   (Term Ex, Term Ex) ->
-  IO (Either String [Path Ex (EvaluationWitness Ex)])
-exec (program, tyRes, fn) (assume, toProve) = fmap fst $
+  IO (Either String a)
+exec toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
   mockPrtT $ do
     let decls = uncurry PrtUnorderedDefs program
     orderedDecls <- elimEvenOddMutRec decls
     flip runReaderT orderedDecls $
-      prove (Problem tyRes fn assume toProve)
-
-execWithFuel ::
-  Int ->
-  (Program Ex, Type Ex, Term Ex) ->
-  (Term Ex, Term Ex) ->
-  IO (Either String [Path Ex (EvaluationWitness Ex)])
-execWithFuel n (program, tyRes, fn) (assume, toProve) = fmap fst $
-  mockPrtT $ do
-    let decls = uncurry PrtUnorderedDefs program
-    orderedDecls <- elimEvenOddMutRec decls
-    flip runReaderT orderedDecls $
-      proveWithFuel n (Problem tyRes fn assume toProve)
+      toDo (Problem tyRes fn assume toProve)
 
 add1 :: (Program Ex, Type Ex, Term Ex)
 add1 =
@@ -251,12 +240,12 @@ ohearnTest =
   testGroup
     "OHearn"
     [ testCase "[y == 11] ohearn [snd result == 42] counter" $
-        pathSatisfies (execWithFuel 30 conditionals1 condWrongTriple) $ 
-          any $ isCounterWith $ \p ->
-            case lookup (SimpleSMT.Atom "pir_x") p of
-              Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]))
-                -> odd (read fstX)
-              _ -> False
+        let test = isCounterWith $ \p ->
+                     case lookup (SimpleSMT.Atom "pir_x") p of
+                       Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]))
+                         -> odd (read fstX)
+                       _ -> False
+        in exec (proveAnyWithFuel 30 test) conditionals1 condWrongTriple *=* True
       -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
       --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
@@ -322,12 +311,12 @@ ohearnTestPeano =
   testGroup
     "OHearn Peano"
     [ testCase "[y == 1] ohearn-peano [snd result == 2] counter" $
-        pathSatisfies (execWithFuel 30 conditionals1Peano condWrongTriplePeano) $ 
-          any $ isCounterWith $ \p ->
-            case lookup (SimpleSMT.Atom "pir_x") p of
-              Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _]))
-                -> fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
-              _ -> False
+        let test = isCounterWith $ \p ->
+                     case lookup (SimpleSMT.Atom "pir_x") p of
+                       Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _]))
+                         -> fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
+                       _ -> False
+        in exec (proveAnyWithFuel 30 test) conditionals1Peano condWrongTriplePeano *=* True
       -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
       --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
@@ -340,16 +329,16 @@ tests =
   [ testGroup
       "incorrectness triples"
       [ testCase "[input > 0] add 1 [result > 0] counter" $
-          exec add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
+          exec prove add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
         testCase "[input > 0] add 1 [result > 1] verified" $
-          exec add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
+          exec prove add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "[isNothing x] isJust x [not result] verified" $
-          exec
+          exec prove
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isNothing x|])
             `pathSatisfies` (all isNoCounter .&. any isVerified),
         testCase "[isJust x] isJust x [not result] counter" $
-          exec
+          exec prove
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isJust x|])
             `pathSatisfies` any isCounter
@@ -357,9 +346,9 @@ tests =
     testGroup
       "Hoare triples"
       [ testCase "{input > 0} add 1 {result > 0} verified" $
-          exec add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
+          exec prove add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "{input > 0} add 1 {result > 1} verified" $
-          exec add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
+          exec prove add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
       ],
     ohearnTest,
     ohearnTestPeano

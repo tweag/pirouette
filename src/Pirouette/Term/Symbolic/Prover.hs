@@ -51,6 +51,21 @@ proveWithFuel ::
   m [Path lang (EvaluationWitness lang)]
 proveWithFuel f problem = symevalT (Fuel f) $ proveRaw problem
 
+proveAny ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  (Path lang (EvaluationWitness lang) -> Bool) ->
+  Problem lang ->
+  m Bool
+proveAny p problem = symevalAnyPath p InfiniteFuel $ proveRaw problem
+
+proveAnyWithFuel ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  Int ->
+  (Path lang (EvaluationWitness lang) -> Bool) ->
+  Problem lang ->
+  m Bool
+proveAnyWithFuel f p problem = symevalAnyPath p (Fuel f) $ proveRaw problem
+
 proveRaw ::
   forall lang m.
   SymEvalConstr lang m =>

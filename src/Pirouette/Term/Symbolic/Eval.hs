@@ -33,6 +33,7 @@ module Pirouette.Term.Symbolic.Eval
     runIncorrectness,
     pathsIncorrectness,
     pathsIncorrectness_,
+    symevalAnyPath,
     UserDeclaredConstraints (..),
     UniversalAxiom (..),
     InCond (..),
@@ -182,6 +183,17 @@ symevalT initialFuel = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
+symevalAnyPath ::
+  (SymEvalConstr lang m) =>
+  (Path lang a -> Bool) ->
+  AvailableFuel ->
+  SymEvalT lang m a ->
+  m Bool
+symevalAnyPath p initialFuel =
+  ListT.anyPath p . runSymEvalTWorker st0
+  where
+    st0 = SymEvalSt mempty M.empty 0 initialFuel False []
+
 runSymEvalTRaw ::
   (Monad m) =>
   SymEvalSt lang ->
@@ -193,13 +205,22 @@ runSymEvalTRaw st = flip runStateT st . symEvalT
 --  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
 runSymEvalT st symEvalT =
-  ListT.toLazyList $ do
-    solvPair <- SMT.runSolverT s $ do
-      usedNames <- prepSolver
-      let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
-      runSymEvalTRaw newState symEvalT
-    let paths = uncurry path solvPair
-    return paths
+  ListT.toLazyList $ runSymEvalTWorker st symEvalT
+
+-- | Running a symbolic execution will prepare the solver only once, then use a persistent session
+--  to make all the necessary queries.
+runSymEvalTWorker ::
+  (SymEvalConstr lang m) =>
+  SymEvalSt lang ->
+  SymEvalT lang m a ->
+  ListT m (Path lang a)
+runSymEvalTWorker st symEvalT = do
+  solvPair <- SMT.runSolverT s $ do
+    usedNames <- prepSolver
+    let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
+    runSymEvalTRaw newState symEvalT
+  let paths = uncurry path solvPair
+  return paths
   where
     -- we'll rely on cvc4 with dbg messages
     -- s = SMT.cvc4_ALL_SUPPORTED True
