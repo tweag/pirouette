@@ -169,6 +169,10 @@ translateTerm knownNames ty (Raw.App var args) = case var of
           SmtLib.app (SmtLib.symbol (toSmtName name)) <$> mapM (translateArg knownNames Nothing) args
       DTypeDef _ ->
         throwError "translateApp: Type name in function name"
+      -- DO NEVER TRY TO TRANSLATE THESE!!
+      -- even though SMT contains a match primitive,
+      -- this should be taken care of at the level
+      -- or symbolic evaluation instead
       DDestructor _ ->
         throwError $ "translateApp: Cannot handle '" <> show name <> "' yet"
 
