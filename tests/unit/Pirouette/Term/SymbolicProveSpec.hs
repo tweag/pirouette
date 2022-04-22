@@ -251,7 +251,7 @@ ohearnTest =
   testGroup
     "OHearn"
     [ testCase "[y == 11] ohearn [snd result == 42] counter" $
-        pathSatisfies (execWithFuel 50 conditionals1 condWrongTriple) $ 
+        pathSatisfies (execWithFuel 30 conditionals1 condWrongTriple) $ 
           any $ isCounterWith $ \p ->
             case lookup (SimpleSMT.Atom "pir_x") p of
               Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]))
@@ -305,14 +305,14 @@ fun main : Integer = 42
 
 condWrongTriplePeano :: (Term Ex, Term Ex)
 condWrongTriplePeano =
-  ( [term| \(result : Delta) (x : Delta) . eq (snd x) (S Z)  |],
-    [term| \(result : Delta) (x : Delta) . False -- eq (snd result) (S (S Z)) |]
+  ( [term| \(result : Delta) (x : Delta) . eq (snd result) (S (S Z)) |],
+    [term| \(result : Delta) (x : Delta) . eq (snd x) (S Z)  |]
   )
 
 condCorrectTriplePeano :: (Term Ex, Term Ex)
 condCorrectTriplePeano =
-  ( [term| \(result : Delta) (x : Delta) . eq (snd x) (S Z) |],
-    [term| \(result : Delta) (x : Delta) . (and (eq (snd result) (S (S Z))) (even (fst result))) |]
+  ( [term| \(result : Delta) (x : Delta) . (and (eq (snd result) (S (S Z))) (even (fst result))) |],
+    [term| \(result : Delta) (x : Delta) . eq (snd x) (S Z) |]
   )
 
 -- XXX: The following tests are hitting the bug on Pirouette.SMT.Constraints, line 196
@@ -322,10 +322,12 @@ ohearnTestPeano =
   testGroup
     "OHearn Peano"
     [ testCase "[y == 1] ohearn-peano [snd result == 2] counter" $
-        let isValidCounter = \case
-              SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]) -> odd (read fstX)
+        pathSatisfies (execWithFuel 30 conditionals1Peano condWrongTriplePeano) $ 
+          any $ isCounterWith $ \p ->
+            case lookup (SimpleSMT.Atom "pir_x") p of
+              Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _]))
+                -> fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
               _ -> False
-         in exec conditionals1Peano condWrongTriplePeano `pathSatisfies` all isVerified -- (isCounterWith $ maybe False isValidCounter . lookup (SimpleSMT.Atom "pir_x")),
       -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
       --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
@@ -359,6 +361,6 @@ tests =
         testCase "{input > 0} add 1 {result > 1} verified" $
           exec add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
       ],
-    ohearnTest
-    -- ohearnTestPeano
+    ohearnTest,
+    ohearnTestPeano
   ]

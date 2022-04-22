@@ -22,6 +22,7 @@ library
       Language.Pirouette.PlutusIR.Builtins
       Language.Pirouette.PlutusIR.SMT
       Language.Pirouette.PlutusIR.ToTerm
+      ListT.Extra
       Pirouette.Monad
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe

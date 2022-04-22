@@ -69,8 +69,8 @@ import Data.Data hiding (eqT)
 import Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
-import ListT (ListT)
-import qualified ListT
+import ListT.Extra (ListT)
+import qualified ListT.Extra as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
@@ -193,7 +193,7 @@ runSymEvalTRaw st = flip runStateT st . symEvalT
 --  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
 runSymEvalT st symEvalT =
-  ListT.toList $ do
+  ListT.toLazyList $ do
     solvPair <- SMT.runSolverT s $ do
       usedNames <- prepSolver
       let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
