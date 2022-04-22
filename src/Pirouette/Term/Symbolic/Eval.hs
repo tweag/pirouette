@@ -52,6 +52,10 @@ module Pirouette.Term.Symbolic.Eval
     symEvalOneStep,
     pruneAndValidate,
     PruneResult (..),
+    normalizeTerm,
+    SymEvalSt(..),
+    fuelExhausted,
+    currentFuel
   )
 where
 
@@ -198,9 +202,9 @@ runSymEvalT st symEvalT =
     return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    s = SMT.cvc4_ALL_SUPPORTED True
+    -- s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    -- s = SMT.cvc4_ALL_SUPPORTED False
+    s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
@@ -371,25 +375,23 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
 -- of constituent cases:
 symEvalOneStep t@(R.App hd args) = case hd of
   R.Free (Builtin builtin) -> do
-    (evaluatedArgs, somethingWasEvaluated) <- listen $ mapM (R.argMapM return symEvalOneStep) args
-    if somethingWasEvaluated == Any True
-      then pure $ R.App hd evaluatedArgs
-      else do
-        -- we could not evaluate arguments more,
-        -- so go on and evaluate the built-in
-        let translator c = WriterT $ do
-              c' <- runTranslator $ translateTerm [] Nothing c
-              case c' of
-                Left _ -> pure (Nothing, Any False)
-                Right (d, _) -> pure (Just d, Any False)
-        mayBranches <- SMT.branchesBuiltinTerm @lang builtin translator evaluatedArgs
-        case mayBranches of
-          Just branches -> asum $
-            flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-              lift $ learn additionalInfo
-              consumeFuel
-              pure newTerm
-          _ -> pure $ R.App hd evaluatedArgs -- no branching info.
+    -- try to evaluate the built-in
+    let translator c = do
+            c' <- runTranslator $ translateTerm [] Nothing c
+            case c' of
+              Left _ -> pure Nothing
+              Right (d, _) -> pure $ Just d
+    mayBranches <- lift $ SMT.branchesBuiltinTerm @lang builtin translator args
+    case mayBranches of
+      -- if successful, open all the branches
+      Just branches -> asum $
+        flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+          lift $ learn additionalInfo
+          consumeFuel
+          pure newTerm
+      -- if it's not ready, just keep evaluating the arguments
+      Nothing ->
+        R.App hd <$> mapM (R.argMapM return symEvalOneStep) args
   R.Free (TermSig n) -> do
     mDefHead <- Just <$> lift (lift $ prtDefOf n)
     case mDefHead of
@@ -436,13 +438,14 @@ symEvalOneStep t@(R.App hd args) = case hd of
         -- no meta variables.
         let tyParams' = map typeFromMeta tyParams
         (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
+        motiveInWNHF <- lift $ termIsWHNFOrMeta term'
         -- We only do the case distinction if we haven't taken any step
         -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
-        if somethingWasEvaluated == Any True
+        if somethingWasEvaluated == Any True || not motiveInWNHF
           then do
             let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
             pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
-          else asum $ -- traverse every possibility
+          else asum $ -- traverse every possibility, only if in WNHF
             for2 consList cases $ \(consName, consTy) caseTerm -> do
               let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
               let (consArgs, _) = R.tyFunArgs instantiatedTy
@@ -481,7 +484,7 @@ unify (R.App hdT argsT) (R.App hdU argsU) = do
   uTU <- unifyVar hdT hdU
   uArgs <- zipWithMPlus unifyArg argsT argsU
   return $ uTU <> mconcat uArgs
-unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq t u])
+unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq Nothing t u])
 
 unifyVar :: (LanguageBuiltins lang) => VarMeta lang SymVar -> VarMeta lang SymVar -> Maybe (Constraint lang)
 unifyVar (R.Meta s) (R.Meta r) = Just (symVarEq s r)
@@ -693,15 +696,18 @@ checkProperty cOut cIn axioms env = do
   inconsistent <- SMT.checkSat
   (inTotal, _inUsedAnyUFs) <- assertNotConstraint vars (sestKnownNames env) cIn
   let everythingWasTranslated = cstrTotal && outTotal && inTotal
-  -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
+      -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
   result <- SMT.checkSat
+  -- liftIO $ print result
+  -- liftIO $ print $ pretty (sestConstraint env)
+  -- liftIO $ print (cstrTotal, outTotal, inTotal)
   finalResult <- case (inconsistent, result) of
     (SMT.Unsat, _) -> return PruneInconsistentAssumptions
     (_, SMT.Unsat) -> return PruneImplicationHolds
     -- If a partial translation of the constraints is SAT,
     -- it does not guarantee us that the full set of constraints is satisfiable.
     -- Only in the case in which we could translate the entire thing to prove.
-    (_, SMT.Sat) | everythingWasTranslated {- && not usedAnyUFs -} ->
+    (_, SMT.Sat) | everythingWasTranslated ->
       do
         m <- if null vars then pure [] else SMT.getModel (M.keys vars)
         pure $ PruneCounterFound m

@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Simple parser for a simple language aimed at helping us
@@ -33,9 +34,11 @@ import Control.Monad.Combinators.Expr
 import Data.Data
 import Data.Foldable
 import qualified Data.Map as M
+import Data.Maybe (isJust)
 import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
+import Pirouette.Monad ( termIsMeta )
 import Pirouette.SMT
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
@@ -110,7 +113,7 @@ instance LanguageBuiltinTypes Ex where
     where
       a = SystF.tyPure $ SystF.Bound (SystF.Ann "a") 0
 
-tInt, tBool :: Type Ex
+tInt, tBool :: TypeMeta Ex meta
 tInt = SystF.tyPure $ SystF.Free $ TyBuiltin TyInteger
 tBool = SystF.tyPure $ SystF.Free $ TyBuiltin TyBool
 
@@ -123,20 +126,45 @@ instance LanguageSMT Ex where
   translateBuiltinTerm TermSub [x, y] = Just $ SimpleSMT.sub x y
   translateBuiltinTerm TermLt [x, y] = Just $ SimpleSMT.lt x y
   translateBuiltinTerm TermEq [x, y] = Just $ SimpleSMT.eq x y
-  translateBuiltinTerm TermIte [_, c, t, e] = Just $ SimpleSMT.ite c t e
+  translateBuiltinTerm TermIte [_, _c, _t, _e] = Nothing -- Just $ SimpleSMT.ite c t e
   translateBuiltinTerm _ _ = Nothing
 
+pattern BTrue :: TermMeta Ex meta
+pattern BFalse :: TermMeta Ex meta
+pattern BTrue = SystF.App (SystF.Free (Constant (ConstBool True))) []
+pattern BFalse = SystF.App (SystF.Free (Constant (ConstBool False))) []
+
+pattern IConstant :: Integer -> TermMeta Ex meta
+pattern IConstant n = SystF.App (SystF.Free (Constant (ConstInt n))) []
+
 instance LanguageSMTBranches Ex where
-  branchesBuiltinTerm TermIte translator [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] = do
-    cond <- translator c
-    case cond of
-      Nothing -> pure Nothing
-      Just smtCond ->
-        return $
-          Just
-            [ Branch (And [Native smtCond]) t, -- c holds => t is executed
-              Branch (And [Native (SimpleSMT.not smtCond)]) e
-            ] -- (not c) holds => e is executed
+  branchesBuiltinTerm TermIte _translator 
+    [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] = 
+    case c of
+      BTrue  -> pure $ Just [Branch (And []) t]
+      BFalse -> pure $ Just [Branch (And []) e]
+      SystF.App (SystF.Free (Builtin TermEq)) [SystF.TermArg x, SystF.TermArg y]
+        | constantOrAppliedToBuiltin x, constantOrAppliedToBuiltin y
+        -> pure $ Just
+             [ -- either they are equal
+               Branch (And [NonInlinableSymbolEq (Just tInt) x y]) t, 
+               -- or they are not
+               Branch (And [NonInlinableSymbolNotEq (Just tInt) x y]) e
+             ]
+      _ | Just _ <- termIsMeta c -> pure $ Just
+              [ -- c is True => t is executed
+                Branch (And [NonInlinableSymbolEq (Just tBool) c BTrue]) t, 
+                -- c is False => e is executed
+                Branch (And [NonInlinableSymbolEq (Just tBool) c BFalse]) e
+              ]
+      _ -> pure Nothing
+
+    where
+      constantOrAppliedToBuiltin (IConstant _) = True
+      constantOrAppliedToBuiltin (SystF.App (SystF.Free (Builtin _)) args) =
+        all (constantOrAppliedToBuiltin . (\(SystF.TermArg a) -> a)) args
+      constantOrAppliedToBuiltin tm = isJust (termIsMeta tm)
+
   branchesBuiltinTerm _ _ _ = pure Nothing
 
 -- ** Syntactical Categories

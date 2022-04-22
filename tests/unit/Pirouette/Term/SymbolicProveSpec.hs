@@ -30,6 +30,18 @@ exec (program, tyRes, fn) (assume, toProve) = fmap fst $
     flip runReaderT orderedDecls $
       prove (Problem tyRes fn assume toProve)
 
+execWithFuel ::
+  Int ->
+  (Program Ex, Type Ex, Term Ex) ->
+  (Term Ex, Term Ex) ->
+  IO (Either String [Path Ex (EvaluationWitness Ex)])
+execWithFuel n (program, tyRes, fn) (assume, toProve) = fmap fst $
+  mockPrtT $ do
+    let decls = uncurry PrtUnorderedDefs program
+    orderedDecls <- elimEvenOddMutRec decls
+    flip runReaderT orderedDecls $
+      proveWithFuel n (Problem tyRes fn assume toProve)
+
 add1 :: (Program Ex, Type Ex, Term Ex)
 add1 =
   ( [prog|
@@ -224,14 +236,14 @@ fun main : Integer = 42
 
 condWrongTriple :: (Term Ex, Term Ex)
 condWrongTriple =
-  ( [term| \(result : Delta) (x : Delta) . snd x == 11 |],
-    [term| \(result : Delta) (x : Delta) . snd result == 42 |]
+  ( [term| \(result : Delta) (x : Delta) . snd result == 42 |],
+    [term| \(result : Delta) (x : Delta) . snd x == 11 |]
   )
 
 condCorrectTriple :: (Term Ex, Term Ex)
 condCorrectTriple =
-  ( [term| \(result : Delta) (x : Delta) . snd x == 11 |],
-    [term| \(result : Delta) (x : Delta) . (and (snd result == 42) (even (fst result))) |]
+  ( [term| \(result : Delta) (x : Delta) . (and (snd result == 42) (even (fst result))) |],
+    [term| \(result : Delta) (x : Delta) . snd x == 11 |]
   )
 
 ohearnTest :: TestTree
@@ -239,13 +251,14 @@ ohearnTest =
   testGroup
     "OHearn"
     [ testCase "[y == 11] ohearn [snd result == 42] counter" $
-        let isValidCounter = \case
-              SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]) -> odd (read fstX)
+        pathSatisfies (execWithFuel 50 conditionals1 condWrongTriple) $ 
+          any $ isCounterWith $ \p ->
+            case lookup (SimpleSMT.Atom "pir_x") p of
+              Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]))
+                -> odd (read fstX)
               _ -> False
-         in exec conditionals1 condWrongTriple `pathSatisfies` all (isCounterWith $ maybe False isValidCounter . lookup (SimpleSMT.Atom "pir_x"))
-      {- doesn't terminate on @serras's machine
-      testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
-        exec conditionals1 condCorrectTriple `pathSatisfies` all isVerified -}
+      -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
+      --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
 
 -- We didn't have much success with builtins integers; let me try the same with peano naturals:

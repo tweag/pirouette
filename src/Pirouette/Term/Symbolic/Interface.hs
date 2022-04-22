@@ -327,7 +327,7 @@ parseAtomicCondAsFunction' var =
       t <- parseParenTermAsFun
       void $ char ' '
       u <- parseParenTermAsFun
-      return $ SMT.NonInlinableSymbolEq <$> t <*> u
+      return $ SMT.NonInlinableSymbolEq Nothing <$> t <*> u
 
     parseParenTermAsFun :: (Read (BuiltinTypes lang)) => Parser (TermMeta lang SymVar -> TermMeta lang SymVar)
     parseParenTermAsFun =

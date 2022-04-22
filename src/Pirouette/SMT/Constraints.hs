@@ -40,7 +40,8 @@ type Env lang = Map Name (Type lang)
 data AtomicConstraint lang meta
   = Assign Name (TermMeta lang meta)
   | VarEq Name Name
-  | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
+  | NonInlinableSymbolEq (Maybe (TypeMeta lang meta)) (TermMeta lang meta) (TermMeta lang meta)
+  | NonInlinableSymbolNotEq (Maybe (TypeMeta lang meta)) (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
   | Native SimpleSMT.SExpr
   deriving (Eq, Show)
@@ -66,7 +67,7 @@ class (LanguageSMT lang) => LanguageSMTBranches lang where
   -- For example, one can introduce a 'if_then_else' built-in
   -- and implement this method to look at both possibilities.
   branchesBuiltinTerm ::
-    (ToSMT meta, Monad m) =>
+    (ToSMT meta, PirouetteReadDefs lang m) =>
     BuiltinTerms lang ->
     (TermMeta lang meta -> m (Maybe SimpleSMT.SExpr)) ->
     [ArgMeta lang meta] ->
@@ -84,8 +85,10 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (AtomicConstraint lang met
     pretty n <+> "↦" <+> pretty term
   pretty (VarEq a b) =
     pretty a <+> "⇔" <+> pretty b
-  pretty (NonInlinableSymbolEq t u) =
+  pretty (NonInlinableSymbolEq _ t u) =
     pretty t <+> "==" <+> pretty u
+  pretty (NonInlinableSymbolNotEq _ t u) =
+    pretty t <+> "/=" <+> pretty u
   pretty (OutOfFuelEq t u) =
     pretty t <+> "~~" <+> pretty u
   pretty (Native expr) =
@@ -150,10 +153,14 @@ atomicConstraintToSExpr _ _knownNames (VarEq a b) = do
   let aName = toSmtName a
   let bName = toSmtName b
   return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
-atomicConstraintToSExpr _ knownNames (NonInlinableSymbolEq term1 term2) = do
-  t1 <- translateTerm knownNames Nothing term1
-  t2 <- translateTerm knownNames Nothing term2
+atomicConstraintToSExpr _ knownNames (NonInlinableSymbolEq ty term1 term2) = do
+  t1 <- translateTerm knownNames ty term1
+  t2 <- translateTerm knownNames ty term2
   return $ t1 `SimpleSMT.eq` t2
+atomicConstraintToSExpr _ knownNames (NonInlinableSymbolNotEq ty term1 term2) = do
+  t1 <- translateTerm knownNames ty term1
+  t2 <- translateTerm knownNames ty term2
+  return $ SimpleSMT.not (t1 `SimpleSMT.eq` t2)
 atomicConstraintToSExpr _ knownNames (OutOfFuelEq term1 term2) = do
   t1 <- translateTerm knownNames Nothing term1
   t2 <- translateTerm knownNames Nothing term2
