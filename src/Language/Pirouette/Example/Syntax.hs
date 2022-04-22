@@ -38,7 +38,7 @@ import Data.Maybe (isJust)
 import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
-import Pirouette.Monad ( termIsMeta )
+import Pirouette.Monad (termIsMeta)
 import Pirouette.SMT
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Syntax
@@ -126,45 +126,58 @@ instance LanguageSMT Ex where
   translateBuiltinTerm TermSub [x, y] = Just $ SimpleSMT.sub x y
   translateBuiltinTerm TermLt [x, y] = Just $ SimpleSMT.lt x y
   translateBuiltinTerm TermEq [x, y] = Just $ SimpleSMT.eq x y
-  translateBuiltinTerm TermIte [_, _c, _t, _e] = Nothing -- Just $ SimpleSMT.ite c t e
+  -- DO NOT TRANSLATE THIS TO 'ite',
+  -- This should be taken care by symbolic evaluation branching,
+  -- since it is in fact like 'match'
+  translateBuiltinTerm TermIte [_, _c, _t, _e] = Nothing
   translateBuiltinTerm _ _ = Nothing
 
+  -- they are stuck if they are constants, ot a not-ite builtin
+  isStuckBuiltin (IConstant _) = True
+  isStuckBuiltin (SystF.App (SystF.Free (Builtin b)) args)
+    | b /= TermIte =
+      all (isStuckBuiltin . (\(SystF.TermArg a) -> a)) args
+  isStuckBuiltin tm = isJust (termIsMeta tm)
+
 pattern BTrue :: TermMeta Ex meta
+
 pattern BFalse :: TermMeta Ex meta
+
 pattern BTrue = SystF.App (SystF.Free (Constant (ConstBool True))) []
+
 pattern BFalse = SystF.App (SystF.Free (Constant (ConstBool False))) []
 
 pattern IConstant :: Integer -> TermMeta Ex meta
 pattern IConstant n = SystF.App (SystF.Free (Constant (ConstInt n))) []
 
 instance LanguageSMTBranches Ex where
-  branchesBuiltinTerm TermIte _translator 
-    [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] = 
-    case c of
-      BTrue  -> pure $ Just [Branch (And []) t]
-      BFalse -> pure $ Just [Branch (And []) e]
-      SystF.App (SystF.Free (Builtin TermEq)) [SystF.TermArg x, SystF.TermArg y]
-        | constantOrAppliedToBuiltin x, constantOrAppliedToBuiltin y
-        -> pure $ Just
-             [ -- either they are equal
-               Branch (And [NonInlinableSymbolEq (Just tInt) x y]) t, 
-               -- or they are not
-               Branch (And [NonInlinableSymbolNotEq (Just tInt) x y]) e
-             ]
-      _ | Just _ <- termIsMeta c -> pure $ Just
-              [ -- c is True => t is executed
-                Branch (And [NonInlinableSymbolEq (Just tBool) c BTrue]) t, 
-                -- c is False => e is executed
-                Branch (And [NonInlinableSymbolEq (Just tBool) c BFalse]) e
-              ]
-      _ -> pure Nothing
-
-    where
-      constantOrAppliedToBuiltin (IConstant _) = True
-      constantOrAppliedToBuiltin (SystF.App (SystF.Free (Builtin _)) args) =
-        all (constantOrAppliedToBuiltin . (\(SystF.TermArg a) -> a)) args
-      constantOrAppliedToBuiltin tm = isJust (termIsMeta tm)
-
+  branchesBuiltinTerm
+    TermIte
+    _translator
+    [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
+      case c of
+        BTrue -> pure $ Just [Branch (And []) t]
+        BFalse -> pure $ Just [Branch (And []) e]
+        SystF.App (SystF.Free (Builtin TermEq)) [SystF.TermArg x, SystF.TermArg y]
+          | isStuckBuiltin x,
+            isStuckBuiltin y ->
+            pure $
+              Just
+                [ -- either they are equal
+                  Branch (And [NonInlinableSymbolEq (Just tInt) x y]) t,
+                  -- or they are not
+                  Branch (And [NonInlinableSymbolNotEq (Just tInt) x y]) e
+                ]
+        _
+          | Just _ <- termIsMeta c ->
+            pure $
+              Just
+                [ -- c is True => t is executed
+                  Branch (And [NonInlinableSymbolEq (Just tBool) c BTrue]) t,
+                  -- c is False => e is executed
+                  Branch (And [NonInlinableSymbolEq (Just tBool) c BFalse]) e
+                ]
+        _ -> pure Nothing
   branchesBuiltinTerm _ _ _ = pure Nothing
 
 -- ** Syntactical Categories

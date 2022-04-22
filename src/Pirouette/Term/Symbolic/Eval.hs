@@ -53,9 +53,9 @@ module Pirouette.Term.Symbolic.Eval
     pruneAndValidate,
     PruneResult (..),
     normalizeTerm,
-    SymEvalSt(..),
+    SymEvalSt (..),
     fuelExhausted,
-    currentFuel
+    currentFuel,
   )
 where
 
@@ -377,10 +377,10 @@ symEvalOneStep t@(R.App hd args) = case hd of
   R.Free (Builtin builtin) -> do
     -- try to evaluate the built-in
     let translator c = do
-            c' <- runTranslator $ translateTerm [] Nothing c
-            case c' of
-              Left _ -> pure Nothing
-              Right (d, _) -> pure $ Just d
+          c' <- runTranslator $ translateTerm [] Nothing c
+          case c' of
+            Left _ -> pure Nothing
+            Right (d, _) -> pure $ Just d
     mayBranches <- lift $ SMT.branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
@@ -696,7 +696,7 @@ checkProperty cOut cIn axioms env = do
   inconsistent <- SMT.checkSat
   (inTotal, _inUsedAnyUFs) <- assertNotConstraint vars (sestKnownNames env) cIn
   let everythingWasTranslated = cstrTotal && outTotal && inTotal
-      -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
+  -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
   result <- SMT.checkSat
   -- liftIO $ print result
   -- liftIO $ print $ pretty (sestConstraint env)

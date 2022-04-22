@@ -17,8 +17,8 @@ import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as Lazy
 import qualified Control.Monad.State.Strict as Strict
 import Data.Data (Data)
-import Data.Maybe (isJust)
 import qualified Data.Map as Map
+import Data.Maybe (isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import ListT (ListT)

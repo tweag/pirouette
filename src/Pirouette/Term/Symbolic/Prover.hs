@@ -8,12 +8,13 @@ module Pirouette.Term.Symbolic.Prover where
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Writer
+import Pirouette.Monad (termIsWHNFOrMeta)
+import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
 import Pirouette.SMT.Translation
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Pirouette.Monad (termIsWHNFOrMeta, termIsBuiltin)
 
 -- | A problem represents a triple that should be checked.
 -- It should be the case that assuming 'problemAssume',
@@ -82,25 +83,36 @@ worker ::
   SymTerm lang ->
   SymEvalT lang m (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  knownNames <- gets sestKnownNames
   -- liftIO $ print (pretty bodyTerm)
   -- liftIO $ print (pretty assumeTerm)
   -- liftIO $ print (pretty proveTerm)
   -- _ <- liftIO getLine
+
+  -- terms are only useful if they are in WHNF or are stuck
+  -- (stuck-ness if defined per language)
+  knownNames <- gets sestKnownNames
+  let translate t = do
+        res <- runTranslator $ translateTerm knownNames Nothing t
+        isWHNF <- termIsWHNFOrMeta t
+        case res of
+          Left e -> pure $ Left e
+          Right (c, _)
+            | isStuckBuiltin t || isWHNF ->
+              pure $ Right c
+            | otherwise ->
+              pure $ Left "not stuck term"
   -- step 1. try to prune the thing
+  mayBodyTerm <- translate bodyTerm
+  mayAssumeCond <- translate assumeTerm
+  mayProveCond <- translate proveTerm
   -- introduce the assumption about the result, if useful
-  mayBodyTerm <- runTranslator $ translateTerm knownNames Nothing bodyTerm
   case mayBodyTerm of
     Right _ -> learn $ And [Assign (symVar resultVar) bodyTerm]
     _ -> pure ()
   -- now try to prune if we can translate the things
-  whnfBody <- termIsWHNFOrMeta bodyTerm
-  mayAssumeCond <- runTranslator $ translateTerm knownNames Nothing assumeTerm
-  mayProveCond <- runTranslator $ translateTerm knownNames Nothing proveTerm
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
     -- if everything can be translated, try to prune with it
-    (Right _, Right (assumeCond, _), Right (proveCond, _))
-      | whnfBody || termIsBuiltin bodyTerm -> do
+    (Right _, Right assumeCond, Right proveCond) ->
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
@@ -114,6 +126,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
       (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
+      -- check the fuel
       noMoreFuel <- fuelExhausted <$> currentFuel
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' []
