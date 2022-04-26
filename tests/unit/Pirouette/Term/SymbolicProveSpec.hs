@@ -16,6 +16,8 @@ import Pirouette.Term.Symbolic.Prover
 import Pirouette.Term.SymbolicEvalUtils
 import Pirouette.Term.Syntax.Base
 import Pirouette.Transformations (elimEvenOddMutRec)
+import Pirouette.Transformations.Defunctionalization
+import Pirouette.Transformations.Monomorphization
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -351,5 +353,161 @@ tests =
           exec prove add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
       ],
     ohearnTest,
-    ohearnTestPeano
+    ohearnTestPeano,
+    minSwapTest
   ]
+
+-- * MinSwap example
+
+minswap :: (Program Ex, Type Ex, Term Ex)
+minswap =
+  ( [prog|
+fun and : Bool -> Bool -> Bool
+  = \(x : Bool) (y : Bool) . if @Bool x then y else False
+
+fun eqInt : Integer -> Integer -> Bool
+  = \(x : Integer) (y : Integer) . x == y
+
+data List (a : Type)
+  = Nil : List a
+  | Cons : a -> List a -> List a
+
+fun foldr : all (a : Type)(r : Type) . (a -> r -> r) -> r -> List a -> r
+  = /\(a : Type)(r : Type) . \(f : a -> r -> r) (e : r) (l : List a)
+  . match_List @a l @r
+      e
+      (\(x : a) (xs : List a) . f x (foldr @a @r f e xs))
+
+fun listEq : all (a : Type) . (a -> a -> Bool) -> List a -> List a -> Bool
+  = /\(a : Type) . \(eq : a -> a -> Bool) (x0 : List a) (y0 : List a)
+  . match_List @a x0 @Bool
+      (match_List @a y0 @Bool True (\(y : a) (ys : List a) . False))
+      (\(x : a) (xs : List a) . match_List @a y0 @Bool False (\(y : a) (ys : List a) . and (eq x y) (listEq @a eq xs ys)))
+
+data Pair (x : Type) (y : Type)
+  = P : x -> y -> Pair x y
+
+fun pairEq : all (a : Type)(b : Type) . (a -> a -> Bool) -> (b -> b -> Bool) -> Pair a b -> Pair a b -> Bool
+  = /\(a : Type)(b : Type) . \(eqA : a -> a -> Bool) (eqB : b -> b -> Bool) (x : Pair a b) (y : Pair a b)
+  . match_Pair @a @b x @Bool
+      (\(x0 : a) (x1 : b) . match_Pair @a @b y @Bool
+        (\(y0 : a) (y1 : b) . and (eqA x0 y0) (eqB x1 y1)))
+
+data Maybe (x : Type)
+  = Just : x -> Maybe x
+  | Nothing : Maybe x
+
+fun maybeSum : all (x : Type) . Maybe x -> Maybe x -> Maybe x
+  = /\ (x : Type) . \(mx : Maybe x)(my : Maybe x)
+  . match_Maybe @x mx @(Maybe x)
+      (\(jx : x) . Just @x jx)
+      my
+
+data KVMap (k : Type) (v : Type)
+  = KV : List (Pair k v) -> KV k v
+
+fun toList : all (k : Type)(v : Type) . KVMap k v -> List (Pair k v)
+  = /\(k : Type)(v : Type) . \(m : KVMap k v) . match_KVMap @k @v m @(List (Pair k v)) (\(x : List (Pair k v)) . x)
+
+fun lkupOne : all (k : Type)(v : Type) . (k -> Bool) -> Pair k v -> Maybe v
+  = /\(k : Type)(v : Type) . \(predi : k -> Bool)(m : Pair k v)
+  . match_Pair @k @v m @(Maybe v)
+      (\(fst : k) (snd : v) . if @(Maybe v) predi fst then Just @v snd else Nothing @v)
+
+fun lkup : all (k : Type)(v : Type) . (k -> k -> Bool) -> KVMap k v -> k -> Maybe v
+  = /\(k : Type)(v : Type) . \(eq : k -> k -> Bool)(m : KVMap k v) (tgt : k)
+  . match_KVMap @k @v m @(Maybe v)
+      (foldr @(Pair k v) @(Maybe v) (\(pk : Pair k v) . maybeSum @v (lkupOne @k @v (eq tgt) pk)) (Nothing @v))
+
+-- Just like a plutus value, but se use integers for currency symbols and token names
+-- to not have to deal with bytestrings
+data Value
+  = V : KVMap Integer (KVMap Integer Integer) -> Value
+
+-- Analogous to Plutus assetClassValueOf
+fun assetClassValueOf : Value -> Pair Integer Integer -> Integer
+  = \(v : Value) (ac : Pair Integer Integer)
+  . match_Pair @Integer @Integer ac @Integer
+      (\(curSym : Integer) (tokName : Integer)
+       . match_Value v @Integer
+       (\(openV : KVMap Integer (KVMap Integer Integer))
+        . match_Maybe @(KVMap Integer Integer) (lkup @Integer @(KVMap Integer Integer) eqInt openV curSym) @Integer
+            (\(tokM : KVMap Integer Integer)
+             . match_Maybe @Integer (lkup @Integer @Integer (\(x : Integer) (y : Integer) . x == y) tokM tokName) @Integer
+                 (\(r : Integer) . r)
+                 0
+            )
+            0
+      ))
+
+-- Now we define the wrong isUnity function, that is too permissive
+fun minSwap_isUnity : Value -> Pair Integer Integer -> Bool
+  = \(v : Value) (ac : Pair Integer Integer) . assetClassValueOf v ac == 1
+
+-- The correct spec for that should be exactly what we wrote in our blogpost:
+--
+-- > isUnity :: Value -> AssetClass -> Bool
+-- > isUnity v c = Map.lookup curr (getValue v) == Just (Map.fromList [(tok, 1)])
+-- >  where (curr, tok) = unAssetClass c
+--
+-- In our example language, that gets a little more verbose! :P
+fun correct_isUnity : Value -> Pair Integer Integer -> Bool
+  = \(v : Value) (ac : Pair Integer Integer)
+  . match_Pair @Integer @Integer ac @Bool
+      (\(curSym : Integer) (tokName : Integer)
+       . match_Value v @Bool
+       (\(openV : KVMap Integer (KVMap Integer Integer))
+        . match_Maybe @(KVMap Integer Integer) (lkup @Integer @(KVMap Integer Integer) eqInt openV curSym) @Bool
+            (\(tokM : KVMap Integer Integer)
+             . listEq @(Pair Integer Integer)
+                 (pairEq @Integer @Integer eqInt eqInt)
+                 (toList @Integer @Integer tokM)
+                 (Cons @(Pair Integer Integer) (P @Integer @Integer tokName 1) (Nil @(Pair Integer Integer))))
+            False
+       ))
+
+-- Now we define a simple example asset class
+fun example_ac : Pair Integer Integer
+  = P @Integer @Integer 42 42
+
+-- And the infamous validator, slightly simplified:
+fun validator : Value -> Bool
+  = \(v : Value) . minSwap_isUnity v example_ac
+
+fun main : Integer = 42
+  |],
+    [ty|Bool|],
+    [term| \(v : Value) . validator v |]
+  )
+
+-- Now we estabilish the incorrectness triple that says:
+--
+-- > [ \v -> correct_isUnity example_ac v ] validator v [ \r _ -> r ]
+--
+-- In other words, it only validates if @v@ is correct. We expect
+-- a counterexample out of this.
+condMinSwap :: (Term Ex, Term Ex)
+condMinSwap =
+  ( [term| \(result : Bool) (v : Value) . result |],
+    [term| \(result : Bool) (v : Value) . correct_isUnity example_ac v |]
+  )
+
+execFull ::
+  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
+  (Program Ex, Type Ex, Term Ex) ->
+  (Term Ex, Term Ex) ->
+  IO (Either String a)
+execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
+  mockPrtT $ do
+    let decls = defunctionalize $ monomorphize $ uncurry PrtUnorderedDefs program
+    orderedDecls <- elimEvenOddMutRec decls
+    flip runReaderT orderedDecls $
+      toDo (Problem tyRes fn assume toProve)
+
+minSwapTest :: TestTree
+minSwapTest =
+  testGroup
+    "MinSwap"
+    [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
+        execFull (proveAnyWithFuel 30 isCounter) minswap condMinSwap *=* True
+    ]
