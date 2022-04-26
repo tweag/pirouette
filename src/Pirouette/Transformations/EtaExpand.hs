@@ -18,7 +18,7 @@ import Pirouette.Transformations.Utils
 -- | Eta-expands all definitions of all terms involved in a program
 etaExpandAll ::
   forall lang.
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (LanguagePretty lang, Language lang) =>
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
 etaExpandAll defs@PrtUnorderedDefs {..} = transformBi (etaExpandAux prtUODecls) defs
@@ -37,16 +37,23 @@ etaExpandTerm t = do
 --  returns the type of a term @x : t@ partially applied to @a1 ... aN@.
 --  This is different from type application because we need to instantiate
 --  the 'SystF.TyAll's and drop the 'SystF.TyFun's.
-instantiateType :: Type lang -> [Arg lang] -> Type lang
+instantiateType :: (Language lang) => Type lang -> [Arg lang] -> Type lang
 instantiateType t [] = t
 instantiateType (SystF.TyFun _ u) (SystF.TermArg _ : args) = instantiateType u args
 instantiateType (SystF.TyAll _ _ t) (SystF.TyArg arg : args) =
   instantiateType (subst (singleSub arg) t) args
-instantiateType _ _ = error "instantiateType: type-checking would fail"
+instantiateType t args =
+  error $
+    unlines
+      [ "instantiateType: trying to instantiate:",
+        "t = " ++ renderSingleLineStr (pretty t),
+        "with",
+        "args = " ++ renderSingleLineStr (pretty args)
+      ]
 
 -- Auxiliar function, supposed to be used as an argument to 'transformBi' to
 -- eta expand terms. Check 'etaExpandTerm' or 'etaExpandAll'.
-etaExpandAux :: (LanguageBuiltins lang) => Decls lang -> Term lang -> Term lang
+etaExpandAux :: (Language lang) => Decls lang -> Term lang -> Term lang
 etaExpandAux decls (SystF.Free (TermSig name) `SystF.App` args)
   | Just nameType <- lookupNameType decls name,
     specNamePartialApp <- nameType `instantiateType` args,
@@ -98,13 +105,15 @@ shiftArg kTy _ (SystF.TyArg t) = SystF.TyArg $ shift kTy t
 --
 -- This may return Nothing if the name is not known or
 -- if the name doesn't have a *-inhabiting type (for instance, being a type itself).
+--
+-- TODO: Move this to TypeChecker or something; it seems it would even solve the TODO
+-- below.
 lookupNameType :: Decls lang -> Name -> Maybe (Type lang)
 lookupNameType decls name = name `M.lookup` decls >>= getName
   where
     getName (DFunDef fd) = Just $ funTy fd
     getName (DConstructor idx typeName) = do
       DTypeDef Datatype {..} <- typeName `M.lookup` decls -- this pattern-match failure shall probably be a hard error instead of Nothing
-      conTy <- constructors `safeIdx` idx
-      pure $ foldr (\(name', kind') ty -> SystF.TyAll (SystF.Ann name') kind' ty) (snd conTy) typeVariables
+      snd <$> constructors `safeIdx` idx
     getName (DDestructor _) = Nothing -- TODO just write the type of the destructor out
     getName (DTypeDef _) = Nothing
