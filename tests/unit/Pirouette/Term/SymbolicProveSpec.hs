@@ -14,7 +14,7 @@ import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Symbolic.Prover
 import Pirouette.Term.SymbolicEvalUtils
-import Pirouette.Term.Syntax.Base
+import Pirouette.Term.Syntax
 import Pirouette.Transformations (elimEvenOddMutRec)
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
@@ -192,7 +192,6 @@ fun main : Integer = 42
 --
 -- Now we have that SEM1 is equivalent to SEM3
 
-
 conditionals1 :: (Program Ex, Type Ex, Term Ex)
 conditionals1 =
   ( [prog|
@@ -243,13 +242,13 @@ ohearnTest =
     "OHearn"
     [ testCase "[y == 11] ohearn [snd result == 42] counter" $
         let test = isCounterWith $ \p ->
-                     case lookup (SimpleSMT.Atom "pir_x") p of
-                       Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _]))
-                         -> odd (read fstX)
-                       _ -> False
-        in exec (proveAnyWithFuel 30 test) conditionals1 condWrongTriple *=* True
-      -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
-      --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
+              case lookup (SimpleSMT.Atom "pir_x") p of
+                Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _])) ->
+                  odd (read fstX)
+                _ -> False
+         in exec (proveAnyWithFuel 30 test) conditionals1 condWrongTriple *=* True
+        -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
+        --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
 
 -- We didn't have much success with builtins integers; let me try the same with peano naturals:
@@ -314,13 +313,13 @@ ohearnTestPeano =
     "OHearn Peano"
     [ testCase "[y == 1] ohearn-peano [snd result == 2] counter" $
         let test = isCounterWith $ \p ->
-                     case lookup (SimpleSMT.Atom "pir_x") p of
-                       Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _]))
-                         -> fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
-                       _ -> False
-        in exec (proveAnyWithFuel 30 test) conditionals1Peano condWrongTriplePeano *=* True
-      -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
-      --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
+              case lookup (SimpleSMT.Atom "pir_x") p of
+                Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _])) ->
+                  fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
+                _ -> False
+         in exec (proveAnyWithFuel 30 test) conditionals1Peano condWrongTriplePeano *=* True
+        -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
+        --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
 
 switchSides :: (Term Ex, Term Ex) -> (Term Ex, Term Ex)
@@ -335,12 +334,14 @@ tests =
         testCase "[input > 0] add 1 [result > 1] verified" $
           exec prove add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "[isNothing x] isJust x [not result] verified" $
-          exec prove
+          exec
+            prove
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isNothing x|])
             `pathSatisfies` (all isNoCounter .&. any isVerified),
         testCase "[isJust x] isJust x [not result] counter" $
-          exec prove
+          exec
+            prove
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isJust x|])
             `pathSatisfies` any isCounter
@@ -358,6 +359,7 @@ tests =
   ]
 
 -- * MinSwap example
+
 
 minswap :: (Program Ex, Type Ex, Term Ex)
 minswap =
@@ -492,6 +494,25 @@ condMinSwap =
     [term| \(result : Bool) (v : Value) . correct_isUnity example_ac v |]
   )
 
+bug :: (Program Ex, Type Ex, Term Ex)
+bug =
+  ( [prog|
+
+fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
+  = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
+
+fun appSym : all (k : Type) . (k -> k -> Bool) -> k -> Bool
+  = /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (predi m) m
+
+fun eqInt : Integer -> Integer -> Bool
+  = \(x : Integer) (y : Integer) . x == y
+
+fun main : Bool = appSym @Integer eqInt 2
+    |],
+    [ty|Bool|],
+    [term| \(v : Value) . validator v |]
+  )
+
 execFull ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
   (Program Ex, Type Ex, Term Ex) ->
@@ -499,7 +520,12 @@ execFull ::
   IO (Either String a)
 execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
   mockPrtT $ do
-    let decls = defunctionalize $ monomorphize $ uncurry PrtUnorderedDefs program
+    let prog0 = uncurry PrtUnorderedDefs program
+    -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
+    let prog1 = monomorphize prog0
+    -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
+    let decls = defunctionalize $ prog1
+    -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
     orderedDecls <- elimEvenOddMutRec decls
     flip runReaderT orderedDecls $
       toDo (Problem tyRes fn assume toProve)
@@ -509,5 +535,5 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 30 isCounter) minswap condMinSwap *=* True
+        execFull (proveAnyWithFuel 30 isCounter) bug condMinSwap *=* True
     ]

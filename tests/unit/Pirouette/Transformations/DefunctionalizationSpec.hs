@@ -181,7 +181,10 @@ equalModuloDestructors :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex -> Assertio
 equalModuloDestructors p1 p2 = do
   let decls1 = Map.filter (not . isDestructor) $ prtUODecls p1
       decls2 = Map.filter (not . isDestructor) $ prtUODecls p2
-  decls1 @=? decls2
+      msg = unlines [ "## decls1: ", renderSingleLineStr (pretty decls1)
+                    , "" , "## decls2: ", renderSingleLineStr (pretty decls2)
+                    ]
+  assertBool msg (decls1 == decls2)
   prtUOMainTerm p1 @=? prtUOMainTerm p2
   where
       isDestructor DDestructor {} = True
