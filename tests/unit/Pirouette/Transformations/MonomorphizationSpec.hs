@@ -44,6 +44,12 @@ fun fold : all a : Type . Monoid a -> List a -> a
                 zero
           )
 
+fun maybeSum : all (x : Type) . Maybe x -> Maybe x -> Maybe x
+  = /\ (x : Type) . \(mx : Maybe x)(my : Maybe x)
+  . match_Maybe @x mx @(Maybe x)
+      my
+      (\(jx : x) . Just @x jx)
+
 fun intMonoid : Monoid Integer
      = Mon @Integer 0 (\(x : Integer) (y : Integer) . x + y)
 
@@ -70,7 +76,7 @@ tests =
     testCase "findPolyHOFDefs picks 'Monoid'" $
       assertBool "not there" $ "Monoid" `M.member` findPolyHOFDefs (prtUODecls sampleUDefs),
     -- In order to get the transitive closure of all the definitions that use ho-defs,
-    -- we rely on 'hofsClosure':
+    -- we rely on 'hofsClosure'.
     testCase "hofsClosure picks the expected defs" $
       let ds = prtUODecls sampleUDefs
        in M.keys (hofsClosure ds (findPolyHOFDefs ds)) @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],

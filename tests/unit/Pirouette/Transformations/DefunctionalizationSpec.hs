@@ -194,11 +194,11 @@ tests =
     testCase "add and const, monomorphic" $
       defunctionalize (uDefs addConst) `equalModuloDestructors` uDefs addConstDefunc,
     testCase "data type, monomorphic, free variables" $
-      defunctionalize (uDefs dataType) `equalModuloDestructors` uDefs dataTypeDefunc
-    -- testCase "add and apply, polymorphic" $
-    --   monoDefunc (uDefs addAndApplyPoly) `equalModuloDestructors` uDefs addAndApplyPoly,
-    -- testCase "add and const, polymorphic" $
-    --   monoDefunc (uDefs addConstPoly) `equalModuloDestructors` uDefs addConstPoly
+      defunctionalize (uDefs dataType) `equalModuloDestructors` uDefs dataTypeDefunc,
+    testCase "add and apply, polymorphic" $
+      monoDefunc (uDefs addAndApplyPoly) `equalModuloDestructors` uDefs addAndApplyPoly,
+    testCase "add and const, polymorphic" $
+      monoDefunc (uDefs addConstPoly) `equalModuloDestructors` uDefs addConstPoly
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex

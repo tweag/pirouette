@@ -15,6 +15,7 @@ import Control.Arrow ((***))
 import Control.Monad.RWS.Strict
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
+import Data.Generics.Uniplate.Operations
 import Data.List (nub, sortOn)
 import qualified Data.Map as M
 import Data.Maybe
@@ -28,17 +29,48 @@ import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
+import Debug.Trace
+import Control.Monad.Except
+import Pirouette.Transformations.Monomorphization (hofsClosure, findPolyHOFDefs)
 
-defunctionalize ::
-  (LanguagePretty lang, LanguageBuiltins lang) =>
-  PrtUnorderedDefs lang ->
-  PrtUnorderedDefs lang
-defunctionalize defs = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
+defunctionalize :: (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+defunctionalize defs =
+  case defunctionalizeAssumptions defs of
+    () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
     (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpandAll defs) mempty (DefunState mempty)
 
     typeDecls = mkClosureTypes closureCtorInfos
     applyFunDecls = mkApplyFuns closureCtorInfos
+
+defunctionalizeAssumptions :: (Language lang) => PrtUnorderedDefs lang -> ()
+defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -> defOk n d >> return d) $ defs
+  where
+    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
+    getDtorName (DTypeDef Datatype {..}) = Just destructor
+    getDtorName _ = Nothing
+
+    hofs = hofsClosure (prtUODecls defs) (findPolyHOFDefs $ prtUODecls defs)
+
+    defOk :: forall lang . (Language lang) => Name -> Definition lang -> Either String ()
+    defOk n (DFunDef FunDef {..}) =
+      let termAbs = [ t | t@SystF.Abs {} <- universe funBody ]
+
+          tyArgs :: [ Arg lang ]
+          tyArgs = [ thisTyArgs | (SystF.App (SystF.Free (TermSig t)) args) <- universe funBody
+                       , t `S.notMember` dtorsNames
+                       , thisTyArgs <- filter SystF.isTyArg args
+                       , not $ null thisTyArgs ]
+
+          tyVars :: [ Var lang ]
+          tyVars = [ t | t@(SystF.Bound _ _) <- universeBi funTy ]
+       in if n `M.member` hofs
+          then if null termAbs && null tyArgs && null tyVars
+            then Right ()
+            else Left $ "Defunctionalization will fail for: " ++ show n ++ "\n"
+                     ++ show termAbs ++ show tyArgs ++ show tyVars
+          else Right ()
+    defOk _ _ = return ()
 
 -- * Defunctionalization of types
 
@@ -114,7 +146,9 @@ defunFuns defs = defunCalls toDefun defs'
 -- * Closure type generation
 
 mkClosureTypes :: (Language lang) => [ClosureCtorInfo lang] -> Decls lang
-mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
+mkClosureTypes infos =
+  let xs = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
+   in trace ("Generating closures for: " ++ show (M.keys xs)) xs
   where
     types = M.toList $ M.fromListWith (<>) [(closureTypeName $ hofType $ hofArgInfo info, [info]) | info <- infos]
     typeDecls =
