@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Pirouette.Transformations.DefunctionalizationSpec (tests) where
 
@@ -12,17 +13,55 @@ import Data.Map as Map
 import Language.Pirouette.Example
 import Pirouette.Monad
 import Pirouette.Term.Syntax
+import Pirouette.Transformations
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import Test.Tasty
 import Test.Tasty.HUnit
 
+tests :: [TestTree]
+tests =
+  [ testGroup "Monomorphic" defuncTestsMono,
+    testGroup "Polymorphic" defuncTestsPoly
+  ]
+
 uDefs :: Program Ex -> PrtUnorderedDefs Ex
 uDefs = uncurry PrtUnorderedDefs
 
+-- * Monomorphic Tests
+
+defuncTestsMono :: [TestTree]
+defuncTestsMono =
+  [ testCase "add and apply, monomorphic" $
+      defunctionalize (uDefs addAndApply) `equalModuloDestructors` uDefs addAndApplyDefunc,
+    testCase "add and const, monomorphic" $
+      defunctionalize (uDefs addConst) `equalModuloDestructors` uDefs addConstDefunc,
+    testCase "data type, monomorphic, free variables" $
+      defunctionalize (uDefs dataType) `equalModuloDestructors` uDefs dataTypeDefunc
+  ]
+  where
+    -- We're testing equality of definitions except for destructors
+    equalModuloDestructors :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex -> Assertion
+    equalModuloDestructors p1 p2 = do
+      let decls1 = Map.filter (not . isDestructor) $ prtUODecls p1
+          decls2 = Map.filter (not . isDestructor) $ prtUODecls p2
+          msg =
+            unlines
+              [ "## decls1: ",
+                renderSingleLineStr (pretty decls1),
+                "",
+                "## decls2: ",
+                renderSingleLineStr (pretty decls2)
+              ]
+      assertBool msg (decls1 == decls2)
+      prtUOMainTerm p1 @=? prtUOMainTerm p2
+      where
+        isDestructor DDestructor {} = True
+        isDestructor _ = False
+
 addAndApply, addAndApplyDefunc :: Program Ex
 (addAndApply, addAndApplyDefunc) =
-  ([prog|
+  ( [prog|
 fun add : Integer -> Integer -> Integer
     = \(x : Integer) (y : Integer) . x + y
 
@@ -33,7 +72,8 @@ fun two : Integer
     = apply (add 1) 1
 
 fun main : Integer = 42
-|], [prog|
+|],
+    [prog|
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
     = \(cls : Closure!!TyInteger_TyInteger) .
       match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer) (\(η : Integer) . add 1 η)
@@ -51,11 +91,12 @@ fun two : Integer
     = apply Closure!!TyInteger_TyInteger_ctor_0 1
 
 fun main : Integer = 42
-|])
+|]
+  )
 
 addConst, addConstDefunc :: Program Ex
 (addConst, addConstDefunc) =
-  ([prog|
+  ( [prog|
 fun add : Integer -> Integer -> Integer
     = \(x : Integer) (y : Integer) . x + y
 
@@ -75,7 +116,8 @@ fun four : Integer
    = apply (apply (add 2)) 2
 
 fun main : Integer = 42
-|], [prog|
+|],
+    [prog|
 data Closure!!TyInteger_TyInteger
   = Closure!!TyInteger_TyInteger_ctor_0 : Closure!!TyInteger_TyInteger
   | Closure!!TyInteger_TyInteger_ctor_1 : Closure!!TyInteger_TyInteger
@@ -109,11 +151,12 @@ fun two : Integer
     = apply Closure!!TyInteger_TyInteger_ctor_3 1
 
 fun main : Integer = 42
-|])
+|]
+  )
 
 dataType, dataTypeDefunc :: Program Ex
 (dataType, dataTypeDefunc) =
-  ([prog|
+  ( [prog|
 data IntHomo
   = IntHomoC : (Integer -> Integer) -> IntHomo
 
@@ -121,7 +164,8 @@ fun applyIntHomoToOne : IntHomo -> Integer
   = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Integer -> Integer) . f 1)
 
 fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (\(x : Integer) . x + k))
-|], [prog|
+|],
+    [prog|
 data Closure!!TyInteger_TyInteger
   = Closure!!TyInteger_TyInteger_ctor_0 : Integer -> Closure!!TyInteger_TyInteger
 
@@ -136,73 +180,34 @@ fun applyIntHomoToOne : IntHomo -> Integer
   = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Closure!!TyInteger_TyInteger) . _Apply!!TyInteger_TyInteger f 1)
 
 fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (Closure!!TyInteger_TyInteger_ctor_0 k))
-|])
-
-addAndApplyPoly :: Program Ex
-addAndApplyPoly =
-  [prog|
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
-
-fun apply : all (a : Type) (b : Type) . (a -> b) -> a -> b
-    = /\ (a : Type) (b : Type) . \ (f : a -> b) (x : a) . f x
-
-fun two : Integer
-    = apply @Integer @Integer (add 1) 1
-
-fun main : Integer = 42
 |]
+  )
 
-addConstPoly :: Program Ex
-addConstPoly =
-  [prog|
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
+-- * Polymorphic Tests
 
-fun const : all (a : Type) (b : Type) . a -> b -> a
-    = /\ (a : Type) (b : Type) . \ (x : a) (y : b) . x
-
-fun apply : all (a : Type) (b : Type) . (a -> b) -> a -> b
-    = /\ (a : Type) (b : Type) . \ (f : a -> b) (x : a) . f x
-
-fun two : Integer
-    = apply @Integer @Integer (add 1) 1
-
-fun three : Integer
-    = apply @Integer @Integer (const @Integer @Integer 3) 10
-
-fun four : Integer
-   = apply @Integer @Integer (apply @Integer @Integer (add 2)) 2
-
-fun main : Integer = 42
-|]
-
-equalModuloDestructors :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex -> Assertion
-equalModuloDestructors p1 p2 = do
-  let decls1 = Map.filter (not . isDestructor) $ prtUODecls p1
-      decls2 = Map.filter (not . isDestructor) $ prtUODecls p2
-      msg = unlines [ "## decls1: ", renderSingleLineStr (pretty decls1)
-                    , "" , "## decls2: ", renderSingleLineStr (pretty decls2)
-                    ]
-  assertBool msg (decls1 == decls2)
-  prtUOMainTerm p1 @=? prtUOMainTerm p2
-  where
-      isDestructor DDestructor {} = True
-      isDestructor _              = False
-
-tests :: [TestTree]
-tests =
-  [ testCase "add and apply, monomorphic" $
-      defunctionalize (uDefs addAndApply) `equalModuloDestructors` uDefs addAndApplyDefunc,
-    testCase "add and const, monomorphic" $
-      defunctionalize (uDefs addConst) `equalModuloDestructors` uDefs addConstDefunc,
-    testCase "data type, monomorphic, free variables" $
-      defunctionalize (uDefs dataType) `equalModuloDestructors` uDefs dataTypeDefunc,
-    testCase "add and apply, polymorphic" $
-      monoDefunc (uDefs addAndApplyPoly) `equalModuloDestructors` uDefs addAndApplyPoly,
-    testCase "add and const, polymorphic" $
-      monoDefunc (uDefs addConstPoly) `equalModuloDestructors` uDefs addConstPoly
+defuncTestsPoly :: [TestTree]
+defuncTestsPoly =
+  [ testCase "Nested closures are generated" $
+      case monoDefunc (uDefs bug) of
+        Left err -> assertFailure err
+        Right _ -> return ()
   ]
   where
-    monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
-    monoDefunc = defunctionalize . monomorphize
+    monoDefunc :: PrtUnorderedDefs Ex -> Either String (PrtOrderedDefs Ex)
+    monoDefunc = mockPrt . elimEvenOddMutRec . defunctionalize . monomorphize
+
+
+bug :: Program Ex
+bug =
+  [prog|
+fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
+  = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
+
+fun appSym : all (k : Type) . (k -> k -> Bool) -> k -> Bool
+  = /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (predi m) m
+
+fun eqInt : Integer -> Integer -> Bool
+  = \(x : Integer) (y : Integer) . x == y
+
+fun main : Bool = appSym @Integer eqInt 2
+|]
