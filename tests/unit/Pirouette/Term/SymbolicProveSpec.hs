@@ -494,25 +494,6 @@ condMinSwap =
     [term| \(result : Bool) (v : Value) . correct_isUnity example_ac v |]
   )
 
-bug :: (Program Ex, Type Ex, Term Ex)
-bug =
-  ( [prog|
-
-fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
-  = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
-
-fun appSym : all (k : Type) . (k -> k -> Bool) -> k -> Bool
-  = /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (predi m) m
-
-fun eqInt : Integer -> Integer -> Bool
-  = \(x : Integer) (y : Integer) . x == y
-
-fun main : Bool = appSym @Integer eqInt 2
-    |],
-    [ty|Bool|],
-    [term| \(v : Value) . validator v |]
-  )
-
 execFull ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
   (Program Ex, Type Ex, Term Ex) ->
@@ -535,5 +516,5 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 30 isCounter) bug condMinSwap *=* True
+        execFull (proveAnyWithFuel 30 isCounter) minswap condMinSwap *=* True
     ]

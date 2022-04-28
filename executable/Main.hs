@@ -143,7 +143,7 @@ mainOpts opts uDefs = do
       else runIncorrectness (constraintFile opts) t
     symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
-processDecls :: (LanguageBuiltins lang, LanguagePretty lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
+processDecls :: (LanguageBuiltinTypes lang, LanguageBuiltins lang, LanguagePretty lang, MonadIO m) => CliOpts -> PrtUnorderedDefs lang -> PrtT m (PrtOrderedDefs lang)
 processDecls opts uDefs = do
   -- If the user wishes, we can perform checks on the sanity of the translation
   -- from PlutusIR to PrtDefs
