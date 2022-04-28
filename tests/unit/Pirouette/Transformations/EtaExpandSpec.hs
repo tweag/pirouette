@@ -40,6 +40,9 @@ fun const : all (a : Type) (b : Type) . a -> b -> a
 fun omg : all a : Type . Integer -> a -> all f : (Type -> Type) . f a -> Integer
      = /\ a : Type . \ (i : Integer) (x : a) . /\ f : Type -> Type . const @Integer @(f a) i
 
+fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
+  = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
+
 fun main : Integer = 42
 |]
 
@@ -60,10 +63,12 @@ tests :: [TestTree]
 tests =
   [ testCase "add ~ \\x y -> add x y" $
       [term| add |] `isEtaEq` [term| \(x : Integer) (y : Integer) . add x y |],
-    testCase "f (add 42) ~ f (\\x -> add 42 x)" $
-      [term| f (add 42) |] `isEtaEq` [term| f (\ x : Integer . add 42 x) |],
+    testCase "appOne (predi m) m ~ appOne (\\o -> preti m o) m" $
+      [term| /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (predi m) m |]
+        `isEtaEq` [term| /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (\o : k . predi m o) m |],
     testCase "const ~  /\\(a : Type) (b : Type) . \\(x : a) (y : b) . const @a @b x y" $
       [term| const |] `isEtaEq` [term| /\(a : Type) (b : Type) . \(x : a) (y : b) . const @a @b x y |],
     testCase "omg @Integer 42 ~ \\a : Integer . /\\ f : (Type -> Type) . \\(x : f Integer) . omg @Integer 42 a @f x" $
-      [term| omg @Integer 42 |] `isEtaEq` [term| \a : Integer . /\ f : (Type -> Type) . \(x : f Integer) . omg @Integer 42 a @f x |]
+      [term| omg @Integer 42 |]
+        `isEtaEq` [term| \a : Integer . /\ f : (Type -> Type) . \(x : f Integer) . omg @Integer 42 a @f x |]
   ]

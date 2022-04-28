@@ -15,7 +15,6 @@ import Control.Arrow ((***))
 import Control.Monad.RWS.Strict
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
-import Data.Generics.Uniplate.Operations
 import Data.List (nub, sortOn)
 import qualified Data.Map as M
 import Data.Maybe
@@ -29,11 +28,15 @@ import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
-import Debug.Trace
-import Control.Monad.Except
 import Pirouette.Transformations.Monomorphization (hofsClosure, findPolyHOFDefs)
 
-defunctionalize :: (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+-- Defunctionalization assumes lots of things! Namelly:
+--
+-- 1. No polymorphic higher-order function occurence
+-- 2. everything has been fully eta-expanded
+-- 3. ??? still discovering
+
+defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 defunctionalize defs =
   case defunctionalizeAssumptions defs of
     () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
@@ -146,9 +149,7 @@ defunFuns defs = defunCalls toDefun defs'
 -- * Closure type generation
 
 mkClosureTypes :: (Language lang) => [ClosureCtorInfo lang] -> Decls lang
-mkClosureTypes infos =
-  let xs = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
-   in trace ("Generating closures for: " ++ show (M.keys xs)) xs
+mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
   where
     types = M.toList $ M.fromListWith (<>) [(closureTypeName $ hofType $ hofArgInfo info, [info]) | info <- infos]
     typeDecls =
@@ -200,7 +201,7 @@ data ClosureCtorInfo lang = ClosureCtorInfo
     ctorName :: Name,
     ctorArgs :: [Type lang],
     hofTerm :: Term lang
-  }
+  } deriving (Show)
 
 type DefunCallsCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
@@ -240,6 +241,7 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
     replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _ (_, _, arg) = pure arg
 
+
 mkClosureArg ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   [(FlatArgType lang, SystF.Ann Name)] ->
@@ -249,6 +251,7 @@ mkClosureArg ::
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
+
   tell [ClosureCtorInfo {hofTerm = remapFreeDeBruijns free2closurePos lam, ..}]
   pure $ SystF.TermArg $ SystF.Free (TermSig ctorName) `SystF.App` [SystF.TermArg $ SystF.Bound (snd $ ctx !! fromIntegral idx) idx `SystF.App` [] | idx <- frees]
   where
@@ -294,6 +297,10 @@ newCtorIdx ty = do
 
 -- * Defunctionalization of function definitions
 
+-- TODO: rename to 'HOArgPos' and give example; the idea being
+-- that @[Nothing, Just (HofArg "Int -> Bool"), Nothing]@ gives us info
+-- that we need to defunctionalize the second argument to a function expecting
+-- three arguments
 type HofsList lang = [Maybe (DefunHofArgInfo lang)]
 
 traverseDefs ::
