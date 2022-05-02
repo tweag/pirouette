@@ -98,9 +98,9 @@ worker ::
   SymTerm lang ->
   SymEvalT lang m (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  -- liftIO $ print (pretty bodyTerm)
-  -- liftIO $ print (pretty assumeTerm)
-  -- liftIO $ print (pretty proveTerm)
+  liftIO $ print (pretty bodyTerm)
+  liftIO $ print (pretty assumeTerm)
+  liftIO $ print (pretty proveTerm)
   -- _ <- liftIO getLine
 
   -- terms are only useful if they are in WHNF or are stuck
@@ -127,7 +127,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   -- now try to prune if we can translate the things
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
     -- if everything can be translated, try to prune with it
-    (Right _, Right assumeCond, Right proveCond) ->
+    (Right _, Right assumeCond, Right proveCond) -> do
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
@@ -137,9 +137,9 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     PruneCounterFound model -> pure $ CounterExample bodyTerm model
     _ -> do
       -- one step of evaluation on each
-      (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
-      (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
-      (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
+      (bodyTerm', bodyWasEval) <- runWriterT (symEvalOneStep bodyTerm)
+      (assumeTerm', assummeWasEval) <- runWriterT (symEvalOneStep assumeTerm)
+      (proveTerm', proveWasEval) <- runWriterT (symEvalOneStep proveTerm)
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
       -- check the fuel
       noMoreFuel <- fuelExhausted <$> currentFuel

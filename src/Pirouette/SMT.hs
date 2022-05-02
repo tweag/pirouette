@@ -111,14 +111,14 @@ solverPop = do
 
 -- | Declare a single datatype in the current solver session.
 declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) [Name]
-declareDatatype typeName (Datatype _ typeVariabes _ cstrs) = do
+declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
   solver <- ask
-  (constr', _) <- runWriterT $ mapM constructorFromPIR cstrs
+  (constr', _) <- runWriterT $ mapM (constructorFromPIR typeVariables) cstrs
   liftIO $ do
     SimpleSMT.declareDatatype
       solver
       (toSmtName typeName)
-      (map (toSmtName . fst) typeVariabes)
+      (map (toSmtName . fst) typeVariables)
       constr'
   return $ typeName : map fst cstrs
 

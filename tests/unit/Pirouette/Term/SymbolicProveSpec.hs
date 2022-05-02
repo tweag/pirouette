@@ -518,7 +518,7 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 30 isCounter') minswap condMinSwap *=* True
+        execFull (proveAnyWithFuel 50 isCounter') minswap condMinSwap *=* True
     ]
   where
     isCounter' t

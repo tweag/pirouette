@@ -179,15 +179,15 @@ translateArg _ (Raw.TyArg ty) = translateType ty
 -- function translates constructor types in PlutusIR to this layout and
 -- provides required names for the fields of product types.
 constructorFromPIR ::
-  forall builtins meta m.
+  forall builtins meta typeVariable m.
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
+  [typeVariable] ->
   (Name, TypeMeta builtins meta) ->
   TranslatorT m (String, [(String, SmtLib.SExpr)])
-constructorFromPIR (name, constructorType) = do
+constructorFromPIR tyVars (name, constructorType) = do
   -- Fields of product types must be named: we append ids to the constructor name
   let fieldNames = map (((toSmtName name ++ "_") ++) . show) [1 :: Int ..]
-  cstrs <- zip fieldNames <$> aux constructorType
+      (_, unwrapped) = Raw.tyUnwrapBinders (length tyVars) constructorType
+      (args, _) = Raw.tyFunArgs unwrapped
+  cstrs <- zip fieldNames <$> mapM translateType args
   return (toSmtName name, cstrs)
-  where
-    aux :: TypeMeta builtins meta -> TranslatorT m [SmtLib.SExpr]
-    aux x = let (args, _) = Raw.tyFunArgs x in mapM translateType args

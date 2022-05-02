@@ -224,7 +224,7 @@ runSymEvalTWorker st symEvalT = do
     -- we'll rely on cvc4 with dbg messages
     s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    --- s = SMT.cvc4_ALL_SUPPORTED False
+    -- s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
