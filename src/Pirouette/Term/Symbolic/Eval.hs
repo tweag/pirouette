@@ -81,7 +81,6 @@ import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Pirouette.Term.Transformations
 import Prettyprinter hiding (Pretty (..))
 
 -- import Debug.Trace (trace)
@@ -339,8 +338,10 @@ runEvaluation t = do
 currentFuel :: (SymEvalConstr lang m) => SymEvalT lang m AvailableFuel
 currentFuel = gets sestFuel
 
+-- We no longer do any normalization: these functions are all slightly wrong,
+-- since they were originally thought of for the TLA+ translation
 normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar -> m (TermMeta lang SymVar)
-normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
+normalizeTerm = return -- destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
 -- | Top level symbolic evaluation loop.
 symeval ::
@@ -465,6 +466,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
         (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
+        tell somethingWasEvaluated -- just in case
         motiveInWNHF <- lift $ termIsWHNFOrMeta term'
         -- We only do the case distinction if we haven't taken any step
         -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
@@ -488,7 +490,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
                   Just constr -> do
                     lift $ learn constr
                     consumeFuel
-                    pure $ caseTerm `R.appN` symbArgs
+                    pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
   R.Meta (SymVar vr) -> do
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint

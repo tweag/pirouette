@@ -508,7 +508,7 @@ execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
     let prog1 = monomorphize prog0
     -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
     let decls = defunctionalize prog1
-    -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
+    liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
     orderedDecls <- elimEvenOddMutRec decls
     flip runReaderT orderedDecls $
       toDo (Problem tyRes fn assume toProve)
@@ -518,7 +518,7 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 50 isCounter') minswap condMinSwap *=* True
+        execFull (proveAnyWithFuel 100 isCounter') minswap condMinSwap *=* True
     ]
   where
     isCounter' t

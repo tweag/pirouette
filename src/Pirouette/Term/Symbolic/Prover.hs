@@ -98,9 +98,10 @@ worker ::
   SymTerm lang ->
   SymEvalT lang m (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  liftIO $ print (pretty bodyTerm)
-  liftIO $ print (pretty assumeTerm)
-  liftIO $ print (pretty proveTerm)
+  -- liftIO $ putStrLn "NORMALIZED"
+  -- liftIO $ print (pretty bodyTerm)
+  -- liftIO $ print (pretty assumeTerm)
+  -- liftIO $ print (pretty proveTerm)
   -- _ <- liftIO getLine
 
   -- terms are only useful if they are in WHNF or are stuck
@@ -140,9 +141,15 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       (bodyTerm', bodyWasEval) <- runWriterT (symEvalOneStep bodyTerm)
       (assumeTerm', assummeWasEval) <- runWriterT (symEvalOneStep assumeTerm)
       (proveTerm', proveWasEval) <- runWriterT (symEvalOneStep proveTerm)
+      liftIO $ putStrLn "ONE STEP"
+      liftIO $ print (pretty bodyTerm')
+      liftIO $ print (pretty assumeTerm')
+      liftIO $ print (pretty proveTerm')
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
+      liftIO $ print somethingWasEval
       -- check the fuel
       noMoreFuel <- fuelExhausted <$> currentFuel
+      currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' []
         else do
