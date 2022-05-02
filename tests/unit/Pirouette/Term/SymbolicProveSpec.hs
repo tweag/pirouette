@@ -67,8 +67,8 @@ maybes :: Program Ex
 maybes =
   [prog|
 data MaybeInt
-  = JustInt : Integer -> Maybe Int
-  | NothingInt : Maybe Int
+  = JustInt : Integer -> MaybeInt
+  | NothingInt : MaybeInt
 
 fun isNothing : MaybeInt -> Bool
   = \(m : MaybeInt) . match_MaybeInt m @Bool (\(n : Integer) . False) True
