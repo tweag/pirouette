@@ -257,10 +257,19 @@ assertConstraint,
     [Name] ->
     C.Constraint lang meta ->
     SMT.SolverT m (Bool, UsedAnyUFs)
-assertConstraint knownNames c = do
+assertConstraint knownNames c@C.Bot = do
   (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assert expr
   pure (done, usedAnyUFs)
+assertConstraint knownNames (C.And atomics) = do
+  (dones, usedAnyUFs) <- unzip <$> forM atomics (\atomic -> do
+    -- do it one by one
+    (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames (C.And [atomic])
+    SMT.assert expr
+    pure (done, usedAnyUFs)
+    )
+  pure (and dones, mconcat usedAnyUFs)
+  
 assertNotConstraint knownNames c = do
   (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assertNot expr

@@ -908,7 +908,9 @@ and :: SExpr -> SExpr -> SExpr
 and p q = fun "and" [p, q]
 
 andMany :: [SExpr] -> SExpr
-andMany xs = if null xs then bool True else fun "and" xs
+andMany [] = bool True
+andMany [x] = x
+andMany xs = fun "and" xs
 
 -- | Disjunction.
 or :: SExpr -> SExpr -> SExpr
