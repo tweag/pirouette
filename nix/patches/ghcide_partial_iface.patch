@@ -1,8 +1,7 @@
 diff --git a/src/Development/IDE/Core/Compile.hs b/src/Development/IDE/Core/Compile.hs
-index 9279abd2..8c5dbda4 100644
 --- a/src/Development/IDE/Core/Compile.hs
 +++ b/src/Development/IDE/Core/Compile.hs
-@@ -271,7 +271,7 @@ mkHiFileResultCompile session' tcm simplified_guts ltype = catchErrs $ do
+@@ -398,7 +398,7 @@ mkHiFileResultCompile session' tcm simplified_guts ltype = catchErrs $ do
    let !partial_iface = force (mkPartialIface session details simplified_guts)
    final_iface <- mkFullIface session partial_iface Nothing
  #elif MIN_VERSION_ghc(8,10,0)

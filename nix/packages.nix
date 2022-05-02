@@ -21,7 +21,7 @@ let
     (iohkpkgs.haskell-nix.hackage-package {
       compiler-nix-name = "ghc810420210212";
       name = "haskell-language-server";
-      version = "1.6.1.1";
+      version = "1.7.0.0";
       modules = [{
         packages.ghcide.patches = [ patches/ghcide_partial_iface.patch ];
         packages.ghcide.flags.ghc-patched-unboxed-bytecode = true;
