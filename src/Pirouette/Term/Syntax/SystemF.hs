@@ -107,6 +107,11 @@ tyArity :: AnnType ann tyVar -> Int
 tyArity (TyAll _ _ t) = 1 + tyArity t
 tyArity t = tyMonoArity t
 
+-- | Unlike 'tyArity', we only compute how many type arguments a type can receive
+tyPolyArity :: AnnType ann tyVar -> Int
+tyPolyArity (TyAll _ _ t) = 1 + tyPolyArity t
+tyPolyArity _ = 0
+
 -- | Unlike 'tyArity', we only compute how many term arguments a term of
 --  the given type has to receive
 tyMonoArity :: AnnType ann tyVar -> Int

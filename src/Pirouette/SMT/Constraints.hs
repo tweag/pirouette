@@ -7,11 +7,9 @@
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
-import Control.Applicative ((<|>))
 import Data.Either
 import Data.List (intersperse)
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Pirouette.Monad
 import Pirouette.SMT.Base
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
@@ -40,8 +38,8 @@ type Env lang = Map Name (Type lang)
 data AtomicConstraint lang meta
   = Assign Name (TermMeta lang meta)
   | VarEq Name Name
-  | NonInlinableSymbolEq (Maybe (TypeMeta lang meta)) (TermMeta lang meta) (TermMeta lang meta)
-  | NonInlinableSymbolNotEq (Maybe (TypeMeta lang meta)) (TermMeta lang meta) (TermMeta lang meta)
+  | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
+  | NonInlinableSymbolNotEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
   | Native SimpleSMT.SExpr
   deriving (Eq, Show)
@@ -85,9 +83,9 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (AtomicConstraint lang met
     pretty n <+> "↦" <+> pretty term
   pretty (VarEq a b) =
     pretty a <+> "⇔" <+> pretty b
-  pretty (NonInlinableSymbolEq _ t u) =
+  pretty (NonInlinableSymbolEq t u) =
     pretty t <+> "==" <+> pretty u
-  pretty (NonInlinableSymbolNotEq _ t u) =
+  pretty (NonInlinableSymbolNotEq t u) =
     pretty t <+> "/=" <+> pretty u
   pretty (OutOfFuelEq t u) =
     pretty t <+> "~~" <+> pretty u
@@ -138,34 +136,30 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) whe
 -- Hence, we chose solution #2
 atomicConstraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  Env lang ->
   [Name] ->
   AtomicConstraint lang meta ->
   TranslatorT m SimpleSMT.SExpr
-atomicConstraintToSExpr env knownNames (Assign name term) = do
+atomicConstraintToSExpr knownNames (Assign name term) = do
   let smtName = toSmtName name
-  let (Just ty) = Map.lookup name env
-  d <-
-    translateTerm knownNames (Just $ typeToMeta ty) term
-      <|> translateTerm knownNames Nothing term
+  d <- translateTerm knownNames term
   return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
-atomicConstraintToSExpr _ _knownNames (VarEq a b) = do
+atomicConstraintToSExpr _knownNames (VarEq a b) = do
   let aName = toSmtName a
   let bName = toSmtName b
   return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
-atomicConstraintToSExpr _ knownNames (NonInlinableSymbolEq ty term1 term2) = do
-  t1 <- translateTerm knownNames ty term1
-  t2 <- translateTerm knownNames ty term2
+atomicConstraintToSExpr knownNames (NonInlinableSymbolEq term1 term2) = do
+  t1 <- translateTerm knownNames term1
+  t2 <- translateTerm knownNames term2
   return $ t1 `SimpleSMT.eq` t2
-atomicConstraintToSExpr _ knownNames (NonInlinableSymbolNotEq ty term1 term2) = do
-  t1 <- translateTerm knownNames ty term1
-  t2 <- translateTerm knownNames ty term2
+atomicConstraintToSExpr knownNames (NonInlinableSymbolNotEq term1 term2) = do
+  t1 <- translateTerm knownNames term1
+  t2 <- translateTerm knownNames term2
   return $ SimpleSMT.not (t1 `SimpleSMT.eq` t2)
-atomicConstraintToSExpr _ knownNames (OutOfFuelEq term1 term2) = do
-  t1 <- translateTerm knownNames Nothing term1
-  t2 <- translateTerm knownNames Nothing term2
+atomicConstraintToSExpr knownNames (OutOfFuelEq term1 term2) = do
+  t1 <- translateTerm knownNames term1
+  t2 <- translateTerm knownNames term2
   return $ t1 `SimpleSMT.eq` t2
-atomicConstraintToSExpr _ _knownNames (Native expr) =
+atomicConstraintToSExpr _knownNames (Native expr) =
   return expr
 
 -- Since the translation of atomic constraints can fail,
@@ -174,12 +168,11 @@ atomicConstraintToSExpr _ _knownNames (Native expr) =
 -- A 'False' indicates that some have been forgotten during the translation.
 constraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  Env lang ->
   [Name] ->
   Constraint lang meta ->
   m (Bool, UsedAnyUFs, SimpleSMT.SExpr)
-constraintToSExpr env knownNames (And constraints) = do
-  atomTrads <- mapM (runTranslator . atomicConstraintToSExpr env knownNames) constraints
+constraintToSExpr knownNames (And constraints) = do
+  atomTrads <- mapM (runTranslator . atomicConstraintToSExpr knownNames) constraints
   let (translations, usedUFs) = unzip (rights atomTrads)
   return (all isRight atomTrads, mconcat usedUFs, SimpleSMT.andMany translations)
-constraintToSExpr _ _ Bot = return (True, NotUsedAnyUFs, SimpleSMT.bool False)
+constraintToSExpr _ Bot = return (True, NotUsedAnyUFs, SimpleSMT.bool False)

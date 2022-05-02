@@ -164,18 +164,18 @@ instance LanguageSMTBranches Ex where
             pure $
               Just
                 [ -- either they are equal
-                  Branch (And [NonInlinableSymbolEq (Just tInt) x y]) t,
+                  Branch (And [NonInlinableSymbolEq x y]) t,
                   -- or they are not
-                  Branch (And [NonInlinableSymbolNotEq (Just tInt) x y]) e
+                  Branch (And [NonInlinableSymbolNotEq x y]) e
                 ]
         _
           | Just _ <- termIsMeta c ->
             pure $
               Just
                 [ -- c is True => t is executed
-                  Branch (And [NonInlinableSymbolEq (Just tBool) c BTrue]) t,
+                  Branch (And [NonInlinableSymbolEq c BTrue]) t,
                   -- c is False => e is executed
-                  Branch (And [NonInlinableSymbolEq (Just tBool) c BFalse]) e
+                  Branch (And [NonInlinableSymbolEq c BFalse]) e
                 ]
         _ -> pure Nothing
   branchesBuiltinTerm _ _ _ = pure Nothing

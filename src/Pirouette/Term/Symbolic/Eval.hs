@@ -233,7 +233,7 @@ runSymEvalTWorker st symEvalT = do
       dependencyOrder <- lift $ lift prtDependencyOrder
       declNames <- runExceptT $ do
         dts <- SMT.declareDatatypes decls dependencyOrder
-        fns <- SMT.declareUninterpretedFunctions decls dependencyOrder
+        fns <- SMT.declareAsManyUninterpretedFunctionsAsPossible decls dependencyOrder
         pure (dts ++ fns)
       case declNames of
         Right usedNames -> return usedNames
@@ -255,16 +255,15 @@ instance (MonadIO m) => MonadIO (SymEvalT lang m) where
 assertConstraint,
   assertNotConstraint ::
     (PirouetteReadDefs lang m, SMT.LanguageSMT lang, SMT.ToSMT meta, MonadIO m) =>
-    C.Env lang ->
     [Name] ->
     C.Constraint lang meta ->
     SMT.SolverT m (Bool, UsedAnyUFs)
-assertConstraint env knownNames c = do
-  (done, usedAnyUFs, expr) <- C.constraintToSExpr env knownNames c
+assertConstraint knownNames c = do
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assert expr
   pure (done, usedAnyUFs)
-assertNotConstraint env knownNames c = do
-  (done, usedAnyUFs, expr) <- C.constraintToSExpr env knownNames c
+assertNotConstraint knownNames c = do
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assertNot expr
   pure (done, usedAnyUFs)
 
@@ -292,7 +291,7 @@ prune xs = SymEvalT $
         -- since we want to prune unsatisfiable path.
         -- And if a partial translation is already unsat,
         -- so is the translation of the whole set of constraints.
-        void $ assertConstraint (sestGamma env) (sestKnownNames env) (sestConstraint env)
+        void $ assertConstraint (sestKnownNames env) (sestConstraint env)
         res <- SMT.checkSat
         SMT.solverPop
         return $ case res of
@@ -398,7 +397,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
   R.Free (Builtin builtin) -> do
     -- try to evaluate the built-in
     let translator c = do
-          c' <- runTranslator $ translateTerm [] Nothing c
+          c' <- runTranslator $ translateTerm [] c
           case c' of
             Left _ -> pure Nothing
             Right (d, _) -> pure $ Just d
@@ -505,7 +504,7 @@ unify (R.App hdT argsT) (R.App hdU argsU) = do
   uTU <- unifyVar hdT hdU
   uArgs <- zipWithMPlus unifyArg argsT argsU
   return $ uTU <> mconcat uArgs
-unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq Nothing t u])
+unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq t u])
 
 unifyVar :: (LanguageBuiltins lang) => VarMeta lang SymVar -> VarMeta lang SymVar -> Maybe (Constraint lang)
 unifyVar (R.Meta s) (R.Meta r) = Just (symVarEq s r)
@@ -712,10 +711,10 @@ checkProperty cOut cIn axioms env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
-  (outTotal, _outUsedAnyUFs) <- assertConstraint vars (sestKnownNames env) cOut
+  (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
+  (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
   inconsistent <- SMT.checkSat
-  (inTotal, _inUsedAnyUFs) <- assertNotConstraint vars (sestKnownNames env) cIn
+  (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn
   let everythingWasTranslated = cstrTotal && outTotal && inTotal
   -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
   result <- SMT.checkSat

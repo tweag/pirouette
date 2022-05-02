@@ -107,7 +107,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   -- (stuck-ness if defined per language)
   knownNames <- gets sestKnownNames
   let translate t = do
-        res <- runTranslator $ translateTerm knownNames Nothing t
+        res <- runTranslator $ translateTerm knownNames t
         isWHNF <- termIsWHNFOrMeta t
         case res of
           Left e -> pure $ Left e

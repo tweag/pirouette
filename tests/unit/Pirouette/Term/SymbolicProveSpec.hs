@@ -491,7 +491,7 @@ fun main : Integer = 42
 condMinSwap :: (Term Ex, Term Ex)
 condMinSwap =
   ( [term| \(result : Bool) (v : Value) . result |],
-    [term| \(result : Bool) (v : Value) . correct_isUnity example_ac v |]
+    [term| \(result : Bool) (v : Value) . correct_isUnity v example_ac |]
   )
 
 execFull ::
@@ -505,7 +505,7 @@ execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
     -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
     let prog1 = monomorphize prog0
     -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
-    let decls = defunctionalize $ prog1
+    let decls = defunctionalize prog1
     -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
     orderedDecls <- elimEvenOddMutRec decls
     flip runReaderT orderedDecls $

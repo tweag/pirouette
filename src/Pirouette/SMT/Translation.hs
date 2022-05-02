@@ -98,75 +98,63 @@ translateTerm ::
   forall lang meta m.
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   [Name] ->
-  Maybe (TypeMeta lang meta) ->
   TermMeta lang meta ->
   TranslatorT m SmtLib.SExpr
-translateTerm _ _ (Raw.Lam _ann _ty _term) =
+translateTerm _ (Raw.Lam _ann _ty _term) =
   throwError "Translate term to smtlib: Lambda abstraction in term"
-translateTerm _ _ (Raw.Abs _ann _kind _term) =
+translateTerm _ (Raw.Abs _ann _kind _term) =
   throwError "Translate term to smtlib: Type abstraction in term"
-translateTerm knownNames ty (Raw.App var args) = case var of
+translateTerm knownNames (Raw.App var args) = case var of
   -- error cases
   Raw.Bound (Raw.Ann _name) _ ->
     throwError "translateApp: Bound variable; did you forget to apply something?"
   Raw.Free Bottom ->
     throwError "translateApp: Bottom; unclear how to translate that. WIP"
   -- meta go to ToSMT
-  Raw.Meta h -> SmtLib.app (translate h) <$> mapM (translateArg knownNames Nothing) args
+  Raw.Meta h -> SmtLib.app (translate h) <$> mapM (translateArg knownNames) args
   -- constants and builtins go to LanguageSMT
   Raw.Free (Constant c) ->
     if null args
       then return $ translateConstant @lang c
       else throwError "translateApp: Constant applied to arguments"
   Raw.Free (Builtin b) -> do
-    translatedArgs <- mapM (translateArg knownNames Nothing) args
+    translatedArgs <- mapM (translateArg knownNames) args
     case translateBuiltinTerm @lang b translatedArgs of
       Nothing -> throwError "translateApp: Built-in term applied to wrong # of args"
       Just t -> return t
   Raw.Free (TermSig name) -> do
-    _ <- traceMe ("translateApp: " ++ show name ++ "; " ++ show ty) (return ())
+    _ <- traceMe ("translateApp: " ++ show name) (return ())
     defn <- liftTranslator ("translateApp: Unknown name: " <> show name) (prtDefOf name)
     case defn of
       DConstructor ix tname
         | name `notElem` knownNames ->
           throwError $ "translateApp: Unknown constructor '" <> show name <> "'"
         | otherwise -> do
-          tdef <- liftTranslatorMaybe $ prtTypeDefOf tname
-          -- we first need to figure out the real type
-          let actualTy = case (ty, tdef) of
-                (Just ty', _) -> Just ty'
-                -- if there are no variables, we know the type in its entirety too
-                (_, Just Datatype {typeVariables = []}) -> Just $ Raw.TyApp (Raw.Free (TySig tname)) []
-                _ -> Nothing
-          -- then we need to figure out the type of the constructor
-          let cstrArgTys = do
-                Raw.TyApp _ tyArgs <- actualTy
-                Datatype {constructors} <- tdef
-                let cstrTy = snd (constructors !! ix)
-                    -- instantiate the type with the given variables
-                    instTy = Raw.tyInstantiateN (typeToMeta cstrTy) tyArgs
-                    -- there must be exactly 'length args' argument types
-                    (argTys, _) = Raw.tyFunArgs instTy
-                guard (length argTys == length args)
-                return argTys
-              -- create a list of nothings if we don't get back anything interesting
-              cstrArgTys' = maybe (replicate (length args) Nothing) (map Just) cstrArgTys
-          -- now we push the types of the arguments, if known
-          translatedArgs <- zipWithM (translateArg knownNames) cstrArgTys' args
-          -- finally we build the
-          case actualTy of
-            Just ty' ->
-              SmtLib.app
-                <$> (SmtLib.as (SmtLib.symbol (toSmtName name)) <$> translateType ty')
-                <*> pure translatedArgs
-            Nothing ->
-              pure $ SmtLib.app (SmtLib.symbol (toSmtName name)) translatedArgs
+          -- bring in the type information
+          Datatype {constructors} <-
+            liftTranslator
+              ("translateApp: Unknown type '" <> show tname <> "'")
+              (prtTypeDefOf tname)
+          -- we assume that if everything is well-typed
+          -- the constructor actually exists, hence the use of (!!)
+          let cstrTy = snd (constructors !! ix)
+              -- now we split the arguments as required for the constructor
+              (tyArgs, restArgs) = splitAt (Raw.tyPolyArity cstrTy) args
+              -- and instantiate the type
+              instTy = Raw.tyInstantiateN (typeToMeta cstrTy) (map (\(Raw.TyArg ty) -> ty) tyArgs)
+              (argTys, resultTy) = Raw.tyFunArgs instTy
+          -- there must be exactly as many arguments as required
+          guard (length argTys == length restArgs)
+          -- finally build the term
+          SmtLib.app
+            <$> (SmtLib.as (SmtLib.symbol (toSmtName name)) <$> translateType resultTy)
+            <*> mapM (translateArg knownNames) restArgs
       DFunDef _
         | name `notElem` knownNames ->
           throwError $ "translateApp: Unknown function '" <> show name <> "'"
         | otherwise -> do
           tell UsedSomeUFs
-          SmtLib.app (SmtLib.symbol (toSmtName name)) <$> mapM (translateArg knownNames Nothing) args
+          SmtLib.app (SmtLib.symbol (toSmtName name)) <$> mapM (translateArg knownNames) args
       DTypeDef _ ->
         throwError "translateApp: Type name in function name"
       -- DO NEVER TRY TO TRANSLATE THESE!!
@@ -179,13 +167,12 @@ translateTerm knownNames ty (Raw.App var args) = case var of
 translateArg ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   [Name] ->
-  Maybe (TypeMeta lang meta) ->
   ArgMeta lang meta ->
   TranslatorT m SmtLib.SExpr
-translateArg knownNames ty (Raw.TermArg term) = translateTerm knownNames ty term
+translateArg knownNames (Raw.TermArg term) = translateTerm knownNames term
 -- TODO: This case is known to create invalid SMT terms,
 -- since in SMT solver, application of a term to a type is not allowed.
-translateArg _ _ (Raw.TyArg ty) = translateType ty
+translateArg _ (Raw.TyArg ty) = translateType ty
 
 -- | The definition of constructors in SMTlib follows a fixed layout. This
 -- function translates constructor types in PlutusIR to this layout and

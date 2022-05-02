@@ -24,6 +24,7 @@ module Pirouette.SMT
     declareDatatypes,
     declareUninterpretedFunction,
     declareUninterpretedFunctions,
+    declareAsManyUninterpretedFunctionsAsPossible,
     declareVariables,
     declareVariable,
     assert,
@@ -155,6 +156,20 @@ declareUninterpretedFunctions decls orderedNames = do
   forMaybeM fnNames $ \fnName ->
     case M.lookup fnName decls of
       Just (DFunDef fdef) -> Just <$> declareUninterpretedFunction fnName fdef
+      _ -> return Nothing
+
+declareAsManyUninterpretedFunctionsAsPossible ::
+  (LanguageSMT lang, MonadIO m) =>
+  M.Map Name (Definition lang) ->
+  [R.Arg Name Name] ->
+  ExceptT String (SolverT m) [Name]
+declareAsManyUninterpretedFunctionsAsPossible decls orderedNames = do
+  let fnNames = mapMaybe (R.argElim (const Nothing) Just) orderedNames
+  forMaybeM fnNames $ \fnName ->
+    case M.lookup fnName decls of
+      Just (DFunDef fdef) ->
+        (Just <$> declareUninterpretedFunction fnName fdef)
+          `catchError` (\_ -> return Nothing)
       _ -> return Nothing
 
 -- | Declare (name and type) all the variables of the environment in the SMT

@@ -78,7 +78,7 @@ etaExpandAux decls env (hd `SystF.App` args) =
                 then
                   wrapInLambdas remainingArgs $
                     -- Because the 'hd' can be a bound variable; it might need to be shifted to
-                    varMap (+remTermArgsLen) hd
+                    varMap (+ remTermArgsLen) hd
                       `SystF.App` ( (shiftArg remTyArgsLen remTermArgsLen <$> args')
                                       ++ mkExpIndices remTyArgsLen remTermArgsLen remainingArgs
                                   )

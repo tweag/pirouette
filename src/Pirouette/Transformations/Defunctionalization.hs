@@ -27,8 +27,8 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
+import Pirouette.Transformations.Monomorphization (findPolyHOFDefs, hofsClosure)
 import Pirouette.Transformations.Utils
-import Pirouette.Transformations.Monomorphization (hofsClosure, findPolyHOFDefs)
 
 -- Defunctionalization assumes lots of things! Namelly:
 --
@@ -55,24 +55,28 @@ defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -
 
     hofs = hofsClosure (prtUODecls defs) (findPolyHOFDefs $ prtUODecls defs)
 
-    defOk :: forall lang . (Language lang) => Name -> Definition lang -> Either String ()
+    defOk :: forall lang. (Language lang) => Name -> Definition lang -> Either String ()
     defOk n (DFunDef FunDef {..}) =
-      let termAbs = [ t | t@SystF.Abs {} <- universe funBody ]
+      let termAbs = [t | t@SystF.Abs {} <- universe funBody]
 
-          tyArgs :: [ Arg lang ]
-          tyArgs = [ thisTyArgs | (SystF.App (SystF.Free (TermSig t)) args) <- universe funBody
-                       , t `S.notMember` dtorsNames
-                       , thisTyArgs <- filter SystF.isTyArg args
-                       , not $ null thisTyArgs ]
+          tyArgs :: [Arg lang]
+          tyArgs =
+            [ thisTyArgs | (SystF.App (SystF.Free (TermSig t)) args) <- universe funBody, t `S.notMember` dtorsNames, thisTyArgs <- filter SystF.isTyArg args, not $ null thisTyArgs
+            ]
 
-          tyVars :: [ Var lang ]
-          tyVars = [ t | t@(SystF.Bound _ _) <- universeBi funTy ]
+          tyVars :: [Var lang]
+          tyVars = [t | t@(SystF.Bound _ _) <- universeBi funTy]
        in if n `M.member` hofs
-          then if null termAbs && null tyArgs && null tyVars
-            then Right ()
-            else Left $ "Defunctionalization will fail for: " ++ show n ++ "\n"
-                     ++ show termAbs ++ show tyArgs ++ show tyVars
-          else Right ()
+            then
+              if null termAbs && null tyArgs && null tyVars
+                then Right ()
+                else
+                  Left $
+                    "Defunctionalization will fail for: " ++ show n ++ "\n"
+                      ++ show termAbs
+                      ++ show tyArgs
+                      ++ show tyVars
+            else Right ()
     defOk _ _ = return ()
 
 -- * Defunctionalization of types
@@ -201,7 +205,8 @@ data ClosureCtorInfo lang = ClosureCtorInfo
     ctorName :: Name,
     ctorArgs :: [Type lang],
     hofTerm :: Term lang
-  } deriving (Show)
+  }
+  deriving (Show)
 
 type DefunCallsCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
@@ -240,7 +245,6 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
       DefunCallsCtx lang (Arg lang)
     replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _ (_, _, arg) = pure arg
-
 
 mkClosureArg ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
