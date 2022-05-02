@@ -80,7 +80,6 @@ import qualified Pirouette.SMT.Constraints as C
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Pirouette.Term.Transformations
 import Prettyprinter hiding (Pretty (..))
@@ -223,9 +222,9 @@ runSymEvalTWorker st symEvalT = do
   return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    -- s = SMT.cvc4_ALL_SUPPORTED True
+    s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    s = SMT.cvc4_ALL_SUPPORTED False
+    --- s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
@@ -456,7 +455,6 @@ symEvalOneStep t@(R.App hd args) = case hd of
         -- We know what is the type of all the possible term results, its whatever
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
-        let tyParams' = map typeFromMeta tyParams
         (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
         motiveInWNHF <- lift $ termIsWHNFOrMeta term'
         -- We only do the case distinction if we haven't taken any step
@@ -465,20 +463,43 @@ symEvalOneStep t@(R.App hd args) = case hd of
           then do
             let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
             pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
-          else asum $ -- traverse every possibility, only if in WNHF
-            for2 consList cases $ \(consName, consTy) caseTerm -> do
-              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
-              let (consArgs, _) = R.tyFunArgs instantiatedTy
-              svars <- lift $ freshSymVars consArgs
-              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-              let mconstr = unify term' symbCons
-              case mconstr of
-                Nothing -> empty
-                Just constr -> do
-                  lift $ learn constr
-                  consumeFuel
-                  pure $ caseTerm `R.appN` symbArgs
+          else do
+            -- traverse every possibility, only if in WNHF
+            let tyParams' = map typeFromMeta tyParams
+            asum $
+              for2 consList cases $ \(consName, consTy) caseTerm -> do
+                let instantiatedTy = R.tyInstantiateN consTy tyParams'
+                let (consArgs, _) = R.tyFunArgs instantiatedTy
+                svars <- lift $ freshSymVars consArgs
+                let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+                let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+                let mconstr = unify term' symbCons
+                case mconstr of
+                  Nothing -> empty
+                  Just constr -> do
+                    lift $ learn constr
+                    consumeFuel
+                    pure $ caseTerm `R.appN` symbArgs
+  R.Meta (SymVar vr) -> do
+    -- if we have a meta, try to replace it
+    cstr <- gets sestConstraint
+    case cstr of
+      C.And atomics -> do
+        let findAssignment v (C.Assign w _) = v == w
+            findAssignment _ _ = False
+            findEq v (C.VarEq w _) = v == w
+            findEq _ _ = False
+            -- we need to jump more than one equality,
+            -- hence the involved loop here
+            findLoop v
+              | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
+                Just tm
+              | Just (C.VarEq _ other) <- find (findEq v) atomics =
+                findLoop other
+              | otherwise =
+                Nothing
+        maybe justEvaluateArgs pure (findLoop vr)
+      _ -> justEvaluateArgs
 
   -- in any other case don't try too hard
   _ -> justEvaluateArgs

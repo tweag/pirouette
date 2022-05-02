@@ -21,6 +21,8 @@ import Pirouette.Transformations.Monomorphization
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import Debug.Trace
+
 exec ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
   (Program Ex, Type Ex, Term Ex) ->
@@ -406,7 +408,7 @@ fun maybeSum : all (x : Type) . Maybe x -> Maybe x -> Maybe x
       my
 
 data KVMap (k : Type) (v : Type)
-  = KV : List (Pair k v) -> KV k v
+  = KV : List (Pair k v) -> KVMap k v
 
 fun toList : all (k : Type)(v : Type) . KVMap k v -> List (Pair k v)
   = /\(k : Type)(v : Type) . \(m : KVMap k v) . match_KVMap @k @v m @(List (Pair k v)) (\(x : List (Pair k v)) . x)
@@ -516,5 +518,9 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 30 isCounter) minswap condMinSwap *=* True
+        execFull (proveAnyWithFuel 30 isCounter') minswap condMinSwap *=* True
     ]
+  where
+    isCounter' t
+      | isCounter t = trace (show $ pretty t) True
+      | otherwise   = False

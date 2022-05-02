@@ -149,6 +149,7 @@ translateTerm knownNames (Raw.App var args) = case var of
           SmtLib.app
             <$> (SmtLib.as (SmtLib.symbol (toSmtName name)) <$> translateType resultTy)
             <*> mapM (translateArg knownNames) restArgs
+      -- SmtLib.app (SmtLib.symbol (toSmtName name)) <$> mapM (translateArg knownNames) restArgs
       DFunDef _
         | name `notElem` knownNames ->
           throwError $ "translateApp: Unknown function '" <> show name <> "'"
