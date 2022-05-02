@@ -7,7 +7,7 @@
 
 module Pirouette.Transformations.EtaExpand (etaExpandAll, etaExpandTerm) where
 
-import Data.Generics.Uniplate.Data
+import Control.Monad.Identity
 import qualified Data.Map as M
 import Pirouette.Monad
 import Pirouette.Term.Syntax
@@ -18,51 +18,72 @@ import Pirouette.Transformations.Utils
 -- | Eta-expands all definitions of all terms involved in a program
 etaExpandAll ::
   forall lang.
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (LanguageBuiltinTypes lang, Language lang) =>
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
-etaExpandAll defs@PrtUnorderedDefs {..} = transformBi (etaExpandAux prtUODecls) defs
+etaExpandAll PrtUnorderedDefs {..} =
+  PrtUnorderedDefs
+    { prtUODecls = M.map (runIdentity . defTermMapM (return . go)) prtUODecls,
+      prtUOMainTerm = go prtUOMainTerm
+    }
+  where
+    go = etaExpandAux prtUODecls []
 
 -- | Eta-expands a single term
 etaExpandTerm ::
   forall lang m.
-  (PirouetteReadDefs lang m, Language lang) =>
+  (PirouetteReadDefs lang m, LanguageBuiltinTypes lang, Language lang) =>
   Term lang ->
   m (Term lang)
 etaExpandTerm t = do
   decls <- prtAllDefs
-  return $ transformBi (etaExpandAux decls) t
+  return $ etaExpandAux decls [] t
 
 -- | Given a type @t@ and a list of arguments @a1 ... aN@,
 --  returns the type of a term @x : t@ partially applied to @a1 ... aN@.
 --  This is different from type application because we need to instantiate
 --  the 'SystF.TyAll's and drop the 'SystF.TyFun's.
-instantiateType :: Type lang -> [Arg lang] -> Type lang
+instantiateType :: (Language lang) => Type lang -> [Arg lang] -> Type lang
 instantiateType t [] = t
 instantiateType (SystF.TyFun _ u) (SystF.TermArg _ : args) = instantiateType u args
 instantiateType (SystF.TyAll _ _ t) (SystF.TyArg arg : args) =
   instantiateType (subst (singleSub arg) t) args
-instantiateType _ _ = error "instantiateType: type-checking would fail"
+instantiateType t args =
+  error $
+    unlines
+      [ "instantiateType: trying to instantiate:",
+        "t = " ++ renderSingleLineStr (pretty t),
+        "with",
+        "args = " ++ renderSingleLineStr (pretty args)
+      ]
 
--- Auxiliar function, supposed to be used as an argument to 'transformBi' to
--- eta expand terms. Check 'etaExpandTerm' or 'etaExpandAll'.
-etaExpandAux :: (LanguageBuiltins lang) => Decls lang -> Term lang -> Term lang
-etaExpandAux decls (SystF.Free (TermSig name) `SystF.App` args)
-  | Just nameType <- lookupNameType decls name,
-    specNamePartialApp <- nameType `instantiateType` args,
-    (remainingArgs, _) <- flattenType specNamePartialApp,
-    -- After looking up the definition and infering its flattened type, we still have to
-    -- separate between the arguments which are type arguments and which are term
-    -- arguments:
-    let remTyArgsLen = fromIntegral $ length $ filter isTyArg remainingArgs,
-    let remTermArgsLen = fromIntegral $ length $ filter (not . isTyArg) remainingArgs,
-    let remArgsLen = remTyArgsLen + remTermArgsLen,
-    remArgsLen > 0 =
-    wrapInLambdas remainingArgs $
-      SystF.Free (TermSig name)
-        `SystF.App` ( (shiftArg remTyArgsLen remTermArgsLen <$> args)
-                        ++ mkExpIndices remTyArgsLen remTermArgsLen remainingArgs
-                    )
+-- Actual eta expansion definition; this needs to be a primitive recursive function
+-- because we need to eta-expand arguments too.
+etaExpandAux :: (Language lang, LanguageBuiltinTypes lang) => Decls lang -> [Type lang] -> Term lang -> Term lang
+etaExpandAux decls env (SystF.Lam ann ty t) = SystF.Lam ann ty (etaExpandAux decls (ty : env) t)
+etaExpandAux decls env (SystF.Abs ann k t) = SystF.Abs ann k (etaExpandAux decls env t)
+etaExpandAux decls env (hd `SystF.App` args) =
+  let args' = map (SystF.argMap id $ etaExpandAux decls env) args
+   in case findType decls env hd of
+        Just nameType ->
+          let specNamePartialApp = nameType `instantiateType` args'
+              (remainingArgs, _) = flattenType specNamePartialApp
+              -- After looking up the definition and infering its flattened type, we still have to
+              -- separate between the arguments which are type arguments and which are term
+              -- arguments:
+              remTyArgsLen = fromIntegral $ length $ filter isTyArg remainingArgs
+              remTermArgsLen = fromIntegral $ length $ filter (not . isTyArg) remainingArgs
+              remArgsLen = remTyArgsLen + remTermArgsLen
+           in if remArgsLen > 0
+                then
+                  wrapInLambdas remainingArgs $
+                    -- Because the 'hd' can be a bound variable; it might need to be shifted to
+                    varMap (+remTermArgsLen) hd
+                      `SystF.App` ( (shiftArg remTyArgsLen remTermArgsLen <$> args')
+                                      ++ mkExpIndices remTyArgsLen remTermArgsLen remainingArgs
+                                  )
+                else hd `SystF.App` args'
+        Nothing -> error $ "etaExpandAux: " ++ show hd ++ " has no type"
   where
     -- Generating the arguments is simple; we fold over the list of remaining arguments
     -- and use either the mTy or the mTerm counters, then decrease whatever counter we
@@ -75,9 +96,6 @@ etaExpandAux decls (SystF.Free (TermSig name) `SystF.App` args)
     mkExpIndices mTy mTerm (FlatTermArg _ : as) =
       SystF.TermArg (SystF.termPure $ SystF.Bound (SystF.Ann "η") (mTerm - 1)) :
       mkExpIndices mTy (mTerm - 1) as
--- Any other term that is neither an application nor does it satisfy the guards above needs
--- no intervention; we just return it as is.
-etaExpandAux _ term = term
 
 isTyArg :: FlatArgType lang -> Bool
 isTyArg (FlatTyArg _) = True
@@ -94,17 +112,39 @@ shiftArg :: (LanguageBuiltins lang) => Integer -> Integer -> Arg lang -> Arg lan
 shiftArg kTy kTerm (SystF.TermArg e) = SystF.TermArg $ SystF.termTyMap (shift kTy) $ shift kTerm e
 shiftArg kTy _ (SystF.TyArg t) = SystF.TyArg $ shift kTy t
 
--- | Returns the type of the given name.
---
--- This may return Nothing if the name is not known or
--- if the name doesn't have a *-inhabiting type (for instance, being a type itself).
-lookupNameType :: Decls lang -> Name -> Maybe (Type lang)
-lookupNameType decls name = name `M.lookup` decls >>= getName
-  where
-    getName (DFunDef fd) = Just $ funTy fd
-    getName (DConstructor idx typeName) = do
-      DTypeDef Datatype {..} <- typeName `M.lookup` decls -- this pattern-match failure shall probably be a hard error instead of Nothing
-      conTy <- constructors `safeIdx` idx
-      pure $ foldr (\(name', kind') ty -> SystF.TyAll (SystF.Ann name') kind' ty) (snd conTy) typeVariables
-    getName (DDestructor _) = Nothing -- TODO just write the type of the destructor out
-    getName (DTypeDef _) = Nothing
+-- TODO: This was mostly copied from our type-checker; but it really seems like `PirouetteReadDefs`
+-- should be extended to something like `PirouetteTyped`, which provides us these things
+
+findType ::
+  (LanguageBuiltinTypes lang) =>
+  Decls lang ->
+  [Type lang] ->
+  Var lang ->
+  Maybe (Type lang)
+findType decls _env (SystF.Free (TermSig f)) =
+  case M.lookup f decls of
+    Just (DFunction _ _ ty) -> pure ty
+    Just (DDestructor t) -> do
+      tdef <- typeDef decls t
+      pure $ destructorTypeFor t tdef
+    Just (DConstructor i t) -> do
+      tdef <- typeDef decls t
+      case safeIdx (constructors tdef) i of
+        Just (_, ty) -> pure ty
+        Nothing -> Nothing
+    _ -> Nothing
+findType _decls _env (SystF.Free (Constant c)) = pure $ typeOfConstant c
+findType _decls _env (SystF.Free (Builtin t)) = pure $ typeOfBuiltin t
+findType _decls _env (SystF.Free Bottom) = pure typeOfBottom
+findType _decls env (SystF.Bound _ i) = env `safeIdx` i
+findType _decls _env (SystF.Meta _) =
+  error "this should never happen, meta is Void"
+
+typeDef ::
+  Decls lang ->
+  Name ->
+  Maybe (TypeDef lang)
+typeDef decls nm = do
+  case M.lookup nm decls of
+    Just (DTypeDef def) -> pure def
+    _ -> Nothing

@@ -28,17 +28,52 @@ import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Utils
+import Pirouette.Transformations.Monomorphization (hofsClosure, findPolyHOFDefs)
 
-defunctionalize ::
-  (LanguagePretty lang, LanguageBuiltins lang) =>
-  PrtUnorderedDefs lang ->
-  PrtUnorderedDefs lang
-defunctionalize defs = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
+-- Defunctionalization assumes lots of things! Namelly:
+--
+-- 1. No polymorphic higher-order function occurence
+-- 2. everything has been fully eta-expanded
+-- 3. ??? still discovering
+
+defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+defunctionalize defs =
+  case defunctionalizeAssumptions defs of
+    () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
     (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpandAll defs) mempty (DefunState mempty)
 
     typeDecls = mkClosureTypes closureCtorInfos
     applyFunDecls = mkApplyFuns closureCtorInfos
+
+defunctionalizeAssumptions :: (Language lang) => PrtUnorderedDefs lang -> ()
+defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -> defOk n d >> return d) $ defs
+  where
+    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
+    getDtorName (DTypeDef Datatype {..}) = Just destructor
+    getDtorName _ = Nothing
+
+    hofs = hofsClosure (prtUODecls defs) (findPolyHOFDefs $ prtUODecls defs)
+
+    defOk :: forall lang . (Language lang) => Name -> Definition lang -> Either String ()
+    defOk n (DFunDef FunDef {..}) =
+      let termAbs = [ t | t@SystF.Abs {} <- universe funBody ]
+
+          tyArgs :: [ Arg lang ]
+          tyArgs = [ thisTyArgs | (SystF.App (SystF.Free (TermSig t)) args) <- universe funBody
+                       , t `S.notMember` dtorsNames
+                       , thisTyArgs <- filter SystF.isTyArg args
+                       , not $ null thisTyArgs ]
+
+          tyVars :: [ Var lang ]
+          tyVars = [ t | t@(SystF.Bound _ _) <- universeBi funTy ]
+       in if n `M.member` hofs
+          then if null termAbs && null tyArgs && null tyVars
+            then Right ()
+            else Left $ "Defunctionalization will fail for: " ++ show n ++ "\n"
+                     ++ show termAbs ++ show tyArgs ++ show tyVars
+          else Right ()
+    defOk _ _ = return ()
 
 -- * Defunctionalization of types
 
@@ -166,7 +201,7 @@ data ClosureCtorInfo lang = ClosureCtorInfo
     ctorName :: Name,
     ctorArgs :: [Type lang],
     hofTerm :: Term lang
-  }
+  } deriving (Show)
 
 type DefunCallsCtx lang = RWS () [ClosureCtorInfo lang] (DefunState lang)
 
@@ -206,6 +241,7 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
     replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg ctx hofArgInfo lam
     replaceArg _ (_, _, arg) = pure arg
 
+
 mkClosureArg ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   [(FlatArgType lang, SystF.Ann Name)] ->
@@ -215,6 +251,7 @@ mkClosureArg ::
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
+
   tell [ClosureCtorInfo {hofTerm = remapFreeDeBruijns free2closurePos lam, ..}]
   pure $ SystF.TermArg $ SystF.Free (TermSig ctorName) `SystF.App` [SystF.TermArg $ SystF.Bound (snd $ ctx !! fromIntegral idx) idx `SystF.App` [] | idx <- frees]
   where
@@ -260,6 +297,10 @@ newCtorIdx ty = do
 
 -- * Defunctionalization of function definitions
 
+-- TODO: rename to 'HOArgPos' and give example; the idea being
+-- that @[Nothing, Just (HofArg "Int -> Bool"), Nothing]@ gives us info
+-- that we need to defunctionalize the second argument to a function expecting
+-- three arguments
 type HofsList lang = [Maybe (DefunHofArgInfo lang)]
 
 traverseDefs ::
