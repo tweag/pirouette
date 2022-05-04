@@ -127,10 +127,10 @@ data Closure!!TyInteger_TyInteger
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
     = \(cls : Closure!!TyInteger_TyInteger) .
       match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer)
-        (\(η : Integer) . add 1 η)
-        (\(η : Integer) . const 3 η)
-        (\(η : Integer) . apply Closure!!TyInteger_TyInteger_ctor_0 η)
         (\(η : Integer) . add 2 η)
+        (\(η : Integer) . apply Closure!!TyInteger_TyInteger_ctor_0 η)
+        (\(η : Integer) . const 3 η)
+        (\(η : Integer) . add 1 η)
 
 fun add : Integer -> Integer -> Integer
     = \(x : Integer) (y : Integer) . x + y

@@ -98,7 +98,7 @@ worker ::
   SymTerm lang ->
   SymEvalT lang m (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  -- liftIO $ putStrLn "NORMALIZED"
+  -- liftIO $ putStrLn "ONE STEP"
   -- liftIO $ print (pretty bodyTerm)
   -- liftIO $ print (pretty assumeTerm)
   -- liftIO $ print (pretty proveTerm)
@@ -129,6 +129,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
     -- if everything can be translated, try to prune with it
     (Right _, Right assumeCond, Right proveCond) -> do
+      -- liftIO $ putStrLn "prunning..."
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
@@ -138,18 +139,18 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     PruneCounterFound model -> pure $ CounterExample bodyTerm model
     _ -> do
       -- one step of evaluation on each
-      (bodyTerm', bodyWasEval) <- runWriterT (symEvalOneStep bodyTerm)
-      (assumeTerm', assummeWasEval) <- runWriterT (symEvalOneStep assumeTerm)
-      (proveTerm', proveWasEval) <- runWriterT (symEvalOneStep proveTerm)
-      liftIO $ putStrLn "ONE STEP"
-      liftIO $ print (pretty bodyTerm')
-      liftIO $ print (pretty assumeTerm')
-      liftIO $ print (pretty proveTerm')
+      (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
+      (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
+      (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
+      -- liftIO $ putStrLn "ONE STEP"
+      -- liftIO $ print (pretty bodyTerm')
+      -- liftIO $ print (pretty assumeTerm')
+      -- liftIO $ print (pretty proveTerm')
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
-      liftIO $ print somethingWasEval
+      -- liftIO $ print somethingWasEval
       -- check the fuel
       noMoreFuel <- fuelExhausted <$> currentFuel
-      currentFuel >>= liftIO . print
+      -- currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' []
         else do

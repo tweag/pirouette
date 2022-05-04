@@ -193,20 +193,24 @@ consIsRecursive ty con = do
 termIsRecursive :: (PirouetteReadDefs lang m) => Name -> m Bool
 termIsRecursive n = Set.member (SystF.TermArg n) <$> directDepsOf n
 
+data WHNFResult lang meta
+  = WHNFConstant (Constants lang)
+  | WHNFConstructor Int Name [ArgMeta lang meta]
+
 -- | Returns whether a term is in Weak Head Normal Form,
 -- that is, a constant or a constructor followed by any arguments.
-termIsWHNF :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m Bool
-termIsWHNF (SystF.App vm _args) = case vm of
-  SystF.Bound {} -> pure False
-  SystF.Meta {} -> pure False
-  SystF.Free (Constant _) -> pure True
+termIsWHNF :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m (Maybe (WHNFResult lang meta))
+termIsWHNF (SystF.App vm args) = case vm of
+  SystF.Bound {} -> pure Nothing
+  SystF.Meta {} -> pure Nothing
+  SystF.Free (Constant c) -> pure $ Just (WHNFConstant c)
   SystF.Free (TermSig n) -> do
     mDef <- prtDefOf n
     case mDef of
-      DConstructor {} -> pure True
-      _ -> pure False
-  SystF.Free _ -> pure False
-termIsWHNF _ = pure False
+      DConstructor ix ty -> pure $ Just (WHNFConstructor ix ty args)
+      _ -> pure Nothing
+  SystF.Free _ -> pure Nothing
+termIsWHNF _ = pure Nothing
 
 -- | Returns whether the term is a meta-variable.
 termIsMeta :: TermMeta lang meta -> Maybe meta
@@ -221,7 +225,10 @@ termIsBuiltin _ = False
 -- | Returns whether a term is in Weak Head Normal Form,
 -- that is, a constant or a constructor followed by any arguments.
 termIsWHNFOrMeta :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m Bool
-termIsWHNFOrMeta tm = (isJust (termIsMeta tm) ||) <$> termIsWHNF tm
+termIsWHNFOrMeta tm = do
+  let m = termIsMeta tm
+  w <- termIsWHNF tm
+  return $ isJust m || isJust w
 
 -- *** Implementations for 'PirouetteReadDefs'
 

@@ -221,9 +221,9 @@ runSymEvalTWorker st symEvalT = do
   return paths
   where
     -- we'll rely on cvc4 with dbg messages
-    s = SMT.cvc4_ALL_SUPPORTED True
+    -- s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    -- s = SMT.cvc4_ALL_SUPPORTED False
+    s = SMT.cvc4_ALL_SUPPORTED False
 
     prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
     prepSolver = do
@@ -261,14 +261,17 @@ assertConstraint knownNames c@C.Bot = do
   SMT.assert expr
   pure (done, usedAnyUFs)
 assertConstraint knownNames (C.And atomics) = do
-  (dones, usedAnyUFs) <- unzip <$> forM atomics (\atomic -> do
-    -- do it one by one
-    (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames (C.And [atomic])
-    SMT.assert expr
-    pure (done, usedAnyUFs)
-    )
+  (dones, usedAnyUFs) <-
+    unzip
+      <$> forM
+        atomics
+        ( \atomic -> do
+            -- do it one by one
+            (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames (C.And [atomic])
+            SMT.assert expr
+            pure (done, usedAnyUFs)
+        )
   pure (and dones, mconcat usedAnyUFs)
-  
 assertNotConstraint knownNames c = do
   (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assertNot expr
@@ -461,21 +464,25 @@ symEvalOneStep t@(R.App hd args) = case hd of
       -- move on to evaluate N.
       Just (DDestructor tyName) -> do
         Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
-        Datatype _ _ _ consList <- lift $ lift $ prtTypeDefOf tyName
+        _dt@(Datatype _ _ _ consList) <- lift $ lift $ prtTypeDefOf tyName
         -- We know what is the type of all the possible term results, its whatever
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
         (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
         tell somethingWasEvaluated -- just in case
-        motiveInWNHF <- lift $ termIsWHNFOrMeta term'
         -- We only do the case distinction if we haven't taken any step
         -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
-        if somethingWasEvaluated == Any True || not motiveInWNHF
-          then do
-            let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
-            pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
-          else do
-            -- traverse every possibility, only if in WNHF
+        let motiveIsMeta = termIsMeta term'
+        motiveWHNF <- lift $ termIsWHNF term'
+        let bailOutArgs = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
+            bailOutTerm = R.App hd (map R.TyArg tyParams ++ bailOutArgs ++ excess)
+        case (somethingWasEvaluated, motiveIsMeta, motiveWHNF) of
+          (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
+          (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
+          (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
+          (_, Just _, _) -> do
+            -- we have a meta, explore every possibility
+            -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
             let tyParams' = map typeFromMeta tyParams
             asum $
               for2 consList cases $ \(consName, consTy) caseTerm -> do
@@ -485,12 +492,20 @@ symEvalOneStep t@(R.App hd args) = case hd of
                 let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
                 let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
                 let mconstr = unify term' symbCons
+                -- liftIO $ print mconstr
                 case mconstr of
                   Nothing -> empty
                   Just constr -> do
                     lift $ learn constr
                     consumeFuel
                     pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+          (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
+            -- we have a particular constructor
+            -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
+            -- liftIO $ putStrLn $ "possibilitites: " <> show (pretty dt)
+            let caseTerm = cases !! ix
+            consumeFuel
+            pure $ (caseTerm `R.appN` dropWhile R.isTyArg constructorArgs) `R.appN` excess
   R.Meta (SymVar vr) -> do
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint
@@ -509,7 +524,9 @@ symEvalOneStep t@(R.App hd args) = case hd of
                 findLoop other
               | otherwise =
                 Nothing
-        maybe justEvaluateArgs pure (findLoop vr)
+        case findLoop vr of
+          Nothing -> justEvaluateArgs
+          Just lp -> consumeFuel >> pure lp
       _ -> justEvaluateArgs
 
   -- in any other case don't try too hard

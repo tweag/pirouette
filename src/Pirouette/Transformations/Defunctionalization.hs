@@ -43,8 +43,10 @@ defunctionalize defs =
   where
     (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpandAll defs) mempty (DefunState mempty)
 
-    typeDecls = mkClosureTypes closureCtorInfos
-    applyFunDecls = mkApplyFuns closureCtorInfos
+    closureCtorInfos' = sortOn (\c -> (ctorName c, ctorIdx c)) closureCtorInfos
+
+    typeDecls = mkClosureTypes closureCtorInfos'
+    applyFunDecls = mkApplyFuns closureCtorInfos'
 
 defunctionalizeAssumptions :: (Language lang) => PrtUnorderedDefs lang -> ()
 defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -> defOk n d >> return d) $ defs
@@ -181,14 +183,15 @@ mkApplyFuns infos = M.fromList funDecls
     funDecls =
       [ (funName, DFunDef $ FunDef NonRec funBody funTy)
         | (funName, infos') <- funs,
-          let DefunHofArgInfo {..} = hofArgInfo $ head infos',
+          let infos'' = sortOn ctorIdx infos',
+          let DefunHofArgInfo {..} = hofArgInfo $ head infos'',
           let closTy = closureType hofType,
           let funTy = closTy `SystF.TyFun` hofType,
           let funBody =
                 let closArgIdx = SystF.TermArg $ SystF.Bound (SystF.Ann "cls") 0 `SystF.App` []
                     dtorResTy = SystF.TyArg hofType
                     dtor = SystF.Free (TermSig $ dtorName $ closureTypeName hofType)
-                 in SystF.Lam (SystF.Ann "cls") closTy $ dtor `SystF.App` (closArgIdx : dtorResTy : (SystF.TermArg . mkDtorBranch <$> infos'))
+                 in SystF.Lam (SystF.Ann "cls") closTy $ dtor `SystF.App` (closArgIdx : dtorResTy : (SystF.TermArg . mkDtorBranch <$> infos''))
       ]
     mkDtorBranch ClosureCtorInfo {..} = foldr (SystF.Lam (SystF.Ann "ctx")) hofTerm ctorArgs
 

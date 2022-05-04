@@ -248,7 +248,7 @@ ohearnTest =
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _])) ->
                   odd (read fstX)
                 _ -> False
-         in exec (proveAnyWithFuel 30 test) conditionals1 condWrongTriple *=* True
+         in exec (proveAnyWithFuel 50 test) conditionals1 condWrongTriple *=* True
         -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
         --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
@@ -319,7 +319,7 @@ ohearnTestPeano =
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _])) ->
                   fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
                 _ -> False
-         in exec (proveAnyWithFuel 30 test) conditionals1Peano condWrongTriplePeano *=* True
+         in exec (proveAnyWithFuel 50 test) conditionals1Peano condWrongTriplePeano *=* True
         -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
         --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
@@ -508,7 +508,7 @@ execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
     let prog1 = monomorphize prog0
     -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
     let decls = defunctionalize prog1
-    liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
+    -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
     orderedDecls <- elimEvenOddMutRec decls
     flip runReaderT orderedDecls $
       toDo (Problem tyRes fn assume toProve)
