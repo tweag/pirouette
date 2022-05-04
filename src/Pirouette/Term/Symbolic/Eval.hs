@@ -680,7 +680,7 @@ pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
   void $ liftIO udcAdditionalDefs
   svars <- declSymVars udcInputs
   let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-  liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+  -- liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
   conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
 
 conditionalEval ::
@@ -693,9 +693,9 @@ conditionalEval ::
 conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
   (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
-  liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
+  -- liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
   result <- pruneAndValidate (q t') p axioms
-  liftIO $ putStrLn $ "result? " ++ show result
+  -- liftIO $ putStrLn $ "result? " ++ show result
   case result of
     PruneInconsistentAssumptions -> pure Discharged
     PruneImplicationHolds -> pure Verified
