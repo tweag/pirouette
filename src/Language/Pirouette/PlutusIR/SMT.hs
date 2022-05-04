@@ -9,6 +9,7 @@ instance LanguageSMT BuiltinsOfPIR where
   translateBuiltinType = trPIRType
   translateBuiltinTerm = error "translateBuiltinTerm (t :: BuiltinTerms PlutusIR): not yet impl"
   translateConstant = error "translateConstant (t :: Constants PlutusIR): not yet impl"
+  isStuckBuiltin = error "isStuckBuiltin (t :: TermMeta PlutusIR meta): not yet impl"
 
 instance LanguageSMTBranches BuiltinsOfPIR where
   branchesBuiltinTerm _tm _translator _args = pure Nothing

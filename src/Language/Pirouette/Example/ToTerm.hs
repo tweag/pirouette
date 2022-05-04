@@ -65,10 +65,10 @@ trType env (TyFun ty ty2) = SystF.TyFun <$> trType env ty <*> trType env ty2
 trType env (TyApp ty ty2) = SystF.app <$> trType env ty <*> trType env ty2
 trType env (TyVar s) =
   case s `elemIndex` env of
-    Just i -> return $ SystF.tyPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
+    Just i -> return $ SystF.TyPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
     Nothing -> throwError $ "type variable " ++ s ++ " undeclared"
-trType _ (TyFree s) = return $ SystF.tyPure $ SystF.Free $ TySig (fromString s)
-trType _ (TyBase et) = return $ SystF.tyPure $ SystF.Free $ TyBuiltin et
+trType _ (TyFree s) = return $ SystF.TyPure $ SystF.Free $ TySig (fromString s)
+trType _ (TyBase et) = return $ SystF.TyPure $ SystF.Free $ TyBuiltin et
 
 trTerm :: Env -> Env -> Expr -> TrM (Term Ex)
 trTerm tyEnv termEnv (ExprApp ex (ExprTy tyArg)) =

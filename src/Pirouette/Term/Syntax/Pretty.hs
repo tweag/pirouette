@@ -89,4 +89,4 @@ instance (Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang) where
 instance (LanguagePretty lang) => Pretty (Decls lang) where
   pretty = align . vsep . map prettyDef . Map.toList
     where
-      prettyDef (name, def) = pretty name <+> "|->" <+> pretty def
+      prettyDef (name, def) = vsep [pretty name <+> "|->", indent 2 (pretty def)]

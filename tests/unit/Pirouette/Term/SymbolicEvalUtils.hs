@@ -14,14 +14,20 @@ thing *=* expected = do
     Left e -> assertFailure $ "finished with errors: " <> e
     Right x -> x @=? expected
 
-satisfies :: (Eq a, Show a) => IO (Either String a) -> (a -> Bool) -> Assertion
+satisfies 
+  :: (Eq a, Show a)
+  => IO (Either String a)
+  -> (a -> Bool) -> Assertion
 thing `satisfies` property = do
   given <- thing
   case given of
     Left e -> assertFailure $ "finished with errors: " <> e
     Right x -> assertBool ("property not satisfied: " <> show x) (property x)
 
-pathSatisfies :: (Language lang, Pretty res, Show res) => IO (Either String [Path lang res]) -> ([Path lang res] -> Bool) -> Assertion
+pathSatisfies 
+  :: (Language lang, Pretty res, Show res)
+  => IO (Either String [Path lang res])
+  -> ([Path lang res] -> Bool) -> Assertion
 thing `pathSatisfies` property = do
   given <- thing
   case given of
@@ -31,7 +37,11 @@ thing `pathSatisfies` property = do
 (.&.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 p .&. q = \x -> p x && q x
 
-isVerified, isDischarged, isCounter, isNoCounter :: Path lang (EvaluationWitness lang) -> Bool
+(.||.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
+p .||. q = \x -> p x || q x
+
+isVerified, isDischarged, isCounter, isNoCounter, ranOutOfFuel 
+  :: Path lang (EvaluationWitness lang) -> Bool
 
 isVerified Path { pathResult = Verified } = True
 isVerified _ = False
@@ -41,6 +51,9 @@ isDischarged _ = False
 
 isCounter Path { pathResult = CounterExample _ _ } = True
 isCounter _ = False
+
+ranOutOfFuel Path { pathStatus = OutOfFuel } = True
+ranOutOfFuel _ = False
 
 isCounterWith :: (Model -> Bool) -> Path lang (EvaluationWitness lang) -> Bool
 isCounterWith f Path { pathResult = CounterExample _ m } = f m

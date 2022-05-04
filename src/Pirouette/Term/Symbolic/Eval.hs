@@ -33,12 +33,13 @@ module Pirouette.Term.Symbolic.Eval
     runIncorrectness,
     pathsIncorrectness,
     pathsIncorrectness_,
+    symevalAnyPath,
     UserDeclaredConstraints (..),
     UniversalAxiom (..),
     InCond (..),
     OutCond (..),
     EvaluationWitness (..),
-    Model,
+    Model (..),
 
     -- * Internal, used to build on top of 'SymEvalT'
     SymEvalConstr,
@@ -52,6 +53,10 @@ module Pirouette.Term.Symbolic.Eval
     symEvalOneStep,
     pruneAndValidate,
     PruneResult (..),
+    normalizeTerm,
+    SymEvalSt (..),
+    fuelExhausted,
+    currentFuel,
   )
 where
 
@@ -61,12 +66,14 @@ import Control.Monad.Except
 import Control.Monad.Reader (ask)
 import Control.Monad.State
 import Control.Monad.Writer
+import Data.Bifunctor (bimap)
 import Data.Data hiding (eqT)
 import Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
-import ListT (ListT)
-import qualified ListT
+import Data.String (IsString)
+import ListT.Extra (ListT)
+import qualified ListT.Extra as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
@@ -75,15 +82,13 @@ import qualified Pirouette.SMT.Constraints as C
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Pirouette.Term.Transformations
 import Prettyprinter hiding (Pretty (..))
 
 -- import Debug.Trace (trace)
 
 newtype SymVar = SymVar {symVar :: Name}
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, IsString)
 
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar
@@ -91,10 +96,10 @@ instance SMT.ToSMT SymVar where
 type Constraint lang = SMT.Constraint lang SymVar
 
 symVarEq :: SymVar -> SymVar -> Constraint lang
-symVarEq a b = SMT.And [SMT.VarEq (symVar a) (symVar b)]
+symVarEq a b = SMT.And [SMT.VarEq a b]
 
 (=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
-a =:= t = SMT.And [SMT.Assign (symVar a) t]
+a =:= t = SMT.And [SMT.Assign a t]
 
 data PathStatus = Completed | OutOfFuel deriving (Eq, Show)
 
@@ -178,6 +183,17 @@ symevalT initialFuel = runSymEvalT st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
+symevalAnyPath ::
+  (SymEvalConstr lang m) =>
+  (Path lang a -> Bool) ->
+  AvailableFuel ->
+  SymEvalT lang m a ->
+  m Bool
+symevalAnyPath p initialFuel =
+  ListT.anyPath p . runSymEvalTWorker st0
+  where
+    st0 = SymEvalSt mempty M.empty 0 initialFuel False []
+
 runSymEvalTRaw ::
   (Monad m) =>
   SymEvalSt lang ->
@@ -189,13 +205,22 @@ runSymEvalTRaw st = flip runStateT st . symEvalT
 --  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
 runSymEvalT st symEvalT =
-  ListT.toList $ do
-    solvPair <- SMT.runSolverT s $ do
-      usedNames <- prepSolver
-      let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
-      runSymEvalTRaw newState symEvalT
-    let paths = uncurry path solvPair
-    return paths
+  ListT.toLazyList $ runSymEvalTWorker st symEvalT
+
+-- | Running a symbolic execution will prepare the solver only once, then use a persistent session
+--  to make all the necessary queries.
+runSymEvalTWorker ::
+  (SymEvalConstr lang m) =>
+  SymEvalSt lang ->
+  SymEvalT lang m a ->
+  ListT m (Path lang a)
+runSymEvalTWorker st symEvalT = do
+  solvPair <- SMT.runSolverT s $ do
+    usedNames <- prepSolver
+    let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
+    runSymEvalTRaw newState symEvalT
+  let paths = uncurry path solvPair
+  return paths
   where
     -- we'll rely on cvc4 with dbg messages
     -- s = SMT.cvc4_ALL_SUPPORTED True
@@ -206,8 +231,11 @@ runSymEvalT st symEvalT =
     prepSolver = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
-      declData <- runExceptT (SMT.declareDatatypes decls dependencyOrder)
-      case declData of
+      declNames <- runExceptT $ do
+        dts <- SMT.declareDatatypes decls dependencyOrder
+        fns <- SMT.declareAsManyUninterpretedFunctionsAsPossible decls dependencyOrder
+        pure (dts ++ fns)
+      case declNames of
         Right usedNames -> return usedNames
         Left e -> error e
 
@@ -227,18 +255,29 @@ instance (MonadIO m) => MonadIO (SymEvalT lang m) where
 assertConstraint,
   assertNotConstraint ::
     (PirouetteReadDefs lang m, SMT.LanguageSMT lang, SMT.ToSMT meta, MonadIO m) =>
-    C.Env lang ->
     [Name] ->
     C.Constraint lang meta ->
-    SMT.SolverT m Bool
-assertConstraint env knownNames c = do
-  (done, expr) <- C.constraintToSExpr env knownNames c
+    SMT.SolverT m (Bool, UsedAnyUFs)
+assertConstraint knownNames c@C.Bot = do
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assert expr
-  pure done
-assertNotConstraint env knownNames c = do
-  (done, expr) <- C.constraintToSExpr env knownNames c
+  pure (done, usedAnyUFs)
+assertConstraint knownNames (C.And atomics) = do
+  (dones, usedAnyUFs) <-
+    unzip
+      <$> forM
+        atomics
+        ( \atomic -> do
+            -- do it one by one
+            (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames (C.And [atomic])
+            SMT.assert expr
+            pure (done, usedAnyUFs)
+        )
+  pure (and dones, mconcat usedAnyUFs)
+assertNotConstraint knownNames c = do
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
   SMT.assertNot expr
-  pure done
+  pure (done, usedAnyUFs)
 
 -- | Prune the set of paths in the current set.
 prune :: forall lang m a. (Pretty a, SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
@@ -264,7 +303,7 @@ prune xs = SymEvalT $
         -- since we want to prune unsatisfiable path.
         -- And if a partial translation is already unsat,
         -- so is the translation of the whole set of constraints.
-        void $ assertConstraint (sestGamma env) (sestKnownNames env) (sestConstraint env)
+        void $ assertConstraint (sestKnownNames env) (sestConstraint env)
         res <- SMT.checkSat
         SMT.solverPop
         return $ case res of
@@ -304,8 +343,10 @@ runEvaluation t = do
 currentFuel :: (SymEvalConstr lang m) => SymEvalT lang m AvailableFuel
 currentFuel = gets sestFuel
 
+-- We no longer do any normalization: these functions are all slightly wrong,
+-- since they were originally thought of for the TLA+ translation
 normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar -> m (TermMeta lang SymVar)
-normalizeTerm = destrNF >=> removeExcessiveDestArgs >=> constrDestrId
+normalizeTerm = return -- destrNF >=> removeExcessiveDestArgs >=> constrDestrId
 
 -- | Top level symbolic evaluation loop.
 symeval ::
@@ -368,25 +409,23 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
 -- of constituent cases:
 symEvalOneStep t@(R.App hd args) = case hd of
   R.Free (Builtin builtin) -> do
-    (evaluatedArgs, somethingWasEvaluated) <- listen $ mapM (R.argMapM return symEvalOneStep) args
-    if somethingWasEvaluated == Any True
-      then pure $ R.App hd evaluatedArgs
-      else do
-        -- we could not evaluate arguments more,
-        -- so go on and evaluate the built-in
-        let translator c = WriterT $ do
-              c' <- runExceptT $ translateTerm [] Nothing c
-              case c' of
-                Left _ -> pure (Nothing, Any False)
-                Right d -> pure (Just d, Any False)
-        mayBranches <- SMT.branchesBuiltinTerm @lang builtin translator evaluatedArgs
-        case mayBranches of
-          Just branches -> asum $
-            flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-              lift $ learn additionalInfo
-              consumeFuel
-              pure newTerm
-          _ -> pure $ R.App hd evaluatedArgs -- no branching info.
+    -- try to evaluate the built-in
+    let translator c = do
+          c' <- runTranslator $ translateTerm [] c
+          case c' of
+            Left _ -> pure Nothing
+            Right (d, _) -> pure $ Just d
+    mayBranches <- lift $ SMT.branchesBuiltinTerm @lang builtin translator args
+    case mayBranches of
+      -- if successful, open all the branches
+      Just branches -> asum $
+        flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+          lift $ learn additionalInfo
+          consumeFuel
+          pure newTerm
+      -- if it's not ready, just keep evaluating the arguments
+      Nothing ->
+        R.App hd <$> mapM (R.argMapM return symEvalOneStep) args
   R.Free (TermSig n) -> do
     mDefHead <- Just <$> lift (lift $ prtDefOf n)
     case mDefHead of
@@ -427,32 +466,70 @@ symEvalOneStep t@(R.App hd args) = case hd of
       -- move on to evaluate N.
       Just (DDestructor tyName) -> do
         Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
-        Datatype _ _ _ consList <- lift $ lift $ prtTypeDefOf tyName
+        _dt@(Datatype _ _ _ consList) <- lift $ lift $ prtTypeDefOf tyName
         -- We know what is the type of all the possible term results, its whatever
         -- type we're destructing applied to its arguments, making sure it contains
         -- no meta variables.
-        let tyParams' = map typeFromMeta tyParams
         (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
+        tell somethingWasEvaluated -- just in case
         -- We only do the case distinction if we haven't taken any step
         -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
-        if somethingWasEvaluated == Any True
-          then do
-            let args' = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
-            pure $ R.App hd (map R.TyArg tyParams ++ args' ++ excess)
-          else asum $ -- traverse every possibility
-            for2 consList cases $ \(consName, consTy) caseTerm -> do
-              let instantiatedTy = subst (foldl' (\x y -> Just y :< x) (Inc 0) tyParams') consTy
-              let (consArgs, _) = R.tyFunArgs instantiatedTy
-              svars <- lift $ freshSymVars consArgs
-              let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-              let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-              let mconstr = unify term' symbCons
-              case mconstr of
-                Nothing -> empty
-                Just constr -> do
-                  lift $ learn constr
-                  consumeFuel
-                  pure $ caseTerm `R.appN` symbArgs
+        let motiveIsMeta = termIsMeta term'
+        motiveWHNF <- lift $ termIsWHNF term'
+        let bailOutArgs = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
+            bailOutTerm = R.App hd (map R.TyArg tyParams ++ bailOutArgs ++ excess)
+        case (somethingWasEvaluated, motiveIsMeta, motiveWHNF) of
+          (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
+          (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
+          (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
+          (_, Just _, _) -> do
+            -- we have a meta, explore every possibility
+            -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
+            let tyParams' = map typeFromMeta tyParams
+            asum $
+              for2 consList cases $ \(consName, consTy) caseTerm -> do
+                let instantiatedTy = R.tyInstantiateN consTy tyParams'
+                let (consArgs, _) = R.tyFunArgs instantiatedTy
+                svars <- lift $ freshSymVars consArgs
+                let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+                let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+                let mconstr = unify term' symbCons
+                -- liftIO $ print mconstr
+                case mconstr of
+                  Nothing -> empty
+                  Just constr -> do
+                    lift $ learn constr
+                    consumeFuel
+                    pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+          (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
+            -- we have a particular constructor
+            -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
+            -- liftIO $ putStrLn $ "possibilitites: " <> show (pretty dt)
+            let caseTerm = cases !! ix
+            consumeFuel
+            pure $ (caseTerm `R.appN` dropWhile R.isTyArg constructorArgs) `R.appN` excess
+  R.Meta vr -> do
+    -- if we have a meta, try to replace it
+    cstr <- gets sestConstraint
+    case cstr of
+      C.And atomics -> do
+        let findAssignment v (C.Assign w _) = v == w
+            findAssignment _ _ = False
+            findEq v (C.VarEq w _) = v == w
+            findEq _ _ = False
+            -- we need to jump more than one equality,
+            -- hence the involved loop here
+            findLoop v
+              | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
+                Just tm
+              | Just (C.VarEq _ other) <- find (findEq v) atomics =
+                findLoop other
+              | otherwise =
+                Nothing
+        case findLoop vr of
+          Nothing -> justEvaluateArgs
+          Just lp -> consumeFuel >> pure lp
+      _ -> justEvaluateArgs
 
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
@@ -505,9 +582,9 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 --- TMP CODE
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
-  pretty (Path conds gamma ps res) =
+  pretty (Path conds _gamma ps res) =
     vsep
-      [ "Env:" <+> hsep (map pretty (M.toList gamma)),
+      [ "", -- "Env:" <+> hsep (map pretty (M.toList gamma)),
         "Path:" <+> indent 2 (pretty conds),
         "Status:" <+> pretty ps,
         "Tip:" <+> indent 2 (pretty res)
@@ -552,7 +629,8 @@ newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
 
 newtype InCond lang = InCond (Constraint lang)
 
-type Model = [(SimpleSMT.SExpr, SimpleSMT.Value)]
+newtype Model = Model [(SimpleSMT.SExpr, SimpleSMT.Value)]
+  deriving (Eq, Show)
 
 data EvaluationWitness lang
   = Verified
@@ -602,7 +680,7 @@ pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
   void $ liftIO udcAdditionalDefs
   svars <- declSymVars udcInputs
   let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-  liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
+  -- liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
   conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
 
 conditionalEval ::
@@ -615,16 +693,16 @@ conditionalEval ::
 conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
   (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
-  liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
+  -- liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
   result <- pruneAndValidate (q t') p axioms
-  liftIO $ putStrLn $ "result? " ++ show result
+  -- liftIO $ putStrLn $ "result? " ++ show result
   case result of
     PruneInconsistentAssumptions -> pure Discharged
     PruneImplicationHolds -> pure Verified
     PruneCounterFound m -> pure (CounterExample t m)
     _ ->
       if somethingWasDone == Any False
-        then pure (CounterExample t []) -- cannot check more
+        then pure (CounterExample t (Model [])) -- cannot check more
         else conditionalEval t' (OutCond q) (InCond p) axioms
 
 data PruneResult
@@ -685,31 +763,47 @@ checkProperty cOut cIn axioms env = do
   case decl of
     Right _ -> return ()
     Left s -> error s
-  cstrTotal <- assertConstraint vars (sestKnownNames env) (sestConstraint env)
-  outTotal <- assertConstraint vars (sestKnownNames env) cOut
+  (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
+  (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
   inconsistent <- SMT.checkSat
-  inTotal <- assertNotConstraint vars (sestKnownNames env) cIn
+  (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn
+  let everythingWasTranslated = cstrTotal && outTotal && inTotal
+  -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
   result <- SMT.checkSat
+  -- liftIO $ print result
+  -- liftIO $ print $ pretty (sestConstraint env)
+  -- liftIO $ print (cstrTotal, outTotal, inTotal)
   finalResult <- case (inconsistent, result) of
     (SMT.Unsat, _) -> return PruneInconsistentAssumptions
     (_, SMT.Unsat) -> return PruneImplicationHolds
     -- If a partial translation of the constraints is SAT,
     -- it does not guarantee us that the full set of constraints is satisfiable.
     -- Only in the case in which we could translate the entire thing to prove.
-    (_, SMT.Sat) | cstrTotal && outTotal && inTotal ->
+    (_, SMT.Sat) | everythingWasTranslated ->
       do
         m <- if null vars then pure [] else SMT.getModel (M.keys vars)
-        pure $ PruneCounterFound m
+        pure $ PruneCounterFound (Model m)
     (_, _) -> return PruneUnknown
   SMT.solverPop
   return finalResult
 
+instance Pretty Model where
+  pretty (Model m) =
+    enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- m])
+
 instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"
   pretty Discharged = "Discharged"
-  pretty (CounterExample t m) =
-    vsep
-      [ "COUNTER-EXAMPLE",
-        "Result:" <+> pretty t,
-        "Model:" <+> viaShow m
-      ]
+  pretty (CounterExample t (Model m)) =
+    let model = Model $ map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
+     in vsep
+          [ "COUNTER-EXAMPLE",
+            "Result:" <+> pretty t,
+            "Model:" <+> pretty model
+          ]
+    where
+      -- remove 'pir_' from the values
+      f "pir_Cons" = ":"
+      f "pir_Nil" = "[]"
+      f ('p' : 'i' : 'r' : '_' : rest) = rest
+      f other = other

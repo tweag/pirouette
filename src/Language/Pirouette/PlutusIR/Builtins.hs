@@ -50,6 +50,11 @@ instance LanguageBuiltins BuiltinsOfPIR where
   type BuiltinTerms BuiltinsOfPIR = P.DefaultFun
   type Constants BuiltinsOfPIR = PIRConstant
 
+instance LanguageBuiltinTypes BuiltinsOfPIR where
+  typeOfConstant = undefined
+  typeOfBuiltin = undefined
+  typeOfBottom = undefined
+
 -- | Builtin Plutus Types
 data PIRBuiltinType
   = PIRTypeInteger

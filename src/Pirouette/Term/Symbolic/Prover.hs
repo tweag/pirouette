@@ -6,8 +6,13 @@
 module Pirouette.Term.Symbolic.Prover where
 
 import Control.Monad.Except
+import Control.Monad.State
 import Control.Monad.Writer
+import qualified Data.Text as T
+import Pirouette.Monad (termIsWHNFOrMeta)
+import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
+import Pirouette.SMT.SimpleSMT (SExpr (..))
 import Pirouette.SMT.Translation
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Syntax
@@ -41,6 +46,28 @@ prove ::
   m [Path lang (EvaluationWitness lang)]
 prove problem = symevalT InfiniteFuel $ proveRaw problem
 
+proveWithFuel ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  Int ->
+  Problem lang ->
+  m [Path lang (EvaluationWitness lang)]
+proveWithFuel f problem = symevalT (Fuel f) $ proveRaw problem
+
+proveAny ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  (Path lang (EvaluationWitness lang) -> Bool) ->
+  Problem lang ->
+  m Bool
+proveAny p problem = symevalAnyPath p InfiniteFuel $ proveRaw problem
+
+proveAnyWithFuel ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  Int ->
+  (Path lang (EvaluationWitness lang) -> Bool) ->
+  Problem lang ->
+  m Bool
+proveAnyWithFuel f p problem = symevalAnyPath p (Fuel f) $ proveRaw problem
+
 proveRaw ::
   forall lang m.
   SymEvalConstr lang m =>
@@ -58,11 +85,16 @@ proveRaw Problem {..} = do
       assumeTerm = createTerm problemAssume allVars
       proveTerm = createTerm problemProve allVars
   -- now we start the loop
-  worker resultVar bodyTerm assumeTerm proveTerm
+  let smtVarNames = map (("pir_" <>) . T.unpack . nameString . symVar) allVars
+  refineWitness smtVarNames <$> worker resultVar bodyTerm assumeTerm proveTerm
   where
     createTerm :: Term lang -> [SymVar] -> SymTerm lang
     createTerm body vars =
       R.appN (termToMeta body) $ map (R.TermArg . (`R.App` []) . R.Meta) vars
+    -- only keep the variables we are interested about
+    refineWitness allVars (CounterExample tm (Model m)) =
+      CounterExample tm (Model [(Atom n, t) | (Atom n, t) <- m, n `elem` allVars])
+    refineWitness _ w = w
 
 worker ::
   forall lang m.
@@ -73,15 +105,38 @@ worker ::
   SymTerm lang ->
   SymEvalT lang m (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
+  -- liftIO $ putStrLn "ONE STEP"
+  -- liftIO $ print (pretty bodyTerm)
+  -- liftIO $ print (pretty assumeTerm)
+  -- liftIO $ print (pretty proveTerm)
+  -- _ <- liftIO getLine
+
+  -- terms are only useful if they are in WHNF or are stuck
+  -- (stuck-ness if defined per language)
+  knownNames <- gets sestKnownNames
+  let translate t = do
+        res <- runTranslator $ translateTerm knownNames t
+        isWHNF <- termIsWHNFOrMeta t
+        case res of
+          Left e -> pure $ Left e
+          Right (c, _)
+            | isStuckBuiltin t || isWHNF ->
+              pure $ Right c
+            | otherwise ->
+              pure $ Left "not stuck term"
   -- step 1. try to prune the thing
-  -- introduce the assumption about the result
-  learn $ And [Assign (symVar resultVar) bodyTerm]
-  mayAssumeCond <- runExceptT $ translateTerm [] Nothing assumeTerm
-  mayProveCond <- runExceptT $ translateTerm [] Nothing proveTerm
-  result <- case (mayAssumeCond, mayProveCond) of
-    -- if the assumption and thing-to-prove can be translated, try to prune with it
-    (Right assumeCond, Right proveCond) -> do
-      -- liftIO $ print (pretty bodyTerm)
+  mayBodyTerm <- translate bodyTerm
+  mayAssumeCond <- translate assumeTerm
+  mayProveCond <- translate proveTerm
+  -- introduce the assumption about the result, if useful
+  case mayBodyTerm of
+    Right _ -> learn $ And [Assign resultVar bodyTerm]
+    _ -> pure ()
+  -- now try to prune if we can translate the things
+  result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
+    -- if everything can be translated, try to prune with it
+    (Right _, Right assumeCond, Right proveCond) -> do
+      -- liftIO $ putStrLn "prunning..."
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
@@ -94,7 +149,19 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
       (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
       (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
+      -- liftIO $ putStrLn "ONE STEP"
+      -- liftIO $ print (pretty bodyTerm')
+      -- liftIO $ print (pretty assumeTerm')
+      -- liftIO $ print (pretty proveTerm')
       let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
-      if somethingWasEval == Any False
-        then pure $ CounterExample bodyTerm' []
-        else worker resultVar bodyTerm' assumeTerm' proveTerm'
+      -- liftIO $ print somethingWasEval
+      -- check the fuel
+      noMoreFuel <- fuelExhausted <$> currentFuel
+      -- currentFuel >>= liftIO . print
+      if noMoreFuel || somethingWasEval == Any False
+        then pure $ CounterExample bodyTerm' (Model [])
+        else do
+          normBodyTerm <- lift $ normalizeTerm bodyTerm'
+          normAssumeTerm <- lift $ normalizeTerm assumeTerm'
+          normProveTerm <- lift $ normalizeTerm proveTerm'
+          worker resultVar normBodyTerm normAssumeTerm normProveTerm

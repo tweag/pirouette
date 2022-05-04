@@ -95,6 +95,15 @@ instance Pretty Text.Text where
 instance Pretty Bool where
   pretty = Prettyprint.pretty
 
+instance Pretty Float where
+  pretty = Prettyprint.pretty
+
+instance Pretty Double where
+  pretty = Prettyprint.pretty
+
+instance Pretty Rational where
+  pretty x = Prettyprint.pretty (fromRational x :: Double)
+
 instance Pretty ByteString where
   pretty = prettyList . ByteString.unpack
 

@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -100,6 +101,14 @@ tyFunArgs :: AnnType ann tyVar -> ([AnnType ann tyVar], AnnType ann tyVar)
 tyFunArgs (TyFun u t) = first (u :) $ tyFunArgs t
 tyFunArgs t = ([], t)
 
+tyUnwrapBinders :: Int -> AnnType ann tyVar -> ([(Ann ann, Kind)], AnnType ann tyVar)
+tyUnwrapBinders n ty
+  | n <= 0 = ([], ty)
+  | otherwise = case ty of
+    TyLam a k rest -> first ((a, k) :) $ tyUnwrapBinders (n - 1) rest
+    TyAll a k rest -> first ((a, k) :) $ tyUnwrapBinders (n - 1) rest
+    _ -> ([], ty)
+
 -- | Given a @t : AnnType ann ty@, returns how many arguments would we
 --  have to provide a @AnnTerm@ of type @t@ to fully saturate it. This includes
 --  type arguments!
@@ -107,17 +116,22 @@ tyArity :: AnnType ann tyVar -> Int
 tyArity (TyAll _ _ t) = 1 + tyArity t
 tyArity t = tyMonoArity t
 
+-- | Unlike 'tyArity', we only compute how many type arguments a type can receive
+tyPolyArity :: AnnType ann tyVar -> Int
+tyPolyArity (TyAll _ _ t) = 1 + tyPolyArity t
+tyPolyArity _ = 0
+
 -- | Unlike 'tyArity', we only compute how many term arguments a term of
 --  the given type has to receive
 tyMonoArity :: AnnType ann tyVar -> Int
 tyMonoArity = length . fst . tyFunArgs
 
-tyPure :: tyVar -> AnnType ann tyVar
-tyPure v = TyApp v []
+pattern TyPure :: tyVar -> AnnType ann tyVar
+pattern TyPure v = TyApp v []
 
 instance (IsVar tyVar) => HasSubst (AnnType ann tyVar) where
   type SubstVar (AnnType ann tyVar) = tyVar
-  var = tyPure
+  var = TyPure
 
   subst s (TyApp n xs) = appN (applySub s n) $ map (subst s) xs
   subst s (TyFun t u) = TyFun (subst s t) (subst s u)

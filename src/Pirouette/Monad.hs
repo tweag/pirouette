@@ -18,6 +18,7 @@ import qualified Control.Monad.State.Lazy as Lazy
 import qualified Control.Monad.State.Strict as Strict
 import Data.Data (Data)
 import qualified Data.Map as Map
+import Data.Maybe (isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import ListT (ListT)
@@ -191,6 +192,43 @@ consIsRecursive ty con = do
 --  you want to know whether a term is depends on itself transitively.
 termIsRecursive :: (PirouetteReadDefs lang m) => Name -> m Bool
 termIsRecursive n = Set.member (SystF.TermArg n) <$> directDepsOf n
+
+data WHNFResult lang meta
+  = WHNFConstant (Constants lang)
+  | WHNFConstructor Int Name [ArgMeta lang meta]
+
+-- | Returns whether a term is in Weak Head Normal Form,
+-- that is, a constant or a constructor followed by any arguments.
+termIsWHNF :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m (Maybe (WHNFResult lang meta))
+termIsWHNF (SystF.App vm args) = case vm of
+  SystF.Bound {} -> pure Nothing
+  SystF.Meta {} -> pure Nothing
+  SystF.Free (Constant c) -> pure $ Just (WHNFConstant c)
+  SystF.Free (TermSig n) -> do
+    mDef <- prtDefOf n
+    case mDef of
+      DConstructor ix ty -> pure $ Just (WHNFConstructor ix ty args)
+      _ -> pure Nothing
+  SystF.Free _ -> pure Nothing
+termIsWHNF _ = pure Nothing
+
+-- | Returns whether the term is a meta-variable.
+termIsMeta :: TermMeta lang meta -> Maybe meta
+termIsMeta (SystF.App (SystF.Meta m) _args) = Just m
+termIsMeta _ = Nothing
+
+-- | Returns whether the term begins with a built-in.
+termIsBuiltin :: TermMeta lang meta -> Bool
+termIsBuiltin (SystF.App (SystF.Free (Builtin _)) _args) = True
+termIsBuiltin _ = False
+
+-- | Returns whether a term is in Weak Head Normal Form,
+-- that is, a constant or a constructor followed by any arguments.
+termIsWHNFOrMeta :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m Bool
+termIsWHNFOrMeta tm = do
+  let m = termIsMeta tm
+  w <- termIsWHNF tm
+  return $ isJust m || isJust w
 
 -- *** Implementations for 'PirouetteReadDefs'
 

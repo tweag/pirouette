@@ -164,7 +164,7 @@ destructorTypeFor tname Datatype {..} =
   where
     arity = length typeVariables
 
-    res = SystF.tyPure $ SystF.Bound (SystF.Ann $ fromString "res") 0
+    res = SystF.TyPure $ SystF.Bound (SystF.Ann $ fromString "res") 0
 
     mkConstructorType :: Type lang -> Type lang
     mkConstructorType =
@@ -176,7 +176,7 @@ destructorTypeFor tname Datatype {..} =
     tyArgs :: [Type lang]
     tyArgs =
       zipWith
-        (\(n, _) ix -> SystF.tyPure $ SystF.Bound (SystF.Ann n) (fromIntegral ix))
+        (\(n, _) ix -> SystF.TyPure $ SystF.Bound (SystF.Ann n) (fromIntegral ix))
         typeVariables
         (reverse [0 .. arity - 1])
 

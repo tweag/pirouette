@@ -16,6 +16,7 @@ class (LanguageBuiltins lang) => LanguageSMT lang where
   translateBuiltinType :: BuiltinTypes lang -> SimpleSMT.SExpr
   translateBuiltinTerm :: BuiltinTerms lang -> [SimpleSMT.SExpr] -> Maybe SimpleSMT.SExpr
   translateConstant :: Constants lang -> SimpleSMT.SExpr
+  isStuckBuiltin :: TermMeta lang meta -> Bool
 
 -- | Captures arbitrary types that can be translated to SMTLIB.
 class (Show t) => ToSMT t where

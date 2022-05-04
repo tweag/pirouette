@@ -1,6 +1,6 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE Safe #-}
 
 -- Copyright (c) 2021, Tweag I/O Limited
 -- Copyright (c) 2014, Iavor S. Diatchki
@@ -22,6 +22,8 @@ module Pirouette.SMT.SimpleSMT
     showsSExpr,
     ppSExpr,
     readSExpr,
+    overAtomV,
+    overAtomS,
 
     -- ** Logging and Debugging
     Logger (..),
@@ -174,6 +176,7 @@ import Data.IORef
 import Data.List (intersperse, unfoldr)
 import Data.Ratio (denominator, numerator, (%))
 import Numeric (readHex, showFFloat, showHex)
+import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import System.Exit (ExitCode)
 import System.IO (hClose, hFlush, hGetContents, hGetLine, hPutStrLn, stdout)
 import System.Process (runInteractiveProcess, waitForProcess)
@@ -211,6 +214,16 @@ data SExpr
   | List [SExpr]
   deriving (Eq, Ord, Show)
 
+-- | Apply a function over all atom in a Value.
+overAtomV :: (String -> String) -> Value -> Value
+overAtomV f (Other s) = Other (overAtomS f s)
+overAtomV _ rest = rest
+
+-- | Apply a function over all atoms in a S-expression.
+overAtomS :: (String -> String) -> SExpr -> SExpr
+overAtomS f (Atom s) = Atom (f s)
+overAtomS f (List ss) = List [overAtomS f s | s <- ss]
+
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
 showsSExpr ex =
@@ -220,6 +233,21 @@ showsSExpr ex =
       showChar '('
         . foldr
           (\e m -> showsSExpr e . showChar ' ' . m)
+          (showChar ')')
+          es
+
+-- | Show an s-expression without intermediate 'as'.
+showsSExprWithoutAs :: SExpr -> ShowS
+showsSExprWithoutAs (List [Atom "as", x, _]) =
+  showsSExprWithoutAs x
+showsSExprWithoutAs ex =
+  case ex of
+    Atom x -> showString x
+    List es ->
+      showChar '('
+        . drop 1 -- remove the initial space
+        . foldr
+          (\e m -> showChar ' ' . showsSExprWithoutAs e . m)
           (showChar ')')
           es
 
@@ -254,6 +282,16 @@ ppSExpr = go 0
             . many (map (new (n + 3)) es)
             . showString ")"
         List es -> showString "(" . many (map (new (n + 2)) es) . showString ")"
+
+instance Pretty Value where
+  pretty (Bool b) = pretty b
+  pretty (Int n) = pretty n
+  pretty (Real r) = pretty r
+  pretty (Bits _n v) = "#x" <> pretty v
+  pretty (Other e) = pretty e
+
+instance Pretty SExpr where
+  pretty p = pretty $ showsSExprWithoutAs p ""
 
 -- | Parse an s-expression.
 readSExpr :: String -> Maybe (SExpr, String)
@@ -908,7 +946,9 @@ and :: SExpr -> SExpr -> SExpr
 and p q = fun "and" [p, q]
 
 andMany :: [SExpr] -> SExpr
-andMany xs = if null xs then bool True else fun "and" xs
+andMany [] = bool True
+andMany [x] = x
+andMany xs = fun "and" xs
 
 -- | Disjunction.
 or :: SExpr -> SExpr -> SExpr

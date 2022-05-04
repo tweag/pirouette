@@ -358,7 +358,7 @@ applyRewRules t = foldM (flip applyOneRule) t (map parseRewRule allRewRules)
                 then Just Map.empty
                 else Nothing
             _ -> Nothing
-        Just i -> Just $ Map.singleton i (SystF.TyArg $ SystF.tyPure vT)
+        Just i -> Just $ Map.singleton i (SystF.TyArg $ SystF.TyPure vT)
     isTyVarInstance (SystF.Free nL) (SystF.Free nT) =
       if tyHaveSameString nL nT then Just Map.empty else Nothing
     isTyVarInstance SystF.Bound {} (SystF.Free _) = Nothing
