@@ -91,7 +91,7 @@ etaExpandAux decls env (hd `SystF.App` args) =
     mkExpIndices :: Integer -> Integer -> [FlatArgType lang] -> [Arg lang]
     mkExpIndices _ _ [] = []
     mkExpIndices mTy mTerm (FlatTyArg _ : as) =
-      SystF.TyArg (SystF.tyPure $ SystF.Bound (SystF.Ann "H") (mTy - 1)) : -- H is capital η :)
+      SystF.TyArg (SystF.TyPure $ SystF.Bound (SystF.Ann "H") (mTy - 1)) : -- H is capital η :)
       mkExpIndices (mTy - 1) mTerm as
     mkExpIndices mTy mTerm (FlatTermArg _ : as) =
       SystF.TermArg (SystF.termPure $ SystF.Bound (SystF.Ann "η") (mTerm - 1)) :

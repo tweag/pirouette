@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -125,12 +126,12 @@ tyPolyArity _ = 0
 tyMonoArity :: AnnType ann tyVar -> Int
 tyMonoArity = length . fst . tyFunArgs
 
-tyPure :: tyVar -> AnnType ann tyVar
-tyPure v = TyApp v []
+pattern TyPure :: tyVar -> AnnType ann tyVar
+pattern TyPure v = TyApp v []
 
 instance (IsVar tyVar) => HasSubst (AnnType ann tyVar) where
   type SubstVar (AnnType ann tyVar) = tyVar
-  var = tyPure
+  var = TyPure
 
   subst s (TyApp n xs) = appN (applySub s n) $ map (subst s) xs
   subst s (TyFun t u) = TyFun (subst s t) (subst s u)

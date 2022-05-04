@@ -372,6 +372,9 @@ fun and : Bool -> Bool -> Bool
 fun eqInt : Integer -> Integer -> Bool
   = \(x : Integer) (y : Integer) . x == y
 
+fun eqString : String -> String -> Bool
+  = \(x : String) (y : String) . x ~~ y
+
 data List (a : Type)
   = Nil : List a
   | Cons : a -> List a -> List a
@@ -426,18 +429,18 @@ fun lkup : all (k : Type)(v : Type) . (k -> k -> Bool) -> KVMap k v -> k -> Mayb
 -- Just like a plutus value, but se use integers for currency symbols and token names
 -- to not have to deal with bytestrings
 data Value
-  = V : KVMap Integer (KVMap Integer Integer) -> Value
+  = V : KVMap String (KVMap String Integer) -> Value
 
 -- Analogous to Plutus assetClassValueOf
-fun assetClassValueOf : Value -> Pair Integer Integer -> Integer
-  = \(v : Value) (ac : Pair Integer Integer)
-  . match_Pair @Integer @Integer ac @Integer
-      (\(curSym : Integer) (tokName : Integer)
+fun assetClassValueOf : Value -> Pair String String -> Integer
+  = \(v : Value) (ac : Pair String String)
+  . match_Pair @String @String ac @Integer
+      (\(curSym : String) (tokName : String)
        . match_Value v @Integer
-       (\(openV : KVMap Integer (KVMap Integer Integer))
-        . match_Maybe @(KVMap Integer Integer) (lkup @Integer @(KVMap Integer Integer) eqInt openV curSym) @Integer
-            (\(tokM : KVMap Integer Integer)
-             . match_Maybe @Integer (lkup @Integer @Integer (\(x : Integer) (y : Integer) . x == y) tokM tokName) @Integer
+       (\(openV : KVMap String (KVMap String Integer))
+        . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Integer
+            (\(tokM : KVMap String Integer)
+             . match_Maybe @Integer (lkup @String @Integer eqString tokM tokName) @Integer
                  (\(r : Integer) . r)
                  0
             )
@@ -445,8 +448,8 @@ fun assetClassValueOf : Value -> Pair Integer Integer -> Integer
       ))
 
 -- Now we define the wrong isUnity function, that is too permissive
-fun minSwap_isUnity : Value -> Pair Integer Integer -> Bool
-  = \(v : Value) (ac : Pair Integer Integer) . assetClassValueOf v ac == 1
+fun minSwap_isUnity : Value -> Pair String String -> Bool
+  = \(v : Value) (ac : Pair String String) . assetClassValueOf v ac == 1
 
 -- The correct spec for that should be exactly what we wrote in our blogpost:
 --
@@ -455,24 +458,24 @@ fun minSwap_isUnity : Value -> Pair Integer Integer -> Bool
 -- >  where (curr, tok) = unAssetClass c
 --
 -- In our example language, that gets a little more verbose! :P
-fun correct_isUnity : Value -> Pair Integer Integer -> Bool
-  = \(v : Value) (ac : Pair Integer Integer)
-  . match_Pair @Integer @Integer ac @Bool
-      (\(curSym : Integer) (tokName : Integer)
+fun correct_isUnity : Value -> Pair String String -> Bool
+  = \(v : Value) (ac : Pair String String)
+  . match_Pair @String @String ac @Bool
+      (\(curSym : String) (tokName : String)
        . match_Value v @Bool
-       (\(openV : KVMap Integer (KVMap Integer Integer))
-        . match_Maybe @(KVMap Integer Integer) (lkup @Integer @(KVMap Integer Integer) eqInt openV curSym) @Bool
-            (\(tokM : KVMap Integer Integer)
-             . listEq @(Pair Integer Integer)
-                 (pairEq @Integer @Integer eqInt eqInt)
-                 (toList @Integer @Integer tokM)
-                 (Cons @(Pair Integer Integer) (P @Integer @Integer tokName 1) (Nil @(Pair Integer Integer))))
+       (\(openV : KVMap String (KVMap String Integer))
+        . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Bool
+            (\(tokM : KVMap String Integer)
+             . listEq @(Pair String Integer)
+                 (pairEq @String @Integer eqString eqInt)
+                 (toList @String @Integer tokM)
+                 (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))
             False
        ))
 
 -- Now we define a simple example asset class
-fun example_ac : Pair Integer Integer
-  = P @Integer @Integer 42 42
+fun example_ac : Pair String String
+  = P @String @String "currency" "token"
 
 -- And the infamous validator, slightly simplified:
 fun validator : Value -> Bool

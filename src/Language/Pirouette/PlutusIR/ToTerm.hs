@@ -244,7 +244,7 @@ trType (PIR.TyForall _ v k body) =
   SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyVar _ tyn) =
   asks
-    ( SystF.tyPure
+    ( SystF.TyPure
         . maybe (SystF.Free $ TySig $ toName tyn) (SystF.Bound (SystF.Ann $ toName tyn) . fromIntegral)
         . L.elemIndex (toName tyn)
         . typeStack
@@ -252,7 +252,7 @@ trType (PIR.TyVar _ tyn) =
 trType (PIR.TyFun _ t u) = SystF.TyFun <$> trType t <*> trType u
 trType (PIR.TyApp _ t u) = SystF.tyApp <$> trType t <*> trType u
 trType (PIR.TyBuiltin _ (P.SomeTypeIn uni)) =
-  return $ SystF.tyPure (SystF.Free $ TyBuiltin $ defUniToType uni)
+  return $ SystF.TyPure (SystF.Free $ TyBuiltin $ defUniToType uni)
 trType (PIR.TyIFix l _ _) = throwError $ NotYetImplemented l "TyIFix"
 
 trTermType ::
