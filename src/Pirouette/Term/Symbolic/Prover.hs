@@ -8,9 +8,11 @@ module Pirouette.Term.Symbolic.Prover where
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Writer
+import qualified Data.Text as T
 import Pirouette.Monad (termIsWHNFOrMeta)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
+import Pirouette.SMT.SimpleSMT (SExpr (..))
 import Pirouette.SMT.Translation
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Syntax
@@ -83,11 +85,16 @@ proveRaw Problem {..} = do
       assumeTerm = createTerm problemAssume allVars
       proveTerm = createTerm problemProve allVars
   -- now we start the loop
-  worker resultVar bodyTerm assumeTerm proveTerm
+  let smtVarNames = map (("pir_" <>) . T.unpack . nameString . symVar) allVars
+  refineWitness smtVarNames <$> worker resultVar bodyTerm assumeTerm proveTerm
   where
     createTerm :: Term lang -> [SymVar] -> SymTerm lang
     createTerm body vars =
       R.appN (termToMeta body) $ map (R.TermArg . (`R.App` []) . R.Meta) vars
+    -- only keep the variables we are interested about
+    refineWitness allVars (CounterExample tm (Model m)) =
+      CounterExample tm (Model [(Atom n, t) | (Atom n, t) <- m, n `elem` allVars])
+    refineWitness _ w = w
 
 worker ::
   forall lang m.
