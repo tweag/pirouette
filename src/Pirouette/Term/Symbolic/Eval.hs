@@ -70,6 +70,7 @@ import Data.Data hiding (eqT)
 import Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
+import Data.String (IsString)
 import ListT.Extra (ListT)
 import qualified ListT.Extra as ListT
 import Pirouette.Monad
@@ -86,7 +87,7 @@ import Prettyprinter hiding (Pretty (..))
 -- import Debug.Trace (trace)
 
 newtype SymVar = SymVar {symVar :: Name}
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, IsString)
 
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar
@@ -94,10 +95,10 @@ instance SMT.ToSMT SymVar where
 type Constraint lang = SMT.Constraint lang SymVar
 
 symVarEq :: SymVar -> SymVar -> Constraint lang
-symVarEq a b = SMT.And [SMT.VarEq (symVar a) (symVar b)]
+symVarEq a b = SMT.And [SMT.VarEq a b]
 
 (=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
-a =:= t = SMT.And [SMT.Assign (symVar a) t]
+a =:= t = SMT.And [SMT.Assign a t]
 
 data PathStatus = Completed | OutOfFuel deriving (Eq, Show)
 
@@ -506,7 +507,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
             let caseTerm = cases !! ix
             consumeFuel
             pure $ (caseTerm `R.appN` dropWhile R.isTyArg constructorArgs) `R.appN` excess
-  R.Meta (SymVar vr) -> do
+  R.Meta vr -> do
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint
     case cstr of

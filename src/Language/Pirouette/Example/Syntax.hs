@@ -140,11 +140,9 @@ instance LanguageSMT Ex where
   isStuckBuiltin tm = isJust (termIsMeta tm)
 
 pattern BTrue :: TermMeta Ex meta
-
-pattern BFalse :: TermMeta Ex meta
-
 pattern BTrue = SystF.App (SystF.Free (Constant (ConstBool True))) []
 
+pattern BFalse :: TermMeta Ex meta
 pattern BFalse = SystF.App (SystF.Free (Constant (ConstBool False))) []
 
 pattern IConstant :: Integer -> TermMeta Ex meta
@@ -159,6 +157,35 @@ instance LanguageSMTBranches Ex where
         BTrue -> pure $ Just [Branch (And []) t]
         BFalse -> pure $ Just [Branch (And []) e]
         SystF.App (SystF.Free (Builtin TermEq)) [SystF.TermArg x, SystF.TermArg y]
+          -- try to generate the best type of constraint
+          -- from the available equality ones
+          | Just x1 <- termIsMeta x,
+            Just y1 <- termIsMeta y ->
+            pure $
+              Just
+                [ -- either they are equal
+                  Branch (And [VarEq x1 y1]) t,
+                  -- or they are not
+                  Branch (And [NonInlinableSymbolNotEq x y]) e
+                ]
+          | Just x1 <- termIsMeta x,
+            isStuckBuiltin y ->
+            pure $
+              Just
+                [ -- either they are equal
+                  Branch (And [Assign x1 y]) t,
+                  -- or they are not
+                  Branch (And [NonInlinableSymbolNotEq x y]) e
+                ]
+          | isStuckBuiltin x,
+            Just y1 <- termIsMeta y ->
+            pure $
+              Just
+                [ -- either they are equal
+                  Branch (And [Assign y1 x]) t,
+                  -- or they are not
+                  Branch (And [NonInlinableSymbolNotEq y x]) e
+                ]
           | isStuckBuiltin x,
             isStuckBuiltin y ->
             pure $
@@ -169,13 +196,13 @@ instance LanguageSMTBranches Ex where
                   Branch (And [NonInlinableSymbolNotEq x y]) e
                 ]
         _
-          | Just _ <- termIsMeta c ->
+          | Just v <- termIsMeta c ->
             pure $
               Just
                 [ -- c is True => t is executed
-                  Branch (And [NonInlinableSymbolEq c BTrue]) t,
+                  Branch (And [Assign v BTrue]) t,
                   -- c is False => e is executed
-                  Branch (And [NonInlinableSymbolEq c BFalse]) e
+                  Branch (And [Assign v BFalse]) e
                 ]
         _ -> pure Nothing
   branchesBuiltinTerm _ _ _ = pure Nothing

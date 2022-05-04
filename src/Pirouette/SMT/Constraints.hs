@@ -36,8 +36,8 @@ type Env lang = Map Name (Type lang)
 -- (Because it is a builtin or a constant),
 -- whereas the other one represents an ongoing computation killed by lack of fuel.
 data AtomicConstraint lang meta
-  = Assign Name (TermMeta lang meta)
-  | VarEq Name Name
+  = Assign meta (TermMeta lang meta)
+  | VarEq meta meta
   | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
   | NonInlinableSymbolNotEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
@@ -140,13 +140,13 @@ atomicConstraintToSExpr ::
   AtomicConstraint lang meta ->
   TranslatorT m SimpleSMT.SExpr
 atomicConstraintToSExpr knownNames (Assign name term) = do
-  let smtName = toSmtName name
+  let smtName = translate name
   d <- translateTerm knownNames term
-  return $ SimpleSMT.symbol smtName `SimpleSMT.eq` d
+  return $ smtName `SimpleSMT.eq` d
 atomicConstraintToSExpr _knownNames (VarEq a b) = do
-  let aName = toSmtName a
-  let bName = toSmtName b
-  return $ SimpleSMT.symbol aName `SimpleSMT.eq` SimpleSMT.symbol bName
+  let aName = translate a
+  let bName = translate b
+  return $ aName `SimpleSMT.eq` bName
 atomicConstraintToSExpr knownNames (NonInlinableSymbolEq term1 term2) = do
   t1 <- translateTerm knownNames term1
   t2 <- translateTerm knownNames term2

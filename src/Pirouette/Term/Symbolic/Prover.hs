@@ -123,7 +123,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   mayProveCond <- translate proveTerm
   -- introduce the assumption about the result, if useful
   case mayBodyTerm of
-    Right _ -> learn $ And [Assign (symVar resultVar) bodyTerm]
+    Right _ -> learn $ And [Assign resultVar bodyTerm]
     _ -> pure ()
   -- now try to prune if we can translate the things
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
