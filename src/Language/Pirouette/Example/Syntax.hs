@@ -75,6 +75,13 @@ data ExTerm
   | TermIte
   deriving (Eq, Ord, Show, Data, Typeable, Lift)
 
+exTermIsArithOp :: ExTerm -> Bool
+exTermIsArithOp TermAdd = True
+exTermIsArithOp TermSub = True
+exTermIsArithOp TermLt = True
+exTermIsArithOp TermEq = True
+exTermIsArithOp _ = False
+
 instance Pretty ExTerm where
   prettyPrec _ TermAdd = "add"
   prettyPrec _ TermSub = "sub"
@@ -133,22 +140,43 @@ instance LanguageSMT Ex where
   translateBuiltinTerm _ _ = Nothing
 
   -- they are stuck if they are constants, ot a not-ite builtin
-  isStuckBuiltin (IConstant _) = True
-  isStuckBuiltin (SystF.App (SystF.Free (Builtin b)) args)
-    | b /= TermIte =
-      all (isStuckBuiltin . (\(SystF.TermArg a) -> a)) args
+  isStuckBuiltin e
+    | isConstant e = True
+  isStuckBuiltin (SystF.App (SystF.Free (Builtin op)) args)
+    | exTermIsArithOp op =
+      let args' = map (\(SystF.TermArg a) -> a) args
+       in all isStuckBuiltin args' && not (all isConstant args')
   isStuckBuiltin tm = isJust (termIsMeta tm)
 
+isConstant :: TermMeta Ex meta -> Bool
+isConstant (IConstant _) = True
+isConstant (BConstant _) = True
+isConstant _ = False
+
+pattern BConstant :: Bool -> TermMeta Ex meta
+pattern BConstant b = SystF.App (SystF.Free (Constant (ConstBool b))) []
+
 pattern BTrue :: TermMeta Ex meta
-pattern BTrue = SystF.App (SystF.Free (Constant (ConstBool True))) []
+pattern BTrue = BConstant True
 
 pattern BFalse :: TermMeta Ex meta
-pattern BFalse = SystF.App (SystF.Free (Constant (ConstBool False))) []
+pattern BFalse = BConstant False
 
 pattern IConstant :: Integer -> TermMeta Ex meta
 pattern IConstant n = SystF.App (SystF.Free (Constant (ConstInt n))) []
 
 instance LanguageSMTBranches Ex where
+  -- translate arithmetic operations applied to constants
+  branchesBuiltinTerm op _translator [SystF.TermArg (IConstant x), SystF.TermArg (IConstant y)]
+    | exTermIsArithOp op =
+      pure $ Just [Branch mempty (apply op)]
+    where
+      apply TermAdd = IConstant (x + y)
+      apply TermSub = IConstant (x - y)
+      apply TermLt = BConstant (x < y)
+      apply TermEq = BConstant (x == y)
+      apply _ = error "this should never happen"
+  -- the gist of it: branch when we find an 'if'
   branchesBuiltinTerm
     TermIte
     _translator
