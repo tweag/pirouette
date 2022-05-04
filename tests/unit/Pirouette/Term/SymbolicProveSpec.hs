@@ -243,7 +243,7 @@ ohearnTest =
   testGroup
     "OHearn"
     [ testCase "[y == 11] ohearn [snd result == 42] counter" $
-        let test = isCounterWith $ \p ->
+        let test = isCounterWith $ \(Model p) ->
               case lookup (SimpleSMT.Atom "pir_x") p of
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _])) ->
                   odd (read fstX)
@@ -314,7 +314,7 @@ ohearnTestPeano =
   testGroup
     "OHearn Peano"
     [ testCase "[y == 1] ohearn-peano [snd result == 2] counter" $
-        let test = isCounterWith $ \p ->
+        let test = isCounterWith $ \(Model p) ->
               case lookup (SimpleSMT.Atom "pir_x") p of
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _])) ->
                   fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]

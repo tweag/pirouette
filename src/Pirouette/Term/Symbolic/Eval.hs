@@ -39,7 +39,7 @@ module Pirouette.Term.Symbolic.Eval
     InCond (..),
     OutCond (..),
     EvaluationWitness (..),
-    Model,
+    Model (..),
 
     -- * Internal, used to build on top of 'SymEvalT'
     SymEvalConstr,
@@ -66,6 +66,7 @@ import Control.Monad.Except
 import Control.Monad.Reader (ask)
 import Control.Monad.State
 import Control.Monad.Writer
+import Data.Bifunctor (bimap)
 import Data.Data hiding (eqT)
 import Data.Foldable
 import qualified Data.List as List
@@ -581,9 +582,9 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 --- TMP CODE
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
-  pretty (Path conds gamma ps res) =
+  pretty (Path conds _gamma ps res) =
     vsep
-      [ "Env:" <+> hsep (map pretty (M.toList gamma)),
+      [ "", -- "Env:" <+> hsep (map pretty (M.toList gamma)),
         "Path:" <+> indent 2 (pretty conds),
         "Status:" <+> pretty ps,
         "Tip:" <+> indent 2 (pretty res)
@@ -628,7 +629,8 @@ newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
 
 newtype InCond lang = InCond (Constraint lang)
 
-type Model = [(SimpleSMT.SExpr, SimpleSMT.Value)]
+newtype Model = Model [(SimpleSMT.SExpr, SimpleSMT.Value)]
+  deriving (Eq, Show)
 
 data EvaluationWitness lang
   = Verified
@@ -700,7 +702,7 @@ conditionalEval t (OutCond q) (InCond p) axioms = do
     PruneCounterFound m -> pure (CounterExample t m)
     _ ->
       if somethingWasDone == Any False
-        then pure (CounterExample t []) -- cannot check more
+        then pure (CounterExample t (Model [])) -- cannot check more
         else conditionalEval t' (OutCond q) (InCond p) axioms
 
 data PruneResult
@@ -780,17 +782,28 @@ checkProperty cOut cIn axioms env = do
     (_, SMT.Sat) | everythingWasTranslated ->
       do
         m <- if null vars then pure [] else SMT.getModel (M.keys vars)
-        pure $ PruneCounterFound m
+        pure $ PruneCounterFound (Model m)
     (_, _) -> return PruneUnknown
   SMT.solverPop
   return finalResult
 
+instance Pretty Model where
+  pretty (Model m) =
+    enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- m])
+
 instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"
   pretty Discharged = "Discharged"
-  pretty (CounterExample t m) =
-    vsep
-      [ "COUNTER-EXAMPLE",
-        "Result:" <+> pretty t,
-        "Model:" <+> viaShow m
-      ]
+  pretty (CounterExample t (Model m)) =
+    let model = Model $ map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
+     in vsep
+          [ "COUNTER-EXAMPLE",
+            "Result:" <+> pretty t,
+            "Model:" <+> pretty model
+          ]
+    where
+      -- remove 'pir_' from the values
+      f "pir_Cons" = ":"
+      f "pir_Nil" = "[]"
+      f ('p' : 'i' : 'r' : '_' : rest) = rest
+      f other = other

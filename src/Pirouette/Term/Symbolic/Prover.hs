@@ -152,7 +152,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       noMoreFuel <- fuelExhausted <$> currentFuel
       -- currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
-        then pure $ CounterExample bodyTerm' []
+        then pure $ CounterExample bodyTerm' (Model [])
         else do
           normBodyTerm <- lift $ normalizeTerm bodyTerm'
           normAssumeTerm <- lift $ normalizeTerm assumeTerm'
