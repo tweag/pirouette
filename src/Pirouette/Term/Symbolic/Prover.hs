@@ -132,11 +132,13 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   case mayBodyTerm of
     Right _ -> learn $ And [Assign resultVar bodyTerm]
     _ -> pure ()
+  -- liftIO $ print $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
     -- if everything can be translated, try to prune with it
     (Right _, Right assumeCond, Right proveCond) -> do
       -- liftIO $ putStrLn "prunning..."
+      -- _ <- liftIO getLine
       pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
