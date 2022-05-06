@@ -8,6 +8,7 @@
 module Pirouette.Term.SymbolicProveSpec (tests) where
 
 import Control.Monad.Reader
+import Data.Maybe (isJust)
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.MinSwap as MinSwap
 import Pirouette.Monad
@@ -249,7 +250,7 @@ ohearnTest =
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _])) ->
                   odd (read fstX)
                 _ -> False
-         in exec (proveAnyWithFuel 50 test) conditionals1 condWrongTriple *=* True
+         in exec (proveAnyWithFuel 50 test) conditionals1 condWrongTriple `satisfies` isJust
         -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
         --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
@@ -320,7 +321,7 @@ ohearnTestPeano =
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _])) ->
                   fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
                 _ -> False
-         in exec (proveAnyWithFuel 50 test) conditionals1Peano condWrongTriplePeano *=* True
+         in exec (proveAnyWithFuel 50 test) conditionals1Peano condWrongTriplePeano `satisfies` isJust
         -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
         --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
@@ -405,7 +406,7 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 100 isCounter') minswap condMinSwap *=* True
+        execFull (proveAnyWithFuel 200 isCounter') minswap condMinSwap `satisfies` isJust
     ]
   where
     isCounter' t

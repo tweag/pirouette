@@ -214,7 +214,7 @@ instance LanguageSMTBranches Ex where
           isEq _ = False
           t' = t `SystF.appN` excess
           e' = e `SystF.appN` excess
-      in case c of
+       in case c of
             BTrue -> pure $ Just [Branch (And []) t]
             BFalse -> pure $ Just [Branch (And []) e]
             SystF.App (SystF.Free (Builtin eq)) [SystF.TermArg x, SystF.TermArg y]

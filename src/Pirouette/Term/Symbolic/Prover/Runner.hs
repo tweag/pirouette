@@ -4,7 +4,6 @@
 module Pirouette.Term.Symbolic.Prover.Runner where
 
 import Control.Monad.Reader
-import Data.Maybe (mapMaybe)
 import Pirouette.Monad
 import Pirouette.SMT
 import Pirouette.Term.Symbolic.Eval
@@ -39,30 +38,27 @@ incorrectnessLogic fuel program validator (post :==>: pre) = do
             flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
               typeInferTerm validator
     flip runReaderT orderedDecls $ do
-      proveWithFuel fuel (Problem resultTy validator post pre)
+      proveAnyWithFuel fuel isCounter (Problem resultTy validator post pre)
   printResult fuel result
+  where
+    isCounter Path {pathResult = CounterExample _ _} = True
+    isCounter _ = False
 
 printResult ::
   Int ->
-  Either String [Path lang (EvaluationWitness lang)] ->
+  Either String (Maybe (Path lang (EvaluationWitness lang))) ->
   IO ()
 printResult _ (Left e) = do
   setSGR [SetColor Foreground Vivid Red]
   putStrLn "UNEXPECTED ERROR"
   setSGR [Reset]
   putStrLn e
-printResult steps (Right paths) =
-  let counters = flip mapMaybe paths $ \p ->
-        case pathResult p of
-          CounterExample _ m -> Just m
-          _ -> Nothing
-   in case counters of
-        [] -> do
-          setSGR [SetColor Foreground Vivid Green]
-          putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"
-          setSGR [Reset]
-        (counter : _) -> do
-          setSGR [SetColor Foreground Vivid Yellow]
-          putStrLn "💸 COUNTEREXAMPLE FOUND"
-          setSGR [Reset]
-          print $ pretty counter
+printResult _ (Right (Just Path {pathResult = CounterExample _ model})) = do
+  setSGR [SetColor Foreground Vivid Yellow]
+  putStrLn "💸 COUNTEREXAMPLE FOUND"
+  setSGR [Reset]
+  print $ pretty model
+printResult steps (Right _) = do
+  setSGR [SetColor Foreground Vivid Green]
+  putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"
+  setSGR [Reset]

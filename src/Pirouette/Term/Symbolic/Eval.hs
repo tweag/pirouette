@@ -188,7 +188,7 @@ symevalAnyPath ::
   (Path lang a -> Bool) ->
   AvailableFuel ->
   SymEvalT lang m a ->
-  m Bool
+  m (Maybe (Path lang a))
 symevalAnyPath p initialFuel =
   ListT.anyPath p . runSymEvalTWorker st0
   where
@@ -694,7 +694,7 @@ conditionalEval t (OutCond q) (InCond p) axioms = do
   normalizedT <- lift $ normalizeTerm t
   (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
   -- liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
-  result <- pruneAndValidate (q t') p axioms
+  result <- pruneAndValidate (q t') (Just p) axioms
   -- liftIO $ putStrLn $ "result? " ++ show result
   case result of
     PruneInconsistentAssumptions -> pure Discharged
@@ -716,7 +716,7 @@ data PruneResult
 pruneAndValidate ::
   (SymEvalConstr lang m) =>
   Constraint lang ->
-  Constraint lang ->
+  Maybe (Constraint lang) ->
   [UniversalAxiom lang] ->
   SymEvalT lang m PruneResult
 pruneAndValidate cOut cIn axioms =
@@ -751,7 +751,7 @@ instantiateAxiomWithVars axioms env =
 checkProperty ::
   (SMT.LanguageSMT lang, MonadIO m, LanguagePretty lang, PirouetteReadDefs lang m) =>
   Constraint lang ->
-  Constraint lang ->
+  Maybe (Constraint lang) ->
   [UniversalAxiom lang] ->
   SymEvalSt lang ->
   SMT.SolverT m PruneResult
@@ -766,26 +766,32 @@ checkProperty cOut cIn axioms env = do
   (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
   (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
   inconsistent <- SMT.checkSat
-  (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn
-  let everythingWasTranslated = cstrTotal && outTotal && inTotal
-  -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
-  result <- SMT.checkSat
-  -- liftIO $ print result
-  -- liftIO $ print $ pretty (sestConstraint env)
-  -- liftIO $ print (cstrTotal, outTotal, inTotal)
-  finalResult <- case (inconsistent, result) of
-    (SMT.Unsat, _) -> return PruneInconsistentAssumptions
-    (_, SMT.Unsat) -> return PruneImplicationHolds
-    -- If a partial translation of the constraints is SAT,
-    -- it does not guarantee us that the full set of constraints is satisfiable.
-    -- Only in the case in which we could translate the entire thing to prove.
-    (_, SMT.Sat) | everythingWasTranslated ->
-      do
-        m <- if null vars then pure [] else SMT.getModel (M.keys vars)
-        pure $ PruneCounterFound (Model m)
-    (_, _) -> return PruneUnknown
-  SMT.solverPop
-  return finalResult
+  case (inconsistent, cIn) of
+    (SMT.Unsat, _) -> do
+      SMT.solverPop
+      return PruneInconsistentAssumptions
+    (_, Nothing) -> do
+      SMT.solverPop
+      return PruneUnknown
+    (_, Just cIn') -> do
+      (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn'
+      let everythingWasTranslated = cstrTotal && outTotal && inTotal
+      -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
+      result <- SMT.checkSat
+      -- liftIO $ print result
+      -- liftIO $ print $ pretty (sestConstraint env)
+      -- liftIO $ print (cstrTotal, outTotal, inTotal)
+      finalResult <- case result of
+        SMT.Unsat -> return PruneImplicationHolds
+        -- If a partial translation of the constraints is SAT,
+        -- it does not guarantee us that the full set of constraints is satisfiable.
+        -- Only in the case in which we could translate the entire thing to prove.
+        SMT.Sat | everythingWasTranslated -> do
+          m <- if null vars then pure [] else SMT.getModel (M.keys vars)
+          pure $ PruneCounterFound (Model m)
+        _ -> return PruneUnknown
+      SMT.solverPop
+      return finalResult
 
 instance Pretty Model where
   pretty (Model m) =

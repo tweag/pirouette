@@ -10,7 +10,7 @@ import Pirouette.Term.Syntax.Base
 checkWrong :: IO ()
 checkWrong =
   incorrectnessLogic
-    100 -- amount of steps
+    200 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . validator tx |] -- validator
     ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
@@ -20,7 +20,7 @@ checkWrong =
 checkOk :: IO ()
 checkOk =
   incorrectnessLogic
-    150 -- amount of steps
+    200 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . correct_validator tx |] -- validator
     ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
@@ -32,6 +32,9 @@ minswap =
   [prog|
 fun and : Bool -> Bool -> Bool
   = \(x : Bool) (y : Bool) . if @Bool x then y else False
+
+fun or : Bool -> Bool -> Bool
+  = \(x : Bool) (y : Bool) . if @Bool x then True else y
 
 fun eqInt : Integer -> Integer -> Bool
   = \(x : Integer) (y : Integer) . x == y
@@ -55,6 +58,12 @@ fun listEq : all (a : Type) . (a -> a -> Bool) -> List a -> List a -> Bool
       (match_List @a y0 @Bool True (\(y : a) (ys : List a) . False))
       (\(x : a) (xs : List a) . match_List @a y0 @Bool False (\(y : a) (ys : List a) . and (eq x y) (listEq @a eq xs ys)))
 
+fun contains : all (a : Type) . (a -> Bool) -> List a -> Bool
+  = /\(a : Type) . \(eq : a -> Bool) (x0 : List a)
+  . match_List @a x0 @Bool
+      False
+      (\(x : a) (xs : List a) . or (eq x) (contains @a eq xs))
+
 data Pair (x : Type) (y : Type)
   = P : x -> y -> Pair x y
 
@@ -73,6 +82,10 @@ fun maybeSum : all (x : Type) . Maybe x -> Maybe x -> Maybe x
   . match_Maybe @x mx @(Maybe x)
       (\(jx : x) . Just @x jx)
       my
+
+fun isJust : all (x : Type) . Maybe x -> Bool
+  = /\ (x : Type) . \(mx : Maybe x)
+  . match_Maybe @x mx @Bool (\(jx : x) . True) False
 
 data KVMap (k : Type) (v : Type)
   = KV : List (Pair k v) -> KVMap k v
@@ -100,8 +113,12 @@ data Address
   = A : Integer -> Address
 data TxOut
   = MkTxOut : Address -> Value -> TxOut
+data TxId
+  = Id : Integer -> TxId
+data TxOutRef
+  = MkTxOutRef : TxId -> Integer -> TxOutRef
 data TxInfo
-  = MkTxInfo : List TxOut -> List TxOut -> Value -> Value -> TxInfo
+  = MkTxInfo : List (Pair TxOutRef TxOut) -> List TxOut -> Value -> Value -> TxId -> TxInfo
 
 -- Analogous to Plutus assetClassValueOf
 fun assetClassValueOf : Value -> Pair String String -> Integer
@@ -149,18 +166,41 @@ fun correct_isUnity : Value -> Pair String String -> Bool
 fun example_ac : Pair String String
   = P @String @String "currency" "token"
 
+fun eqTxOutRef : TxOutRef -> TxOutRef -> Bool
+  = \(r1 : TxOutRef) (r2 : TxOutRef)
+  . match_TxOutRef r1 @Bool
+      (\(i1 : TxId) (ix1 : Integer)
+      . match_TxOutRef r2 @Bool 
+          (\(i2 : TxId) (ix2 : Integer)
+          . match_TxId i1 @Bool
+              (\(n1 : Integer)
+              . match_TxId i2 @Bool
+                (\(n2 : Integer)
+                . and (eqInt n1 n2) (eqInt ix1 ix2)
+                ))))
+
+fun spendsOutput : List (Pair TxOutRef TxOut) -> TxOutRef -> Bool
+  = \(inputs : List (Pair TxOutRef TxOut)) (wanted : TxOutRef)
+    . contains @(Pair TxOutRef TxOut)
+        (\(p : Pair TxOutRef TxOut)
+        . match_Pair @TxOutRef @TxOut p @Bool (\(r : TxOutRef) (o : TxOut) . eqTxOutRef wanted r))
+        inputs
+
+fun example_out : TxOutRef
+  = MkTxOutRef (Id 42) 0
+
 -- And the infamous validator, slightly simplified:
 fun validator : TxInfo -> Bool
   = \(tx : TxInfo)
     . match_TxInfo tx @Bool
-      (\(inputs : List TxOut) (outputs : List TxOut) (fee : Value) (mint : Value). 
-        minSwap_isUnity mint example_ac)
+      (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId). 
+        and (spendsOutput inputs example_out) (minSwap_isUnity mint example_ac))
 
 -- And the infamous validator, slightly simplified:
 fun correct_validator : TxInfo -> Bool
   = \(tx : TxInfo)
     . match_TxInfo tx @Bool
-      (\(inputs : List TxOut) (outputs : List TxOut) (fee : Value) (mint : Value). 
+      (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId). 
         correct_isUnity mint example_ac)
 
 fun main : Integer = 42
