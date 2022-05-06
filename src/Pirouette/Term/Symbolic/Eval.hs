@@ -789,21 +789,21 @@ checkProperty cOut cIn axioms env = do
 
 instance Pretty Model where
   pretty (Model m) =
-    enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- m])
-
-instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
-  pretty Verified = "Verified"
-  pretty Discharged = "Discharged"
-  pretty (CounterExample t (Model m)) =
-    let model = Model $ map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
-     in vsep
-          [ "COUNTER-EXAMPLE",
-            "Result:" <+> pretty t,
-            "Model:" <+> pretty model
-          ]
+    let simplified = map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
+     in enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- simplified])
     where
       -- remove 'pir_' from the values
       f "pir_Cons" = ":"
       f "pir_Nil" = "[]"
       f ('p' : 'i' : 'r' : '_' : rest) = rest
       f other = other
+
+instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
+  pretty Verified = "Verified"
+  pretty Discharged = "Discharged"
+  pretty (CounterExample t model) =
+    vsep
+      [ "COUNTER-EXAMPLE",
+        "Result:" <+> pretty t,
+        "Model:" <+> pretty model
+      ]
