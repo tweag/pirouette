@@ -368,7 +368,7 @@ minswap :: (Program Ex, Type Ex, Term Ex)
 minswap =
   ( MinSwap.minswap,
     [ty|Bool|],
-    [term| \(v : Value) . validator v |]
+    [term| \(tx : TxInfo) . validator tx |]
   )
 
 -- Now we estabilish the incorrectness triple that says:
@@ -379,8 +379,8 @@ minswap =
 -- a counterexample out of this.
 condMinSwap :: (Term Ex, Term Ex)
 condMinSwap =
-  ( [term| \(result : Bool) (v : Value) . result |],
-    [term| \(result : Bool) (v : Value) . correct_isUnity v example_ac |]
+  ( [term| \(result : Bool) (tx : TxInfo) . result |],
+    [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
   )
 
 execFull ::
