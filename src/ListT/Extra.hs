@@ -15,15 +15,15 @@ toLazyList (ListT next) = do
     Nothing -> pure []
     Just (v, rest) -> (v :) <$> toLazyList rest
 
-anyPath :: Monad m => (a -> Bool) -> ListT m a -> m Bool
+anyPath :: Monad m => (a -> Bool) -> ListT m a -> m (Maybe a)
 anyPath p = go
   where
     go (ListT next) = do
       mayValue <- next
       case mayValue of
-        Nothing -> pure False
+        Nothing -> pure Nothing
         Just (v, rest)
-          | p v -> pure True
+          | p v -> pure (Just v)
           | otherwise -> go rest
 
 allPaths :: Monad m => (a -> Bool) -> ListT m a -> m Bool

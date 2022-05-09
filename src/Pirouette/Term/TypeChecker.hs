@@ -205,23 +205,49 @@ typeCheckTerm ty (App hd args) = do
   hdTy <- within TermPathAppHead $ findType hd
   finalTy <- typeCheckArgs args hdTy 1
   within TermPathAppResult $ eqType ty finalTy
-  where
-    typeCheckArgs [] current _ = pure current
-    typeCheckArgs (TyArg appliedTy : more) current n = do
-      new <- within (TermPathAppTyArg n) $
-        case current of
-          goodTy@TyAll {} ->
-            pure $ tyInstantiate goodTy appliedTy
-          _ -> err $ TermAppExpectedTyAll current
-      typeCheckArgs more new (n + 1)
-    typeCheckArgs (TermArg tm : more) current n = do
-      new <- within (TermPathAppTermArg n) $
-        case current of
-          TyFun tyArg tyRes -> do
-            typeCheckTerm tyArg tm
-            pure tyRes
-          _ -> err $ TermAppExpectedTyFun current
-      typeCheckArgs more new (n + 1)
+
+typeCheckArgs ::
+  TypeCheckerCtx lang m =>
+  [Pirouette.Term.Syntax.Base.Arg lang] ->
+  Type lang ->
+  Int ->
+  m (Type lang)
+typeCheckArgs [] current _ = pure current
+typeCheckArgs (TyArg appliedTy : more) current n = do
+  new <- within (TermPathAppTyArg n) $
+    case current of
+      goodTy@TyAll {} ->
+        pure $ tyInstantiate goodTy appliedTy
+      _ -> err $ TermAppExpectedTyAll current
+  typeCheckArgs more new (n + 1)
+typeCheckArgs (TermArg tm : more) current n = do
+  new <- within (TermPathAppTermArg n) $
+    case current of
+      TyFun tyArg tyRes -> do
+        typeCheckTerm tyArg tm
+        pure tyRes
+      _ -> err $ TermAppExpectedTyFun current
+  typeCheckArgs more new (n + 1)
+
+-- | Simple type inference, doesn't try too hard.
+typeInferTerm ::
+  TypeCheckerCtx lang m =>
+  Term lang ->
+  m (Maybe (Type lang))
+typeInferTerm (Lam x xTy body) = do
+  bodyTy <- within (TermPathLambdaBody x) $ do
+    extendBound xTy $
+      typeInferTerm body
+  return $ fmap (TyFun xTy) bodyTy
+typeInferTerm (Abs x ki body) = do
+  bodyTy <-
+    within (TermPathAbsBody x) $
+      shiftBoundTyVars $
+        typeInferTerm body
+  return $ fmap (TyAll x ki) bodyTy
+typeInferTerm (App hd args) = do
+  hdTy <- within TermPathAppHead $ findType hd
+  Just <$> typeCheckArgs args hdTy 1
 
 -- | Find the type either in the context,
 -- or in the built-in constants and terms.

@@ -208,10 +208,12 @@ instance LanguageSMTBranches Ex where
   branchesBuiltinTerm
     TermIte
     _translator
-    [SystF.TyArg _, SystF.TermArg c, SystF.TermArg t, SystF.TermArg e] =
+    (SystF.TyArg _ : SystF.TermArg c : SystF.TermArg t : SystF.TermArg e : excess) =
       let isEq TermEq = True
           isEq TermStrEq = True
           isEq _ = False
+          t' = t `SystF.appN` excess
+          e' = e `SystF.appN` excess
        in case c of
             BTrue -> pure $ Just [Branch (And []) t]
             BFalse -> pure $ Just [Branch (And []) e]
@@ -224,9 +226,9 @@ instance LanguageSMTBranches Ex where
                 pure $
                   Just
                     [ -- either they are equal
-                      Branch (And [VarEq x1 y1]) t,
+                      Branch (And [VarEq x1 y1]) t',
                       -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq x y]) e
+                      Branch (And [NonInlinableSymbolNotEq x y]) e'
                     ]
               | isEq eq,
                 Just x1 <- termIsMeta x,
@@ -234,9 +236,9 @@ instance LanguageSMTBranches Ex where
                 pure $
                   Just
                     [ -- either they are equal
-                      Branch (And [Assign x1 y]) t,
+                      Branch (And [Assign x1 y]) t',
                       -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq x y]) e
+                      Branch (And [NonInlinableSymbolNotEq x y]) e'
                     ]
               | isEq eq,
                 isStuckBuiltin x,
@@ -244,9 +246,9 @@ instance LanguageSMTBranches Ex where
                 pure $
                   Just
                     [ -- either they are equal
-                      Branch (And [Assign y1 x]) t,
+                      Branch (And [Assign y1 x]) t',
                       -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq y x]) e
+                      Branch (And [NonInlinableSymbolNotEq y x]) e'
                     ]
               | isEq eq,
                 isStuckBuiltin x,
@@ -254,18 +256,18 @@ instance LanguageSMTBranches Ex where
                 pure $
                   Just
                     [ -- either they are equal
-                      Branch (And [NonInlinableSymbolEq x y]) t,
+                      Branch (And [NonInlinableSymbolEq x y]) t',
                       -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq x y]) e
+                      Branch (And [NonInlinableSymbolNotEq x y]) e'
                     ]
             _
               | Just v <- termIsMeta c ->
                 pure $
                   Just
                     [ -- c is True => t is executed
-                      Branch (And [Assign v BTrue]) t,
+                      Branch (And [Assign v BTrue]) t',
                       -- c is False => e is executed
-                      Branch (And [Assign v BFalse]) e
+                      Branch (And [Assign v BFalse]) e'
                     ]
             _ -> pure Nothing
   branchesBuiltinTerm _ _ _ = pure Nothing

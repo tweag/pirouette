@@ -107,11 +107,21 @@ instance Pretty Rational where
 instance Pretty ByteString where
   pretty = prettyList . ByteString.unpack
 
+instance (Pretty a, Pretty b) => Pretty (Either a b) where
+  prettyPrec _ (Left x) = "Left" <+> prettyPrec 10 x
+  prettyPrec _ (Right x) = "Right" <+> prettyPrec 10 x
+
 instance (Pretty a, Pretty b) => Pretty (a, b) where
   prettyPrec _ (x, y) = parens $ prettyPrec 10 x <+> comma <+> prettyPrec 10 y
+
+instance (Pretty a, Pretty b, Pretty c) => Pretty (a, b, c) where
+  prettyPrec _ (x, y, z) = parens $ prettyPrec 10 x <+> comma <+> prettyPrec 10 y <+> comma <+> prettyPrec 10 z
 
 instance {-# OVERLAPPING #-} Pretty String where
   pretty = Prettyprint.pretty
 
 instance {-# OVERLAPPABLE #-} (Pretty a) => Pretty [a] where
   prettyPrec _ = brackets . align . sep . punctuate comma . map pretty
+
+instance Pretty ShowS where
+  pretty = pretty . ($ "")

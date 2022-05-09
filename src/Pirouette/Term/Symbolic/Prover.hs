@@ -57,7 +57,7 @@ proveAny ::
   (SymEvalConstr lang m, MonadIO m) =>
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
-  m Bool
+  m (Maybe (Path lang (EvaluationWitness lang)))
 proveAny p problem = symevalAnyPath p InfiniteFuel $ proveRaw problem
 
 proveAnyWithFuel ::
@@ -65,7 +65,7 @@ proveAnyWithFuel ::
   Int ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
-  m Bool
+  m (Maybe (Path lang (EvaluationWitness lang)))
 proveAnyWithFuel f p problem = symevalAnyPath p (Fuel f) $ proveRaw problem
 
 proveRaw ::
@@ -109,6 +109,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   -- liftIO $ print (pretty bodyTerm)
   -- liftIO $ print (pretty assumeTerm)
   -- liftIO $ print (pretty proveTerm)
+  -- gets sestConstraint >>= liftIO . print . pretty
   -- _ <- liftIO getLine
 
   -- terms are only useful if they are in WHNF or are stuck
@@ -132,12 +133,18 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   case mayBodyTerm of
     Right _ -> learn $ And [Assign resultVar bodyTerm]
     _ -> pure ()
+  -- liftIO $ print $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
     -- if everything can be translated, try to prune with it
+    (Right _, Right assumeCond, Left _) -> do
+      -- liftIO $ putStrLn "prunning with unknown prove..."
+      -- _ <- liftIO getLine
+      pruneAndValidate (And [Native assumeCond]) Nothing []
     (Right _, Right assumeCond, Right proveCond) -> do
       -- liftIO $ putStrLn "prunning..."
-      pruneAndValidate (And [Native assumeCond]) (And [Native proveCond]) []
+      -- _ <- liftIO getLine
+      pruneAndValidate (And [Native assumeCond]) (Just $ And [Native proveCond]) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
   case result of

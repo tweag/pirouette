@@ -41,6 +41,7 @@ dependencies:
   - haskell-stack-trace-plugin
   - optics-core
   - optics-th
+  - ansi-terminal
 
 library:
   source-dirs: src

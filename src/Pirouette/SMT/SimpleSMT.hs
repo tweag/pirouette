@@ -20,6 +20,7 @@ module Pirouette.SMT.SimpleSMT
     -- ** S-Expressions
     SExpr (..),
     showsSExpr,
+    ppValueHaskellish,
     ppSExpr,
     readSExpr,
     overAtomV,
@@ -177,6 +178,7 @@ import Data.List (intersperse, unfoldr)
 import Data.Ratio (denominator, numerator, (%))
 import Numeric (readHex, showFFloat, showHex)
 import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
+import Prettyprinter (Doc)
 import System.Exit (ExitCode)
 import System.IO (hClose, hFlush, hGetContents, hGetLine, hPutStrLn, stdout)
 import System.Process (runInteractiveProcess, waitForProcess)
@@ -240,6 +242,8 @@ showsSExpr ex =
 showsSExprWithoutAs :: SExpr -> ShowS
 showsSExprWithoutAs (List [Atom "as", x, _]) =
   showsSExprWithoutAs x
+showsSExprWithoutAs (List (List [Atom "as", x, _] : args)) =
+  showsSExprWithoutAs $ List (x : args)
 showsSExprWithoutAs ex =
   case ex of
     Atom x -> showString x
@@ -250,6 +254,57 @@ showsSExprWithoutAs ex =
           (\e m -> showChar ' ' . showsSExprWithoutAs e . m)
           (showChar ')')
           es
+
+-- | Show a Value in a Haskell fashion.
+ppValueHaskellish :: Value -> Doc ann
+ppValueHaskellish (Other s) = pretty $ showsSExprHaskellish s
+ppValueHaskellish t = pretty t
+
+-- | Show an s-expression in a Haskell fashion.
+showsSExprHaskellish :: SExpr -> ShowS
+showsSExprHaskellish = fst . go
+  where
+    go :: SExpr -> (ShowS, Bool)
+    go (List [Atom "as", x, _]) = go x
+    go (List (List [Atom "as", x, _] : args)) = go $ List (x : args)
+    go ex =
+      case ex of
+        Atom x -> (showString x, False)
+        List [] -> (showString "()", False)
+        List [cstr] -> go cstr
+        t@(List (Atom ":" : _))
+          | Just lst <- list t ->
+            ( showChar '['
+                . drop 2
+                . foldr
+                  (\e m -> showString ", " . fst (go e) . m)
+                  (showChar ']')
+                  lst,
+              False
+            )
+        List (cstr : args) ->
+          let (showCstr, _) = go cstr
+           in ( showCstr
+                  . foldr
+                    ( \e m ->
+                        let (showArg, spaceArg) = go e
+                         in if spaceArg
+                              then showString " (" . showArg . showChar ')' . m
+                              else showChar ' ' . showArg . m
+                    )
+                    id
+                    args,
+                True
+              )
+
+    list :: SExpr -> Maybe [SExpr]
+    list (Atom "[]") = Just []
+    list (List [Atom "as", Atom "[]", _]) = Just []
+    list (List [Atom ":", oneArg, restArgs]) =
+      (oneArg :) <$> list restArgs
+    list (List [List [Atom "as", Atom ":", _], oneArg, restArgs]) =
+      (oneArg :) <$> list restArgs
+    list _ = Nothing
 
 -- | Show an S-expression in a somewhat readbale fashion.
 ppSExpr :: SExpr -> ShowS
