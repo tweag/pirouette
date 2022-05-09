@@ -40,6 +40,7 @@ module Pirouette.Term.Symbolic.Eval
     OutCond (..),
     EvaluationWitness (..),
     Model (..),
+    showModelHaskellish,
 
     -- * Internal, used to build on top of 'SymEvalT'
     SymEvalConstr,
@@ -803,6 +804,22 @@ instance Pretty Model where
       f "pir_Nil" = "[]"
       f ('p' : 'i' : 'r' : '_' : rest) = rest
       f other = other
+
+showModelHaskellish :: Model -> Doc ann
+showModelHaskellish (Model m) =
+  let simplified = map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
+   in enclose "{ " " }" $
+        align $
+          vsep
+            [ pretty n <+> "↦" <+> SimpleSMT.ppValueHaskellish term
+              | (n, term) <- simplified
+            ]
+  where
+    -- remove 'pir_' from the values
+    f "pir_Cons" = ":"
+    f "pir_Nil" = "[]"
+    f ('p' : 'i' : 'r' : '_' : rest) = rest
+    f other = other
 
 instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
   pretty Verified = "Verified"

@@ -9,7 +9,6 @@ import Pirouette.SMT
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Symbolic.Prover
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.Pretty.Class
 import Pirouette.Term.Syntax.SystemF (tyFunArgs)
 import Pirouette.Term.TypeChecker
 import Pirouette.Transformations
@@ -41,7 +40,8 @@ incorrectnessLogic fuel program validator (post :==>: pre) = do
       proveAnyWithFuel fuel isCounter (Problem resultTy validator post pre)
   printResult fuel result
   where
-    isCounter Path {pathResult = CounterExample _ _} = True
+    isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
+      | s /= OutOfFuel = True
     isCounter _ = False
 
 printResult ::
@@ -57,7 +57,7 @@ printResult _ (Right (Just Path {pathResult = CounterExample _ model})) = do
   setSGR [SetColor Foreground Vivid Yellow]
   putStrLn "💸 COUNTEREXAMPLE FOUND"
   setSGR [Reset]
-  print $ pretty model
+  print $ showModelHaskellish model
 printResult steps (Right _) = do
   setSGR [SetColor Foreground Vivid Green]
   putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"

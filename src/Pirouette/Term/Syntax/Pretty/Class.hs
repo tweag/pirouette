@@ -122,3 +122,6 @@ instance {-# OVERLAPPING #-} Pretty String where
 
 instance {-# OVERLAPPABLE #-} (Pretty a) => Pretty [a] where
   prettyPrec _ = brackets . align . sep . punctuate comma . map pretty
+
+instance Pretty ShowS where
+  pretty = pretty . ($ "")

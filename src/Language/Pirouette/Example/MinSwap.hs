@@ -20,7 +20,7 @@ checkWrong =
 checkOk :: IO ()
 checkOk =
   incorrectnessLogic
-    200 -- amount of steps
+    100 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . correct_validator tx |] -- validator
     ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple

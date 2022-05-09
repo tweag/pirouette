@@ -405,10 +405,6 @@ minSwapTest :: TestTree
 minSwapTest =
   testGroup
     "MinSwap"
-    [ testCase "[correct_isUnity v] validate [\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 200 isCounter') minswap condMinSwap `satisfies` isJust
+    [ testCase "[correct_isUnity v] validate [\\r _ -> r] counter" $
+        execFull (proveAnyWithFuel 200 isCounter) minswap condMinSwap `satisfies` isJust
     ]
-  where
-    isCounter' t
-      | isCounter t = trace (show $ pretty t) True
-      | otherwise   = False
