@@ -85,6 +85,7 @@ import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty (..))
+import Data.List (genericLength)
 
 -- import Debug.Trace (trace)
 
@@ -498,10 +499,16 @@ symEvalOneStep t@(R.App hd args) = case hd of
                 -- liftIO $ print mconstr
                 case mconstr of
                   Nothing -> empty
-                  Just constr -> ListT.weight 1 $ do
-                    lift $ learn constr
-                    consumeFuel
-                    pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+                  Just constr -> do
+                    let countAssigns SMT.Bot = 0
+                        countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
+                        isAssign SMT.Assign {} = True
+                        isAssign _ = False
+                    -- add weight as many new assignments we get from unification
+                    ListT.weight (countAssigns constr) $ do
+                      lift $ learn constr
+                      consumeFuel
+                      pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
           (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
             -- we have a particular constructor
             -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
