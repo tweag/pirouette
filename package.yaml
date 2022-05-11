@@ -42,6 +42,7 @@ dependencies:
   - optics-core
   - optics-th
   - ansi-terminal
+  - weighted-search
 
 library:
   source-dirs: src
