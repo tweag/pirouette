@@ -24,6 +24,8 @@ library
       Language.Pirouette.PlutusIR.SMT
       Language.Pirouette.PlutusIR.ToTerm
       ListT.Extra
+      ListT.Weighted
+      ListT.Weighted.Examples
       Pirouette.Monad
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe

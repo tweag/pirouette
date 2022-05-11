@@ -16,6 +16,7 @@ import Data.Foldable (toList)
 import Data.List (intercalate)
 import Data.Sequence hiding (null)
 import qualified ListT
+import qualified ListT.Weighted as ListT
 import Pirouette.Monad.Maybe
 
 data LogLevel = TRACE | DEBUG | INFO | WARN | ERROR | CRIT
@@ -129,4 +130,9 @@ instance (MonadLogger m) => MonadLogger (Strict.StateT s m) where
 instance (MonadLogger m) => MonadLogger (ListT.ListT m) where
   logMsg lvl m = lift $ logMsg lvl m
   pushCtx ctx (ListT.ListT m) = ListT.ListT $ pushCtx ctx m
+  context = lift context
+
+instance (MonadLogger m) => MonadLogger (ListT.WeightedListT m) where
+  logMsg lvl m = lift $ logMsg lvl m
+  pushCtx ctx m = ListT.mapWeightedListT (pushCtx ctx) m
   context = lift context

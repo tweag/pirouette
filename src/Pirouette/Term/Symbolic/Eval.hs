@@ -73,8 +73,8 @@ import Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import Data.String (IsString)
-import ListT.Extra (ListT)
-import qualified ListT.Extra as ListT
+import ListT.Weighted (WeightedListT)
+import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
@@ -85,6 +85,7 @@ import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty (..))
+import Data.List (genericLength)
 
 -- import Debug.Trace (trace)
 
@@ -166,9 +167,9 @@ path x st =
 -- | A 'SymEvalT' is equivalent to a function with type:
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
-newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (ListT m)) a}
+newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (WeightedListT m)) a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
+  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
 
 deriving instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SymEvalT lang m)
 
@@ -191,7 +192,7 @@ symevalAnyPath ::
   SymEvalT lang m a ->
   m (Maybe (Path lang a))
 symevalAnyPath p initialFuel =
-  ListT.anyPath p . runSymEvalTWorker st0
+  ListT.firstThat p . runSymEvalTWorker st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
@@ -199,14 +200,14 @@ runSymEvalTRaw ::
   (Monad m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
-  SMT.SolverT (ListT m) (a, SymEvalSt lang)
+  SMT.SolverT (WeightedListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
 runSymEvalT st symEvalT =
-  ListT.toLazyList $ runSymEvalTWorker st symEvalT
+  ListT.toList $ runSymEvalTWorker st symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -214,7 +215,7 @@ runSymEvalTWorker ::
   (SymEvalConstr lang m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
-  ListT m (Path lang a)
+  WeightedListT m (Path lang a)
 runSymEvalTWorker st symEvalT = do
   solvPair <- SMT.runSolverT s $ do
     usedNames <- prepSolver
@@ -228,7 +229,7 @@ runSymEvalTWorker st symEvalT = do
     -- no debug messages
     s = SMT.cvc4_ALL_SUPPORTED False
 
-    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
+    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (WeightedListT m) [Name]
     prepSolver = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
@@ -499,9 +500,15 @@ symEvalOneStep t@(R.App hd args) = case hd of
                 case mconstr of
                   Nothing -> empty
                   Just constr -> do
-                    lift $ learn constr
-                    consumeFuel
-                    pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+                    let countAssigns SMT.Bot = 0
+                        countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
+                        isAssign SMT.Assign {} = True
+                        isAssign _ = False
+                    -- add weight as many new assignments we get from unification
+                    ListT.weight (countAssigns constr) $ do
+                      lift $ learn constr
+                      consumeFuel
+                      pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
           (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
             -- we have a particular constructor
             -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
