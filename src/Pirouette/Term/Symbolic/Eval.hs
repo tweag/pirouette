@@ -73,7 +73,7 @@ import Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import Data.String (IsString)
-import ListT.Weighted (WeightedT)
+import ListT.Weighted (WeightedListT)
 import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
@@ -166,7 +166,7 @@ path x st =
 -- | A 'SymEvalT' is equivalent to a function with type:
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
-newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (WeightedT Integer m)) a}
+newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (WeightedListT m)) a}
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
@@ -199,7 +199,7 @@ runSymEvalTRaw ::
   (Monad m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
-  SMT.SolverT (WeightedT Integer m) (a, SymEvalSt lang)
+  SMT.SolverT (WeightedListT m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
@@ -214,7 +214,7 @@ runSymEvalTWorker ::
   (SymEvalConstr lang m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
-  WeightedT Integer m (Path lang a)
+  WeightedListT m (Path lang a)
 runSymEvalTWorker st symEvalT = do
   solvPair <- SMT.runSolverT s $ do
     usedNames <- prepSolver
@@ -228,7 +228,7 @@ runSymEvalTWorker st symEvalT = do
     -- no debug messages
     s = SMT.cvc4_ALL_SUPPORTED False
 
-    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (WeightedT Integer m) [Name]
+    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (WeightedListT m) [Name]
     prepSolver = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder

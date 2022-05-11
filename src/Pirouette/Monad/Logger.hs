@@ -132,7 +132,7 @@ instance (MonadLogger m) => MonadLogger (ListT.ListT m) where
   pushCtx ctx (ListT.ListT m) = ListT.ListT $ pushCtx ctx m
   context = lift context
 
-instance (ListT.Weight w, MonadLogger m) => MonadLogger (ListT.WeightedT w m) where
+instance (MonadLogger m) => MonadLogger (ListT.WeightedListT m) where
   logMsg lvl m = lift $ logMsg lvl m
-  pushCtx ctx m = ListT.mapWeightedT (pushCtx ctx) m
+  pushCtx ctx m = ListT.mapWeightedListT (pushCtx ctx) m
   context = lift context

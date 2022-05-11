@@ -6,13 +6,13 @@ import Data.Functor.Identity
 import ListT.Weighted
 
 -- All naturals, weighted by the size of the number
-naturals :: Weighted Integer Integer
+naturals :: WeightedList Integer
 naturals = go 0
   where
     go n = pure n <|> weight 1 (go $! n + 1)
 
 -- All finite lists, weighted by the length of the list
-finiteLists :: Weighted Integer a -> Weighted Integer [a]
+finiteLists :: WeightedList a -> WeightedList [a]
 finiteLists w = pure [] <|> weight 1 ((:) <$> w <*> finiteLists w)
 
 -- A list of all finite lists of naturals

@@ -97,7 +97,6 @@ library
     , tlaplus
     , tlaplus-qq
     , uniplate
-    , weighted-search
   default-language: Haskell2010
 
 executable pirouette
@@ -143,7 +142,6 @@ executable pirouette
     , tlaplus
     , tlaplus-qq
     , uniplate
-    , weighted-search
   default-language: Haskell2010
 
 test-suite spec
@@ -201,5 +199,4 @@ test-suite spec
     , tlaplus
     , tlaplus-qq
     , uniplate
-    , weighted-search
   default-language: Haskell2010

@@ -22,7 +22,7 @@ import Data.Maybe (isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import ListT (ListT)
-import ListT.Weighted (Weight, WeightedT)
+import ListT.Weighted (WeightedListT)
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
@@ -125,7 +125,7 @@ instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs la
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 
-instance {-# OVERLAPPABLE #-} (Weight w, PirouetteReadDefs lang m) => PirouetteReadDefs lang (WeightedT w m) where
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (WeightedListT m) where
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 
