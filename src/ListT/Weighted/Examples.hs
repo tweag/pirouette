@@ -2,6 +2,7 @@
 -- https://hackage.haskell.org/package/weighted-search-0.1.0.1/docs/Control-Monad-WeightedSearch.html
 module ListT.Weighted.Examples where
 
+import Data.Functor.Identity
 import ListT.Weighted
 
 -- All naturals, weighted by the size of the number
@@ -16,6 +17,6 @@ finiteLists w = pure [] <|> weight 1 ((:) <$> w <*> finiteLists w)
 
 -- A list of all finite lists of naturals
 finiteListsOfNaturals :: [[Integer]]
-finiteListsOfNaturals = toList (finiteLists naturals)
+finiteListsOfNaturals = runIdentity $ ListT.Weighted.toList (finiteLists naturals)
 
 -- [ [], [0], [0,0], [1], [0,0,0], [0,1], [1,0], [2], [0,0,0,0], [0,0,1], ... ]

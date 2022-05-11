@@ -13,26 +13,32 @@ module ListT.Weighted
     Weighted,
     weight,
     (<|>),
+    mapWeightedT,
     toList,
+    firstThat,
   )
 where
 
 import Control.Applicative (Alternative (..))
 import Control.Monad (MonadPlus (..), ap)
+import Control.Monad.Error.Class (MonadError (..))
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Reader.Class (MonadReader (..))
 import Control.Monad.State.Class (MonadState (..))
 import Control.Monad.Trans (MonadTrans (..))
 import Control.Monad.WeightedSearch (Weight (..))
-import Data.Foldable (fold, toList)
+import Data.Foldable (fold)
 import Data.Functor.Identity (Identity)
 
 -- | Weighted nondeterminstic computations over the weight @w@.
 data WeightedT w m a
   = Fail
-  | Yield a (WeightedT w m a)
-  | Weight w (WeightedT w m a)
-  | Action (m (WeightedT w m a))
+  | -- | returns one value, and then more of them
+    Yield a (WeightedT w m a)
+  | -- | signals that the internal computation is weighted
+    Weight w (WeightedT w m a)
+  | -- | perform an action
+    Action (m (WeightedT w m a))
 
 type Weighted w = WeightedT w Identity
 
@@ -66,6 +72,9 @@ instance (Weight w, Applicative m) => Alternative (WeightedT w m) where
   empty = mzero
   (<|>) = mplus
 
+instance (Weight w, Applicative m) => MonadFail (WeightedT w m) where
+  fail _ = Fail
+
 instance (Weight w, Applicative m) => MonadPlus (WeightedT w m) where
   mzero = Fail
   Fail `mplus` m = m
@@ -91,6 +100,21 @@ instance (Traversable m) => Traversable (WeightedT w m) where
   sequenceA (Yield x w) = Yield <$> x <*> sequenceA w
   sequenceA (Weight a w) = Weight a <$> sequenceA w
   sequenceA (Action w) = Action <$> sequenceA (sequenceA <$> w)
+
+toList :: Monad m => WeightedT w m a -> m [a]
+toList Fail = pure []
+toList (Yield x ms) = (x :) <$> toList ms
+toList (Weight _ ms) = toList ms
+toList (Action a) = toList =<< a
+
+firstThat :: Monad m => (a -> Bool) -> WeightedT w m a -> m (Maybe a)
+firstThat _ Fail = pure Nothing
+firstThat p (Yield x ms) =
+  if p x then pure (Just x) else firstThat p ms
+firstThat p (Weight _ ms) =
+  firstThat p ms
+firstThat p (Action a) =
+  firstThat p =<< a
 
 instance (Weight w) => MonadTrans (WeightedT w) where
   lift x = Action (return <$> x)
@@ -120,3 +144,12 @@ instance forall s w m. (Weight w, MonadWriter s m) => MonadWriter s (WeightedT w
         pure $ go (acc <> r) w
   pass = ???
 -}
+
+instance (Weight w, MonadError e m) => MonadError e (WeightedT w m) where
+  throwError = lift . throwError
+  catchError Fail _h = Fail
+  catchError (Yield x m) h = Yield x (catchError m h)
+  catchError (Weight w m) h = Weight w (catchError m h)
+  catchError (Action a) h =
+    Action $
+      a `catchError` (return . h)

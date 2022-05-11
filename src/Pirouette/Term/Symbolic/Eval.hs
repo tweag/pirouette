@@ -73,8 +73,8 @@ import Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import Data.String (IsString)
-import ListT.Extra (ListT)
-import qualified ListT.Extra as ListT
+import ListT.Weighted (WeightedT)
+import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
@@ -166,7 +166,7 @@ path x st =
 -- | A 'SymEvalT' is equivalent to a function with type:
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
-newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (ListT m)) a}
+newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (WeightedT Integer m)) a}
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
 
@@ -191,7 +191,7 @@ symevalAnyPath ::
   SymEvalT lang m a ->
   m (Maybe (Path lang a))
 symevalAnyPath p initialFuel =
-  ListT.anyPath p . runSymEvalTWorker st0
+  ListT.firstThat p . runSymEvalTWorker st0
   where
     st0 = SymEvalSt mempty M.empty 0 initialFuel False []
 
@@ -199,14 +199,14 @@ runSymEvalTRaw ::
   (Monad m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
-  SMT.SolverT (ListT m) (a, SymEvalSt lang)
+  SMT.SolverT (WeightedT Integer m) (a, SymEvalSt lang)
 runSymEvalTRaw st = flip runStateT st . symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEvalT :: (SymEvalConstr lang m) => SymEvalSt lang -> SymEvalT lang m a -> m [Path lang a]
 runSymEvalT st symEvalT =
-  ListT.toLazyList $ runSymEvalTWorker st symEvalT
+  ListT.toList $ runSymEvalTWorker st symEvalT
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -214,7 +214,7 @@ runSymEvalTWorker ::
   (SymEvalConstr lang m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
-  ListT m (Path lang a)
+  WeightedT Integer m (Path lang a)
 runSymEvalTWorker st symEvalT = do
   solvPair <- SMT.runSolverT s $ do
     usedNames <- prepSolver
@@ -228,7 +228,7 @@ runSymEvalTWorker st symEvalT = do
     -- no debug messages
     s = SMT.cvc4_ALL_SUPPORTED False
 
-    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (ListT m) [Name]
+    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (WeightedT Integer m) [Name]
     prepSolver = do
       decls <- lift $ lift prtAllDefs
       dependencyOrder <- lift $ lift prtDependencyOrder
