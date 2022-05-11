@@ -168,7 +168,7 @@ path x st =
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
 newtype SymEvalT lang m a = SymEvalT {symEvalT :: StateT (SymEvalSt lang) (SMT.SolverT (WeightedListT m)) a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang))
+  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
 
 deriving instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SymEvalT lang m)
 
@@ -498,7 +498,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
                 -- liftIO $ print mconstr
                 case mconstr of
                   Nothing -> empty
-                  Just constr -> do
+                  Just constr -> ListT.weight 1 $ do
                     lift $ learn constr
                     consumeFuel
                     pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess

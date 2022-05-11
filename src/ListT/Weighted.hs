@@ -10,7 +10,7 @@
 module ListT.Weighted
   ( WeightedListT,
     WeightedList,
-    weight,
+    MonadWeightedList (..),
     (<|>),
     mapWeightedListT,
     toList,
@@ -20,11 +20,12 @@ where
 
 import Control.Applicative (Alternative (..))
 import Control.Monad (MonadPlus (..), ap)
-import Control.Monad.Error.Class (MonadError (..))
+import Control.Monad.Except (ExceptT (..), MonadError (..))
 import Control.Monad.IO.Class (MonadIO (..))
-import Control.Monad.Reader.Class (MonadReader (..))
-import Control.Monad.State.Class (MonadState (..))
+import Control.Monad.Reader (MonadReader (..), ReaderT (..))
+import Control.Monad.State (MonadState (..), StateT (..))
 import Control.Monad.Trans (MonadTrans (..))
+import Control.Monad.Writer (WriterT (..))
 import Data.Foldable (fold)
 import Data.Functor.Identity (Identity)
 import GHC.Natural
@@ -40,9 +41,6 @@ data WeightedListT m a
     Action (m (WeightedListT m a))
 
 type WeightedList = WeightedListT Identity
-
-weight :: Natural -> WeightedListT m a -> WeightedListT m a
-weight = Weight
 
 mapWeightedListT :: (Functor n) => (forall a. m a -> n a) -> WeightedListT m b -> WeightedListT n b
 mapWeightedListT _ Fail = Fail
@@ -149,6 +147,22 @@ instance (MonadError e m) => MonadError e (WeightedListT m) where
   catchError Fail _h = Fail
   catchError (Yield x m) h = Yield x (catchError m h)
   catchError (Weight w m) h = Weight w (catchError m h)
-  catchError (Action a) h =
-    Action $
-      a `catchError` (return . h)
+  catchError (Action a) h = Action $ a `catchError` (return . h)
+
+class Functor m => MonadWeightedList m where
+  weight :: Natural -> m a -> m a
+
+instance Functor m => MonadWeightedList (WeightedListT m) where
+  weight = Weight
+
+instance MonadWeightedList m => MonadWeightedList (ReaderT r m) where
+  weight n (ReaderT r) = ReaderT (weight n . r)
+
+instance MonadWeightedList m => MonadWeightedList (ExceptT r m) where
+  weight n (ExceptT r) = ExceptT (weight n r)
+
+instance MonadWeightedList m => MonadWeightedList (StateT r m) where
+  weight n (StateT r) = StateT (weight n . r)
+
+instance MonadWeightedList m => MonadWeightedList (WriterT r m) where
+  weight n (WriterT r) = WriterT (weight n r)

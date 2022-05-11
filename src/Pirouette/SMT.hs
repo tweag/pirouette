@@ -49,6 +49,7 @@ import Control.Monad.State.Class
 import Control.Monad.Writer
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, mapMaybe)
+import ListT.Weighted (MonadWeightedList)
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.SMT.Base as Base
@@ -63,7 +64,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 --  solver-specific operations, such as initialization
 newtype SolverT m a = SolverT {unSolverT :: ReaderT SimpleSMT.Solver m a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO, MonadLogger, MonadFail)
+  deriving newtype (Applicative, Monad, MonadReader SimpleSMT.Solver, MonadIO, MonadLogger, MonadFail, MonadWeightedList)
 
 instance MonadTrans SolverT where
   lift = SolverT . lift
