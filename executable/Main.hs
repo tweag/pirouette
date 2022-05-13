@@ -34,7 +34,7 @@ import Pirouette.Monad.Logger
 import Language.Pirouette.PlutusIR.SMT ()
 import Language.Pirouette.PlutusIR.Builtins
 import Language.Pirouette.PlutusIR.ToTerm
-import Pirouette.Term.Symbolic.Eval (runFor, AvailableFuel(..))
+import Pirouette.Term.Symbolic.Eval (runFor, SymEvalStatistics(..))
 import Pirouette.Term.Symbolic.Interface (runIncorrectness)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
@@ -139,7 +139,7 @@ mainOpts opts uDefs = do
     symbolicExec n (DFunction _ t _) =
       let fil = constraintFile opts in
       if fil == ""
-      then runFor (Fuel 10) n t
+      then runFor (\st -> sestConsumedFuel st > 10) n t
       else runIncorrectness (constraintFile opts) t
     symbolicExec _ _ = throwError' (PEOther "Impossible to symbolic execute a symbol which is not a function")
 
