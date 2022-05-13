@@ -23,8 +23,6 @@ import Pirouette.Transformations.Monomorphization
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Debug.Trace
-
 exec ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
   (Program Ex, Type Ex, Term Ex) ->
@@ -250,7 +248,7 @@ ohearnTest =
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _])) ->
                   odd (read fstX)
                 _ -> False
-         in exec (proveAnyWithFuel 50 test) conditionals1 condWrongTriple `satisfies` isJust
+         in exec (proveAny (\st -> sestConsumedFuel st > 50) test) conditionals1 condWrongTriple `satisfies` isJust
         -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
         --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
@@ -321,7 +319,7 @@ ohearnTestPeano =
                 Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _])) ->
                   fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
                 _ -> False
-         in exec (proveAnyWithFuel 50 test) conditionals1Peano condWrongTriplePeano `satisfies` isJust
+         in exec (proveAny (\st -> sestConsumedFuel st > 50) test) conditionals1Peano condWrongTriplePeano `satisfies` isJust
         -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
         --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
@@ -329,23 +327,25 @@ ohearnTestPeano =
 switchSides :: (Term Ex, Term Ex) -> (Term Ex, Term Ex)
 switchSides (assume, prove) = (prove, assume)
 
+proveUnbounded = prove (const False)
+
 tests :: [TestTree]
 tests =
   [ testGroup
       "incorrectness triples"
       [ testCase "[input > 0] add 1 [result > 0] counter" $
-          exec prove add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
+          exec proveUnbounded add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
         testCase "[input > 0] add 1 [result > 1] verified" $
-          exec prove add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
+          exec proveUnbounded add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "[isNothing x] isJust x [not result] verified" $
           exec
-            prove
+            proveUnbounded
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isNothing x|])
             `pathSatisfies` (all isNoCounter .&. any isVerified),
         testCase "[isJust x] isJust x [not result] counter" $
           exec
-            prove
+            proveUnbounded
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isJust x|])
             `pathSatisfies` any isCounter
@@ -353,9 +353,9 @@ tests =
     testGroup
       "Hoare triples"
       [ testCase "{input > 0} add 1 {result > 0} verified" $
-          exec prove add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
+          exec proveUnbounded add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "{input > 0} add 1 {result > 1} verified" $
-          exec prove add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
+          exec proveUnbounded add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
       ],
     ohearnTest,
     ohearnTestPeano,
@@ -406,5 +406,5 @@ minSwapTest =
   testGroup
     "MinSwap"
     [ testCase "[correct_isUnity v] validate [\\r _ -> r] counter" $
-        execFull (proveAnyWithFuel 200 isCounter) minswap condMinSwap `satisfies` isJust
+        execFull (proveAny (\st -> sestConstructors st > 50) isCounter) minswap condMinSwap `satisfies` isJust
     ]

@@ -456,7 +456,7 @@ runIncorrectness ::
   Term lang ->
   m ()
 runIncorrectness fil t = do
-  paths <- flip pathsIncorrectness_ t $ \solver -> do
+  paths <- flip (pathsIncorrectness_ (const False)) t $ \solver -> do
     constrDescription <- liftIO $ eitherDecodeFileStrict fil
     case constrDescription of
       Left l -> error $ "Impossible to parse this file\n" ++ l
