@@ -1,3 +1,9 @@
+# Disclaimer
+
+### This branch is deprecated; latest work is in `dev`
+
+`dev` will be merged as soon as possible
+
 # Pirouette
 
 _Pirouette is a research prototype under active development_
