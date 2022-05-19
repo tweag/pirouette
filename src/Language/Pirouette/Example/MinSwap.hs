@@ -6,8 +6,9 @@ import Language.Pirouette.Example.QuasiQuoter
 import Language.Pirouette.Example.Syntax
 import Pirouette.Term.Symbolic.Prover.Runner
 import Pirouette.Term.Syntax.Base
+import qualified Test.Tasty.HUnit as Test
 
-checkWrong :: IO ()
+checkWrong :: Test.Assertion
 checkWrong =
   incorrectnessLogic
     200 -- amount of steps
@@ -17,7 +18,7 @@ checkWrong =
         :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
     )
 
-checkOk :: IO ()
+checkOk :: Test.Assertion
 checkOk =
   incorrectnessLogic
     100 -- amount of steps

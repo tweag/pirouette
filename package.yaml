@@ -50,16 +50,6 @@ library:
     -Wno-orphans
     -fplugin=StackTrace.Plugin
 
-executable:
-  main: Main.hs
-  source-dirs: executable
-  dependencies:
-    - pirouette
-  ghc-options:
-    -Wall
-    -Wno-orphans
-    -fplugin=StackTrace.Plugin
-
 tests:
   spec:
     main: Spec.hs

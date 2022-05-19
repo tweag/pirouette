@@ -15,6 +15,7 @@ import Pirouette.Transformations
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import System.Console.ANSI
+import qualified Test.Tasty.HUnit as Test
 
 data AssumeProve lang = Term lang :==>: Term lang
   deriving (Eq, Show)
@@ -25,7 +26,7 @@ incorrectnessLogic ::
   Program lang ->
   Term lang ->
   AssumeProve lang ->
-  IO ()
+  Test.Assertion
 incorrectnessLogic fuel program validator (post :==>: pre) = do
   (result, _logs) <- mockPrtT $ do
     let prog0 = uncurry PrtUnorderedDefs program
@@ -39,6 +40,7 @@ incorrectnessLogic fuel program validator (post :==>: pre) = do
     flip runReaderT orderedDecls $ do
       proveAnyWithFuel fuel isCounter (Problem resultTy validator post pre)
   printResult fuel result
+  assertAllClear result
   where
     isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
       | s /= OutOfFuel = True
@@ -62,3 +64,13 @@ printResult steps (Right _) = do
   setSGR [SetColor Foreground Vivid Green]
   putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"
   setSGR [Reset]
+
+-- | Assert a test failure (Tasty HUnit integration) when the result of the
+-- incorrectness logic execution reveals an error or a counterexample.
+assertAllClear ::
+  Either String (Maybe (Path lang (EvaluationWitness lang))) ->
+  Test.Assertion
+assertAllClear (Left _) = Test.assertFailure "Unexpected error"
+assertAllClear (Right (Just Path {pathResult = CounterExample _ _})) =
+  Test.assertFailure "Counterexample found"
+assertAllClear (Right _) = return ()
