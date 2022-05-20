@@ -10,7 +10,7 @@ import Pirouette.Term.Syntax.Base
 checkWrong :: IO ()
 checkWrong =
   incorrectnessLogic
-    200 -- amount of steps
+    15 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . validator tx |] -- validator
     ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
@@ -20,7 +20,7 @@ checkWrong =
 checkOk :: IO ()
 checkOk =
   incorrectnessLogic
-    100 -- amount of steps
+    20 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . correct_validator tx |] -- validator
     ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple

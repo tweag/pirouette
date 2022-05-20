@@ -26,7 +26,8 @@ incorrectnessLogic ::
   Term lang ->
   AssumeProve lang ->
   IO ()
-incorrectnessLogic fuel program validator (post :==>: pre) = do
+incorrectnessLogic maxCstrs program validator (post :==>: pre) = do
+  let shouldStop = \st -> sestConstructors st > maxCstrs
   (result, _logs) <- mockPrtT $ do
     let prog0 = uncurry PrtUnorderedDefs program
     let prog1 = monomorphize prog0
@@ -37,8 +38,8 @@ incorrectnessLogic fuel program validator (post :==>: pre) = do
             flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
               typeInferTerm validator
     flip runReaderT orderedDecls $ do
-      proveAnyWithFuel fuel isCounter (Problem resultTy validator post pre)
-  printResult fuel result
+      proveAny shouldStop isCounter (Problem resultTy validator post pre)
+  printResult maxCstrs result
   where
     isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
       | s /= OutOfFuel = True
