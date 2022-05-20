@@ -10,7 +10,7 @@ import qualified Test.Tasty.HUnit as Test
 
 checkWrong :: Test.Assertion
 checkWrong =
-  incorrectnessLogic
+  assertIncorrectnessLogic
     200 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . validator tx |] -- validator
@@ -20,7 +20,7 @@ checkWrong =
 
 checkOk :: Test.Assertion
 checkOk =
-  incorrectnessLogic
+  assertIncorrectnessLogic
     100 -- amount of steps
     minswap -- entire program
     [term| \(tx : TxInfo) . correct_validator tx |] -- validator
