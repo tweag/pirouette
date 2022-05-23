@@ -10,7 +10,7 @@ module Pirouette.Term.SymbolicProveSpec (tests) where
 import Control.Monad.Reader
 import Data.Maybe (isJust)
 import Language.Pirouette.Example
-import qualified Language.Pirouette.Example.MinSwap as MinSwap
+import qualified Language.Pirouette.Example.IsUnity as IsUnity
 import Pirouette.Monad
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.Term.Symbolic.Eval
@@ -359,15 +359,15 @@ tests =
       ],
     ohearnTest,
     ohearnTestPeano,
-    minSwapTest
+    isUnityTest
   ]
 
--- * MinSwap example
+-- * IsUnity example
 
 
-minswap :: (Program Ex, Type Ex, Term Ex)
-minswap =
-  ( MinSwap.minswap,
+isUnity :: (Program Ex, Type Ex, Term Ex)
+isUnity =
+  ( IsUnity.definitions,
     [ty|Bool|],
     [term| \(tx : TxInfo) . validator tx |]
   )
@@ -378,8 +378,8 @@ minswap =
 --
 -- In other words, it only validates if @v@ is correct. We expect
 -- a counterexample out of this.
-condMinSwap :: (Term Ex, Term Ex)
-condMinSwap =
+condIsUnity :: (Term Ex, Term Ex)
+condIsUnity =
   ( [term| \(result : Bool) (tx : TxInfo) . result |],
     [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
   )
@@ -401,10 +401,10 @@ execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
     flip runReaderT orderedDecls $
       toDo (Problem tyRes fn assume toProve)
 
-minSwapTest :: TestTree
-minSwapTest =
+isUnityTest :: TestTree
+isUnityTest =
   testGroup
-    "MinSwap"
+    "isUnity Bug"
     [ testCase "[correct_isUnity v] validate [\\r _ -> r] counter" $
-        execFull (proveAny (\st -> sestConstructors st > 50) isCounter) minswap condMinSwap `satisfies` isJust
+        execFull (proveAny (\st -> sestConstructors st > 50) isCounter) isUnity condIsUnity `satisfies` isJust
     ]
