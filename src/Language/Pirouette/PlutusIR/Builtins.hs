@@ -22,6 +22,7 @@ import Data.Data
 import qualified Data.Text as T
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 import PlutusCore
   ( DefaultUni (..),
     pattern DefaultUniList,
@@ -50,10 +51,107 @@ instance LanguageBuiltins BuiltinsOfPIR where
   type BuiltinTerms BuiltinsOfPIR = P.DefaultFun
   type Constants BuiltinsOfPIR = PIRConstant
 
+infixr 2 :->:
+
+pattern (:->:) :: SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar
+pattern (:->:) x y = SystF.TyFun x y
+
+systfType :: PIRBuiltinType -> TypeMeta BuiltinsOfPIR meta
+systfType = SystF.TyPure . SystF.Free . TyBuiltin
+
+tInt, tBool, tUnit, tByteString, tString, tData :: TypeMeta BuiltinsOfPIR meta
+tInt = systfType PIRTypeInteger
+tBool = systfType PIRTypeBool
+tUnit = systfType PIRTypeUnit
+tByteString = systfType PIRTypeByteString
+tString = systfType PIRTypeString
+tData = systfType PIRTypeData
+
+cstToBuiltinType :: PIRConstant -> PIRBuiltinType
+cstToBuiltinType (PIRConstInteger _) = PIRTypeInteger
+cstToBuiltinType (PIRConstByteString _) = PIRTypeByteString
+cstToBuiltinType PIRConstUnit = PIRTypeUnit
+cstToBuiltinType (PIRConstBool _) = PIRTypeBool
+cstToBuiltinType (PIRConstString _) = PIRTypeString
+cstToBuiltinType (PIRConstList []) = PIRTypeList Nothing
+cstToBuiltinType (PIRConstList (c : cs)) =
+  let res = PIRTypeList (Just $ cstToBuiltinType c)
+   in if all (== res) (cstToBuiltinType <$> cs)
+        then res
+        else error "typeOfConstant: mismatching element types in a PIRConstList"
+cstToBuiltinType (PIRConstPair c1 c2) =
+  PIRTypePair (Just (cstToBuiltinType c1)) (Just (cstToBuiltinType c2))
+cstToBuiltinType (PIRConstData _) = PIRTypeData
+
+
 instance LanguageBuiltinTypes BuiltinsOfPIR where
-  typeOfConstant = undefined
-  typeOfBuiltin = undefined
-  typeOfBottom = undefined
+  typeOfConstant = systfType . cstToBuiltinType
+  typeOfBuiltin P.AddInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.SubtractInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.MultiplyInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.DivideInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.QuotientInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.RemainderInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.ModInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.EqualsInteger = tInt :->: tInt :->: tBool
+  typeOfBuiltin P.LessThanInteger = tInt :->: tInt :->: tBool
+  typeOfBuiltin P.LessThanEqualsInteger = tInt :->: tInt :->: tBool
+  typeOfBuiltin P.AppendByteString = tByteString :->: tByteString :->: tByteString
+  typeOfBuiltin P.ConsByteString = undefined
+  typeOfBuiltin P.SliceByteString = undefined
+  typeOfBuiltin P.LengthOfByteString = tByteString :->: tInt
+  typeOfBuiltin P.IndexByteString = undefined
+  typeOfBuiltin P.EqualsByteString = tByteString :->: tByteString :->: tBool
+  typeOfBuiltin P.LessThanByteString = tByteString :->: tByteString :->: tBool
+  typeOfBuiltin P.LessThanEqualsByteString = tByteString :->: tByteString :->: tBool
+  typeOfBuiltin P.Sha2_256 = undefined
+  typeOfBuiltin P.Sha3_256 = undefined
+  typeOfBuiltin P.Blake2b_256 = undefined
+  typeOfBuiltin P.VerifySignature = undefined
+  typeOfBuiltin P.AppendString = tString :->: tString :->: tString
+  typeOfBuiltin P.EqualsString = tString :->: tString :->: tBool
+  typeOfBuiltin P.EncodeUtf8 = undefined
+  typeOfBuiltin P.DecodeUtf8 = undefined
+  typeOfBuiltin P.IfThenElse =
+    SystF.TyAll (SystF.ann "a") SystF.KStar (tBool :->: a :->: a)
+    where
+      a = SystF.TyPure $ SystF.Bound (SystF.Ann "a") 0
+  typeOfBuiltin P.ChooseUnit = undefined
+  typeOfBuiltin P.Trace = undefined
+  typeOfBuiltin P.FstPair =
+    SystF.TyAll
+      (SystF.ann "a")
+      SystF.KStar
+      ( SystF.TyAll
+          (SystF.ann "b")
+          SystF.KStar
+          undefined -- TODO Is it even possible...?
+      )
+    where
+      a = SystF.TyPure $ SystF.Bound (SystF.Ann "a") 0
+      b = SystF.TyPure $ SystF.Bound (SystF.Ann "b") 0
+  typeOfBuiltin P.SndPair = undefined
+  typeOfBuiltin P.ChooseList = undefined
+  typeOfBuiltin P.MkCons = undefined
+  typeOfBuiltin P.HeadList = undefined
+  typeOfBuiltin P.TailList = undefined
+  typeOfBuiltin P.NullList = undefined
+  typeOfBuiltin P.ChooseData = undefined
+  typeOfBuiltin P.ConstrData = undefined
+  typeOfBuiltin P.MapData = undefined
+  typeOfBuiltin P.ListData = undefined
+  typeOfBuiltin P.IData = undefined
+  typeOfBuiltin P.BData = undefined
+  typeOfBuiltin P.UnConstrData = undefined
+  typeOfBuiltin P.UnMapData = undefined
+  typeOfBuiltin P.UnListData = undefined
+  typeOfBuiltin P.UnIData = undefined
+  typeOfBuiltin P.UnBData = undefined
+  typeOfBuiltin P.EqualsData = tData :->: tData :->: tBool
+  typeOfBuiltin P.MkPairData = tData :->: tData :->: systfType (PIRTypePair (Just PIRTypeData) (Just PIRTypeData))
+  typeOfBuiltin P.MkNilData = tData
+  typeOfBuiltin P.MkNilPairData = undefined
+  typeOfBottom = error "No bottom type in PIR"
 
 -- | Builtin Plutus Types
 data PIRBuiltinType
