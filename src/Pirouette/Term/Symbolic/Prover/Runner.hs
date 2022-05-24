@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Pirouette.Term.Symbolic.Prover.Runner where
 
@@ -23,25 +24,33 @@ data AssumeProve lang = Term lang :==>: Term lang
 type IncorrectnessResult lang =
   Either String (Maybe (Path lang (EvaluationWitness lang)))
 
+-- For now only out of fuel stopping condition
+newtype StoppingCondition = StopOutOfFuel Int
+
+-- | Parameters for an incorrectness logic run
+data ILParams lang = ILParams
+  { ilDefinitions :: Program lang,
+    ilTarget :: Term lang,
+    ilCondition :: AssumeProve lang,
+    ilStopping :: StoppingCondition
+  }
+
 runIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSMTBranches lang) =>
-  Int ->
-  Program lang ->
-  Term lang ->
-  AssumeProve lang ->
-  IO (IncorrectnessResult lang)
-runIncorrectnessLogic fuel program validator (post :==>: pre) = do
+  ILParams lang -> IO (IncorrectnessResult lang)
+runIncorrectnessLogic
+  (ILParams definitions target (post :==>: pre) (StopOutOfFuel fuel)) = do
   (result, _logs) <- mockPrtT $ do
-    let prog0 = uncurry PrtUnorderedDefs program
+    let prog0 = uncurry PrtUnorderedDefs definitions
     let prog1 = monomorphize prog0
     let decls = defunctionalize prog1
     orderedDecls <- elimEvenOddMutRec decls
     let Right (Just (_, resultTy)) =
           fmap (fmap tyFunArgs) $
             flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
-              typeInferTerm validator
+              typeInferTerm target
     flip runReaderT orderedDecls $ do
-      proveAnyWithFuel fuel isCounter (Problem resultTy validator post pre)
+      proveAnyWithFuel fuel isCounter (Problem resultTy target post pre)
   return result
   where
     isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
@@ -77,22 +86,16 @@ assertIRResult (Right _) = return ()
 -- pretty-print the result
 replIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSMTBranches lang) =>
-  Int ->
-  Program lang ->
-  Term lang ->
-  AssumeProve lang ->
+  ILParams lang ->
   IO ()
-replIncorrectnessLogic fuel program validator (post :==>: pre) =
-  runIncorrectnessLogic fuel program validator (post :==>: pre) >>= printIRResult fuel
+replIncorrectnessLogic params@ILParams{ilStopping = StopOutOfFuel fuel} =
+  runIncorrectnessLogic params >>= printIRResult fuel
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
 assertIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSMTBranches lang) =>
-  Int ->
-  Program lang ->
-  Term lang ->
-  AssumeProve lang ->
+  ILParams lang ->
   Test.Assertion
-assertIncorrectnessLogic fuel program validator (post :==>: pre) =
-  runIncorrectnessLogic fuel program validator (post :==>: pre) >>= assertIRResult
+assertIncorrectnessLogic params =
+  runIncorrectnessLogic params >>= assertIRResult

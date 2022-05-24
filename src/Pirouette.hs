@@ -15,4 +15,5 @@ import Language.Pirouette.Example.Syntax as X
 import Pirouette.Term.Symbolic.Prover.Runner as X
   ( assertIncorrectnessLogic,
     replIncorrectnessLogic,
+    ILParams(..)
   )

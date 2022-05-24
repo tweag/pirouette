@@ -11,22 +11,26 @@ import qualified Test.Tasty.HUnit as Test
 checkWrong :: Test.Assertion
 checkWrong =
   assertIncorrectnessLogic
-    200 -- amount of steps
-    minswap -- entire program
-    [term| \(tx : TxInfo) . validator tx |] -- validator
-    ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
-        :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
-    )
+    ILParams
+      { ilDefinitions = minswap,
+        ilTarget = [term| \(tx : TxInfo) . validator tx |], -- validator
+        ilCondition =
+          [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
+            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
+        ilStopping = StopOutOfFuel 200
+      }
 
 checkOk :: Test.Assertion
 checkOk =
   assertIncorrectnessLogic
-    100 -- amount of steps
-    minswap -- entire program
-    [term| \(tx : TxInfo) . correct_validator tx |] -- validator
-    ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
-        :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
-    )
+    ILParams
+      { ilDefinitions = minswap,
+        ilTarget = [term| \(tx : TxInfo) . correct_validator tx |], -- validator
+        ilCondition =
+          [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
+            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
+        ilStopping = StopOutOfFuel 100
+      }
 
 minswap :: Program Ex
 minswap =
