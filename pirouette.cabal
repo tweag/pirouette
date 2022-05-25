@@ -16,7 +16,7 @@ extra-source-files:
 library
   exposed-modules:
       Language.Pirouette.Example
-      Language.Pirouette.Example.MinSwap
+      Language.Pirouette.Example.IsUnity
       Language.Pirouette.Example.QuasiQuoter
       Language.Pirouette.Example.Syntax
       Language.Pirouette.Example.ToTerm

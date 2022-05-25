@@ -1,6 +1,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 
-module Language.Pirouette.Example.MinSwap where
+module Language.Pirouette.Example.IsUnity where
 
 import Language.Pirouette.Example.QuasiQuoter
 import Language.Pirouette.Example.Syntax
@@ -11,29 +11,29 @@ import qualified Test.Tasty.HUnit as Test
 checkWrong :: Test.Assertion
 checkWrong =
   assertIncorrectnessLogic
-    ILParams
-      { ilDefinitions = minswap,
-        ilTarget = [term| \(tx : TxInfo) . validator tx |], -- validator
-        ilCondition =
+    IncorrectnessParams
+      { ipDefinitions = definitions,
+        ipTarget = [term| \(tx : TxInfo) . validator tx |], -- validator
+        ipCondition =
           [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
             :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
-        ilStopping = StopOutOfFuel 200
+        ipMaxCstrs = 15
       }
 
 checkOk :: Test.Assertion
 checkOk =
   assertIncorrectnessLogic
-    ILParams
-      { ilDefinitions = minswap,
-        ilTarget = [term| \(tx : TxInfo) . correct_validator tx |], -- validator
-        ilCondition =
+    IncorrectnessParams
+      { ipDefinitions = definitions,
+        ipTarget = [term| \(tx : TxInfo) . correct_validator tx |], -- validator
+        ipCondition =
           [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
             :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
-        ilStopping = StopOutOfFuel 100
+        ipMaxCstrs = 20
       }
 
-minswap :: Program Ex
-minswap =
+definitions :: Program Ex
+definitions =
   [prog|
 fun and : Bool -> Bool -> Bool
   = \(x : Bool) (y : Bool) . if @Bool x then y else False
@@ -142,7 +142,7 @@ fun assetClassValueOf : Value -> Pair String String -> Integer
       ))
 
 -- Now we define the wrong isUnity function, that is too permissive
-fun minSwap_isUnity : Value -> Pair String String -> Bool
+fun wrong_isUnity : Value -> Pair String String -> Bool
   = \(v : Value) (ac : Pair String String) . assetClassValueOf v ac == 1
 
 -- The correct spec for that should be exactly what we wrote in our blogpost:
@@ -175,7 +175,7 @@ fun eqTxOutRef : TxOutRef -> TxOutRef -> Bool
   = \(r1 : TxOutRef) (r2 : TxOutRef)
   . match_TxOutRef r1 @Bool
       (\(i1 : TxId) (ix1 : Integer)
-      . match_TxOutRef r2 @Bool 
+      . match_TxOutRef r2 @Bool
           (\(i2 : TxId) (ix2 : Integer)
           . match_TxId i1 @Bool
               (\(n1 : Integer)
@@ -198,14 +198,14 @@ fun example_out : TxOutRef
 fun validator : TxInfo -> Bool
   = \(tx : TxInfo)
     . match_TxInfo tx @Bool
-      (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId). 
-        and (spendsOutput inputs example_out) (minSwap_isUnity mint example_ac))
+      (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId).
+        and (spendsOutput inputs example_out) (wrong_isUnity mint example_ac))
 
 -- And the infamous validator, slightly simplified:
 fun correct_validator : TxInfo -> Bool
   = \(tx : TxInfo)
     . match_TxInfo tx @Bool
-      (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId). 
+      (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId).
         correct_isUnity mint example_ac)
 
 fun main : Integer = 42
