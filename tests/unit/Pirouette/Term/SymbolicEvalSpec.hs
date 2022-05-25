@@ -27,6 +27,7 @@ symbolicExec program term = fmap fst $ mockPrtT $ do
   let decls = uncurry PrtUnorderedDefs program
   orderedDecls <- elimEvenOddMutRec decls
   flip runReaderT orderedDecls $ do
+    -- TODO: use some stopping condition related to constructors not fuel
     pathsFor (\st -> sestConsumedFuel st > 10) "main" term
 
 incorrectnessExec' :: (Program Ex, Term Ex) -> (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
@@ -40,11 +41,11 @@ incorrectnessExec program term inC outC = fmap fst $ mockPrtT $ do
   orderedDecls <- elimEvenOddMutRec decls
   flip runReaderT orderedDecls $ do
     pathsIncorrectness (const False) UserDeclaredConstraints {
-      udcInputs = [], 
-      udcOutputCond = outC, 
-      udcInputCond = inC, 
-      udcAdditionalDefs = pure [], 
-      udcAxioms = [] } 
+      udcInputs = [],
+      udcOutputCond = outC,
+      udcInputCond = inC,
+      udcAdditionalDefs = pure [],
+      udcAxioms = [] }
       term
 
 add1 :: (Program Ex, Term Ex)
@@ -77,6 +78,36 @@ fun main : Integer = 42
   |],
   [term| \(n : Integer) (x : Integer) (y : Integer) . whoKnows n x y |])
 
+stateSpaceExploration :: (Program Ex, Term Ex)
+stateSpaceExploration = (
+  [prog|
+data ListOfInteger : Type
+  = Nil : ListOfInteger
+  | Cons : Integer -> ListOfInteger -> ListOfInteger
+
+-- TODO: Write PairOfLists
+
+-- match_ListOfInteger : ListOfInteger -> all (a : Type) -> a -> (Integer -> ListOfInteger -> a) -> a
+fun sumList : ListOfInteger -> Integer
+  = \(xs : ListOfInteger) .
+    match_ListOfInteger xs @Integer
+      0
+      (\(y : Integer) (ys : ListOfInteger) . y + sumList ys)
+
+fun main : Integer = 42
+  |],
+  [term| \(xs : PairsOfLists) . match_PairOfLists xs @Integer
+           (\(fst : ListOfIntegers) (snd : ListOfIntegers) . sumList fst * sumList snd)
+       |])
+
+-- TODO: Add a test that checks that all paths that are produced contain the expected terms in the expected order.
+-- For instance, for the stopping condition of (\stats -> numConstructors > 5), we should see
+-- the following paths:
+--
+-- > ([], []) (_ : [], []) ([], _ : []) (_ : [], _ : []) (_ : _ : [], []) ([], _ : _ : [])
+--
+
+
 botConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
 botConditions = (SMT.Bot, const mempty)
 
@@ -84,7 +115,7 @@ topConditions :: (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
 topConditions = (mempty, const mempty)
 
 tests :: [TestTree]
-tests = [ 
+tests = [
   testCase "add 1" $
     symbolicExec' add1 `satisfies` isSingleton,
   testCase "add 1, bot" $
