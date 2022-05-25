@@ -6,26 +6,31 @@ import Language.Pirouette.Example.QuasiQuoter
 import Language.Pirouette.Example.Syntax
 import Pirouette.Term.Symbolic.Prover.Runner
 import Pirouette.Term.Syntax.Base
+import qualified Test.Tasty.HUnit as Test
 
-checkWrong :: IO ()
+checkWrong :: Test.Assertion
 checkWrong =
-  incorrectnessLogic
-    15 -- amount of steps
-    definitions -- entire program
-    [term| \(tx : TxInfo) . validator tx |] -- validator
-    ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
-        :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
-    )
+  assertIncorrectnessLogic
+    IncorrectnessParams
+      { ipDefinitions = definitions,
+        ipTarget = [term| \(tx : TxInfo) . validator tx |], -- validator
+        ipCondition =
+          [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
+            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
+        ipMaxCstrs = 15
+      }
 
-checkOk :: IO ()
+checkOk :: Test.Assertion
 checkOk =
-  incorrectnessLogic
-    20 -- amount of steps
-    definitions -- entire program
-    [term| \(tx : TxInfo) . correct_validator tx |] -- validator
-    ( [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
-        :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
-    )
+  assertIncorrectnessLogic
+    IncorrectnessParams
+      { ipDefinitions = definitions,
+        ipTarget = [term| \(tx : TxInfo) . correct_validator tx |], -- validator
+        ipCondition =
+          [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
+            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
+        ipMaxCstrs = 20
+      }
 
 definitions :: Program Ex
 definitions =
