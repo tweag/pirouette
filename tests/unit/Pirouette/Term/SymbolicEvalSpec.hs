@@ -22,13 +22,22 @@ import Pirouette.Term.SymbolicEvalUtils
 symbolicExec' :: (Program Ex, Term Ex) -> IO (Either String [Path Ex (TermMeta Ex SymVar)])
 symbolicExec' = uncurry symbolicExec
 
+symbolicExecCtors' :: Int -> (Program Ex, Term Ex) -> IO (Either String [Path Ex (TermMeta Ex SymVar)])
+symbolicExecCtors' = uncurry . symbolicExecCtors
+
 symbolicExec :: Program Ex -> Term Ex -> IO (Either String [Path Ex (TermMeta Ex SymVar)])
 symbolicExec program term = fmap fst $ mockPrtT $ do
   let decls = uncurry PrtUnorderedDefs program
   orderedDecls <- elimEvenOddMutRec decls
   flip runReaderT orderedDecls $ do
-    -- TODO: use some stopping condition related to constructors not fuel
     pathsFor (\st -> sestConsumedFuel st > 10) "main" term
+
+symbolicExecCtors :: Int -> Program Ex -> Term Ex -> IO (Either String [Path Ex (TermMeta Ex SymVar)])
+symbolicExecCtors depth program term = fmap fst $ mockPrtT $ do
+  let decls = uncurry PrtUnorderedDefs program
+  orderedDecls <- elimEvenOddMutRec decls
+  flip runReaderT orderedDecls $ do
+    pathsFor (\st -> sestConstructors st > depth) "main" term
 
 incorrectnessExec' :: (Program Ex, Term Ex) -> (Constraint Ex, TermMeta Ex SymVar -> Constraint Ex)
                    -> IO (Either String [Path Ex (EvaluationWitness Ex)])
@@ -81,11 +90,12 @@ fun main : Integer = 42
 stateSpaceExploration :: (Program Ex, Term Ex)
 stateSpaceExploration = (
   [prog|
-data ListOfInteger : Type
+data ListOfInteger
   = Nil : ListOfInteger
   | Cons : Integer -> ListOfInteger -> ListOfInteger
 
--- TODO: Write PairOfLists
+data PairOfLists
+  = MkPair : ListOfInteger -> ListOfInteger -> PairOfLists
 
 -- match_ListOfInteger : ListOfInteger -> all (a : Type) -> a -> (Integer -> ListOfInteger -> a) -> a
 fun sumList : ListOfInteger -> Integer
@@ -96,8 +106,8 @@ fun sumList : ListOfInteger -> Integer
 
 fun main : Integer = 42
   |],
-  [term| \(xs : PairsOfLists) . match_PairOfLists xs @Integer
-           (\(fst : ListOfIntegers) (snd : ListOfIntegers) . sumList fst * sumList snd)
+  [term| \(xs : PairOfLists) . match_PairOfLists xs @Integer
+           (\(fst : ListOfIntegers) (snd : ListOfIntegers) . sumList fst + sumList snd)
        |])
 
 -- TODO: Add a test that checks that all paths that are produced contain the expected terms in the expected order.
@@ -123,7 +133,27 @@ tests = [
   testCase "add 1, top" $
     incorrectnessExec' add1 topConditions `pathSatisfies` (isSingleton .&. all isVerified),
   testCase "one fake branch" $
-    incorrectnessExec' oneFake botConditions `pathSatisfies` (isSingleton .&. all isCounter)
+    incorrectnessExec' oneFake botConditions `pathSatisfies` (isSingleton .&. all isCounter),
   -- testCase "who knows should have two branches" $
   --   incorrectnessExec' whoKnows botConditions `pathSatisfies` (\x -> length x == 2)
+  testCase "pairs of lists - depth 0" $
+    symbolicExecCtors' 0 stateSpaceExploration `satisfies` isSingleton,
+  -- Nil s1, Cons s1
+  testCase "pairs of lists - depth 1" $
+    symbolicExecCtors' 1 stateSpaceExploration `satisfies` exactlyKElements 2,
+  -- Nil Nil, Nil (Cons s2 s3), (Cons s2 Nil) s1, (Cons s2 (Cons s4 s5)) s2
+  testCase "pairs of lists - depth 2" $
+    symbolicExecCtors' 2 stateSpaceExploration `satisfies` exactlyKElements 4,
+  -- Nil Nil, Nil (Cons s2 Nil), Nil (Cons s2 (Cons s4 s5)),
+  -- (Cons s2 Nil) Nil, (Cons s2 Nil) (Cons s5 s6),
+  -- (Cons s2 (Cons s4 Nil)) s1, (Cons s2 (Cons s4 (Cons s6 s7))) s1
+  testCase "pairs of lists - depth 3" $
+    symbolicExecCtors' 3 stateSpaceExploration `satisfies` exactlyKElements 7,
+  testCase "pairs of lists - depth 4" $
+    symbolicExecCtors' 4 stateSpaceExploration `satisfies` exactlyKElements 11,
+  testCase "pairs of lists - depth 5" $
+    symbolicExecCtors' 5 stateSpaceExploration `satisfies` exactlyKElements 16,
+  testCase "pairs of lists - depth 6" $
+    symbolicExecCtors' 6 stateSpaceExploration `satisfies` exactlyKElements 22
+
   ]

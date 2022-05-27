@@ -64,3 +64,10 @@ isNoCounter = not . isCounter
 isSingleton :: [a] -> Bool
 isSingleton [_] = True
 isSingleton _ = False
+
+exactlyTwoElements :: [a] -> Bool
+exactlyTwoElements [_,_] = True
+exactlyTwoElements _ = False
+
+exactlyKElements :: Int -> [a] -> Bool
+exactlyKElements k xs = length xs == k
