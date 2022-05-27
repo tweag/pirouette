@@ -444,8 +444,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
           signalEvaluation
           pure newTerm
       -- if it's not ready, just keep evaluating the arguments
-      Nothing ->
-        R.App hd <$> mapM (R.argMapM return symEvalOneStep) args
+      Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
     mDefHead <- Just <$> lift (lift $ prtDefOf n)
     case mDefHead of
@@ -563,9 +562,16 @@ symEvalOneStep t@(R.App hd args) = case hd of
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
   where
-    justEvaluateArgs = do
-      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
-      pure $ R.App hd evaluatedArgs
+    justEvaluateArgs = R.App hd <$> symEvalOneStepArgs args
+
+    symEvalOneStepArgs [] = pure []
+    symEvalOneStepArgs (a@R.TyArg {} : as) =
+      (a :) <$> symEvalOneStepArgs as
+    symEvalOneStepArgs (R.TermArg a : as) = do
+      (newA, somethingWasEvaluated) <- listen (symEvalOneStep a)
+      if somethingWasEvaluated == Any True
+        then pure (R.TermArg newA : as)
+        else (R.TermArg newA :) <$> symEvalOneStepArgs as
 
 -- | Indicate that something has been evaluated.
 signalEvaluation :: Functor m => WriterT Any (SymEvalT lang m) ()
