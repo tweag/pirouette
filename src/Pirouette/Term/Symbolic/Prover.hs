@@ -140,6 +140,11 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     PruneCounterFound model -> pure $ CounterExample bodyTerm model
     _ -> do
       -- one step of evaluation on each
+      -- it is very important that we do all three in parallel,
+      -- because otherwise we risk going into a rabbit hole in
+      -- one of them, and never learn from the evaluation in other
+      -- (for example, expanding a big bodyTerm when the assumeTerm
+      -- has a cut-off somewhere)
       (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
       (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
       (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
