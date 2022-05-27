@@ -45,7 +45,8 @@ prove ::
   StoppingCondition ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-prove shouldStop problem = symevalT shouldStop $ proveRaw problem
+prove shouldStop problem =
+  symevalT shouldStop ArgumentsInParallel $ proveRaw problem
 
 proveAny ::
   (SymEvalConstr lang m, MonadIO m) =>
@@ -53,7 +54,8 @@ proveAny ::
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
   m (Maybe (Path lang (EvaluationWitness lang)))
-proveAny shouldStop p problem = symevalAnyPath shouldStop p $ proveRaw problem
+proveAny shouldStop p problem =
+  symevalAnyPath shouldStop ArgumentsInParallel p $ proveRaw problem
 
 proveRaw ::
   forall lang m.

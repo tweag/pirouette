@@ -19,7 +19,6 @@ module Pirouette.Term.Symbolic.Eval
   ( -- * Runners
 
     -- ** General inputs and outputs
-    AvailableFuel (..),
     Path (..),
     PathStatus (..),
     Constraint,
@@ -27,6 +26,7 @@ module Pirouette.Term.Symbolic.Eval
 
     -- ** Base symbolic evaluation
     StoppingCondition,
+    ArgumentEvaluationPolicy (..),
     SymEvalStatistics (..),
     runFor,
     pathsFor,
@@ -118,7 +118,14 @@ deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lan
 
 deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
 
-data AvailableFuel = Fuel Int | InfiniteFuel
+data ArgumentEvaluationPolicy
+  = -- | Only evaluate the next argument when we cannot
+    --   move further in the previous one.
+    --   Without a stopping condition we risk going
+    --   recursively on the first argument and never stop.
+    ArgumentsOneByOne
+  | -- | Fairer, but potentially less precise statistics
+    ArgumentsInParallel
   deriving (Eq, Show)
 
 data SymEvalSt lang = SymEvalSt
@@ -129,7 +136,8 @@ data SymEvalSt lang = SymEvalSt
     -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
     sestValidated :: Bool,
     sestKnownNames :: [Name], -- The list of names the SMT solver is aware of
-    sestStoppingCondition :: StoppingCondition
+    sestStoppingCondition :: StoppingCondition,
+    sestArgumentEvaluationPolicy :: ArgumentEvaluationPolicy
   }
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
@@ -188,22 +196,24 @@ type SymEvalConstr lang m =
 symevalT ::
   (SymEvalConstr lang m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   SymEvalT lang m a ->
   m [Path lang a]
-symevalT shouldStop = runSymEvalT st0
+symevalT shouldStop argPolicy = runSymEvalT st0
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False [] shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False [] shouldStop argPolicy
 
 symevalAnyPath ::
   (SymEvalConstr lang m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   (Path lang a -> Bool) ->
   SymEvalT lang m a ->
   m (Maybe (Path lang a))
-symevalAnyPath shouldStop p =
+symevalAnyPath shouldStop argPolicy p =
   ListT.firstThat p . runSymEvalTWorker st0
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False [] shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False [] shouldStop argPolicy
 
 runSymEvalTRaw ::
   (Monad m) =>
@@ -564,14 +574,20 @@ symEvalOneStep t@(R.App hd args) = case hd of
   where
     justEvaluateArgs = R.App hd <$> symEvalOneStepArgs args
 
-    symEvalOneStepArgs [] = pure []
-    symEvalOneStepArgs (a@R.TyArg {} : as) =
-      (a :) <$> symEvalOneStepArgs as
-    symEvalOneStepArgs (R.TermArg a : as) = do
+    symEvalOneStepArgs theArgs = do
+      policy <- gets sestArgumentEvaluationPolicy
+      case policy of
+        ArgumentsInParallel -> mapM (R.argMapM return symEvalOneStep) theArgs
+        ArgumentsOneByOne -> symEvalOneStepArgsOneByOne theArgs
+
+    symEvalOneStepArgsOneByOne [] = pure []
+    symEvalOneStepArgsOneByOne (a@R.TyArg {} : as) =
+      (a :) <$> symEvalOneStepArgsOneByOne as
+    symEvalOneStepArgsOneByOne (R.TermArg a : as) = do
       (newA, somethingWasEvaluated) <- listen (symEvalOneStep a)
       if somethingWasEvaluated == Any True
         then pure (R.TermArg newA : as)
-        else (R.TermArg newA :) <$> symEvalOneStepArgs as
+        else (R.TermArg newA :) <$> symEvalOneStepArgsOneByOne as
 
 -- | Indicate that something has been evaluated.
 signalEvaluation :: Functor m => WriterT Any (SymEvalT lang m) ()
@@ -643,20 +659,22 @@ instance Pretty SymVar where
 runFor ::
   (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   Name ->
   Term lang ->
   m ()
-runFor shouldStop nm t = do
-  paths <- pathsFor shouldStop nm t
+runFor shouldStop argPolicy nm t = do
+  paths <- pathsFor shouldStop argPolicy nm t
   mapM_ (liftIO . print . pretty) paths
 
 pathsFor ::
   (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   Name ->
   Term lang ->
   m [Path lang (TermMeta lang SymVar)]
-pathsFor shouldStop _ t = symevalT shouldStop (runEvaluation t)
+pathsFor shouldStop argPolicy _ = symevalT shouldStop argPolicy . runEvaluation
 
 -- * All the functions related to symbolic execution guarded by user written predicates rather than fuel.
 
@@ -689,11 +707,12 @@ data UniversalAxiom lang = UniversalAxiom
 runIncorrectness ::
   (SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   UserDeclaredConstraints lang ->
   Term lang ->
   m ()
-runIncorrectness shouldStop udc t = do
-  paths <- pathsIncorrectness shouldStop udc t
+runIncorrectness shouldStop argPolicy udc t = do
+  paths <- pathsIncorrectness shouldStop argPolicy udc t
   if null paths
     then liftIO $ putStrLn "Condition VERIFIED"
     else mapM_ (liftIO . print . pretty) paths
@@ -701,19 +720,21 @@ runIncorrectness shouldStop udc t = do
 pathsIncorrectness ::
   (SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   UserDeclaredConstraints lang ->
   Term lang ->
   m [Path lang (EvaluationWitness lang)]
-pathsIncorrectness shouldStop udc t =
-  symevalT shouldStop $ pathsIncorrectnessWorker udc t
+pathsIncorrectness shouldStop argPolicy udc t =
+  symevalT shouldStop argPolicy $ pathsIncorrectnessWorker udc t
 
 pathsIncorrectness_ ::
   (SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
+  ArgumentEvaluationPolicy ->
   (SimpleSMT.Solver -> m (UserDeclaredConstraints lang)) ->
   Term lang ->
   m [Path lang (EvaluationWitness lang)]
-pathsIncorrectness_ shouldStop getUdc t = symevalT shouldStop $ do
+pathsIncorrectness_ shouldStop argPolicy getUdc t = symevalT shouldStop argPolicy $ do
   solver <- SymEvalT $ lift $ SMT.SolverT ask
   udc <- lift $ getUdc solver
   pathsIncorrectnessWorker udc t
