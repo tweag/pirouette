@@ -136,24 +136,31 @@ tests = [
     incorrectnessExec' oneFake botConditions `pathSatisfies` (isSingleton .&. all isCounter),
   -- testCase "who knows should have two branches" $
   --   incorrectnessExec' whoKnows botConditions `pathSatisfies` (\x -> length x == 2)
-  testCase "pairs of lists - depth 0" $
+
+  testCase "pairs of lists: one by one unfolding - depth 0" $
     symbolicExecCtors' 0 stateSpaceExploration `satisfies` isSingleton,
+
   -- Nil s1, Cons s1
-  testCase "pairs of lists - depth 1" $
+  testCase "pairs of lists: one by one unfolding - depth 1" $
     symbolicExecCtors' 1 stateSpaceExploration `satisfies` exactlyKElements 2,
+
   -- Nil Nil, Nil (Cons s2 s3), (Cons s2 Nil) s1, (Cons s2 (Cons s4 s5)) s2
-  testCase "pairs of lists - depth 2" $
+  testCase "pairs of lists: one by one unfolding - depth 2" $
     symbolicExecCtors' 2 stateSpaceExploration `satisfies` exactlyKElements 4,
+
   -- Nil Nil, Nil (Cons s2 Nil), Nil (Cons s2 (Cons s4 s5)),
   -- (Cons s2 Nil) Nil, (Cons s2 Nil) (Cons s5 s6),
   -- (Cons s2 (Cons s4 Nil)) s1, (Cons s2 (Cons s4 (Cons s6 s7))) s1
-  testCase "pairs of lists - depth 3" $
+  testCase "pairs of lists: one by one unfolding - depth 3" $
     symbolicExecCtors' 3 stateSpaceExploration `satisfies` exactlyKElements 7,
-  testCase "pairs of lists - depth 4" $
+
+  testCase "pairs of lists: one by one unfolding - depth 4" $
     symbolicExecCtors' 4 stateSpaceExploration `satisfies` exactlyKElements 11,
-  testCase "pairs of lists - depth 5" $
+
+  testCase "pairs of lists: one by one unfolding - depth 5" $
     symbolicExecCtors' 5 stateSpaceExploration `satisfies` exactlyKElements 16,
-  testCase "pairs of lists - depth 6" $
-    symbolicExecCtors' 6 stateSpaceExploration `satisfies` exactlyKElements 22
+
+  testCase "single constructor: parallel unfolding" $
+    symbolicExecCtors' 1 singleConstructor `satisfies` isSingleton
 
   ]
