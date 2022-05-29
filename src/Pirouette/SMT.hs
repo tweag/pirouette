@@ -8,6 +8,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | This is Pirouette's SMT solver interface; you probably won't need to import
 --  anything under the @SMT/@ folder explicitely unless you're trying to do some
@@ -31,6 +33,9 @@ module Pirouette.SMT
     assertNot,
     getUnsatCore,
     getModel,
+
+    -- * New interface
+    Solve (..), SolverInit (..),
 
     -- * Convenient re-exports
     Constraint (..),
@@ -58,6 +63,27 @@ import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
+import System.IO.Unsafe (unsafePerformIO)
+
+-- The api to the SMT solver is simple; all the user has to do is inform us how to (A) initialize
+-- the solver with a shared context and (B) solve different problems. The @problems@ is supposed
+-- to be a GADT in order to fix the different result type of solving different problems.
+
+-- PUZZLE: The initSolver is currently returning some data that is later used under 'solveProblem';
+-- we did this because the declareAsManyUninterpretedFunctionsAsPossible function returns the
+-- names of the declared functions and we need to know those to futher translate terms
+-- into SMT. Yet, it should be possible for us to "dry-run" that translation at first, simplifying
+-- this whole situation and removing this initRes type variable
+--
+-- In fact; I won't even add it to the 'solveProblem' not to fall into using it
+
+class SolverInit ctx initRes where
+  initSolver :: MonadIO m => ctx -> SolverT m initRes
+
+class Solve lang (problem :: * -> * -> *) where
+  solveProblem :: (PirouetteReadDefs lang m, MonadIO m) => problem lang probRes -> SolverT m probRes
+
+-- OLD CODE
 
 -- | Solver monad for a specific solver, passed as a phantom type variable @s@ (refer to 'IsSolver' for more)
 --  to know the supported solvers. That's a phantom type variable used only to distinguish
@@ -124,16 +150,10 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
   return $ typeName : map fst cstrs
 
 -- | Declare a set of datatypes in the current solver session, in the order specified by
--- the dependency order passed as the second argument. You can generally get its value
--- from a 'PirouetteDepOrder' monad.
+-- the list of definitions. For info on sorting definitions, check the 'PirouetteDepOrder' class.
 declareDatatypes ::
-  (LanguageSMT lang, MonadIO m) => M.Map Name (Definition lang) -> [R.Arg Name Name] -> ExceptT String (SolverT m) [Name]
-declareDatatypes decls orderedNames = do
-  let tyNames = mapMaybe (R.argElim Just (const Nothing)) orderedNames
-  concatForM tyNames $ \tyname ->
-    case M.lookup tyname decls of
-      Just (DTypeDef tdef) -> declareDatatype tyname tdef
-      _ -> return []
+  (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
+declareDatatypes = fmap concat . mapM (uncurry declareDatatype)
 
 -- | Declare a single function signature as uninterpreted
 -- in the current solver session.
@@ -161,17 +181,12 @@ declareUninterpretedFunctions decls orderedNames = do
 
 declareAsManyUninterpretedFunctionsAsPossible ::
   (LanguageSMT lang, MonadIO m) =>
-  M.Map Name (Definition lang) ->
-  [R.Arg Name Name] ->
+  [(Name, FunDef lang)] ->
   ExceptT String (SolverT m) [Name]
-declareAsManyUninterpretedFunctionsAsPossible decls orderedNames = do
-  let fnNames = mapMaybe (R.argElim (const Nothing) Just) orderedNames
-  forMaybeM fnNames $ \fnName ->
-    case M.lookup fnName decls of
-      Just (DFunDef fdef) ->
-        (Just <$> declareUninterpretedFunction fnName fdef)
-          `catchError` (\_ -> return Nothing)
-      _ -> return Nothing
+declareAsManyUninterpretedFunctionsAsPossible ds = do
+  forMaybeM ds $ \(fnName, fnDef) ->
+    (Just <$> declareUninterpretedFunction fnName fnDef)
+      `catchError` (\_ -> return Nothing)
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.
