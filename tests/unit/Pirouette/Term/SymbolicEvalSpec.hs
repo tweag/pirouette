@@ -110,6 +110,23 @@ fun main : Integer = 42
            (\(fst : ListOfIntegers) (snd : ListOfIntegers) . sumList fst + sumList snd)
        |])
 
+
+singleConstructor :: (Program Ex, Term Ex)
+singleConstructor = (
+  [prog|
+data A
+  = Val : Integer -> A
+
+fun getVal : A -> Integer
+  = \(v : A) .
+    match_A v @Integer
+      (\(y : Integer) . y)
+
+fun main : Integer = 42
+  |],
+  [term| \(v : A) . getVal v
+       |])
+
 -- TODO: Add a test that checks that all paths that are produced contain the expected terms in the expected order.
 -- For instance, for the stopping condition of (\stats -> numConstructors > 5), we should see
 -- the following paths:
