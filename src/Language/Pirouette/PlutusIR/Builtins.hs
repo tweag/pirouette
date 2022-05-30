@@ -144,15 +144,18 @@ instance LanguageBuiltinTypes BuiltinsOfPIR where
     (
     -- fConstr
     -- Should we use PIRTypeList (Just PIRTypeData) or apply a polymorphic PIRTypeList to tData?
-    (tInt :->: systfType (PIRTypeList (Just PIRTypeData)) :->: "a")
+    -- (tInt :->: systfType (PIRTypeList (Just PIRTypeData)) :->: "a")
+    (tInt :->: tList tData :->: "a")
     :->: 
     -- fMap
     -- Same question for list + same question for pair
-    (systfType (PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) :->: "a")
+    -- (systfType (PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) :->: "a")
+    (tList (tPair tData tData) :->: "a")
     :->: 
     -- fList
     -- Same question for list
-    (systfType (PIRTypeList (Just PIRTypeData)) :->: "a")
+    -- (systfType (PIRTypeList (Just PIRTypeData)) :->: "a")
+    (tList tData :->: "a")
     :->: 
     -- fI
     (tInt :->: "a")
@@ -165,15 +168,22 @@ instance LanguageBuiltinTypes BuiltinsOfPIR where
   typeOfBuiltin P.ListData = undefined
   typeOfBuiltin P.IData = undefined
   typeOfBuiltin P.BData = undefined
-  typeOfBuiltin P.UnConstrData = undefined -- TODO REQUIRED BY "AUCTION"
+  typeOfBuiltin P.UnConstrData = -- REQUIRED BY "AUCTION"
+    -- Same question for pair
+    -- (systfType (PIRTypePair (Just PIRTypeInteger) (Just PIRTypeData)) :->: "a")
+    tData :->: tPair tInt tData
   typeOfBuiltin P.UnMapData = undefined
   typeOfBuiltin P.UnListData = -- REQUIRED BY "AUCTION"
-    -- Should we use PIRTypeList (Just PIRTypeData) or apply a polymorphic PIRTypeList to tData?
-    tData :->: systfType (PIRTypeList (Just PIRTypeData))
+    -- Same question for list
+    -- tData :->: systfType (PIRTypeList (Just PIRTypeData))
+    tData :->: tList tData
   typeOfBuiltin P.UnIData = tData :->: tInt -- REQUIRED BY "AUCTION"
   typeOfBuiltin P.UnBData = tData :->: tByteString -- REQUIRED BY "AUCTION"
   typeOfBuiltin P.EqualsData = tData :->: tData :->: tBool
-  typeOfBuiltin P.MkPairData = tData :->: tData :->: systfType (PIRTypePair (Just PIRTypeData) (Just PIRTypeData))
+  typeOfBuiltin P.MkPairData =
+    -- Same question for pair
+    -- tData :->: tData :->: systfType (PIRTypePair (Just PIRTypeData) (Just PIRTypeData))
+    tData :->: tData :->: tPair tData tData
   typeOfBuiltin P.MkNilData = tData
   typeOfBuiltin P.MkNilPairData = undefined
   typeOfBottom = error "No bottom type in PIR"
