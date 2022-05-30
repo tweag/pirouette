@@ -53,22 +53,6 @@ instance LanguageBuiltins BuiltinsOfPIR where
   type BuiltinTerms BuiltinsOfPIR = P.DefaultFun
   type Constants BuiltinsOfPIR = PIRConstant
 
-infixr 2 :->:
-
-pattern (:->:) :: SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar
-pattern (:->:) x y = SystF.TyFun x y
-
-systfType :: PIRBuiltinType -> TypeMeta BuiltinsOfPIR meta
-systfType = SystF.TyPure . SystF.Free . TyBuiltin
-
-tInt, tBool, tUnit, tByteString, tString, tData :: TypeMeta BuiltinsOfPIR meta
-tInt = systfType PIRTypeInteger
-tBool = systfType PIRTypeBool
-tUnit = systfType PIRTypeUnit
-tByteString = systfType PIRTypeByteString
-tString = systfType PIRTypeString
-tData = systfType PIRTypeData
-
 cstToBuiltinType :: PIRConstant -> PIRBuiltinType
 cstToBuiltinType (PIRConstInteger _) = PIRTypeInteger
 cstToBuiltinType (PIRConstByteString _) = PIRTypeByteString
@@ -84,6 +68,24 @@ cstToBuiltinType (PIRConstList (c : cs)) =
 cstToBuiltinType (PIRConstPair c1 c2) =
   PIRTypePair (Just (cstToBuiltinType c1)) (Just (cstToBuiltinType c2))
 cstToBuiltinType (PIRConstData _) = PIRTypeData
+
+-- | Shortcut for system F arrows
+infixr 2 :->:
+pattern (:->:) :: SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar
+pattern (:->:) x y = SystF.TyFun x y
+
+-- | Helper to lift PIR builtin types to system F
+systfType :: PIRBuiltinType -> TypeMeta BuiltinsOfPIR meta
+systfType = SystF.TyPure . SystF.Free . TyBuiltin
+
+-- Shortcuts for PIR builtin types in systemF
+tInt, tBool, tUnit, tByteString, tString, tData :: TypeMeta BuiltinsOfPIR meta
+tInt = systfType PIRTypeInteger
+tBool = systfType PIRTypeBool
+tUnit = systfType PIRTypeUnit
+tByteString = systfType PIRTypeByteString
+tString = systfType PIRTypeString
+tData = systfType PIRTypeData
 
 -- | Shortcuts for type variables using overloaded string
 instance IsString (SystF.AnnType Name (SystF.VarMeta Void Name (TypeBase BuiltinsOfPIR))) where

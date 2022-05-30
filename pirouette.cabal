@@ -21,6 +21,7 @@ library
       Language.Pirouette.Example.Syntax
       Language.Pirouette.Example.ToTerm
       Language.Pirouette.PlutusIR.Builtins
+      Language.Pirouette.PlutusIR.Sandbox
       Language.Pirouette.PlutusIR.SMT
       Language.Pirouette.PlutusIR.ToTerm
       ListT.Extra
