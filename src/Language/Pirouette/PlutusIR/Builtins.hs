@@ -32,6 +32,8 @@ import PlutusCore
 import qualified PlutusCore as P
 import qualified PlutusCore.Data as P
 import Prettyprinter hiding (Pretty, pretty)
+import Data.String (IsString, fromString)
+import Data.Void (Void)
 
 -- * Declaring the builtins of PlutusIR.
 
@@ -83,10 +85,9 @@ cstToBuiltinType (PIRConstPair c1 c2) =
   PIRTypePair (Just (cstToBuiltinType c1)) (Just (cstToBuiltinType c2))
 cstToBuiltinType (PIRConstData _) = PIRTypeData
 
--- | Shortcuts for type variables
-a, b :: TypeMeta BuiltinsOfPIR meta
-a = SystF.TyPure $ SystF.Bound (SystF.Ann "a") 0
-b = SystF.TyPure $ SystF.Bound (SystF.Ann "b") 0
+-- | Shortcuts for type variables using overloaded string
+instance IsString (SystF.AnnType Name (SystF.VarMeta Void Name (TypeBase BuiltinsOfPIR))) where
+  fromString x = SystF.TyPure $ SystF.Bound (SystF.Ann (fromString x)) 0
 
 -- | Polymorphic PIR list type shortcut
 tList :: TypeMeta BuiltinsOfPIR meta -> TypeMeta BuiltinsOfPIR meta
@@ -128,36 +129,36 @@ instance LanguageBuiltinTypes BuiltinsOfPIR where
   typeOfBuiltin P.EqualsString = tString :->: tString :->: tBool
   typeOfBuiltin P.EncodeUtf8 = undefined
   typeOfBuiltin P.DecodeUtf8 = undefined
-  typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: a :->: a)
+  typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: "a" :->: "a")
   typeOfBuiltin P.ChooseUnit = undefined
-  typeOfBuiltin P.Trace = forall "a" (tString :->: a :->: a)
-  typeOfBuiltin P.FstPair = forall "a" (forall "b" (tPair a b :->: a))
-  typeOfBuiltin P.SndPair = forall "a" (forall "b" (tPair a b :->: b))
-  typeOfBuiltin P.ChooseList = forall "a" (tList a :->: forall "b" (b :->: (a :->: tList a :->: b))) -- REQUIRED BY "AUCTION"
-  typeOfBuiltin P.MkCons = forall "a" (a :->: tList a :->: a)
-  typeOfBuiltin P.HeadList = forall "a" (tList a :->: a) -- REQUIRED BY "AUCTION"
-  typeOfBuiltin P.TailList = forall "a" (tList a :->: tList a) -- REQUIRED BY "AUCTION"
-  typeOfBuiltin P.NullList = forall "a" (tList a)
+  typeOfBuiltin P.Trace = forall "a" (tString :->: "a" :->: "a")
+  typeOfBuiltin P.FstPair = forall "a" (forall "b" (tPair "a" "b" :->: "a"))
+  typeOfBuiltin P.SndPair = forall "a" (forall "b" (tPair "a" "b" :->: "b"))
+  typeOfBuiltin P.ChooseList = forall "a" (tList "a" :->: forall "b" ("b" :->: ("a" :->: tList "a" :->: "b"))) -- REQUIRED BY "AUCTION"
+  typeOfBuiltin P.MkCons = forall "a" ("a" :->: tList "a" :->: "a")
+  typeOfBuiltin P.HeadList = forall "a" (tList "a" :->: "a") -- REQUIRED BY "AUCTION"
+  typeOfBuiltin P.TailList = forall "a" (tList "a" :->: tList "a") -- REQUIRED BY "AUCTION"
+  typeOfBuiltin P.NullList = forall "a" (tList "a")
   typeOfBuiltin P.ChooseData = -- REQUIRED BY "AUCTION"
     forall "a"
     (
     -- fConstr
     -- Should we use PIRTypeList (Just PIRTypeData) or apply a polymorphic PIRTypeList to tData?
-    (tInt :->: systfType (PIRTypeList (Just PIRTypeData)) :->: a)
+    (tInt :->: systfType (PIRTypeList (Just PIRTypeData)) :->: "a")
     :->: 
     -- fMap
     -- Same question for list + same question for pair
-    (systfType (PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) :->: a)
+    (systfType (PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) :->: "a")
     :->: 
     -- fList
     -- Same question for list
-    (systfType (PIRTypeList (Just PIRTypeData)) :->: a)
+    (systfType (PIRTypeList (Just PIRTypeData)) :->: "a")
     :->: 
     -- fI
-    (tInt :->: a)
+    (tInt :->: "a")
     :->: 
     -- fB
-    (tByteString :->: a)
+    (tByteString :->: "a")
     )
   typeOfBuiltin P.ConstrData = undefined
   typeOfBuiltin P.MapData = undefined
