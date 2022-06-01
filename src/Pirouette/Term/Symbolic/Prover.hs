@@ -139,15 +139,14 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     PruneImplicationHolds -> pure Verified
     PruneCounterFound model -> pure $ CounterExample bodyTerm model
     _ -> do
-      -- one step of evaluation on each
-      (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
-      (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
-      (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
+      -- one step of evaluation on each,
+      -- but going into matches first
+      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $ runWriterT $
+        symEvalMatchesFirst Just id [bodyTerm, assumeTerm, proveTerm]
       -- liftIO $ putStrLn "ONE STEP"
       -- liftIO $ print (pretty bodyTerm')
       -- liftIO $ print (pretty assumeTerm')
       -- liftIO $ print (pretty proveTerm')
-      let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
       -- liftIO $ print somethingWasEval
       -- check the fuel
       noMoreFuel <- gets sestStoppingCondition >>= \s -> s <$> currentStatistics
