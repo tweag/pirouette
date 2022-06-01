@@ -21,7 +21,6 @@ library
       Language.Pirouette.Example.Syntax
       Language.Pirouette.Example.ToTerm
       Language.Pirouette.PlutusIR.Builtins
-      Language.Pirouette.PlutusIR.Sandbox
       Language.Pirouette.PlutusIR.SMT
       Language.Pirouette.PlutusIR.ToTerm
       ListT.Extra
@@ -150,6 +149,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.Pirouette.ExampleSpec
+      Language.Pirouette.PlutusIR.BuiltinsSpec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Term.SymbolicEvalSpec
       Pirouette.Term.SymbolicEvalUtils
