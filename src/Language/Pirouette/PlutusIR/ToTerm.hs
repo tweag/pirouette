@@ -115,7 +115,9 @@ trBindings bs = do
   -- split the term and the data/type binds; we'll handle the data/type bindings first as
   -- those are simple.
   let (termBinds, datatypeBinds) = unzipWith eitherDataTerm' bs
-  datatypeDecls <- mapM (trDataOrTypeBinding . snd) datatypeBinds
+  -- datatypeDecls <- mapM (trDataOrTypeBinding . snd) datatypeBinds
+  datatypeDecls <- mapMTypeSynonyms (snd <$> datatypeBinds)
+
   -- make a pass over the terms, determining which context variables they depend on.
   -- This has to be done as a fixpoint calculation because dependencies are transitive.
   -- That is, if f depedends on z, but g depends on f, then g also depends on z.
@@ -126,6 +128,19 @@ trBindings bs = do
   let termDeclsList = map (\(r, (n, (t, ty))) -> (n, termToDef r t ty)) terms'
   let termDecls = M.fromList termDeclsList
   return $ termDecls <> additionalDecls <> mconcat datatypeDecls
+
+  where
+    mapMTypeSynonyms :: [PIR.Binding tyname name DefaultUni P.DefaultFun loc]
+      -> TrM loc [Decls BuiltinsOfPIR]
+    mapMTypeSynonyms [] = return []
+    mapMTypeSynonyms (PIR.TypeBind _ (PIR.TyVarDecl _ n _) ty : bs') =
+      -- FIXME Does not compile because of name/tyname/Name discrepencies
+      -- To investigate
+      local (pushSynonym n ty) (mapMTypeSynonyms bs')
+    mapMTypeSynonyms (b : bs') = do
+      d <- trDataOrTypeBinding b
+      ds <- mapMTypeSynonyms bs'
+      return $ d : ds
 
 -- | Runs a simple fixpoint calculation returning a new set of dependencies for
 --  the terms that are about to be bound. We need that to modify the terms by passing
