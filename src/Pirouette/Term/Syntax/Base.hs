@@ -53,6 +53,9 @@ instance Pretty Name where
 class ToName v where
   toName :: v -> Name
 
+instance ToName Name where
+  toName = id
+
 -- * Types and Type Definitions
 
 -- | The type system we are interested in is standard polymorphic type-level lambda calculus

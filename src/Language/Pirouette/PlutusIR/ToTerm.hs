@@ -58,30 +58,34 @@ data Err loc
 --  unravelling let-statements requires us to track the dependencies of each known term.
 --  The stack of bound variables is kept in the @Reader@ monad and the dependencies
 --  on the @State@ monad.
-type TrM loc = StateT (DepsOf Name) (ReaderT (Env Name) (Except (Err loc)))
+type TrM loc = StateT (DepsOf Name) (ReaderT (Env Name loc) (Except (Err loc)))
 
 -- | Dependencies are a map from a name to a set of names.
 type DepsOf name = M.Map name (S.Set (name, Type BuiltinsOfPIR))
 
 -- | The translation environment consists of the stack of bound variables.
-data Env name = Env
+data Env name loc = Env
   { termStack :: [(name, Type BuiltinsOfPIR)],
+    typeSynonyms :: [(name, PIR.Type name DefaultUni loc)],
     typeStack :: [name]
   }
 
-envEmpty :: Env name
-envEmpty = Env [] []
+envEmpty :: Env name loc
+envEmpty = Env [] [] []
 
-pushNames :: [(name, Type BuiltinsOfPIR)] -> Env name -> Env name
+pushNames :: [(name, Type BuiltinsOfPIR)] -> Env name loc -> Env name loc
 pushNames ns env = env {termStack = ns ++ termStack env}
 
-pushName :: name -> Type BuiltinsOfPIR -> Env name -> Env name
+pushName :: name -> Type BuiltinsOfPIR -> Env name loc -> Env name loc
 pushName n ty env = env {termStack = (n, ty) : termStack env}
 
-pushType :: name -> Env name -> Env name
+pushSynonym :: name -> PIR.Type name DefaultUni loc -> Env name loc -> Env name loc
+pushSynonym n ty env = env {typeSynonyms = (n, ty) : typeSynonyms env}
+
+pushType :: name -> Env name loc -> Env name loc
 pushType ty env = env {typeStack = ty : typeStack env}
 
-pushTypes :: [name] -> Env name -> Env name
+pushTypes :: [name] -> Env name loc -> Env name loc
 pushTypes ty env = env {typeStack = ty ++ typeStack env}
 
 -- | Translates a program into a list of declarations and a body.
@@ -202,7 +206,7 @@ trDataOrTypeBinding ::
   PIR.Binding tyname name DefaultUni P.DefaultFun loc ->
   TrM loc (Decls BuiltinsOfPIR)
 trDataOrTypeBinding (PIR.TermBind l _ _ _) = throwError $ NoTermBindAllowed l
-trDataOrTypeBinding (PIR.TypeBind l _ _) = throwError $ NotYetImplemented l "type-bind"
+trDataOrTypeBinding PIR.TypeBind {} = return M.empty
 trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons)) =
   let tyName = toName $ PIR._tyVarDeclName tyvard
       tyKind = trKind $ PIR._tyVarDeclKind tyvard
@@ -243,12 +247,15 @@ trType (PIR.TyLam _ v k body) =
 trType (PIR.TyForall _ v k body) =
   SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyVar _ tyn) =
-  asks
-    ( SystF.TyPure
+  asks (lookup (toName tyn) . typeSynonyms) >>= maybe (asks f) trType
+  where
+    f :: Env Name loc -> Type BuiltinsOfPIR
+    f =
+      SystF.TyPure
         . maybe (SystF.Free $ TySig $ toName tyn) (SystF.Bound (SystF.Ann $ toName tyn) . fromIntegral)
         . L.elemIndex (toName tyn)
         . typeStack
-    )
+
 trType (PIR.TyFun _ t u) = SystF.TyFun <$> trType t <*> trType u
 trType (PIR.TyApp _ t u) = SystF.tyApp <$> trType t <*> trType u
 trType (PIR.TyBuiltin _ (P.SomeTypeIn uni)) =
