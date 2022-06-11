@@ -131,7 +131,7 @@ instance LanguageBuiltinTypes BuiltinsOfPIR where
   typeOfBuiltin P.EqualsString = tString :->: tString :->: tBool
   typeOfBuiltin P.EncodeUtf8 = undefined
   typeOfBuiltin P.DecodeUtf8 = undefined
-  typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: tVar "a" 0 :->: tVar "a" 0)
+  typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0)
   typeOfBuiltin P.ChooseUnit = undefined
   typeOfBuiltin P.Trace = forall "a" (tString :->: tVar "a" 0 :->: tVar "a" 0)
   typeOfBuiltin P.FstPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "a" 1))
