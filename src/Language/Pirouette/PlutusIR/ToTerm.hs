@@ -31,6 +31,7 @@ import PlutusCore (DefaultUni (..))
 import qualified PlutusCore as P
 import qualified PlutusCore.Pretty as P
 import qualified PlutusIR.Core.Type as PIR
+import Debug.Trace
 
 -- * Translating 'PIR.Type's and 'PIR.Term's
 
@@ -64,7 +65,17 @@ type TrM loc = StateT (St Name) (ReaderT (Env Name) (Except (Err loc)))
 -- float definitions from let-clauses to the global scope: all the dependencies
 -- of a term defined in a let-clause have to become a parameter once that
 -- term is floated.
-type DepsOf name = M.Map name (S.Set (name, Type BuiltinsOfPIR))
+type DepsOf name = M.Map name (S.Set (Dep name))
+
+data Dep name
+  = TermDep name (Type BuiltinsOfPIR)
+  | TypeDep name SystF.Kind
+  deriving (Eq, Show, Ord)
+
+unzipDeps :: [Dep name] -> ([(name, SystF.Kind)], [(name, Type BuiltinsOfPIR)])
+unzipDeps [] = ([], [])
+unzipDeps (TermDep n ty : ds) = second ((n, ty):) $ unzipDeps ds
+unzipDeps (TypeDep n ki : ds) = first ((n, ki):) $ unzipDeps ds
 
 -- | In the state we will keep track of the dependencies of each term we explore and
 -- a set of type synonyms, that we will expand as soon as we find them.
@@ -77,10 +88,9 @@ stEmpty :: St name
 stEmpty = St M.empty M.empty
 
 -- | The translation environment consists of the stack of bound term and type variables.
--- We are ignoring the kind of the type variables because it is never necessary.
 data Env name = Env
   { termStack :: [(name, Type BuiltinsOfPIR)],
-    typeStack :: [name]
+    typeStack :: [(name, SystF.Kind)]
   }
 
 envEmpty :: Env name
@@ -92,10 +102,10 @@ pushNames ns env = env {termStack = ns ++ termStack env}
 pushName :: name -> Type BuiltinsOfPIR -> Env name -> Env name
 pushName n ty env = env {termStack = (n, ty) : termStack env}
 
-pushType :: name -> Env name -> Env name
-pushType ty env = env {typeStack = ty : typeStack env}
+pushType :: name -> SystF.Kind -> Env name -> Env name
+pushType ty ki env = env {typeStack = (ty, ki) : typeStack env}
 
-pushTypes :: [name] -> Env name -> Env name
+pushTypes :: [(name, SystF.Kind)] -> Env name -> Env name
 pushTypes ty env = env {typeStack = ty ++ typeStack env}
 
 -- | Translates a program into a list of declarations and a body.
@@ -161,8 +171,9 @@ bindingCtxDeps termBinds = do
       TrM loc (DepsOf Name)
     go xs origDeps delta = do
       vs <- asks termStack
+      ts <- asks typeStack
       let currDeps = M.unionWith S.union origDeps delta
-      let newDelta = M.fromList $ map (second $ termCtxDeps vs currDeps) xs
+      let newDelta = M.fromList $ map (second $ termCtxDeps vs ts currDeps) xs
       if delta == newDelta
         then return currDeps
         else go xs origDeps newDelta
@@ -187,26 +198,45 @@ termCtxDeps ::
   forall tyname name uni loc.
   (PIRConstraint tyname name P.DefaultFun) =>
   [(Name, Type BuiltinsOfPIR)] ->
+  [(Name, SystF.Kind)] ->
   DepsOf Name ->
   PIR.Term tyname name uni P.DefaultFun loc ->
-  S.Set (Name, Type BuiltinsOfPIR)
-termCtxDeps vs deps (PIR.Var _ n) =
+  S.Set (Dep Name)
+termCtxDeps vs _ deps (PIR.Var _ n) =
   -- The vs represent the stack of bound variables that were bound OUTSIDE the term we're
   -- looking at. note how we do NOT change vs on the PIR.LamAbs case!
   case L.elemIndex (toName n) (map fst vs) of
-    Just i -> S.singleton (unsafeIdx "termCtxDeps" vs i)
+    Just i -> S.singleton $ uncurry TermDep $ unsafeIdx "termCtxDeps" vs i
     Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
-termCtxDeps vs deps (PIR.LamAbs _ _ _ t) = termCtxDeps vs deps t -- TODO: What happens in case there is name shadowing? We'll mess this up!
-termCtxDeps vs deps (PIR.Apply _ tfun targ) = S.union (termCtxDeps vs deps tfun) (termCtxDeps vs deps targ)
-termCtxDeps vs deps (PIR.TyInst _ t _) = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.TyAbs _ _ _ t) = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.IWrap _ _ _ t) = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.Unwrap _ t) = termCtxDeps vs deps t
-termCtxDeps vs deps (PIR.Let _ _ bs t) =
+termCtxDeps vs ts deps (PIR.LamAbs _ _ _ t) = termCtxDeps vs ts deps t -- TODO: What happens in case there is name shadowing? We'll mess this up!
+termCtxDeps vs ts deps (PIR.Apply _ tfun targ) = S.union (termCtxDeps vs ts deps tfun) (termCtxDeps vs ts deps targ)
+termCtxDeps vs ts deps (PIR.TyInst _ t i) = tyCtxDeps ts deps i `S.union` termCtxDeps vs ts deps t
+termCtxDeps vs ts deps (PIR.TyAbs _ _ _ t) = termCtxDeps vs ts deps t
+termCtxDeps vs ts deps (PIR.IWrap _ _ _ t) = termCtxDeps vs ts deps t
+termCtxDeps vs ts deps (PIR.Unwrap _ t) = termCtxDeps vs ts deps t
+termCtxDeps vs ts deps (PIR.Let _ _ bs t) =
   S.union
-    (termCtxDeps vs deps t)
-    (S.unions (map (either (termCtxDeps vs deps . fst . snd) (const S.empty) . eitherDataTerm) $ NE.toList bs))
-termCtxDeps _ _ _ = S.empty
+    (termCtxDeps vs ts deps t)
+    (S.unions (map (either (termCtxDeps vs ts deps . fst . snd) (const S.empty) . eitherDataTerm) $ NE.toList bs))
+termCtxDeps _ _ _ _ = S.empty
+
+tyCtxDeps ::
+  forall tyname uni loc.
+  (ToName tyname) =>
+  [(Name, SystF.Kind)] ->
+  DepsOf Name ->
+  PIR.Type tyname uni loc ->
+  S.Set (Dep Name)
+tyCtxDeps ts deps (PIR.TyBuiltin _ _) = S.empty
+tyCtxDeps ts deps (PIR.TyVar _ n) =
+   case L.elemIndex (toName n) (map fst ts) of
+    Just i -> S.singleton $ uncurry TypeDep $ unsafeIdx "tyCtxDeps" ts i
+    Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
+tyCtxDeps ts deps (PIR.TyFun _ tyA tyB) = tyCtxDeps ts deps tyA `S.union` tyCtxDeps ts deps tyB
+tyCtxDeps ts deps (PIR.TyApp _ tyA tyB) = tyCtxDeps ts deps tyA `S.union` tyCtxDeps ts deps tyB
+tyCtxDeps ts deps (PIR.TyForall _ _ _ ty) = tyCtxDeps ts deps ty
+tyCtxDeps ts deps (PIR.TyLam _ _ _ ty) = tyCtxDeps ts deps ty
+tyCtxDeps ts deps (PIR.TyIFix loc ty' ty_tynameuniloc) = undefined
 
 -- | Handles a data/type binding by creating a number of declarations for the constructors
 --  and desctructors involved. The type variables declared within a type get duplicated into
@@ -252,7 +282,7 @@ trTypeWithArgs ::
   PIR.Type tyname DefaultUni loc ->
   TrM loc (Type BuiltinsOfPIR)
 trTypeWithArgs env ty = do
-  ty' <- local (pushTypes $ reverse $ map fst env) $ trType ty
+  ty' <- local (pushTypes $ reverse env) $ trType ty
   return $ L.foldl' (\t (v, k) -> SystF.TyAll (SystF.Ann v) k t) ty' env
 
 trType ::
@@ -260,13 +290,13 @@ trType ::
   PIR.Type tyname DefaultUni loc ->
   TrM loc (Type BuiltinsOfPIR)
 trType (PIR.TyLam _ v k body) =
-  SystF.TyLam (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
+  SystF.TyLam (SystF.Ann $ toName v) (trKind k) <$> local (pushType (toName v) (trKind k)) (trType body)
 trType (PIR.TyForall _ v k body) =
-  SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
+  SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType (toName v) (trKind k)) (trType body)
 trType (PIR.TyVar _ tyn) = do
   let tyName = toName tyn
   -- First we try to see if this type is a bound variable
-  bounds <- asks typeStack
+  bounds <- asks (map fst . typeStack)
   case L.elemIndex tyName bounds of
     Just ix -> return $ SystF.TyPure (SystF.Bound (SystF.Ann tyName) $ fromIntegral ix)
     -- If it's not a bound variable, we check whether its a type synonym
@@ -320,10 +350,12 @@ trTerm ::
 trTerm mn t = do
   deps <- gets stDepsOf
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
-  t' <- local (pushNames $ reverse vs) (go t)
-  let adjustType = flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) vs
+  let (tyDeps, termDeps) = unzipDeps vs
+  trace ("trTerm " ++ show mn ++ "; tyDeps = " ++ show (map fst tyDeps)) (return ())
+  t' <- local (pushNames $ reverse termDeps) (go t)
+  let adjustType = flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) termDeps
   return
-    ( foldr (\(n, t0) r -> SystF.Lam (SystF.Ann n) t0 r) t' vs,
+    ( foldr (\(n, t0) r -> SystF.Lam (SystF.Ann n) t0 r) t' termDeps,
       adjustType
     )
   where
@@ -343,7 +375,7 @@ trTerm mn t = do
     go (PIR.Unwrap _ t0) = go t0 --      preserve the wrap/unwraps?
     go (PIR.TyInst _ t0 ty) = SystF.app <$> go t0 <*> lift (SystF.TyArg <$> trType ty)
     go (PIR.TyAbs _ ty k t0) = do
-      SystF.Abs (SystF.Ann $ toName ty) (trKind k) <$> local (pushType $ toName ty) (go t0)
+      SystF.Abs (SystF.Ann $ toName ty) (trKind k) <$> local (pushType (toName ty) (trKind k)) (go t0)
     go (PIR.LamAbs _ n tyd t0) = do
       ty <- lift $ trType tyd
       SystF.Lam (SystF.Ann $ toName n) ty <$> local (pushName (toName n) ty) (go t0)
@@ -356,6 +388,7 @@ trTerm mn t = do
       tell bs'
       go t0
 
+    -- TODO: Check if dep on types too!
     checkIfDep :: Name -> [Name] -> TrM loc (Term BuiltinsOfPIR)
     checkIfDep n vs = do
       mDepsOn <- gets (M.lookup n . stDepsOf)
@@ -368,7 +401,7 @@ trTerm mn t = do
                       . (\x -> (SystF.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs))
                       . fst
                   )
-                  $ S.toList ns
+                  $ snd $ unzipDeps $ S.toList ns
           return $ SystF.App (SystF.Free $ TermSig n) args
 
 -- A straightforward translation of a PIRTerm to the Pirouette representation of term.
