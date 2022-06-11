@@ -37,7 +37,7 @@ openAndParsePIR fileName = do
 tests :: [TestTree]
 tests = (:[]) $ withResource acquire (const $ return ()) $ \progAct ->
   testGroup
-    "ToTerm"
+    "With resource: tests/unit/resources/fromPlutusIRSpec-01.pir"
     [ testCase "Translates the PIR program without errors" $ do
         -- We force a pattern match on at least one declaration, which
         -- means that translation had to happen at this point.

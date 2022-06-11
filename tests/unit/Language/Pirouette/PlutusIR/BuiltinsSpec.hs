@@ -19,39 +19,31 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.ExpectedFailure (expectFail)
 
-splitFilePath :: FilePath
-splitFilePath = "tests/unit/resources/split.flat"
-
-auctionFilePath :: FilePath
-auctionFilePath = "tests/unit/resources/auction.flat"
+goldenFiles :: [(String, FilePath)]
+goldenFiles = [("Split", "tests/unit/resources/split.flat")
+              ,("Auction", "tests/unit/resources/auction.flat")]
 
 tests :: [TestTree]
 tests =
-  [ testGroup
-      "PIR validators typecheck"
-      [ testCase "The split validator typechecks" (assertTrProgram splitFilePath),
-        testCase "The auction validator typechecks" (assertTrProgram auctionFilePath)
-      ]
+  [ testGroup "Read and translate programs" $ flip map goldenFiles $ \(n, fpath) ->
+       testCase n (assertTrProgramOk fpath)
   ]
 
-assertTrProgram :: FilePath -> Assertion
-assertTrProgram flatFilePath = do
-  Right (Showable pir) <- openAndDecodeFlat flatFilePath
+assertTrProgramOk :: FilePath -> Assertion
+assertTrProgramOk flatFilePath = do
+  Right pir <- openAndDecodeFlat flatFilePath
   case runExcept (trProgram pir) of
     Left err -> assertFailure $ "Translate program: " ++ show err
     Right (_, decls) -> return ()
   return ()
 
-data Showable (f :: * -> *) :: * where
-  Showable :: (Show x) => f x -> Showable f
-
 openAndDecodeFlat ::
   (MonadIO m) =>
   FilePath ->
-  m (Either String (Showable (Program P.TyName P.Name P.DefaultUni P.DefaultFun)))
+  m (Either String (Program P.TyName P.Name P.DefaultUni P.DefaultFun ()))
 openAndDecodeFlat fileName = do
   content <- liftIO $ BS.readFile fileName
-  return . either (Left . show) (Right . Showable) $
+  return . either (Left . show) Right $
     pirDecoder content
   where
     pirDecoder :: BS.ByteString -> Flat.Decoded (Program P.TyName P.Name P.DefaultUni P.DefaultFun ())
