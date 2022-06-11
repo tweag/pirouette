@@ -58,12 +58,26 @@ data Err loc
 --  unravelling let-statements requires us to track the dependencies of each known term.
 --  The stack of bound variables is kept in the @Reader@ monad and the dependencies
 --  on the @State@ monad.
-type TrM loc = StateT (DepsOf Name) (ReaderT (Env Name) (Except (Err loc)))
+type TrM loc = StateT (St Name) (ReaderT (Env Name) (Except (Err loc)))
 
--- | Dependencies are a map from a name to a set of names.
+-- | Dependencies are a map from a name to a set of names, we use them to
+-- float definitions from let-clauses to the global scope: all the dependencies
+-- of a term defined in a let-clause have to become a parameter once that
+-- term is floated.
 type DepsOf name = M.Map name (S.Set (name, Type BuiltinsOfPIR))
 
--- | The translation environment consists of the stack of bound variables.
+-- | In the state we will keep track of the dependencies of each term we explore and
+-- a set of type synonyms, that we will expand as soon as we find them.
+data St name = St {
+    stDepsOf :: DepsOf name,
+    stTypeSynonyms :: M.Map name (Type BuiltinsOfPIR)
+  }
+
+stEmpty :: St name
+stEmpty = St M.empty M.empty
+
+-- | The translation environment consists of the stack of bound term and type variables.
+-- We are ignoring the kind of the type variables because it is never necessary.
 data Env name = Env
   { termStack :: [(name, Type BuiltinsOfPIR)],
     typeStack :: [name]
@@ -90,7 +104,7 @@ trProgram ::
   (PIRConstraint tyname name P.DefaultFun) =>
   PIR.Program tyname name DefaultUni P.DefaultFun loc ->
   Except (Err loc) (Term BuiltinsOfPIR, Decls BuiltinsOfPIR)
-trProgram (PIR.Program _ t) = runReaderT (evalStateT (runWriterT (fst <$> trTerm Nothing t)) M.empty) envEmpty
+trProgram (PIR.Program _ t) = runReaderT (evalStateT (runWriterT (fst <$> trTerm Nothing t)) stEmpty) envEmpty
 
 -- | Translates a program into a list of declarations, ignoring the body.
 trProgramDecls ::
@@ -112,6 +126,7 @@ trBindings bs = do
   -- those are simple.
   let (termBinds, datatypeBinds) = unzipWith eitherDataTerm' bs
   datatypeDecls <- mapM (trDataOrTypeBinding . snd) datatypeBinds
+
   -- make a pass over the terms, determining which context variables they depend on.
   -- This has to be done as a fixpoint calculation because dependencies are transitive.
   -- That is, if f depedends on z, but g depends on f, then g also depends on z.
@@ -126,15 +141,16 @@ trBindings bs = do
 -- | Runs a simple fixpoint calculation returning a new set of dependencies for
 --  the terms that are about to be bound. We need that to modify the terms by passing
 --  each one of their dependencies as an additional parameter.
+--  This function alters the relevant part of the state monad of 'TrM'.
 bindingCtxDeps ::
   forall tyname name loc.
   (PIRConstraint tyname name P.DefaultFun) =>
   [(Name, PIR.Term tyname name DefaultUni P.DefaultFun loc)] ->
   TrM loc ()
 bindingCtxDeps termBinds = do
-  deps <- get
+  deps <- gets stDepsOf
   deps' <- go termBinds deps M.empty
-  put deps'
+  modify (\st -> st { stDepsOf = deps' })
   where
     -- The go function below runs a fixpoint computation on a delta over the original dependencies;
     -- We keep computing a new delta until we find nothing different to add;
@@ -202,7 +218,12 @@ trDataOrTypeBinding ::
   PIR.Binding tyname name DefaultUni P.DefaultFun loc ->
   TrM loc (Decls BuiltinsOfPIR)
 trDataOrTypeBinding (PIR.TermBind l _ _ _) = throwError $ NoTermBindAllowed l
-trDataOrTypeBinding (PIR.TypeBind l _ _) = throwError $ NotYetImplemented l "type-bind"
+trDataOrTypeBinding (PIR.TypeBind _ tyvard tybody) =
+  let tyName = toName $ PIR._tyVarDeclName tyvard
+   in do
+        ty <- trType tybody
+        modify (\st -> st { stTypeSynonyms = M.insert tyName ty (stTypeSynonyms st) })
+        return M.empty
 trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons)) =
   let tyName = toName $ PIR._tyVarDeclName tyvard
       tyKind = trKind $ PIR._tyVarDeclKind tyvard
@@ -242,13 +263,19 @@ trType (PIR.TyLam _ v k body) =
   SystF.TyLam (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
 trType (PIR.TyForall _ v k body) =
   SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType $ toName v) (trType body)
-trType (PIR.TyVar _ tyn) =
-  asks
-    ( SystF.TyPure
-        . maybe (SystF.Free $ TySig $ toName tyn) (SystF.Bound (SystF.Ann $ toName tyn) . fromIntegral)
-        . L.elemIndex (toName tyn)
-        . typeStack
-    )
+trType (PIR.TyVar _ tyn) = do
+  let tyName = toName tyn
+  -- First we try to see if this type is a bound variable
+  bounds <- asks typeStack
+  case L.elemIndex tyName bounds of
+    Just ix -> return $ SystF.TyPure (SystF.Bound (SystF.Ann tyName) $ fromIntegral ix)
+    -- If it's not a bound variable, we check whether its a type synonym
+    Nothing -> do
+      syns <- gets stTypeSynonyms
+      case M.lookup (toName tyn) syns of
+        Just ty -> return ty
+         -- Finally, it's not bound nor a type synonym, we translate it as a "free" name.
+        Nothing -> return $ SystF.TyPure (SystF.Free $ TySig tyName)
 trType (PIR.TyFun _ t u) = SystF.TyFun <$> trType t <*> trType u
 trType (PIR.TyApp _ t u) = SystF.tyApp <$> trType t <*> trType u
 trType (PIR.TyBuiltin _ (P.SomeTypeIn uni)) =
@@ -291,7 +318,7 @@ trTerm ::
     (TrM loc)
     (Term BuiltinsOfPIR, Type BuiltinsOfPIR -> Type BuiltinsOfPIR)
 trTerm mn t = do
-  deps <- get
+  deps <- gets stDepsOf
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
   t' <- local (pushNames $ reverse vs) (go t)
   let adjustType = flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) vs
@@ -331,7 +358,7 @@ trTerm mn t = do
 
     checkIfDep :: Name -> [Name] -> TrM loc (Term BuiltinsOfPIR)
     checkIfDep n vs = do
-      mDepsOn <- gets (M.lookup n)
+      mDepsOn <- gets (M.lookup n . stDepsOf)
       case mDepsOn of
         Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig n
         Just ns -> do
@@ -352,7 +379,7 @@ trPIRTerm ::
   PIRConstraint tyname name P.DefaultFun =>
   PIR.Term tyname name DefaultUni P.DefaultFun loc ->
   Except (Err loc) (Term BuiltinsOfPIR)
-trPIRTerm t = runReaderT (evalStateT (fst <$> runWriterT (fst <$> trTerm Nothing t)) M.empty) envEmpty
+trPIRTerm t = runReaderT (evalStateT (fst <$> runWriterT (fst <$> trTerm Nothing t)) stEmpty) envEmpty
 
 -- * Some Auxiliary Functions
 

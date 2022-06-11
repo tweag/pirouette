@@ -42,31 +42,18 @@ rESULTNAME = "__result"
 
 prove ::
   (SymEvalConstr lang m, MonadIO m) =>
+  StoppingCondition ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-prove problem = symevalT InfiniteFuel $ proveRaw problem
-
-proveWithFuel ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  Int ->
-  Problem lang ->
-  m [Path lang (EvaluationWitness lang)]
-proveWithFuel f problem = symevalT (Fuel f) $ proveRaw problem
+prove shouldStop problem = symevalT shouldStop $ proveRaw problem
 
 proveAny ::
   (SymEvalConstr lang m, MonadIO m) =>
+  StoppingCondition ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
   m (Maybe (Path lang (EvaluationWitness lang)))
-proveAny p problem = symevalAnyPath p InfiniteFuel $ proveRaw problem
-
-proveAnyWithFuel ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  Int ->
-  (Path lang (EvaluationWitness lang) -> Bool) ->
-  Problem lang ->
-  m (Maybe (Path lang (EvaluationWitness lang)))
-proveAnyWithFuel f p problem = symevalAnyPath p (Fuel f) $ proveRaw problem
+proveAny shouldStop p problem = symevalAnyPath shouldStop p $ proveRaw problem
 
 proveRaw ::
   forall lang m.
@@ -152,18 +139,17 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     PruneImplicationHolds -> pure Verified
     PruneCounterFound model -> pure $ CounterExample bodyTerm model
     _ -> do
-      -- one step of evaluation on each
-      (bodyTerm', bodyWasEval) <- prune $ runWriterT (symEvalOneStep bodyTerm)
-      (assumeTerm', assummeWasEval) <- prune $ runWriterT (symEvalOneStep assumeTerm)
-      (proveTerm', proveWasEval) <- prune $ runWriterT (symEvalOneStep proveTerm)
+      -- one step of evaluation on each,
+      -- but going into matches first
+      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $ runWriterT $
+        symEvalMatchesFirst Just id [bodyTerm, assumeTerm, proveTerm]
       -- liftIO $ putStrLn "ONE STEP"
       -- liftIO $ print (pretty bodyTerm')
       -- liftIO $ print (pretty assumeTerm')
       -- liftIO $ print (pretty proveTerm')
-      let somethingWasEval = bodyWasEval <> assummeWasEval <> proveWasEval
       -- liftIO $ print somethingWasEval
       -- check the fuel
-      noMoreFuel <- fuelExhausted <$> currentFuel
+      noMoreFuel <- gets sestStoppingCondition >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' (Model [])

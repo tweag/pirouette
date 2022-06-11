@@ -16,7 +16,7 @@ extra-source-files:
 library
   exposed-modules:
       Language.Pirouette.Example
-      Language.Pirouette.Example.MinSwap
+      Language.Pirouette.Example.IsUnity
       Language.Pirouette.Example.QuasiQuoter
       Language.Pirouette.Example.Syntax
       Language.Pirouette.Example.ToTerm
@@ -26,6 +26,7 @@ library
       ListT.Extra
       ListT.Weighted
       ListT.Weighted.Examples
+      Pirouette
       Pirouette.Monad
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
@@ -83,51 +84,6 @@ library
     , optics-th
     , optparse-applicative
     , parser-combinators
-    , plutus-core
-    , prettyprinter
-    , process
-    , simple-smt
-    , tasty
-    , tasty-expected-failure
-    , tasty-hspec
-    , tasty-hunit
-    , tasty-quickcheck
-    , template-haskell
-    , text
-    , tlaplus
-    , tlaplus-qq
-    , uniplate
-  default-language: Haskell2010
-
-executable pirouette
-  main-is: Main.hs
-  other-modules:
-      Paths_pirouette
-  hs-source-dirs:
-      executable
-  ghc-options: -Wall -Wno-orphans -fplugin=StackTrace.Plugin
-  build-depends:
-      QuickCheck
-    , aeson
-    , ansi-terminal
-    , base >=4.9 && <5
-    , bytestring
-    , containers
-    , deriving-compat
-    , flat >=0.4.5
-    , gitrev
-    , haskell-stack-trace-plugin
-    , hspec
-    , interpolate
-    , lens
-    , list-t
-    , megaparsec
-    , mtl >=2.2.2
-    , optics-core
-    , optics-th
-    , optparse-applicative
-    , parser-combinators
-    , pirouette
     , plutus-core
     , prettyprinter
     , process
