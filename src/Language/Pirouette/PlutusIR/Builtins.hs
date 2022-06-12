@@ -166,7 +166,7 @@ instance LanguageBuiltinTypes BuiltinsOfPIR where
   typeOfBuiltin P.MkPairData = tData :->: tData :->: tPair tData tData -- (or (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))
   typeOfBuiltin P.MkNilData = tData
   typeOfBuiltin P.MkNilPairData = undefined
-  typeOfBottom = error "No bottom type in PIR"
+  typeOfBottom = forall "a" (tVar "a" 0)
 
 -- | Builtin Plutus Types
 data PIRBuiltinType

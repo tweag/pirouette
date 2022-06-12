@@ -421,7 +421,7 @@ trTerm mn t = do
     go (PIR.Constant _ (P.Some (P.ValueOf tx x))) =
       return $ SystF.termPure $ SystF.Free $ Constant $ defUniToConstant tx x
     go (PIR.Builtin _ f) = return $ SystF.termPure $ SystF.Free $ Builtin f
-    go (PIR.Error _ _) = return $ SystF.termPure $ SystF.Free Bottom
+    go (PIR.Error _ ty) = SystF.App (SystF.Free Bottom) . (:[]) . SystF.TyArg <$> lift (trType ty)
     go (PIR.IWrap _ _ _ t0) = go t0 -- VCM: are we sure we don't neet to
     go (PIR.Unwrap _ t0) = go t0 --      preserve the wrap/unwraps?
     go (PIR.TyInst _ t0 ty) = SystF.app <$> go t0 <*> lift (SystF.TyArg <$> trType ty)
