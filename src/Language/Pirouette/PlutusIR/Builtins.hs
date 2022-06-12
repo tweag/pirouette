@@ -136,47 +136,28 @@ instance LanguageBuiltinTypes BuiltinsOfPIR where
   typeOfBuiltin P.Trace = forall "a" (tString :->: tVar "a" 0 :->: tVar "a" 0)
   typeOfBuiltin P.FstPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "a" 1))
   typeOfBuiltin P.SndPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "b" 0))
+  -- https://github.com/input-output-hk/plutus/blob/3c4067bb96251444c43ad2b17bc19f337c8b47d7/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L1009
   typeOfBuiltin P.ChooseList =
-    forall
-      "a"
-      ( tList (tVar "a" 0)
-          :->: forall
-            "b"
-            ( tVar "b" 0
-                :->: (tVar "a" 1 :->: tList (tVar "a" 1) :->: tVar "b" 0)
-            )
-      )
+    forall "a" (forall "b" (tList (tVar "a" 1) :->: tVar "b" 0 :->: tVar "b" 0 :->: tVar "b" 0))
   typeOfBuiltin P.MkCons = forall "a" (tVar "a" 0 :->: tList (tVar "a" 0) :->: tVar "a" 0)
   typeOfBuiltin P.HeadList = forall "a" (tList (tVar "a" 0) :->: tVar "a" 0)
   typeOfBuiltin P.TailList = forall "a" (tList (tVar "a" 0) :->: tList (tVar "a" 0))
   typeOfBuiltin P.NullList = forall "a" (tList (tVar "a" 0))
+  -- https://github.com/input-output-hk/plutus/blob/3c4067bb96251444c43ad2b17bc19f337c8b47d7/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L1075
   typeOfBuiltin P.ChooseData =
-    forall
-      "a"
-      ( -- fConstr
-        (tInt :->: tList tData :->: tVar "a" 0)
-          -- Or (tInt :->: systfType (PIRTypeList (Just PIRTypeData)) :->: tVar "a" 0)
-          :->:
-          -- fMap
-          (tList (tPair tData tData) :->: tVar "a" 0)
-          -- Or (systfType (PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) :->: tVar "a" 0)
-          :->:
-          -- fList
-          (tList tData :->: tVar "a" 0)
-          -- Or (systfType (PIRTypeList (Just PIRTypeData)) :->: tVar "a" 0)
-          :->:
-          -- fI
-          (tInt :->: tVar "a" 0)
-          :->:
-          -- fB
-          (tByteString :->: tVar "a" 0)
-      )
+    forall "a" (tData
+            :->: tVar "a" 0
+            :->: tVar "a" 0
+            :->: tVar "a" 0
+            :->: tVar "a" 0
+            :->: tVar "a" 0
+            :->: tVar "a" 0)
   typeOfBuiltin P.ConstrData = undefined
   typeOfBuiltin P.MapData = undefined
   typeOfBuiltin P.ListData = undefined
   typeOfBuiltin P.IData = undefined
   typeOfBuiltin P.BData = undefined
-  typeOfBuiltin P.UnConstrData = tData :->: tPair tInt tData -- (or (PIRTypePair (Just PIRTypeInteger) (Just PIRTypeData)))
+  typeOfBuiltin P.UnConstrData = tData :->: tPair tInt (tList tData)
   typeOfBuiltin P.UnMapData = undefined
   typeOfBuiltin P.UnListData = tData :->: tList tData -- (or (PIRTypeList (Just PIRTypeData)))
   typeOfBuiltin P.UnIData = tData :->: tInt
