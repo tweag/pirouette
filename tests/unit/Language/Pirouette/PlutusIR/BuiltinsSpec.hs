@@ -36,7 +36,6 @@ assertTrProgramOk flatFilePath = do
   case runExcept (trProgram pir) of
     Left err -> assertFailure $ "Translate program: " ++ show err
     Right (_, decls) -> do
-      writeFile "decls.pirouette" (show $ pretty decls)
       case typeCheckDecls decls of
         Left err -> assertFailure $ "Typecheck program: " ++ show (pretty err)
         Right _ -> return ()

@@ -31,7 +31,7 @@ import PlutusCore (DefaultUni (..))
 import qualified PlutusCore as P
 import qualified PlutusCore.Pretty as P
 import qualified PlutusIR.Core.Type as PIR
-import Debug.Trace
+import Data.Function (on)
 
 -- * Translating 'PIR.Type's and 'PIR.Term's
 
@@ -67,15 +67,36 @@ type TrM loc = StateT (St Name) (ReaderT (Env Name) (Except (Err loc)))
 -- term is floated.
 type DepsOf name = M.Map name (S.Set (Dep name))
 
+-- | Dependencies can be either a term dependency, or a type dependency; in case
+-- of type dependencies, we also carry which De Bruijn index it must be places as.
+-- For example, say we have a function that has a term dependency of
+-- type @var 1 -> var 0@; naturally, it will have (at least) two type dependencies,
+-- call them @a@ and @b@. When building @f@ as a pirouette declaration, we could declare it as:
+--
+-- > f :: /\a b -> ... (var 0 -> var 1) ...
+--
+-- or
+--
+-- > f :: /\b a -> ... (var 0 -> var 1) ...
+--
+-- To know which one is correct, we need to know which De Bruijn index each of
+-- the type dependencies had.
 data Dep name
   = TermDep name (Type BuiltinsOfPIR)
-  | TypeDep name SystF.Kind
+  | TypeDep Int name SystF.Kind
   deriving (Eq, Show, Ord)
 
+-- |Given a list of dependencies; separates them into type and term dependencies.
+-- Returns the type dependencies in the order they should be declared at.
 unzipDeps :: [Dep name] -> ([(name, SystF.Kind)], [(name, Type BuiltinsOfPIR)])
-unzipDeps [] = ([], [])
-unzipDeps (TermDep n ty : ds) = second ((n, ty):) $ unzipDeps ds
-unzipDeps (TypeDep n ki : ds) = first ((n, ki):) $ unzipDeps ds
+unzipDeps ds0 =
+  let (rawTyDeps, termDeps) = go ds0
+   in (map snd (L.sortBy (flip compare `on` fst) rawTyDeps), termDeps)
+  where
+    go :: [Dep name] -> ([(Int, (name, SystF.Kind))], [(name, Type BuiltinsOfPIR)])
+    go [] = ([], [])
+    go (TermDep n ty : ds) = second ((n, ty):) $ go ds
+    go (TypeDep i n ki : ds) = first ((i , (n, ki)):) $ go ds
 
 -- | In the state we will keep track of the dependencies of each term we explore and
 -- a set of type synonyms, that we will expand as soon as we find them.
@@ -227,16 +248,20 @@ tyCtxDeps ::
   DepsOf Name ->
   PIR.Type tyname uni loc ->
   S.Set (Dep Name)
-tyCtxDeps ts deps (PIR.TyBuiltin _ _) = S.empty
+tyCtxDeps _ _ (PIR.TyBuiltin _ _) = S.empty
 tyCtxDeps ts deps (PIR.TyVar _ n) =
    case L.elemIndex (toName n) (map fst ts) of
-    Just i -> S.singleton $ uncurry TypeDep $ unsafeIdx "tyCtxDeps" ts i
+    Just i -> S.singleton $ uncurry (TypeDep i) $ unsafeIdx "tyCtxDeps" ts i
     Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
 tyCtxDeps ts deps (PIR.TyFun _ tyA tyB) = tyCtxDeps ts deps tyA `S.union` tyCtxDeps ts deps tyB
 tyCtxDeps ts deps (PIR.TyApp _ tyA tyB) = tyCtxDeps ts deps tyA `S.union` tyCtxDeps ts deps tyB
 tyCtxDeps ts deps (PIR.TyForall _ _ _ ty) = tyCtxDeps ts deps ty
 tyCtxDeps ts deps (PIR.TyLam _ _ _ ty) = tyCtxDeps ts deps ty
-tyCtxDeps ts deps (PIR.TyIFix loc ty' ty_tynameuniloc) = undefined
+-- We've never seen an instance of 'TyIFix' showing up so far. I also can't find satisfactory
+-- documentation on it, so instead of doing something blatantly wrong and waste an afternoon
+-- debugging it, I'll leave an error here. Whoever hits this error first in practice will
+-- know to investigate 'TyIFix'.
+tyCtxDeps _ _ PIR.TyIFix {} = error "We never seen a TyIFix, hence its not supported. Check source"
 
 -- | Handles a data/type binding by creating a number of declarations for the constructors
 --  and desctructors involved. The type variables declared within a type get duplicated into
@@ -351,14 +376,38 @@ trTerm mn t = do
   deps <- gets stDepsOf
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
   let (tyDeps, termDeps) = unzipDeps vs
-  trace ("trTerm " ++ show mn ++ "; tyDeps = " ++ show (map fst tyDeps)) (return ())
-  t' <- local (pushNames $ reverse termDeps) (go t)
-  let adjustType = flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) termDeps
+  t' <- local (pushTypes (reverse tyDeps) . pushNames (reverse termDeps)) (go t)
+  let adjustType =
+        flip (foldr (\(n, t0) r -> SystF.TyAll (SystF.Ann n) t0 r)) tyDeps
+        . flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) termDeps
   return
-    ( foldr (\(n, t0) r -> SystF.Lam (SystF.Ann n) t0 r) t' termDeps,
+    ( flip (foldr (\(n, t0) r -> SystF.Abs (SystF.Ann n) t0 r)) tyDeps $
+        foldr (\(n, t0) r -> SystF.Lam (SystF.Ann n) t0 r) t' termDeps,
       adjustType
     )
   where
+    -- Say we're given the following syntax-sugared PlutusIR program:
+    --
+    -- > p = \x ->
+    -- >      let f = \i -> length i + (k * x)
+    -- >       in \y ->
+    -- >         let g = \j -> f (y + j)
+    -- >          in g x
+    --
+    -- The @f@ and @g@ bindings will be translated to the top level because Pirouette
+    -- doesn't support let statements.
+    -- When floating those functions to the top level we have to be careful not to
+    -- leave free variables hanging (i.e., the body of @g@ depends on @y@, which comes from a lambda).
+    --
+    -- When computing the translation of the body of @g@, our @termStack@ env will be @[y, x]@
+    -- because we will have traversed two lambdas. Moreover, the body of @g@ does depend on both
+    -- @x@ and @y@: it depends on @y@ directly and on @x@ transitively through @f@, hence when
+    -- lifting @g@ to the top level, it will have to receive these two extra arguments:
+    --
+    -- > g = \x y j -> f x (y + j)
+    --
+    -- Note how we also passed @x@, which is a dependency of @f@, to the call to @f@!
+    -- That's what the 'getTransitiveDepsAsArgs' below is responsible for doing.
     go ::
       PIR.Term tyname name DefaultUni P.DefaultFun loc ->
       WriterT (Decls BuiltinsOfPIR) (TrM loc) (Term BuiltinsOfPIR)
@@ -366,7 +415,9 @@ trTerm mn t = do
       vs <- asks termStack
       case L.elemIndex (toName n) (map fst vs) of
         Just i -> return $ SystF.termPure (SystF.Bound (SystF.Ann $ toName n) $ fromIntegral i)
-        Nothing -> lift . checkIfDep (toName n) $ map fst vs
+        Nothing -> do
+          args <- lift $ getTransitiveDepsAsArgs (toName n)
+          return $ SystF.App (SystF.Free $ TermSig (toName n)) args
     go (PIR.Constant _ (P.Some (P.ValueOf tx x))) =
       return $ SystF.termPure $ SystF.Free $ Constant $ defUniToConstant tx x
     go (PIR.Builtin _ f) = return $ SystF.termPure $ SystF.Free $ Builtin f
@@ -388,21 +439,32 @@ trTerm mn t = do
       tell bs'
       go t0
 
-    -- TODO: Check if dep on types too!
-    checkIfDep :: Name -> [Name] -> TrM loc (Term BuiltinsOfPIR)
-    checkIfDep n vs = do
+    -- Given a name that is not a bound variable, returns which arguments we have to
+    -- provide to satisfy its dependencies. Check the comment to 'go' above for an example.
+    getTransitiveDepsAsArgs :: Name -> TrM loc [Arg BuiltinsOfPIR]
+    getTransitiveDepsAsArgs n = do
+      vs <- asks (map fst . termStack)
+      ts <- asks (map fst . typeStack)
       mDepsOn <- gets (M.lookup n . stDepsOf)
       case mDepsOn of
-        Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig n
+        Nothing -> return []
         Just ns -> do
-          let args =
+          let (tyDeps, termDeps) = unzipDeps $ S.toList ns
+          let termArgs =
                 map
                   ( SystF.TermArg . SystF.termPure . uncurry SystF.Bound
                       . (\x -> (SystF.Ann x, fromIntegral $ fromJust $ L.elemIndex x vs))
                       . fst
                   )
-                  $ snd $ unzipDeps $ S.toList ns
-          return $ SystF.App (SystF.Free $ TermSig n) args
+                  termDeps
+          let tyArgs =
+                map
+                  ( SystF.TyArg . SystF.TyPure . uncurry SystF.Bound
+                      . (\x -> (SystF.Ann x, fromIntegral $ fromJust $ L.elemIndex x ts))
+                      . fst
+                  )
+                  tyDeps
+          return $ tyArgs ++ termArgs
 
 -- A straightforward translation of a PIRTerm to the Pirouette representation of term.
 -- This function is not used by `trProgram` which is the main function to translate
