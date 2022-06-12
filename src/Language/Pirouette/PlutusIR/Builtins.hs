@@ -105,67 +105,36 @@ forall x = SystF.TyAll (SystF.ann x) SystF.KStar
 
 instance LanguageBuiltinTypes BuiltinsOfPIR where
   typeOfConstant = systfType . cstToBuiltinType
+
   typeOfBuiltin P.AddInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.SubtractInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.MultiplyInteger = tInt :->: tInt :->: tInt
   typeOfBuiltin P.DivideInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.QuotientInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.RemainderInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.ModInteger = tInt :->: tInt :->: tInt
   typeOfBuiltin P.EqualsInteger = tInt :->: tInt :->: tBool
   typeOfBuiltin P.LessThanInteger = tInt :->: tInt :->: tBool
   typeOfBuiltin P.LessThanEqualsInteger = tInt :->: tInt :->: tBool
-  typeOfBuiltin P.AppendByteString = tByteString :->: tByteString :->: tByteString
-  typeOfBuiltin P.ConsByteString = undefined
-  typeOfBuiltin P.SliceByteString = undefined
-  typeOfBuiltin P.LengthOfByteString = tByteString :->: tInt
-  typeOfBuiltin P.IndexByteString = undefined
   typeOfBuiltin P.EqualsByteString = tByteString :->: tByteString :->: tBool
-  typeOfBuiltin P.LessThanByteString = tByteString :->: tByteString :->: tBool
-  typeOfBuiltin P.LessThanEqualsByteString = tByteString :->: tByteString :->: tBool
-  typeOfBuiltin P.Sha2_256 = undefined
-  typeOfBuiltin P.Sha3_256 = undefined
-  typeOfBuiltin P.Blake2b_256 = undefined
-  typeOfBuiltin P.VerifySignature = undefined
-  typeOfBuiltin P.AppendString = tString :->: tString :->: tString
-  typeOfBuiltin P.EqualsString = tString :->: tString :->: tBool
-  typeOfBuiltin P.EncodeUtf8 = undefined
-  typeOfBuiltin P.DecodeUtf8 = undefined
   typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0)
-  typeOfBuiltin P.ChooseUnit = undefined
   typeOfBuiltin P.Trace = forall "a" (tString :->: tVar "a" 0 :->: tVar "a" 0)
   typeOfBuiltin P.FstPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "a" 1))
   typeOfBuiltin P.SndPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "b" 0))
   -- https://github.com/input-output-hk/plutus/blob/3c4067bb96251444c43ad2b17bc19f337c8b47d7/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L1009
   typeOfBuiltin P.ChooseList =
     forall "a" (forall "b" (tList (tVar "a" 1) :->: tVar "b" 0 :->: tVar "b" 0 :->: tVar "b" 0))
-  typeOfBuiltin P.MkCons = forall "a" (tVar "a" 0 :->: tList (tVar "a" 0) :->: tVar "a" 0)
   typeOfBuiltin P.HeadList = forall "a" (tList (tVar "a" 0) :->: tVar "a" 0)
   typeOfBuiltin P.TailList = forall "a" (tList (tVar "a" 0) :->: tList (tVar "a" 0))
-  typeOfBuiltin P.NullList = forall "a" (tList (tVar "a" 0))
   -- https://github.com/input-output-hk/plutus/blob/3c4067bb96251444c43ad2b17bc19f337c8b47d7/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L1075
   typeOfBuiltin P.ChooseData =
-    forall "a" (tData
-            :->: tVar "a" 0
-            :->: tVar "a" 0
-            :->: tVar "a" 0
-            :->: tVar "a" 0
-            :->: tVar "a" 0
-            :->: tVar "a" 0)
-  typeOfBuiltin P.ConstrData = undefined
-  typeOfBuiltin P.MapData = undefined
-  typeOfBuiltin P.ListData = undefined
-  typeOfBuiltin P.IData = undefined
-  typeOfBuiltin P.BData = undefined
+    forall "a" (tData :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0)
   typeOfBuiltin P.UnConstrData = tData :->: tPair tInt (tList tData)
-  typeOfBuiltin P.UnMapData = undefined
-  typeOfBuiltin P.UnListData = tData :->: tList tData -- (or (PIRTypeList (Just PIRTypeData)))
   typeOfBuiltin P.UnIData = tData :->: tInt
   typeOfBuiltin P.UnBData = tData :->: tByteString
-  typeOfBuiltin P.EqualsData = tData :->: tData :->: tBool
-  typeOfBuiltin P.MkPairData = tData :->: tData :->: tPair tData tData -- (or (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))
   typeOfBuiltin P.MkNilData = tData
-  typeOfBuiltin P.MkNilPairData = undefined
+  -- TODO: implement the types of other builtins, but make sure to always bring in a golden
+  -- test that comes from the plutus compiler. We should REALLY not be guessing these types,
+  -- no matter how simple they seem.
+  typeOfBuiltin builtin = error $ "typeOfBuiltin " ++ show builtin ++ " is not implemented"
+
+  -- The type of bottom in PlutusIR is similar to Haskell; we translate @PIR.Error loc ty@
+  -- to @Free Bottom `App` [TyArg ty]@.
   typeOfBottom = forall "a" (tVar "a" 0)
 
 -- | Builtin Plutus Types
