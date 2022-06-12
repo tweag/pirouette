@@ -159,19 +159,23 @@ trPIRFun op [x, y] =
           <> " is not an implemented binary operator/function"
 -- Ternary
 trPIRFun op [x, y, z] =
+{-
   case op of
     -- P.IfThenElse ->
     -- P.ChooseList ->
     _ ->
+-}
       error $
         "Translate builtin to SMT: "
           <> show op
           <> " is not an implemented ternary operator/function"
 -- Remainder
 trPIRFun op _ =
+{-
   case op of
     -- P.ChooseData ->
     _ ->
+-}
       error $
         "Translate builtin to SMT: "
           <> show op
