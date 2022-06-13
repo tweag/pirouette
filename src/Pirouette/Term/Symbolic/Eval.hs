@@ -6,6 +6,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -37,6 +39,7 @@ module Pirouette.Term.Symbolic.Eval
     pathsIncorrectness,
     pathsIncorrectness_,
     symevalAnyPath,
+    symEvalMatchesFirst,
     UserDeclaredConstraints (..),
     UniversalAxiom (..),
     InCond (..),
@@ -450,8 +453,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
           signalEvaluation
           pure newTerm
       -- if it's not ready, just keep evaluating the arguments
-      Nothing ->
-        R.App hd <$> mapM (R.argMapM return symEvalOneStep) args
+      Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
     mDefHead <- Just <$> lift (lift $ prtDefOf n)
     case mDefHead of
@@ -464,85 +466,8 @@ symEvalOneStep t@(R.App hd args) = case hd of
         consumeFuel
         signalEvaluation
         pure $ termToMeta body `R.appN` args
-      -- If hd is a constructor, we symbolically evaluate the arguments and reconstruct the term
-      -- by combining the paths with (>>>=), conjuncts all of the constraints. For instance,
-      --
-      -- > symeval (Cons x xs) ==
-      -- >   let x'  = symeval x :: [(Constraint, X)]
-      -- >       xs' = symeval xs :: [(Constraint, XS)]
-      -- >    in [ (cx && cxs , Cons rx rxs)
-      -- >       | (cx, rx) <- x' , (cxs, rxs) <- xs'
-      -- >       , isSAT (cx && cxs) ]
-      --
       Just (DConstructor _ _) -> justEvaluateArgs
-      -- If hd is a destructor, we have more work to do: we have to expand the term
-      -- being destructed, then combine it with all possible destructor cases.
-      -- Say we're looking at:
-      --
-      -- > symeval (Nil_match @Int l N (\x xs -> M))
-      --
-      -- Then say that symeval l == [(c1, Cons sv1 sv2)]; we now create a fresh
-      -- symbolic variable S to connect the result of l and each of the branches.
-      -- The overall result should be something like:
-      --
-      -- > [ (c1 && S = Cons sv1 sv2 && S = Nil , N)
-      -- > , (c1 && S = Cons sv1 sv2 && S = Cons sv3 sv4 , M)
-      -- > ]
-      --
-      -- Naturally, the first path is already impossible so we do not need to
-      -- move on to evaluate N.
-      Just (DDestructor tyName) -> do
-        Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
-        _dt@(Datatype _ _ _ consList) <- lift $ lift $ prtTypeDefOf tyName
-        -- We know what is the type of all the possible term results, its whatever
-        -- type we're destructing applied to its arguments, making sure it contains
-        -- no meta variables.
-        (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
-        tell somethingWasEvaluated -- just in case
-        -- We only do the case distinction if we haven't taken any step
-        -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
-        let motiveIsMeta = termIsMeta term'
-        motiveWHNF <- lift $ termIsWHNF term'
-        let bailOutArgs = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
-            bailOutTerm = R.App hd (map R.TyArg tyParams ++ bailOutArgs ++ excess)
-        case (somethingWasEvaluated, motiveIsMeta, motiveWHNF) of
-          (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
-          (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
-          (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
-          (_, Just _, _) -> do
-            -- we have a meta, explore every possibility
-            -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
-            let tyParams' = map typeFromMeta tyParams
-            asum $
-              for2 consList cases $ \(consName, consTy) caseTerm -> do
-                let instantiatedTy = R.tyInstantiateN consTy tyParams'
-                let (consArgs, _) = R.tyFunArgs instantiatedTy
-                svars <- lift $ freshSymVars consArgs
-                let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-                let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-                let mconstr = unify term' symbCons
-                -- liftIO $ print mconstr
-                case mconstr of
-                  Nothing -> empty
-                  Just constr -> do
-                    let countAssigns SMT.Bot = 0
-                        countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
-                        isAssign SMT.Assign {} = True
-                        isAssign _ = False
-                    -- add weight as many new assignments we get from unification
-                    ListT.weight (countAssigns constr) $ do
-                      lift $ learn constr
-                      moreConstructors (countAssigns constr)
-                      signalEvaluation
-                      pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
-          (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
-            -- we have a particular constructor
-            -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
-            -- liftIO $ putStrLn $ "possibilitites: " <> show (pretty dt)
-            let caseTerm = cases !! ix
-            -- we do not introduce any new constructors
-            signalEvaluation
-            pure $ (caseTerm `R.appN` dropWhile R.isTyArg constructorArgs) `R.appN` excess
+      Just (DDestructor tyName) -> symEvalDestructor t tyName
   R.Meta vr -> do
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint
@@ -569,9 +494,128 @@ symEvalOneStep t@(R.App hd args) = case hd of
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
   where
-    justEvaluateArgs = do
-      evaluatedArgs <- mapM (R.argMapM return symEvalOneStep) args
-      pure $ R.App hd evaluatedArgs
+    justEvaluateArgs = 
+      R.App hd <$> symEvalMatchesFirst
+        (\case R.TyArg {} -> Nothing ; R.TermArg v -> Just v)
+        R.TermArg
+        args
+
+-- | Strategy for evaluating a set of expression,
+--   but giving priority to destructors over the rest.
+--
+--   The two functions allow us to inject to and from
+--   Term, so we can reuse this function either
+--   with Arg (as done above), or with regular Term.
+symEvalMatchesFirst ::
+  forall lang m a.
+  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  (a -> Maybe (TermMeta lang SymVar)) ->
+  (TermMeta lang SymVar -> a) ->
+  [a] -> WriterT Any (SymEvalT lang m) [a]
+symEvalMatchesFirst f g exprs = go [] exprs
+  where
+    -- we came to the end without a match,
+    -- so we execute one step in parallel
+    go _acc [] = forM exprs $ \x -> case f x of
+                    Nothing -> pure x
+                    Just t -> g <$> symEvalOneStep t
+
+    -- first pass, only evaluate destructors
+    -- the accumulator is used only if we ever
+    -- find that match
+    go acc (x : xs)
+      | Nothing <- f x = go (x : acc) xs
+      | Just t  <- f x = do
+          mayTyName <- lift $ lift $ isDestructor t
+          case mayTyName of
+            Just tyName -> (reverse acc ++) . (: xs) . g <$> symEvalDestructor t tyName
+            Nothing -> go (x : acc) xs
+
+
+isDestructor ::
+  forall lang m.
+  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  TermMeta lang SymVar -> m (Maybe Name)
+isDestructor (R.App (R.Free (TermSig n)) _args) = do
+  mDefHead <- Just <$> prtDefOf n
+  pure $ case mDefHead of
+    Just (DDestructor tyName) -> Just tyName
+    _ -> Nothing
+isDestructor _ = pure Nothing
+
+-- If hd is a destructor, we have more work to do: we have to expand the term
+-- being destructed, then combine it with all possible destructor cases.
+-- Say we're looking at:
+--
+-- > symeval (Nil_match @Int l N (\x xs -> M))
+--
+-- Then say that symeval l == [(c1, Cons sv1 sv2)]; we now create a fresh
+-- symbolic variable S to connect the result of l and each of the branches.
+-- The overall result should be something like:
+--
+-- > [ (c1 && S = Cons sv1 sv2 && S = Nil , N)
+-- > , (c1 && S = Cons sv1 sv2 && S = Cons sv3 sv4 , M)
+-- > ]
+--
+-- Naturally, the first path is already impossible so we do not need to
+-- move on to evaluate N.
+symEvalDestructor ::
+  forall lang m.
+  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  TermMeta lang SymVar -> Name ->
+  WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
+symEvalDestructor t@(R.App hd _args) tyName = do
+  Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
+  _dt@(Datatype _ _ _ consList) <- lift $ lift $ prtTypeDefOf tyName
+  -- We know what is the type of all the possible term results, its whatever
+  -- type we're destructing applied to its arguments, making sure it contains
+  -- no meta variables.
+  (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
+  tell somethingWasEvaluated -- just in case
+  -- We only do the case distinction if we haven't taken any step
+  -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
+  let motiveIsMeta = termIsMeta term'
+  motiveWHNF <- lift $ termIsWHNF term'
+  let bailOutArgs = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
+      bailOutTerm = R.App hd (map R.TyArg tyParams ++ bailOutArgs ++ excess)
+  case (somethingWasEvaluated, motiveIsMeta, motiveWHNF) of
+    (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
+    (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
+    (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
+    (_, Just _, _) -> do
+      -- we have a meta, explore every possibility
+      -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
+      let tyParams' = map typeFromMeta tyParams
+      asum $ for2 consList cases $ \(consName, consTy) caseTerm -> do
+        let instantiatedTy = R.tyInstantiateN consTy tyParams'
+        let (consArgs, _) = R.tyFunArgs instantiatedTy
+        svars <- lift $ freshSymVars consArgs
+        let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+        let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+        let mconstr = unify term' symbCons
+        -- liftIO $ print mconstr
+        case mconstr of
+          Nothing -> empty
+          Just constr -> do
+            let countAssigns SMT.Bot = 0
+                countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
+                isAssign SMT.Assign {} = True
+                isAssign _ = False
+            -- add weight as many new assignments we get from unification
+            ListT.weight (countAssigns constr) $ do
+              lift $ learn constr
+              moreConstructors (countAssigns constr)
+              signalEvaluation
+              pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+    (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
+      -- we have a particular constructor
+      -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
+      -- liftIO $ putStrLn $ "possibilitites: " <> show (pretty dt)
+      let caseTerm = cases !! ix
+      -- we do not introduce any new constructors
+      signalEvaluation
+      pure $ (caseTerm `R.appN` dropWhile R.isTyArg constructorArgs) `R.appN` excess
+symEvalDestructor _ _ = error "should never be called with anything else than App"
 
 -- | Indicate that something has been evaluated.
 signalEvaluation :: Functor m => WriterT Any (SymEvalT lang m) ()

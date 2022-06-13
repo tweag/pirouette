@@ -1,5 +1,6 @@
 import qualified Language.Pirouette.ExampleSpec as Ex
 import qualified Language.Pirouette.PlutusIR.ToTermSpec as FP
+import qualified Language.Pirouette.PlutusIR.BuiltinsSpec as PIRBuiltins
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Term.SymbolicEvalSpec as SymbolicEval
 import qualified Pirouette.Term.SymbolicProveSpec as SymbolicProve
@@ -33,7 +34,10 @@ tests =
          testGroup "Symbolic prove" SymbolicProve.tests],
       testGroup
         "Language"
-        [ testGroup "PlutusIR" FP.tests,
+        [ testGroup "PlutusIR"
+          [ testGroup "ToTerm" FP.tests,
+            testGroup "Builtins" PIRBuiltins.tests
+          ],
           testGroup "Example" Ex.tests
         ]
     ]
