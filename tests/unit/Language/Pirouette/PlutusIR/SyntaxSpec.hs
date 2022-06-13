@@ -1,14 +1,14 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Language.Pirouette.PlutusIR.BuiltinsSpec where
+module Language.Pirouette.PlutusIR.SyntaxSpec where
 
 import Control.Monad
 import Control.Monad.Except
 import qualified Data.ByteString as BS
 import qualified Flat
 import GHC.Float (rationalToDouble)
-import Language.Pirouette.PlutusIR.ToTerm
+import Language.Pirouette.PlutusIR
 import Pirouette.Term.TypeChecker
 import Pirouette.Term.Syntax.Pretty
 import qualified PlutusCore as P

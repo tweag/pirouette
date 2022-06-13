@@ -15,13 +15,15 @@
 --  necessary bits for using the facilities from "Pirouette.Term.Syntax" and provides
 --  a translation function 'trProgram' to translate a plutusIR program into a 'PrtTerm'
 --  and a map of definitions.
-module Language.Pirouette.PlutusIR.Builtins where
+module Language.Pirouette.PlutusIR.Syntax where
 
+import Control.Monad.Combinators.Expr
 import qualified Data.ByteString as BS
 import Data.Data
-import Data.String (fromString)
+import Data.Foldable
 import qualified Data.Text as T
 import Language.Haskell.TH.Syntax (Lift)
+import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import PlutusCore
@@ -33,6 +35,10 @@ import PlutusCore
 import qualified PlutusCore as P
 import qualified PlutusCore.Data as P
 import Prettyprinter hiding (Pretty, pretty)
+import Text.Megaparsec
+import Text.Megaparsec.Char
+import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Data.Set as S
 
 -- * Declaring the builtins of PlutusIR.
 
@@ -69,75 +75,6 @@ cstToBuiltinType (PIRConstList (c : cs)) =
 cstToBuiltinType (PIRConstPair c1 c2) =
   PIRTypePair (Just (cstToBuiltinType c1)) (Just (cstToBuiltinType c2))
 cstToBuiltinType (PIRConstData _) = PIRTypeData
-
--- | Shortcut for system F arrows
-infixr 2 :->:
-
-pattern (:->:) :: Type PlutusIR -> Type PlutusIR -> Type PlutusIR
-pattern (:->:) x y = SystF.TyFun x y
-
--- | Helper to lift PIR builtin types to system F
-systfType :: PIRBuiltinType -> Type PlutusIR
-systfType = SystF.TyPure . SystF.Free . TyBuiltin
-
--- Shortcuts for PIR builtin types in systemF
-tInt, tBool, tUnit, tByteString, tString, tData :: Type PlutusIR
-tInt = systfType PIRTypeInteger
-tBool = systfType PIRTypeBool
-tUnit = systfType PIRTypeUnit
-tByteString = systfType PIRTypeByteString
-tString = systfType PIRTypeString
-tData = systfType PIRTypeData
-
--- | Shortcuts for type variables
-tVar :: String -> Integer -> Type PlutusIR
-tVar name deBruijn = SystF.TyPure $ SystF.Bound (SystF.Ann (fromString name)) deBruijn
-
--- | Polymorphic PIR list type shortcut
-tList :: Type PlutusIR -> Type PlutusIR
-tList x = SystF.TyApp (SystF.Free (TyBuiltin (PIRTypeList Nothing))) [x]
-
--- | Polymorphic PIR pair type shortcut
-tPair :: Type PlutusIR -> Type PlutusIR -> Type PlutusIR
-tPair x y = SystF.TyApp (SystF.Free (TyBuiltin (PIRTypePair Nothing Nothing))) [x, y]
-
--- | "Forall" type shortcut helper for types of kind *
-forall :: SystF.Ann (SystF.Ann ann) -> SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar
-forall x = SystF.TyAll (SystF.ann x) SystF.KStar
-
-instance LanguageBuiltinTypes PlutusIR where
-  typeOfConstant = systfType . cstToBuiltinType
-
-  typeOfBuiltin P.AddInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.DivideInteger = tInt :->: tInt :->: tInt
-  typeOfBuiltin P.EqualsInteger = tInt :->: tInt :->: tBool
-  typeOfBuiltin P.LessThanInteger = tInt :->: tInt :->: tBool
-  typeOfBuiltin P.LessThanEqualsInteger = tInt :->: tInt :->: tBool
-  typeOfBuiltin P.EqualsByteString = tByteString :->: tByteString :->: tBool
-  typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0)
-  typeOfBuiltin P.Trace = forall "a" (tString :->: tVar "a" 0 :->: tVar "a" 0)
-  typeOfBuiltin P.FstPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "a" 1))
-  typeOfBuiltin P.SndPair = forall "a" (forall "b" (tPair (tVar "a" 1) (tVar "b" 0) :->: tVar "b" 0))
-  -- https://github.com/input-output-hk/plutus/blob/3c4067bb96251444c43ad2b17bc19f337c8b47d7/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L1009
-  typeOfBuiltin P.ChooseList =
-    forall "a" (forall "b" (tList (tVar "a" 1) :->: tVar "b" 0 :->: tVar "b" 0 :->: tVar "b" 0))
-  typeOfBuiltin P.HeadList = forall "a" (tList (tVar "a" 0) :->: tVar "a" 0)
-  typeOfBuiltin P.TailList = forall "a" (tList (tVar "a" 0) :->: tList (tVar "a" 0))
-  -- https://github.com/input-output-hk/plutus/blob/3c4067bb96251444c43ad2b17bc19f337c8b47d7/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L1075
-  typeOfBuiltin P.ChooseData =
-    forall "a" (tData :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0)
-  typeOfBuiltin P.UnConstrData = tData :->: tPair tInt (tList tData)
-  typeOfBuiltin P.UnIData = tData :->: tInt
-  typeOfBuiltin P.UnBData = tData :->: tByteString
-  typeOfBuiltin P.MkNilData = tData
-  -- TODO: implement the types of other builtins, but make sure to always bring in a golden
-  -- test that comes from the plutus compiler. We should REALLY not be guessing these types,
-  -- no matter how simple they seem.
-  typeOfBuiltin builtin = error $ "typeOfBuiltin " ++ show builtin ++ " is not implemented"
-
-  -- The type of bottom in PlutusIR is similar to Haskell; we translate @PIR.Error loc ty@
-  -- to @Free Bottom `App` [TyArg ty]@.
-  typeOfBottom = forall "a" (tVar "a" 0)
 
 -- | Builtin Plutus Types
 data PIRBuiltinType
@@ -218,3 +155,141 @@ instance Pretty P.Data where
   pretty (P.List xs) = pretty xs
   pretty (P.I i) = pretty i
   pretty (P.B bs) = pretty bs
+
+-- * Parsing
+
+instance LanguageParser PlutusIR where
+  -- TODO: How about applied lists and pairs?
+  parseBuiltinType =
+    label "Builtin type" $
+      asum $
+        map
+          try
+          [ PIRTypeInteger <$ symbol "Integer",
+            PIRTypeByteString <$ symbol "ByteString",
+            PIRTypeUnit <$ symbol "Unit",
+            PIRTypeBool <$ symbol "Bool",
+            PIRTypeString <$ symbol "String",
+            PIRTypeData <$ symbol "Data",
+            PIRTypeList Nothing <$ symbol "List",
+            PIRTypePair Nothing Nothing <$ symbol "Pair"
+          ]
+
+  -- TODO: more constants
+  parseConstant =
+    label "Constant" $
+      asum $
+        map
+          try
+          [ PIRConstInteger <$> try integer,
+            PIRConstUnit <$ symbol "Unit",
+            PIRConstBool <$> parseBoolean,
+            PIRConstString . T.pack <$> stringLiteral
+          ]
+    where
+      parseBoolean = (True <$ symbol "True") <|> (False <$ symbol "False")
+      integer :: Parser Integer
+      integer = L.lexeme spaceConsumer L.decimal
+      -- copied from
+      -- https://hackage.haskell.org/package/megaparsec/docs/Text-Megaparsec-Char-Lexer.html#v:charLiteral
+      stringLiteral :: Parser String
+      stringLiteral = L.lexeme spaceConsumer (char '"' >> manyTill L.charLiteral (char '"'))
+
+  -- Taken from: https://github.com/input-output-hk/plutus/blob/3c81f60746f50b596d3209c38e048ebb473c93b8/plutus-core/plutus-core/src/PlutusCore/Default/Builtins.hs#L45
+  parseBuiltinTerm =
+    label "Builtin Term" $
+      asum $
+        map
+          try
+          [ -- Integers
+            P.AddInteger <$ symbol "b/addInteger",
+            P.SubtractInteger <$ symbol "b/subtractInteger",
+            P.MultiplyInteger <$ symbol "b/multiplyInteger",
+            P.DivideInteger <$ symbol "b/divideInteger",
+            P.QuotientInteger <$ symbol "b/quotientInteger",
+            P.RemainderInteger <$ symbol "b/remainderInteger",
+            P.ModInteger <$ symbol "b/modInteger",
+            P.EqualsInteger <$ symbol "b/equalsInteger",
+            P.LessThanInteger <$ symbol "b/lessThanInteger",
+            P.LessThanEqualsInteger <$ symbol "b/lessThanEqualsInteger",
+            -- Bytestrings
+            P.AppendByteString <$ symbol "b/appendByteString",
+            P.ConsByteString <$ symbol "b/consByteString",
+            P.SliceByteString <$ symbol "b/sliceByteString",
+            P.LengthOfByteString <$ symbol "b/lengthOfByteString",
+            P.IndexByteString <$ symbol "b/indexByteString",
+            P.EqualsByteString <$ symbol "b/equalsByteString",
+            P.LessThanByteString <$ symbol "b/lessThanByteString",
+            P.LessThanEqualsByteString <$ symbol "b/lessThanEqualsByteString",
+            -- Cryptography and hashes
+            P.Sha2_256 <$ symbol "b/sha2",
+            P.Sha3_256 <$ symbol "b/sha3",
+            P.Blake2b_256 <$ symbol "b/blake2b",
+            P.VerifySignature <$ symbol "b/verifySignature",
+            -- P.VerifyEd25519Signature <$ symbol "b/verifyEd25519Signature",
+            -- P.VerifyEcdsaSecp256k1Signature <$ symbol "b/verifyEcdsaSecp256k1Signature",
+            -- P.VerifySchnorrSecp256k1Signature <$ symbol "b/verifySchnorrSecp256k1Signature",
+            -- Strings
+            P.AppendString <$ symbol "b/appendString",
+            P.EqualsString <$ symbol "b/equalsString",
+            P.EncodeUtf8 <$ symbol "b/encodeUtf8",
+            P.DecodeUtf8 <$ symbol "b/decodeUtf8",
+            -- Bool
+            P.IfThenElse <$ symbol "b/ifThenElse",
+            -- Unit
+            P.ChooseUnit <$ symbol "b/chooseUnit",
+            -- Tracing
+            P.Trace <$ symbol "b/trace",
+            -- Pairs
+            P.FstPair <$ symbol "b/fstPair",
+            P.SndPair <$ symbol "b/sndPair",
+            -- Lists
+            P.ChooseList <$ symbol "b/chooseList",
+            P.MkCons <$ symbol "b/mkCons",
+            P.HeadList <$ symbol "b/headList",
+            P.TailList <$ symbol "b/tailList",
+            P.NullList <$ symbol "b/nullList",
+            -- Data
+            -- It is convenient to have a "choosing" function for a data type that has more than two
+            -- constructors to get pattern matching over it and we may end up having multiple such data
+            -- types, hence we include the name of the data type as a suffix.
+            P.ChooseData <$ symbol "b/chooseData",
+            P.ConstrData <$ symbol "b/constrData",
+            P.MapData <$ symbol "b/mapData",
+            P.ListData <$ symbol "b/listData",
+            P.IData <$ symbol "b/iData",
+            P.BData <$ symbol "b/bData",
+            P.UnConstrData <$ symbol "b/unConstrData",
+            P.UnMapData <$ symbol "b/unMapData",
+            P.UnListData <$ symbol "b/unListData",
+            P.UnIData <$ symbol "b/unIData",
+            P.UnBData <$ symbol "b/unBData",
+            P.EqualsData <$ symbol "b/equalsData",
+            -- Misc constructors
+            P.MkPairData <$ symbol "b/mkPairData",
+            P.MkNilData <$ symbol "b/mkNilData",
+            P.MkNilPairData <$ symbol "b/mkNilPairData"
+          ]
+
+  -- Some builtins will also be available through more familiar infix operators
+  operators =
+    [ [ InfixR (symbol "*" >> return (exprBinApp P.MultiplyInteger)),
+        InfixR (symbol "/" >> return (exprBinApp P.DivideInteger)),
+        InfixR (symbol "%" >> return (exprBinApp P.ModInteger))
+      ],
+      [ InfixR (symbol "+" >> return (exprBinApp P.AddInteger)),
+        InfixR (symbol "-" >> return (exprBinApp P.SubtractInteger))
+      ],
+      [ InfixN (symbol "<" >> return (exprBinApp P.LessThanInteger)),
+        InfixN (symbol "<=" >> return (exprBinApp P.LessThanEqualsInteger)),
+        InfixN (symbol "==i" >> return (exprBinApp P.EqualsInteger)),
+        InfixN (symbol "==d" >> return (exprBinApp P.EqualsData)),
+        InfixN (symbol "==bs" >> return (exprBinApp P.EqualsByteString)),
+        InfixN (symbol "==s" >> return (exprBinApp P.EqualsString))
+      ]
+    ]
+
+  reservedNames = S.fromList $ words  "True False unit"
+  reservedTypeNames = S.fromList $ words "Bool Unit List Data Pair String ByteString"
+
+  ifThenElse resTy c t e = SystF.App (SystF.Free $ Builtin P.IfThenElse) $ SystF.TyArg resTy : map SystF.TermArg [c, t, e]

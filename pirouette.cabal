@@ -17,9 +17,11 @@ library
   exposed-modules:
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
+      Language.Pirouette.PlutusIR
       Language.Pirouette.PlutusIR.SMT
       Language.Pirouette.PlutusIR.Syntax
       Language.Pirouette.PlutusIR.ToTerm
+      Language.Pirouette.PlutusIR.Typing
       Language.Pirouette.QuasiQuoter
       Language.Pirouette.QuasiQuoter.Syntax
       Language.Pirouette.QuasiQuoter.ToTerm
@@ -102,7 +104,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.Pirouette.ExampleSpec
-      Language.Pirouette.PlutusIR.BuiltinsSpec
+      Language.Pirouette.PlutusIR.SyntaxSpec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Term.SymbolicEvalSpec
       Pirouette.Term.SymbolicEvalUtils

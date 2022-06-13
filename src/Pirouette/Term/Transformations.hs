@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -12,17 +11,14 @@ import Control.Monad.Except
 import Data.Data
 import Data.Functor
 import Data.Generics.Uniplate.Data
-import Data.List (elemIndex, foldl')
-import qualified Data.Map as Map
 import Data.String (fromString)
-import qualified Data.Text as Text
-import Language.Pirouette.PlutusIR.Builtins
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Data.List (elemIndex)
 
 -- | Put excessive arguments of a a destructor in the branches.
 --  Because we have n-ary applications, whenever we translate something like:

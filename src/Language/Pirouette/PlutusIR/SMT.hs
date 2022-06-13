@@ -1,7 +1,7 @@
 module Language.Pirouette.PlutusIR.SMT where
 
 import qualified Data.Text as Text
-import Language.Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT

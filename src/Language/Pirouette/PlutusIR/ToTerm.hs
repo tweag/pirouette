@@ -24,7 +24,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.Set as S
-import Language.Pirouette.PlutusIR.Builtins
+import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import PlutusCore (DefaultUni (..))
