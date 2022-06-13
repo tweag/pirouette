@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Language.Pirouette.PlutusIR.SyntaxSpec where
 
@@ -11,6 +12,7 @@ import GHC.Float (rationalToDouble)
 import Language.Pirouette.PlutusIR
 import Pirouette.Term.TypeChecker
 import Pirouette.Term.Syntax.Pretty
+import Pirouette.Term.Syntax.Base hiding (Program)
 import qualified PlutusCore as P
 import qualified PlutusCore.Flat as P
 import qualified PlutusCore.Pretty as P
@@ -24,10 +26,16 @@ goldenFiles :: [(String, FilePath)]
 goldenFiles = [("Split", "tests/unit/resources/split.flat")
               ,("Auction", "tests/unit/resources/auction.flat")]
 
+canParseTerm :: Term PlutusIR -> Assertion
+canParseTerm _ = return ()
+
 tests :: [TestTree]
 tests =
   [ testGroup "Read, translate and typecheck programs" $ flip map goldenFiles $ \(n, fpath) ->
-       testCase n (assertTrProgramOk fpath)
+       testCase n (assertTrProgramOk fpath),
+    testCase "Can parse terms" $ do
+      canParseTerm [pir| \(x : Integer) . x + 1 |]
+      canParseTerm [pir| \(bs : ByteString) . b/appendByteString bs bs |]
   ]
 
 assertTrProgramOk :: FilePath -> Assertion
