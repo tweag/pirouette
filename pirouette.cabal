@@ -17,8 +17,8 @@ library
   exposed-modules:
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
-      Language.Pirouette.PlutusIR.Builtins
       Language.Pirouette.PlutusIR.SMT
+      Language.Pirouette.PlutusIR.Syntax
       Language.Pirouette.PlutusIR.ToTerm
       Language.Pirouette.QuasiQuoter
       Language.Pirouette.QuasiQuoter.Syntax
