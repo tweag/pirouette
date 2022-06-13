@@ -26,9 +26,9 @@ jobs:
           ~/.cabal/store
           dist-newstyle
         ## We can use the counter to invalidate the cache whenever necessary
-        key: cabal-cache-0-${{ github.sha }}
+        key: cabal-cache-1-${{ github.sha }}
         restore-keys: |
-          cabal-cache-0-
+          cabal-cache-1-
 
     - name: Accessing the result cache
       uses: actions/cache@v2
@@ -64,11 +64,8 @@ jobs:
       run: |
         echo "!! CABAL TEST OUTPUT:"
         cat pirouette-cabal-test.out
-        echo "!! HLINT OUTPUT:"
-        cat pirouette-hlint.out
         cabal_res=$(cat pirouette-cabal-test.res | cut -d':' -f2)
-        hlint_res=$(cat pirouette-hlint.res | cut -d':' -f2)
-        if [[ "$cabal_res" != "0" ]] || [[ "$hlint_res" != "0" ]]; then
+        if [[ "$cabal_res" != "0" ]]; then
           exit 1
         fi
 
