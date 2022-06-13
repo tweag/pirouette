@@ -7,7 +7,7 @@ import Pirouette.SMT.Constraints
 import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import qualified PlutusCore as P
 
-instance LanguageSMT BuiltinsOfPIR where
+instance LanguageSMT PlutusIR where
   translateBuiltinType = trPIRType
 
   -- translateBuiltinTerm = error "translateBuiltinTerm (t :: BuiltinTerms PlutusIR): not yet impl"
@@ -15,7 +15,7 @@ instance LanguageSMT BuiltinsOfPIR where
   translateConstant = trPIRConstant
   isStuckBuiltin = error "isStuckBuiltin (t :: TermMeta PlutusIR meta): not yet impl"
 
-instance LanguageSMTBranches BuiltinsOfPIR where
+instance LanguageSMTBranches PlutusIR where
   branchesBuiltinTerm _tm _translator _args = pure Nothing
 
 trPIRType :: PIRBuiltinType -> SimpleSMT.SExpr

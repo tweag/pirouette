@@ -17,12 +17,13 @@ library
   exposed-modules:
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
-      Language.Pirouette.Example.QuasiQuoter
       Language.Pirouette.Example.Syntax
-      Language.Pirouette.Example.ToTerm
       Language.Pirouette.PlutusIR.Builtins
       Language.Pirouette.PlutusIR.SMT
       Language.Pirouette.PlutusIR.ToTerm
+      Language.Pirouette.QuasiQuoter
+      Language.Pirouette.QuasiQuoter.Syntax
+      Language.Pirouette.QuasiQuoter.ToTerm
       ListT.Extra
       ListT.Weighted
       ListT.Weighted.Examples
@@ -36,9 +37,6 @@ library
       Pirouette.SMT.Constraints
       Pirouette.SMT.SimpleSMT
       Pirouette.SMT.Translation
-      Pirouette.Specializer.PIRTransformations
-      Pirouette.Specializer.Rewriting
-      Pirouette.Specializer.TypeDecl
       Pirouette.Term.Symbolic.Eval
       Pirouette.Term.Symbolic.Interface
       Pirouette.Term.Symbolic.Prover

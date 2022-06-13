@@ -82,18 +82,18 @@ type DepsOf name = M.Map name (S.Set (Dep name))
 -- To know which one is correct, we need to know which De Bruijn index each of
 -- the type dependencies had.
 data Dep name
-  = TermDep name (Type BuiltinsOfPIR)
+  = TermDep name (Type PlutusIR)
   | TypeDep Int name SystF.Kind
   deriving (Eq, Show, Ord)
 
 -- |Given a list of dependencies; separates them into type and term dependencies.
 -- Returns the type dependencies in the order they should be declared at.
-unzipDeps :: [Dep name] -> ([(name, SystF.Kind)], [(name, Type BuiltinsOfPIR)])
+unzipDeps :: [Dep name] -> ([(name, SystF.Kind)], [(name, Type PlutusIR)])
 unzipDeps ds0 =
   let (rawTyDeps, termDeps) = go ds0
    in (map snd (L.sortBy (flip compare `on` fst) rawTyDeps), termDeps)
   where
-    go :: [Dep name] -> ([(Int, (name, SystF.Kind))], [(name, Type BuiltinsOfPIR)])
+    go :: [Dep name] -> ([(Int, (name, SystF.Kind))], [(name, Type PlutusIR)])
     go [] = ([], [])
     go (TermDep n ty : ds) = second ((n, ty):) $ go ds
     go (TypeDep i n ki : ds) = first ((i , (n, ki)):) $ go ds
@@ -102,7 +102,7 @@ unzipDeps ds0 =
 -- a set of type synonyms, that we will expand as soon as we find them.
 data St name = St {
     stDepsOf :: DepsOf name,
-    stTypeSynonyms :: M.Map name (Type BuiltinsOfPIR)
+    stTypeSynonyms :: M.Map name (Type PlutusIR)
   }
 
 stEmpty :: St name
@@ -110,17 +110,17 @@ stEmpty = St M.empty M.empty
 
 -- | The translation environment consists of the stack of bound term and type variables.
 data Env name = Env
-  { termStack :: [(name, Type BuiltinsOfPIR)],
+  { termStack :: [(name, Type PlutusIR)],
     typeStack :: [(name, SystF.Kind)]
   }
 
 envEmpty :: Env name
 envEmpty = Env [] []
 
-pushNames :: [(name, Type BuiltinsOfPIR)] -> Env name -> Env name
+pushNames :: [(name, Type PlutusIR)] -> Env name -> Env name
 pushNames ns env = env {termStack = ns ++ termStack env}
 
-pushName :: name -> Type BuiltinsOfPIR -> Env name -> Env name
+pushName :: name -> Type PlutusIR -> Env name -> Env name
 pushName n ty env = env {termStack = (n, ty) : termStack env}
 
 pushType :: name -> SystF.Kind -> Env name -> Env name
@@ -134,7 +134,7 @@ trProgram ::
   forall tyname name loc.
   (PIRConstraint tyname name P.DefaultFun) =>
   PIR.Program tyname name DefaultUni P.DefaultFun loc ->
-  Except (Err loc) (Term BuiltinsOfPIR, Decls BuiltinsOfPIR)
+  Except (Err loc) (Term PlutusIR, Decls PlutusIR)
 trProgram (PIR.Program _ t) = runReaderT (evalStateT (runWriterT (fst <$> trTerm Nothing t)) stEmpty) envEmpty
 
 -- | Translates a program into a list of declarations, ignoring the body.
@@ -142,7 +142,7 @@ trProgramDecls ::
   forall tyname name loc.
   (PIRConstraint tyname name P.DefaultFun) =>
   PIR.Program tyname name DefaultUni P.DefaultFun loc ->
-  Except (Err loc) (Decls BuiltinsOfPIR)
+  Except (Err loc) (Decls PlutusIR)
 trProgramDecls = fmap snd . trProgram
 
 -- | Translates a list of bindings into declarations. The recursivity is important since it
@@ -151,7 +151,7 @@ trBindings ::
   forall tyname name loc.
   (PIRConstraint tyname name P.DefaultFun) =>
   [(PIR.Recursivity, PIR.Binding tyname name DefaultUni P.DefaultFun loc)] ->
-  TrM loc (Decls BuiltinsOfPIR)
+  TrM loc (Decls PlutusIR)
 trBindings bs = do
   -- split the term and the data/type binds; we'll handle the data/type bindings first as
   -- those are simple.
@@ -218,7 +218,7 @@ bindingCtxDeps termBinds = do
 termCtxDeps ::
   forall tyname name uni loc.
   (PIRConstraint tyname name P.DefaultFun) =>
-  [(Name, Type BuiltinsOfPIR)] ->
+  [(Name, Type PlutusIR)] ->
   [(Name, SystF.Kind)] ->
   DepsOf Name ->
   PIR.Term tyname name uni P.DefaultFun loc ->
@@ -271,7 +271,7 @@ trDataOrTypeBinding ::
   forall tyname name loc.
   (PIRConstraint tyname name P.DefaultFun) =>
   PIR.Binding tyname name DefaultUni P.DefaultFun loc ->
-  TrM loc (Decls BuiltinsOfPIR)
+  TrM loc (Decls PlutusIR)
 trDataOrTypeBinding (PIR.TermBind l _ _ _) = throwError $ NoTermBindAllowed l
 trDataOrTypeBinding (PIR.TypeBind _ tyvard tybody) =
   let tyName = toName $ PIR._tyVarDeclName tyvard
@@ -305,7 +305,7 @@ trTypeWithArgs ::
   (ToName tyname) =>
   [(Name, SystF.Kind)] ->
   PIR.Type tyname DefaultUni loc ->
-  TrM loc (Type BuiltinsOfPIR)
+  TrM loc (Type PlutusIR)
 trTypeWithArgs env ty = do
   ty' <- local (pushTypes $ reverse env) $ trType ty
   return $ L.foldl' (\t (v, k) -> SystF.TyAll (SystF.Ann v) k t) ty' env
@@ -313,7 +313,7 @@ trTypeWithArgs env ty = do
 trType ::
   (ToName tyname) =>
   PIR.Type tyname DefaultUni loc ->
-  TrM loc (Type BuiltinsOfPIR)
+  TrM loc (Type PlutusIR)
 trType (PIR.TyLam _ v k body) =
   SystF.TyLam (SystF.Ann $ toName v) (trKind k) <$> local (pushType (toName v) (trKind k)) (trType body)
 trType (PIR.TyForall _ v k body) =
@@ -344,9 +344,9 @@ trTermType ::
   PIR.Term tyname name DefaultUni P.DefaultFun loc ->
   PIR.Type tyname DefaultUni loc ->
   WriterT
-    (Decls BuiltinsOfPIR)
+    (Decls PlutusIR)
     (TrM loc)
-    (Term BuiltinsOfPIR, Type BuiltinsOfPIR)
+    (Term PlutusIR, Type PlutusIR)
 trTermType n t ty = do
   (t', f) <- trTerm (Just n) t
   (t',) . f <$> lift (trType ty)
@@ -369,9 +369,9 @@ trTerm ::
   Maybe Name ->
   PIR.Term tyname name DefaultUni P.DefaultFun loc ->
   WriterT
-    (Decls BuiltinsOfPIR)
+    (Decls PlutusIR)
     (TrM loc)
-    (Term BuiltinsOfPIR, Type BuiltinsOfPIR -> Type BuiltinsOfPIR)
+    (Term PlutusIR, Type PlutusIR -> Type PlutusIR)
 trTerm mn t = do
   deps <- gets stDepsOf
   let vs = maybe [] S.toList $ mn >>= (`M.lookup` deps)
@@ -410,7 +410,7 @@ trTerm mn t = do
     -- That's what the 'getTransitiveDepsAsArgs' below is responsible for doing.
     go ::
       PIR.Term tyname name DefaultUni P.DefaultFun loc ->
-      WriterT (Decls BuiltinsOfPIR) (TrM loc) (Term BuiltinsOfPIR)
+      WriterT (Decls PlutusIR) (TrM loc) (Term PlutusIR)
     go (PIR.Var _ n) = do
       vs <- asks termStack
       case L.elemIndex (toName n) (map fst vs) of
@@ -441,7 +441,7 @@ trTerm mn t = do
 
     -- Given a name that is not a bound variable, returns which arguments we have to
     -- provide to satisfy its dependencies. Check the comment to 'go' above for an example.
-    getTransitiveDepsAsArgs :: Name -> TrM loc [Arg BuiltinsOfPIR]
+    getTransitiveDepsAsArgs :: Name -> TrM loc [Arg PlutusIR]
     getTransitiveDepsAsArgs n = do
       vs <- asks (map fst . termStack)
       ts <- asks (map fst . typeStack)
@@ -473,7 +473,7 @@ trTerm mn t = do
 trPIRTerm ::
   PIRConstraint tyname name P.DefaultFun =>
   PIR.Term tyname name DefaultUni P.DefaultFun loc ->
-  Except (Err loc) (Term BuiltinsOfPIR)
+  Except (Err loc) (Term PlutusIR)
 trPIRTerm t = runReaderT (evalStateT (fst <$> runWriterT (fst <$> trTerm Nothing t)) stEmpty) envEmpty
 
 -- * Some Auxiliary Functions
@@ -482,7 +482,7 @@ isRec :: PIR.Recursivity -> Bool
 isRec PIR.Rec = True
 isRec _ = False
 
-termToDef :: PIR.Recursivity -> Term BuiltinsOfPIR -> Type BuiltinsOfPIR -> Definition BuiltinsOfPIR
+termToDef :: PIR.Recursivity -> Term PlutusIR -> Type PlutusIR -> Definition PlutusIR
 termToDef PIR.Rec = DFunction Rec
 termToDef PIR.NonRec = DFunction NonRec
 
