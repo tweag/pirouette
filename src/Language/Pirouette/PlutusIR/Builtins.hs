@@ -38,7 +38,7 @@ import Prettyprinter hiding (Pretty, pretty)
 
 -- | Defining the 'PlutusIR' as a language, which contains a set of builtin (types and terms)
 -- and constants.
-data BuiltinsOfPIR
+data PlutusIR
   deriving (Data, Typeable)
 
 deriving instance Data P.DefaultFun
@@ -47,10 +47,12 @@ deriving instance Lift P.DefaultFun
 
 deriving instance Lift P.Data
 
-instance LanguageBuiltins BuiltinsOfPIR where
-  type BuiltinTypes BuiltinsOfPIR = PIRBuiltinType
-  type BuiltinTerms BuiltinsOfPIR = P.DefaultFun
-  type Constants BuiltinsOfPIR = PIRConstant
+type PIRDefaultFun = P.DefaultFun
+
+instance LanguageBuiltins PlutusIR where
+  type BuiltinTypes PlutusIR = PIRBuiltinType
+  type BuiltinTerms PlutusIR = PIRDefaultFun
+  type Constants PlutusIR = PIRConstant
 
 cstToBuiltinType :: PIRConstant -> PIRBuiltinType
 cstToBuiltinType (PIRConstInteger _) = PIRTypeInteger
@@ -71,15 +73,15 @@ cstToBuiltinType (PIRConstData _) = PIRTypeData
 -- | Shortcut for system F arrows
 infixr 2 :->:
 
-pattern (:->:) :: Type BuiltinsOfPIR -> Type BuiltinsOfPIR -> Type BuiltinsOfPIR
+pattern (:->:) :: Type PlutusIR -> Type PlutusIR -> Type PlutusIR
 pattern (:->:) x y = SystF.TyFun x y
 
 -- | Helper to lift PIR builtin types to system F
-systfType :: PIRBuiltinType -> Type BuiltinsOfPIR
+systfType :: PIRBuiltinType -> Type PlutusIR
 systfType = SystF.TyPure . SystF.Free . TyBuiltin
 
 -- Shortcuts for PIR builtin types in systemF
-tInt, tBool, tUnit, tByteString, tString, tData :: Type BuiltinsOfPIR
+tInt, tBool, tUnit, tByteString, tString, tData :: Type PlutusIR
 tInt = systfType PIRTypeInteger
 tBool = systfType PIRTypeBool
 tUnit = systfType PIRTypeUnit
@@ -88,22 +90,22 @@ tString = systfType PIRTypeString
 tData = systfType PIRTypeData
 
 -- | Shortcuts for type variables
-tVar :: String -> Integer -> Type BuiltinsOfPIR
+tVar :: String -> Integer -> Type PlutusIR
 tVar name deBruijn = SystF.TyPure $ SystF.Bound (SystF.Ann (fromString name)) deBruijn
 
 -- | Polymorphic PIR list type shortcut
-tList :: Type BuiltinsOfPIR -> Type BuiltinsOfPIR
+tList :: Type PlutusIR -> Type PlutusIR
 tList x = SystF.TyApp (SystF.Free (TyBuiltin (PIRTypeList Nothing))) [x]
 
 -- | Polymorphic PIR pair type shortcut
-tPair :: Type BuiltinsOfPIR -> Type BuiltinsOfPIR -> Type BuiltinsOfPIR
+tPair :: Type PlutusIR -> Type PlutusIR -> Type PlutusIR
 tPair x y = SystF.TyApp (SystF.Free (TyBuiltin (PIRTypePair Nothing Nothing))) [x, y]
 
 -- | "Forall" type shortcut helper for types of kind *
 forall :: SystF.Ann (SystF.Ann ann) -> SystF.AnnType ann tyVar -> SystF.AnnType ann tyVar
 forall x = SystF.TyAll (SystF.ann x) SystF.KStar
 
-instance LanguageBuiltinTypes BuiltinsOfPIR where
+instance LanguageBuiltinTypes PlutusIR where
   typeOfConstant = systfType . cstToBuiltinType
 
   typeOfBuiltin P.AddInteger = tInt :->: tInt :->: tInt
