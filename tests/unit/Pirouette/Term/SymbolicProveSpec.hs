@@ -12,7 +12,7 @@ import Data.Maybe (isJust)
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity
 import Pirouette.Monad
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import qualified PureSMT
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Symbolic.Prover
 import Pirouette.Term.SymbolicEvalUtils
@@ -244,8 +244,8 @@ ohearnTest =
     "OHearn"
     [ testCase "[y == 11] ohearn [snd result == 42] counter" $
         let test = isCounterWith $ \(Model p) ->
-              case lookup (SimpleSMT.Atom "pir_x") p of
-                Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", SimpleSMT.Atom fstX, _])) ->
+              case lookup (PureSMT.Atom "pir_x") p of
+                Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", PureSMT.Atom fstX, _])) ->
                   odd (read fstX)
                 _ -> False
          in exec (proveAny (\st -> sestConsumedFuel st > 50) test) conditionals1 condWrongTriple `satisfies` isJust
@@ -315,9 +315,9 @@ ohearnTestPeano =
     "OHearn Peano"
     [ testCase "[y == 1] ohearn-peano [snd result == 2] counter" $
         let test = isCounterWith $ \(Model p) ->
-              case lookup (SimpleSMT.Atom "pir_x") p of
-                Just (SimpleSMT.Other (SimpleSMT.List [SimpleSMT.Atom "pir_D", fstX, _])) ->
-                  fstX == SimpleSMT.List [SimpleSMT.Atom "pir_S", SimpleSMT.Atom "pir_Z"]
+              case lookup (PureSMT.Atom "pir_x") p of
+                Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", fstX, _])) ->
+                  fstX == PureSMT.List [PureSMT.Atom "pir_S", PureSMT.Atom "pir_Z"]
                 _ -> False
          in exec (proveAny (\st -> sestConsumedFuel st > 50) test) conditionals1Peano condWrongTriplePeano `satisfies` isJust
         -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $

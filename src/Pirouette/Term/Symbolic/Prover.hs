@@ -12,7 +12,7 @@ import qualified Data.Text as T
 import Pirouette.Monad (termIsWHNFOrMeta)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
-import Pirouette.SMT.SimpleSMT (SExpr (..))
+import PureSMT (SExpr (..))
 import Pirouette.SMT.Translation
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Syntax

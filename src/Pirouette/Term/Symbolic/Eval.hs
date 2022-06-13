@@ -7,7 +7,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -87,7 +86,7 @@ import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT as SMT
 import qualified Pirouette.SMT.Constraints as C
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import qualified PureSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
@@ -494,7 +493,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
   where
-    justEvaluateArgs = 
+    justEvaluateArgs =
       R.App hd <$> symEvalMatchesFirst
         (\case R.TyArg {} -> Nothing ; R.TermArg v -> Just v)
         R.TermArg
@@ -708,7 +707,7 @@ data UserDeclaredConstraints lang = UserDeclaredConstraints
   { udcInputs :: [(Name, Type lang)],
     udcOutputCond :: OutCond lang,
     udcInputCond :: InCond lang,
-    udcAdditionalDefs :: IO [SimpleSMT.SExpr],
+    udcAdditionalDefs :: IO [PureSMT.SExpr],
     udcAxioms :: [UniversalAxiom lang]
   }
 
@@ -716,7 +715,7 @@ newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
 
 newtype InCond lang = InCond (Constraint lang)
 
-newtype Model = Model [(SimpleSMT.SExpr, SimpleSMT.Value)]
+newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
   deriving (Eq, Show)
 
 data EvaluationWitness lang
@@ -727,7 +726,7 @@ data EvaluationWitness lang
 
 data UniversalAxiom lang = UniversalAxiom
   { boundVars :: [(Name, Type lang)],
-    axiomBody :: [SimpleSMT.SExpr] -> SimpleSMT.SExpr
+    axiomBody :: [PureSMT.SExpr] -> PureSMT.SExpr
   }
 
 runIncorrectness ::
@@ -754,7 +753,7 @@ pathsIncorrectness shouldStop udc t =
 pathsIncorrectness_ ::
   (SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
-  (SimpleSMT.Solver -> m (UserDeclaredConstraints lang)) ->
+  (PureSMT.Solver -> m (UserDeclaredConstraints lang)) ->
   Term lang ->
   m [Path lang (EvaluationWitness lang)]
 pathsIncorrectness_ shouldStop getUdc t = symevalT shouldStop $ do
@@ -828,7 +827,7 @@ instantiateAxiomWithVars axioms env =
               ( \UniversalAxiom {..} ->
                   when (List.any (\(_, tyV) -> tyV == ty) boundVars) $
                     if length boundVars == 1
-                      then void $ SimpleSMT.assert solver (axiomBody [SimpleSMT.symbol (SMT.toSmtName name)])
+                      then void $ PureSMT.assert solver (axiomBody [PureSMT.symbol (SMT.toSmtName name)])
                       else error "Several universally bound variables not handled yet" -- TODO
               )
               axioms
@@ -837,7 +836,7 @@ instantiateAxiomWithVars axioms env =
 
 instance Pretty Model where
   pretty (Model m) =
-    let simplified = map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
+    let simplified = map (bimap (PureSMT.overAtomS f) (PureSMT.overAtomV f)) m
      in enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- simplified])
     where
       -- remove 'pir_' from the values
@@ -848,11 +847,11 @@ instance Pretty Model where
 
 showModelHaskellish :: Model -> Doc ann
 showModelHaskellish (Model m) =
-  let simplified = map (bimap (SimpleSMT.overAtomS f) (SimpleSMT.overAtomV f)) m
+  let simplified = map (bimap (PureSMT.overAtomS f) (PureSMT.overAtomV f)) m
    in enclose "{ " " }" $
         align $
           vsep
-            [ pretty n <+> "↦" <+> SimpleSMT.ppValueHaskellish term
+            [ pretty n <+> "↦" <+> PureSMT.ppValueHaskellish term
               | (n, term) <- simplified
             ]
   where

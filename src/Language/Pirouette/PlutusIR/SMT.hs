@@ -3,7 +3,7 @@ module Language.Pirouette.PlutusIR.SMT where
 import Language.Pirouette.PlutusIR.Builtins
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import qualified PureSMT
 
 instance LanguageSMT BuiltinsOfPIR where
   translateBuiltinType = trPIRType
@@ -14,17 +14,17 @@ instance LanguageSMT BuiltinsOfPIR where
 instance LanguageSMTBranches BuiltinsOfPIR where
   branchesBuiltinTerm _tm _translator _args = pure Nothing
 
-trPIRType :: PIRBuiltinType -> SimpleSMT.SExpr
-trPIRType PIRTypeInteger = SimpleSMT.tInt
-trPIRType PIRTypeBool = SimpleSMT.tBool
-trPIRType PIRTypeString = SimpleSMT.tString
-trPIRType PIRTypeByteString = SimpleSMT.tString
-trPIRType PIRTypeUnit = SimpleSMT.tUnit
-trPIRType PIRTypeData = SimpleSMT.tUnit -- TODO: Temporary represention of data
+trPIRType :: PIRBuiltinType -> PureSMT.SExpr
+trPIRType PIRTypeInteger = PureSMT.tInt
+trPIRType PIRTypeBool = PureSMT.tBool
+trPIRType PIRTypeString = PureSMT.tString
+trPIRType PIRTypeByteString = PureSMT.tString
+trPIRType PIRTypeUnit = PureSMT.tUnit
+trPIRType PIRTypeData = PureSMT.tUnit -- TODO: Temporary represention of data
 -- Note: why do Pair have maybes?
 -- Note answer, because types can be partially applied in System F,
 -- and `Pair a` is represented by `PIRTypePair (pirType a) Nothing`
 trPIRType (PIRTypePair (Just pirType1) (Just pirType2)) =
-  SimpleSMT.tTuple [trPIRType pirType1, trPIRType pirType2]
+  PureSMT.tTuple [trPIRType pirType1, trPIRType pirType2]
 trPIRType pirType =
   error $ "Translate builtin type to smtlib: " <> show pirType <> " not yet handled."

@@ -34,13 +34,11 @@ library
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
-      Pirouette.SMT.SimpleSMT
       Pirouette.SMT.Translation
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.Symbolic.Eval
-      Pirouette.Term.Symbolic.Interface
       Pirouette.Term.Symbolic.Prover
       Pirouette.Term.Symbolic.Prover.Runner
       Pirouette.Term.Syntax
@@ -58,6 +56,9 @@ library
       Pirouette.Transformations.Monomorphization
       Pirouette.Transformations.Prenex
       Pirouette.Transformations.Utils
+      PureSMT
+      PureSMT.Process
+      PureSMT.SExpr
   other-modules:
       Paths_pirouette
   hs-source-dirs:
@@ -97,6 +98,7 @@ library
     , text
     , tlaplus
     , tlaplus-qq
+    , typed-process
     , uniplate
   default-language: Haskell2010
 
@@ -155,5 +157,6 @@ test-suite spec
     , text
     , tlaplus
     , tlaplus-qq
+    , typed-process
     , uniplate
   default-language: Haskell2010
