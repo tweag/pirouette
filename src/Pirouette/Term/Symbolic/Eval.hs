@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Pirouette.Term.Symbolic.Eval
   ( -- * Runners
@@ -91,6 +92,7 @@ import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty (..))
+import Debug.Trace
 
 -- import Debug.Trace (trace)
 
@@ -229,14 +231,16 @@ runSymEvalT st symEvalT =
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEvalTWorker ::
+  forall lang m a .
   (SymEvalConstr lang m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
   WeightedListT m (Path lang a)
 runSymEvalTWorker st symEvalT = do
+  ctx <- lift prepSolver
   solvPair <- SMT.runSolverT s $ do
-    usedNames <- prepSolver
-    let newState = st {sestKnownNames = usedNames ++ sestKnownNames st}
+    SMT.initSolver ctx
+    let newState = st {sestKnownNames = solverSharedCtxUsedNames ctx ++ sestKnownNames st}
     runSymEvalTRaw newState symEvalT
   let paths = uncurry path solvPair
   return paths
@@ -244,7 +248,7 @@ runSymEvalTWorker st symEvalT = do
     -- we'll rely on cvc4 with dbg messages
     -- s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    s = SMT.cvc4_ALL_SUPPORTED False
+    s = SMT.cvc4_ALL_SUPPORTED True
 
     lkupTypeDefOf decls name = case M.lookup name decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
@@ -254,13 +258,14 @@ runSymEvalTWorker st symEvalT = do
       Just (DFunDef fdef) -> Just (name, fdef)
       _ -> Nothing
 
-    prepSolver :: (SymEvalConstr lang m) => SMT.SolverT (WeightedListT m) [Name]
+    prepSolver :: m (SolverSharedCtx lang)
     prepSolver = do
-      decls <- lift $ lift prtAllDefs
-      dependencyOrder <- lift $ lift prtDependencyOrder
+      decls <- prtAllDefs
+      dependencyOrder <- prtDependencyOrder
       let types = mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
-      let fns = mapMaybe (R.argElim (const Nothing) (lkupFunDefOf decls)) dependencyOrder
-      SMT.initSolver $ SolverSharedCtx types fns
+      let allFns = mapMaybe (R.argElim (const Nothing) (lkupFunDefOf decls)) dependencyOrder
+      let fns = mapMaybe (\(n, fd) -> (n,) <$> SMT.supportedUninterpretedFunction fd) allFns
+      return $ SolverSharedCtx types fns
 
 instance (Monad m) => Alternative (SymEvalT lang m) where
   empty = SymEvalT $ StateT $ const empty
@@ -851,7 +856,7 @@ showModelHaskellish (Model m) =
    in enclose "{ " " }" $
         align $
           vsep
-            [ pretty n <+> "↦" <+> PureSMT.ppValueHaskellish term
+            [ pretty n <+> "↦" <+> pretty term
               | (n, term) <- simplified
             ]
   where
@@ -880,8 +885,11 @@ data SolverSharedCtx lang = SolverSharedCtx
   { -- | List of datatypes to be declared
     solverCtxDatatypes :: [(Name, TypeDef lang)],
     -- | List of functions to be declared as uninterpreted functions.
-    solverCtxUninterpretedFuncs :: [(Name, FunDef lang)]
+    solverCtxUninterpretedFuncs :: [(Name, ([PureSMT.SExpr], PureSMT.SExpr))]
   }
+
+solverSharedCtxUsedNames :: SolverSharedCtx lang -> [Name]
+solverSharedCtxUsedNames (SolverSharedCtx tys fns) = map fst tys ++ map fst fns
 
 data CheckPropertyProblem lang = CheckPropertyProblem
   { cpropOut :: Constraint lang,
@@ -897,17 +905,16 @@ data SolverProblem lang :: * -> * where
   CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
   CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
-instance (SMT.LanguageSMT lang) => SMT.SolverInit (SolverSharedCtx lang) [Name] where
+instance (SMT.LanguageSMT lang) => SMT.Solve lang where
+  type Ctx lang = SolverSharedCtx lang
+  type Problem lang = SolverProblem lang
   initSolver SolverSharedCtx {..} = do
-    declNames <- runExceptT $ do
-      dts <- SMT.declareDatatypes solverCtxDatatypes
-      fns <- SMT.declareAsManyUninterpretedFunctionsAsPossible solverCtxUninterpretedFuncs
-      pure (dts ++ fns)
-    case declNames of
-      Right usedNames -> return usedNames
-      Left e -> error e
+      e <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
+      trace ("decl datatypes: " ++ show e) (return ())
+      mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
+      trace ("decl funs: " ++ show (map fst solverCtxUninterpretedFuncs)) (return ())
 
-instance (SMT.LanguageSMT lang) => SMT.Solve lang SolverProblem where
+
   solveProblem (CheckPath CheckPathProblem {..}) = pathIsPlausible cpathState
     where
       pathIsPlausible ::

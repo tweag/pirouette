@@ -23,6 +23,8 @@ module Pirouette.SMT
     solverPop,
     declareDatatype,
     declareDatatypes,
+    supportedUninterpretedFunction,
+    declareRawFun,
     declareUninterpretedFunction,
     declareUninterpretedFunctions,
     declareAsManyUninterpretedFunctionsAsPossible,
@@ -34,7 +36,7 @@ module Pirouette.SMT
     getModel,
 
     -- * New interface
-    Solve (..), SolverInit (..),
+    Solve (..),
 
     -- * Convenient re-exports
     Constraint (..),
@@ -68,19 +70,11 @@ import System.IO.Unsafe (unsafePerformIO)
 -- the solver with a shared context and (B) solve different problems. The @problems@ is supposed
 -- to be a GADT in order to fix the different result type of solving different problems.
 
--- PUZZLE: The initSolver is currently returning some data that is later used under 'solveProblem';
--- we did this because the declareAsManyUninterpretedFunctionsAsPossible function returns the
--- names of the declared functions and we need to know those to futher translate terms
--- into SMT. Yet, it should be possible for us to "dry-run" that translation at first, simplifying
--- this whole situation and removing this initRes type variable
---
--- In fact; I won't even add it to the 'solveProblem' not to fall into using it
-
-class SolverInit ctx initRes where
-  initSolver :: MonadIO m => ctx -> SolverT m initRes
-
-class Solve lang (problem :: * -> * -> *) where
-  solveProblem :: (PirouetteReadDefs lang m, MonadIO m) => problem lang probRes -> SolverT m probRes
+class Solve lang where
+  type Ctx lang :: *
+  type Problem lang :: * -> *
+  initSolver :: (MonadIO m) => Ctx lang -> SolverT m ()
+  solveProblem :: (PirouetteReadDefs lang m, MonadIO m) => Problem lang probRes -> SolverT m probRes
 
 -- OLD CODE
 
@@ -153,6 +147,24 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
 declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
 declareDatatypes = fmap concat . mapM (uncurry declareDatatype)
+
+-- |If a function can be declared as an uninterpreted function, returns
+-- the type of its arguments and the type of its result.
+supportedUninterpretedFunction ::
+  (LanguageSMT lang) => FunDef lang -> Maybe ([PureSMT.SExpr], PureSMT.SExpr)
+supportedUninterpretedFunction FunDef {funTy} = toMaybe $ do
+  let (args, result) = R.tyFunArgs funTy
+  (args', _) <- runWriterT $ mapM translateType args
+  (result', _) <- runWriterT $ translateType result
+  return (args', result')
+ where
+   toMaybe = either (const Nothing) Just . runExcept
+
+declareRawFun ::
+  (MonadIO m) => Name -> ([PureSMT.SExpr], PureSMT.SExpr) -> SolverT m ()
+declareRawFun n (args, res) = do
+  solver <- ask
+  void $ liftIO $ PureSMT.declareFun solver (toSmtName n) args res
 
 -- | Declare a single function signature as uninterpreted
 -- in the current solver session.
