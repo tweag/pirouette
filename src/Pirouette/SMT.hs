@@ -73,8 +73,8 @@ import System.IO.Unsafe (unsafePerformIO)
 class Solve lang where
   type Ctx lang :: *
   type Problem lang :: * -> *
-  initSolver :: (MonadIO m) => Ctx lang -> SolverT m ()
-  solveProblem :: (PirouetteReadDefs lang m, MonadIO m) => Problem lang probRes -> SolverT m probRes
+  initSolver :: Ctx lang -> PureSMT.Solver -> IO ()
+  solveProblem :: Problem lang probRes -> PureSMT.Solver -> IO probRes
 
 -- OLD CODE
 

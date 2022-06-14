@@ -69,7 +69,7 @@ where
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Reader (ask)
+import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Bifunctor (bimap)
@@ -240,7 +240,8 @@ runSymEvalTWorker ::
 runSymEvalTWorker st symEvalT = do
   ctx <- lift prepSolver
   solvPair <- SMT.runSolverT s $ do
-    SMT.initSolver ctx
+    solver <- ask
+    liftIO $ SMT.initSolver ctx solver
     let newState = st {sestKnownNames = solverSharedCtxUsedNames ctx `S.union` sestKnownNames st}
     runSymEvalTRaw newState symEvalT
   let paths = uncurry path solvPair
@@ -818,7 +819,9 @@ pruneAndValidate ::
 pruneAndValidate cOut cIn axioms =
   SymEvalT $
     StateT $ \st -> do
-      contradictProperty <- SMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st)
+      solver <- ask
+      defs <- lift $ lift getPrtOrderedDefs
+      contradictProperty <- liftIO $ SMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st defs) solver
       -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ maybe "--" (show . pretty) cIn ++ "? " ++ show contradictProperty
       return (contradictProperty, st)
 
@@ -897,29 +900,47 @@ data CheckPropertyProblem lang = CheckPropertyProblem
   { cpropOut :: Constraint lang,
     cpropIn :: Maybe (Constraint lang),
     cpropAxioms :: [UniversalAxiom lang],
-    cpropState :: SymEvalSt lang
+    cpropState :: SymEvalSt lang,
+    cpropDefs :: PrtOrderedDefs lang
   }
 
-newtype CheckPathProblem lang = CheckPathProblem {cpathState :: SymEvalSt lang}
+data CheckPathProblem lang = CheckPathProblem
+  { cpathState :: SymEvalSt lang,
+    cpathDefs :: PrtOrderedDefs lang
+  }
 
 -- | Different queries that we know how to solve
 data SolverProblem lang :: * -> * where
   CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
   CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
+-- HACKS DUE TO #106: https://github.com/tweag/pirouette/issues/106
+type HackSolver lang a = SMT.SolverT (ReaderT (PrtOrderedDefs lang) (PrtT IO)) a
+
+hackSolver :: (MonadIO m) => PureSMT.Solver -> SMT.SolverT m a -> m a
+hackSolver s = flip runReaderT s . SMT.unSolverT
+
+hackSolverPrt :: PureSMT.Solver -> PrtOrderedDefs lang -> HackSolver lang a -> IO a
+hackSolverPrt s defs = wrap <=< (mockPrtT . flip runReaderT defs . flip runReaderT s . SMT.unSolverT)
+  where
+    wrap :: (Either String a, [LogMessage]) -> IO a
+    wrap (Left err, _) = error err
+    wrap (Right a, _) = return a
+
 instance (SMT.LanguageSMT lang) => SMT.Solve lang where
   type Ctx lang = SolverSharedCtx lang
   type Problem lang = SolverProblem lang
-  initSolver SolverSharedCtx {..} = do
-      e <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
-      mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
+  initSolver SolverSharedCtx {..} s = hackSolver s $ do
+     e <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
+     mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
 
-  solveProblem (CheckPath CheckPathProblem {..}) = pathIsPlausible cpathState
+  solveProblem (CheckPath CheckPathProblem {..}) s =
+    hackSolverPrt s cpathDefs $ pathIsPlausible cpathState
     where
       pathIsPlausible ::
-        (PirouetteReadDefs lang n, SMT.LanguageSMT lang, MonadIO n) =>
+        (SMT.LanguageSMT lang) =>
         SymEvalSt lang ->
-        SMT.SolverT n Bool
+        HackSolver lang Bool
       pathIsPlausible env
         | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
         | otherwise = do
@@ -939,20 +960,20 @@ instance (SMT.LanguageSMT lang) => SMT.Solve lang where
             SMT.Unsat -> False
             _ -> True
 
-  solveProblem (CheckProperty CheckPropertyProblem {..}) =
-    checkProperty cpropOut cpropIn cpropAxioms cpropState
+  solveProblem (CheckProperty CheckPropertyProblem {..}) s =
+    hackSolverPrt s cpropDefs $ checkProperty cpropOut cpropIn cpropAxioms cpropState
    where
     -- Our aim is to prove that
     -- (pathConstraints /\ cOut) => cIn.
     -- This is equivalent to the unsatisfiability of
     -- pathConstraints /\ cOut /\ (not cIn).
     checkProperty ::
-      (SMT.LanguageSMT lang, MonadIO m, LanguagePretty lang, PirouetteReadDefs lang m) =>
+      (SMT.LanguageSMT lang, LanguagePretty lang) =>
       Constraint lang ->
       Maybe (Constraint lang) ->
       [UniversalAxiom lang] ->
       SymEvalSt lang ->
-      SMT.SolverT m PruneResult
+      HackSolver lang PruneResult
     checkProperty cOut cIn axioms env = do
       SMT.solverPush
       let vars = sestGamma env
