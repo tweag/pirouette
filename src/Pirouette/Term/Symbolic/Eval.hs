@@ -241,7 +241,7 @@ runSymEvalTWorker st symEvalT = do
   ctx <- lift prepSolver
   solvPair <- SMT.runSolverT s $ do
     solver <- ask
-    liftIO $ SMT.initSolver ctx solver
+    liftIO $ PureSMT.initSolver ctx solver
     let newState = st {sestKnownNames = solverSharedCtxUsedNames ctx `S.union` sestKnownNames st}
     runSymEvalTRaw newState symEvalT
   let paths = uncurry path solvPair
@@ -821,7 +821,7 @@ pruneAndValidate cOut cIn axioms =
     StateT $ \st -> do
       solver <- ask
       defs <- lift $ lift getPrtOrderedDefs
-      contradictProperty <- liftIO $ SMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st defs) solver
+      contradictProperty <- liftIO $ PureSMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st defs) solver
       -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ maybe "--" (show . pretty) cIn ++ "? " ++ show contradictProperty
       return (contradictProperty, st)
 
@@ -927,7 +927,7 @@ hackSolverPrt s defs = wrap <=< (mockPrtT . flip runReaderT defs . flip runReade
     wrap (Left err, _) = error err
     wrap (Right a, _) = return a
 
-instance (SMT.LanguageSMT lang) => SMT.Solve lang where
+instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
   type Ctx lang = SolverSharedCtx lang
   type Problem lang = SolverProblem lang
   initSolver SolverSharedCtx {..} s = hackSolver s $ do

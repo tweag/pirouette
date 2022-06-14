@@ -35,9 +35,6 @@ module Pirouette.SMT
     getUnsatCore,
     getModel,
 
-    -- * New interface
-    Solve (..),
-
     -- * Convenient re-exports
     Constraint (..),
     AtomicConstraint (..),
@@ -65,16 +62,6 @@ import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import System.IO.Unsafe (unsafePerformIO)
-
--- The api to the SMT solver is simple; all the user has to do is inform us how to (A) initialize
--- the solver with a shared context and (B) solve different problems. The @problems@ is supposed
--- to be a GADT in order to fix the different result type of solving different problems.
-
-class Solve lang where
-  type Ctx lang :: *
-  type Problem lang :: * -> *
-  initSolver :: Ctx lang -> PureSMT.Solver -> IO ()
-  solveProblem :: Problem lang probRes -> PureSMT.Solver -> IO probRes
 
 -- OLD CODE
 
