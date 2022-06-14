@@ -31,9 +31,7 @@ module Pirouette.Symbolic.Eval
     symevalAnyPath,
     symEvalMatchesFirst,
     UniversalAxiom (..),
-    EvaluationWitness (..),
     Model (..),
-    showModelHaskellish,
 
     -- * Re-export types
     module X,
@@ -60,7 +58,6 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Bifunctor (bimap)
 import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
@@ -78,7 +75,6 @@ import qualified Pirouette.SMT.Monadic as SMT
 import Pirouette.Symbolic.Eval.Types as X
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
 -- | A 'SymEvalT' is equivalent to a function with type:
@@ -187,7 +183,7 @@ instance (MonadIO m) => MonadIO (SymEvalT lang m) where
   liftIO = lift . liftIO
 
 -- | Prune the set of paths in the current set.
-prune :: forall lang m a. (Pretty a, SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
+prune :: forall lang m a. (SymEvalConstr lang m) => SymEvalT lang m a -> SymEvalT lang m a
 prune xs = SymEvalT $
   StateT $ \st -> do
     (x, st') <- runSymEvalTRaw st xs
@@ -467,9 +463,6 @@ moreConstructors :: (SymEvalConstr lang m) => Int -> WriterT Any (SymEvalT lang 
 moreConstructors n = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
--- | Required to run 'prune'
-instance Pretty Any
-
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) (R.App (R.Meta r) []) = Just (symVarEq s r)
 unify (R.App (R.Meta s) []) t = Just (s =:= t)
@@ -517,40 +510,3 @@ pruneAndValidate cOut cIn axioms =
       contradictProperty <- liftIO $ PureSMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st defs) solver
       -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ maybe "--" (show . pretty) cIn ++ "? " ++ show contradictProperty
       return (contradictProperty, st)
-
-instance Pretty Model where
-  pretty (Model m) =
-    let simplified = map (bimap (PureSMT.overAtomS f) (PureSMT.overAtomV f)) m
-     in enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- simplified])
-    where
-      -- remove 'pir_' from the values
-      f "pir_Cons" = ":"
-      f "pir_Nil" = "[]"
-      f ('p' : 'i' : 'r' : '_' : rest) = rest
-      f other = other
-
-showModelHaskellish :: Model -> Doc ann
-showModelHaskellish (Model m) =
-  let simplified = map (bimap (PureSMT.overAtomS f) (PureSMT.overAtomV f)) m
-   in enclose "{ " " }" $
-        align $
-          vsep
-            [ pretty n <+> "↦" <+> pretty term
-              | (n, term) <- simplified
-            ]
-  where
-    -- remove 'pir_' from the values
-    f "pir_Cons" = ":"
-    f "pir_Nil" = "[]"
-    f ('p' : 'i' : 'r' : '_' : rest) = rest
-    f other = other
-
-instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
-  pretty Verified = "Verified"
-  pretty Discharged = "Discharged"
-  pretty (CounterExample t model) =
-    vsep
-      [ "COUNTER-EXAMPLE",
-        "Result:" <+> pretty t,
-        "Model:" <+> pretty model
-      ]

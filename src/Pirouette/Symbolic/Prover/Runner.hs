@@ -17,6 +17,7 @@ import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
+import Pirouette.Term.Syntax (pretty)
 
 data AssumeProve lang = Term lang :==>: Term lang
   deriving (Eq, Show)
@@ -69,7 +70,7 @@ printIRResult _ (Right (Just Path {pathResult = CounterExample _ model})) = do
   setSGR [SetColor Foreground Vivid Yellow]
   putStrLn "💸 COUNTEREXAMPLE FOUND"
   setSGR [Reset]
-  print $ showModelHaskellish model
+  print $ pretty model
 printIRResult steps (Right _) = do
   setSGR [SetColor Foreground Vivid Green]
   putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"

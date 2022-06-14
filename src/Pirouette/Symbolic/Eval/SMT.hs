@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -5,10 +6,14 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | This is Pirouette's SMT solver interface; you probably won't need to import
---  anything under the @SMT/@ folder explicitely unless you're trying to do some
---  very specific things or declaring a language. If you're declaring a language you probably
---  want only "Pirouette.SMT.Base" and "PureSMT" to bring the necessary
+-- | This is Pirouette's symbolic engine SMT solver interface. Inside the
+--  "Pirouette.Symbolic.Eval" namespace, this should be the only module that explicitely
+--  imports anything from the "Pirouette.SMT" namespace. Any additional needs from the symbolic
+--  engine should be encoded as a 'SolverProblem'.
+--
+--  You probably will never need to import anything under the @SMT/@ folder explicitely unless
+--  you're trying to do some very specific things or declaring a language.
+--  If you're declaring a language you probably want only "Pirouette.SMT.Base" and "PureSMT" to bring the necessary
 --  classes and definitions in scope. Check "Language.Pirouette.PlutusIR.SMT" for an example.
 module Pirouette.Symbolic.Eval.SMT where
 
@@ -26,6 +31,8 @@ import qualified Pirouette.SMT.Monadic as SMT
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
 import qualified PureSMT
+import Data.Bifunctor (bimap)
+import Prettyprinter (enclose, align, (<+>), vsep)
 
 -- | Contains the shared context of a session with the solver. Datatypes will
 -- be declared first, then the uninterpreted functions. Definitions will
@@ -41,10 +48,19 @@ solverSharedCtxUsedNames :: SolverSharedCtx lang -> S.Set Name
 solverSharedCtxUsedNames (SolverSharedCtx tys fns) =
   S.fromList $ concatMap (\(n, tdef) -> n : map fst (constructors tdef)) tys ++ map fst fns
 
+-- TODO: What is this for? The name is a little too general
 data UniversalAxiom lang = UniversalAxiom
   { boundVars :: [(Name, Type lang)],
     axiomBody :: [PureSMT.SExpr] -> PureSMT.SExpr
   }
+
+-- | The symbolic engine currently needs to call the SMT solver for two different problems:
+--
+--   1. Check whether a path is plausible
+--   2. Check whether a certain property currently holds over a given path
+data SolverProblem lang :: * -> * where
+  CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
+  CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
 data CheckPropertyProblem lang = CheckPropertyProblem
   { cpropOut :: Constraint lang,
@@ -54,31 +70,37 @@ data CheckPropertyProblem lang = CheckPropertyProblem
     cpropDefs :: PrtOrderedDefs lang
   }
 
+-- |The result of a 'CheckPropertyProblem' is one of the following options:
+data PruneResult
+  -- |The assumptions are inconsistent (TODO: what does it mean? example!)
+  = PruneInconsistentAssumptions
+  -- |The SMT was able to prove that the implication holds in this branch
+  | PruneImplicationHolds
+  -- |The SMT found a counter-example to the implication
+  | PruneCounterFound Model
+  -- |The SMT is uncertain whether the implication holds or not
+  | PruneUnknown
+  deriving (Eq, Show)
+
 data CheckPathProblem lang = CheckPathProblem
   { cpathState :: SymEvalSt lang,
     cpathDefs :: PrtOrderedDefs lang
   }
 
--- | Different queries that we know how to solve
-data SolverProblem lang :: * -> * where
-  CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
-  CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
-
+-- |Models returned by the SMT solver
 newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
   deriving (Eq, Show)
 
-data EvaluationWitness lang
-  = Verified
-  | Discharged
-  | CounterExample (TermMeta lang SymVar) Model
-  deriving (Eq, Show)
-
-data PruneResult
-  = PruneInconsistentAssumptions
-  | PruneImplicationHolds
-  | PruneCounterFound Model
-  | PruneUnknown
-  deriving (Eq, Show)
+instance Pretty Model where
+  pretty (Model m) =
+    let simplified = map (bimap (PureSMT.overAtomS f) (PureSMT.overAtomV f)) m
+     in enclose "{ " " }" $ align (vsep [pretty n <+> "↦" <+> pretty term | (n, term) <- simplified])
+    where
+      -- remove 'pir_' from the values
+      f "pir_Cons" = ":"
+      f "pir_Nil" = "[]"
+      f ('p' : 'i' : 'r' : '_' : rest) = rest
+      f other = other
 
 -- HACKS DUE TO #106: https://github.com/tweag/pirouette/issues/106
 type HackSolver lang a = SMT.SolverT (ReaderT (PrtOrderedDefs lang) (PrtT IO)) a
@@ -93,6 +115,7 @@ hackSolverPrt s defs = wrap <=< (mockPrtT . flip runReaderT defs . flip runReade
     wrap (Left err, _) = error err
     wrap (Right a, _) = return a
 
+-- |Instance necessary to call the 'PureSMT.solve' function.
 instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
   type Ctx lang = SolverSharedCtx lang
   type Problem lang = SolverProblem lang
@@ -204,6 +227,7 @@ assertNotConstraint knownNames c = do
   SMT.assertNot expr
   pure (done, usedAnyUFs)
 
+-- TODO: why is this needed, what needs to be done on the TODO below?
 instantiateAxiomWithVars ::
   (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
 instantiateAxiomWithVars axioms env =
