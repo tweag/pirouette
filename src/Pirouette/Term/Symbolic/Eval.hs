@@ -35,9 +35,6 @@ module Pirouette.Term.Symbolic.Eval
     pathsFor,
 
     -- ** Incorrectness logic
-    runIncorrectness,
-    pathsIncorrectness,
-    pathsIncorrectness_,
     symevalAnyPath,
     symEvalMatchesFirst,
     UserDeclaredConstraints (..),
@@ -213,29 +210,11 @@ prune xs = SymEvalT $
     (x, st') <- runSymEvalTRaw st xs
     -- trace ("  X is " ++ show (pretty x)) $ return ()
     -- trace ("  in the context " ++ show (pretty st')) $ return ()
-    ok <- pathIsPlausible st'
+    solver <- ask
+    defs <- lift $ lift getPrtOrderedDefs
+    ok <- liftIO $ PureSMT.solveProblem (CheckPath $ CheckPathProblem st' defs) solver
     guard ok
     return (x, st')
-  where
-    pathIsPlausible :: (PirouetteReadDefs lang n, MonadIO n) => SymEvalSt lang -> SMT.SolverT n Bool
-    pathIsPlausible env
-      | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
-      | otherwise = do
-        SMT.solverPush
-        decl <- runExceptT (SMT.declareVariables (sestGamma env))
-        case decl of
-          Right _ -> return ()
-          Left s -> error s
-        -- Here we do not care about the totality of the translation,
-        -- since we want to prune unsatisfiable path.
-        -- And if a partial translation is already unsat,
-        -- so is the translation of the whole set of constraints.
-        void $ assertConstraint (sestKnownNames env) (sestConstraint env)
-        res <- SMT.checkSat
-        SMT.solverPop
-        return $ case res of
-          SMT.Unsat -> False
-          _ -> True
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
@@ -608,72 +587,6 @@ data EvaluationWitness lang
   | Discharged
   | CounterExample (TermMeta lang SymVar) Model
   deriving (Eq, Show)
-
-runIncorrectness ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  StoppingCondition ->
-  UserDeclaredConstraints lang ->
-  Term lang ->
-  m ()
-runIncorrectness shouldStop udc t = do
-  paths <- pathsIncorrectness shouldStop udc t
-  if null paths
-    then liftIO $ putStrLn "Condition VERIFIED"
-    else mapM_ (liftIO . print . pretty) paths
-
-pathsIncorrectness ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  StoppingCondition ->
-  UserDeclaredConstraints lang ->
-  Term lang ->
-  m [Path lang (EvaluationWitness lang)]
-pathsIncorrectness shouldStop udc t =
-  symevalT shouldStop $ pathsIncorrectnessWorker udc t
-
-pathsIncorrectness_ ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  StoppingCondition ->
-  (PureSMT.Solver -> m (UserDeclaredConstraints lang)) ->
-  Term lang ->
-  m [Path lang (EvaluationWitness lang)]
-pathsIncorrectness_ shouldStop getUdc t = symevalT shouldStop $ do
-  solver <- SymEvalT $ lift $ SMT.SolverT ask
-  udc <- lift $ getUdc solver
-  pathsIncorrectnessWorker udc t
-
-pathsIncorrectnessWorker ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  UserDeclaredConstraints lang ->
-  Term lang ->
-  SymEvalT lang m (EvaluationWitness lang)
-pathsIncorrectnessWorker UserDeclaredConstraints {..} t = do
-  void $ liftIO udcAdditionalDefs
-  svars <- declSymVars udcInputs
-  let tApplied = R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars
-  -- liftIO $ putStrLn $ "Conditionally evaluating: " ++ show (pretty tApplied)
-  conditionalEval tApplied udcOutputCond udcInputCond udcAxioms
-
-conditionalEval ::
-  (SymEvalConstr lang m, MonadIO m) =>
-  TermMeta lang SymVar ->
-  OutCond lang ->
-  InCond lang ->
-  [UniversalAxiom lang] ->
-  SymEvalT lang m (EvaluationWitness lang)
-conditionalEval t (OutCond q) (InCond p) axioms = do
-  normalizedT <- lift $ normalizeTerm t
-  (t', somethingWasDone) <- runWriterT (symEvalOneStep normalizedT)
-  -- liftIO $ putStrLn $ "normalized: " ++ show (pretty t')
-  result <- pruneAndValidate (q t') (Just p) axioms
-  -- liftIO $ putStrLn $ "result? " ++ show result
-  case result of
-    PruneInconsistentAssumptions -> pure Discharged
-    PruneImplicationHolds -> pure Verified
-    PruneCounterFound m -> pure (CounterExample t m)
-    _ ->
-      if somethingWasDone == Any False
-        then pure (CounterExample t (Model [])) -- cannot check more
-        else conditionalEval t' (OutCond q) (InCond p) axioms
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
