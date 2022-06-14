@@ -1,10 +1,9 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | This is Pirouette's SMT solver interface; you probably won't need to import
 --  anything under the @SMT/@ folder explicitely unless you're trying to do some
@@ -13,38 +12,20 @@
 --  classes and definitions in scope. Check "Language.Pirouette.PlutusIR.SMT" for an example.
 module Pirouette.SMT where
 
-import Control.Applicative
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer
-import Data.Bifunctor (bimap)
-import Data.Data hiding (eqT)
-import Data.Foldable
-import Data.List (genericLength)
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
-import Data.Maybe (mapMaybe)
-import Data.String (IsString)
-import ListT.Weighted (WeightedListT)
-import qualified ListT.Weighted as ListT
+import qualified Data.Set as S
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT.Constraints as C
-import qualified PureSMT
 import Pirouette.SMT.FromTerm
 import qualified Pirouette.SMT.Monadic as SMT
-import Pirouette.Term.Syntax
-import qualified Pirouette.Term.Syntax.SystemF as R
-import Prettyprinter hiding (Pretty (..))
-import Debug.Trace
-import qualified Data.Set as S
 import Pirouette.Term.Symbolic.Eval.Types
-
-
----------- New Solver Interface
+import Pirouette.Term.Syntax
+import qualified PureSMT
 
 -- | Contains the shared context of a session with the solver. Datatypes will
 -- be declared first, then the uninterpreted functions. Definitions will
@@ -86,13 +67,18 @@ data SolverProblem lang :: * -> * where
 newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
   deriving (Eq, Show)
 
+data EvaluationWitness lang
+  = Verified
+  | Discharged
+  | CounterExample (TermMeta lang SymVar) Model
+  deriving (Eq, Show)
+
 data PruneResult
   = PruneInconsistentAssumptions
   | PruneImplicationHolds
   | PruneCounterFound Model
   | PruneUnknown
   deriving (Eq, Show)
-
 
 -- HACKS DUE TO #106: https://github.com/tweag/pirouette/issues/106
 type HackSolver lang a = SMT.SolverT (ReaderT (PrtOrderedDefs lang) (PrtT IO)) a
@@ -111,8 +97,8 @@ instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
   type Ctx lang = SolverSharedCtx lang
   type Problem lang = SolverProblem lang
   initSolver SolverSharedCtx {..} s = hackSolver s $ do
-     e <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
-     mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
+    _ <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
+    mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
 
   solveProblem (CheckPath CheckPathProblem {..}) s =
     hackSolverPrt s cpathDefs $ pathIsPlausible cpathState
@@ -128,7 +114,7 @@ instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
           decl <- runExceptT (SMT.declareVariables (sestGamma env))
           case decl of
             Right _ -> return ()
-            Left s -> error s
+            Left err -> error err
           -- Here we do not care about the totality of the translation,
           -- since we want to prune unsatisfiable path.
           -- And if a partial translation is already unsat,
@@ -139,59 +125,57 @@ instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
           return $ case res of
             SMT.Unsat -> False
             _ -> True
-
   solveProblem (CheckProperty CheckPropertyProblem {..}) s =
     hackSolverPrt s cpropDefs $ checkProperty cpropOut cpropIn cpropAxioms cpropState
-   where
-    -- Our aim is to prove that
-    -- (pathConstraints /\ cOut) => cIn.
-    -- This is equivalent to the unsatisfiability of
-    -- pathConstraints /\ cOut /\ (not cIn).
-    checkProperty ::
-      (SMT.LanguageSMT lang, LanguagePretty lang) =>
-      Constraint lang ->
-      Maybe (Constraint lang) ->
-      [UniversalAxiom lang] ->
-      SymEvalSt lang ->
-      HackSolver lang PruneResult
-    checkProperty cOut cIn axioms env = do
-      SMT.solverPush
-      let vars = sestGamma env
-      decl <- runExceptT (SMT.declareVariables vars)
-      instantiateAxiomWithVars axioms env
-      case decl of
-        Right _ -> return ()
-        Left s -> error s
-      (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
-      (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
-      inconsistent <- SMT.checkSat
-      case (inconsistent, cIn) of
-        (SMT.Unsat, _) -> do
-          SMT.solverPop
-          return PruneInconsistentAssumptions
-        (_, Nothing) -> do
-          SMT.solverPop
-          return PruneUnknown
-        (_, Just cIn') -> do
-          (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn'
-          let everythingWasTranslated = cstrTotal && outTotal && inTotal
-          -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
-          result <- SMT.checkSat
-          -- liftIO $ print result
-          -- liftIO $ print $ pretty (sestConstraint env)
-          -- liftIO $ print (cstrTotal, outTotal, inTotal)
-          finalResult <- case result of
-            SMT.Unsat -> return PruneImplicationHolds
-            -- If a partial translation of the constraints is SAT,
-            -- it does not guarantee us that the full set of constraints is satisfiable.
-            -- Only in the case in which we could translate the entire thing to prove.
-            SMT.Sat | everythingWasTranslated -> do
-              m <- if null vars then pure [] else SMT.getModel (M.keys vars)
-              pure $ PruneCounterFound (Model m)
-            _ -> return PruneUnknown
-          SMT.solverPop
-          return finalResult
-
+    where
+      -- Our aim is to prove that
+      -- (pathConstraints /\ cOut) => cIn.
+      -- This is equivalent to the unsatisfiability of
+      -- pathConstraints /\ cOut /\ (not cIn).
+      checkProperty ::
+        (SMT.LanguageSMT lang, LanguagePretty lang) =>
+        Constraint lang ->
+        Maybe (Constraint lang) ->
+        [UniversalAxiom lang] ->
+        SymEvalSt lang ->
+        HackSolver lang PruneResult
+      checkProperty cOut cIn axioms env = do
+        SMT.solverPush
+        let vars = sestGamma env
+        decl <- runExceptT (SMT.declareVariables vars)
+        instantiateAxiomWithVars axioms env
+        case decl of
+          Right _ -> return ()
+          Left err -> error err
+        (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
+        (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
+        inconsistent <- SMT.checkSat
+        case (inconsistent, cIn) of
+          (SMT.Unsat, _) -> do
+            SMT.solverPop
+            return PruneInconsistentAssumptions
+          (_, Nothing) -> do
+            SMT.solverPop
+            return PruneUnknown
+          (_, Just cIn') -> do
+            (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn'
+            let everythingWasTranslated = cstrTotal && outTotal && inTotal
+            -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
+            result <- SMT.checkSat
+            -- liftIO $ print result
+            -- liftIO $ print $ pretty (sestConstraint env)
+            -- liftIO $ print (cstrTotal, outTotal, inTotal)
+            finalResult <- case result of
+              SMT.Unsat -> return PruneImplicationHolds
+              -- If a partial translation of the constraints is SAT,
+              -- it does not guarantee us that the full set of constraints is satisfiable.
+              -- Only in the case in which we could translate the entire thing to prove.
+              SMT.Sat | everythingWasTranslated -> do
+                m <- if null vars then pure [] else SMT.getModel (M.keys vars)
+                pure $ PruneCounterFound (Model m)
+              _ -> return PruneUnknown
+            SMT.solverPop
+            return finalResult
 
 assertConstraint,
   assertNotConstraint ::
@@ -220,7 +204,8 @@ assertNotConstraint knownNames c = do
   SMT.assertNot expr
   pure (done, usedAnyUFs)
 
-instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
+instantiateAxiomWithVars ::
+  (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
 instantiateAxiomWithVars axioms env =
   SMT.SolverT $ do
     solver <- ask

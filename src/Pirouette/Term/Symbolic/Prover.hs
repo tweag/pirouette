@@ -154,7 +154,4 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' (Model [])
         else do
-          normBodyTerm <- lift $ normalizeTerm bodyTerm'
-          normAssumeTerm <- lift $ normalizeTerm assumeTerm'
-          normProveTerm <- lift $ normalizeTerm proveTerm'
-          worker resultVar normBodyTerm normAssumeTerm normProveTerm
+          worker resultVar bodyTerm' assumeTerm' proveTerm'

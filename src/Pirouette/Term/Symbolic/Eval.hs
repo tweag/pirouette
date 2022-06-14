@@ -1,5 +1,4 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -10,13 +9,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TupleSections #-}
 
 module Pirouette.Term.Symbolic.Eval
   ( -- * Runners
@@ -25,22 +23,14 @@ module Pirouette.Term.Symbolic.Eval
     AvailableFuel (..),
     Path (..),
     PathStatus (..),
-    Constraint,
-    SymVar,
 
     -- ** Base symbolic evaluation
-    StoppingCondition,
     SymEvalStatistics (..),
-    runFor,
-    pathsFor,
 
     -- ** Incorrectness logic
     symevalAnyPath,
     symEvalMatchesFirst,
-    UserDeclaredConstraints (..),
     UniversalAxiom (..),
-    InCond (..),
-    OutCond (..),
     EvaluationWitness (..),
     Model (..),
     showModelHaskellish,
@@ -54,13 +44,11 @@ module Pirouette.Term.Symbolic.Eval
     symevalT,
     runSymEvalT,
     declSymVars,
-    symVar,
     learn,
     prune,
     symEvalOneStep,
     pruneAndValidate,
     PruneResult (..),
-    normalizeTerm,
     SymEvalSt (..),
     currentStatistics,
   )
@@ -73,29 +61,25 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Bifunctor (bimap)
-import Data.Data hiding (eqT)
 import Data.Foldable
 import Data.List (genericLength)
-import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
-import Data.String (IsString)
+import qualified Data.Set as S
 import ListT.Weighted (WeightedListT)
 import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.SMT
+import qualified Pirouette.SMT.Constraints as C
 import qualified Pirouette.SMT.FromTerm as Tr
 import qualified Pirouette.SMT.Monadic as SMT
-import qualified Pirouette.SMT.Constraints as C
-import qualified PureSMT
-import Pirouette.Term.Syntax
 import Pirouette.Term.Symbolic.Eval.Types as X
+import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty (..))
-import Debug.Trace
-import qualified Data.Set as S
+import qualified PureSMT
 
 -- | A 'SymEvalT' is equivalent to a function with type:
 --
@@ -147,24 +131,23 @@ runSymEvalT ::
   SymEvalSt lang ->
   SymEvalT lang m a ->
   m [Path lang a]
-runSymEvalT st symEvalT =
-  ListT.toList $ runSymEvalTWorker st symEvalT
+runSymEvalT st = ListT.toList . runSymEvalTWorker st
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEvalTWorker ::
-  forall lang m a .
+  forall lang m a.
   (SymEvalConstr lang m) =>
   SymEvalSt lang ->
   SymEvalT lang m a ->
   WeightedListT m (Path lang a)
-runSymEvalTWorker st symEvalT = do
+runSymEvalTWorker st f = do
   ctx <- lift prepSolver
   solvPair <- SMT.runSolverT s $ do
     solver <- ask
     liftIO $ PureSMT.initSolver ctx solver
     let newState = st {sestKnownNames = solverSharedCtxUsedNames ctx `S.union` sestKnownNames st}
-    runSymEvalTRaw newState symEvalT
+    runSymEvalTRaw newState f
   let paths = uncurry path solvPair
   return paths
   where
@@ -239,40 +222,8 @@ freshSymVars tys = do
   let vars = zipWith (\i ty -> (Name "s" (Just i), ty)) [ctr ..] tys
   declSymVars vars
 
-runEvaluation ::
-  (SymEvalConstr lang m) =>
-  Term lang ->
-  SymEvalT lang m (TermMeta lang SymVar)
-runEvaluation t = do
-  -- liftIO $ putStrLn $ "evaluating: " ++ show (pretty t)
-  let (lams, _) = R.getHeadLams t
-  svars <- declSymVars lams
-  symeval (R.appN (termToMeta t) $ map (R.TermArg . (`R.App` []) . R.Meta) svars)
-
 currentStatistics :: (SymEvalConstr lang m) => SymEvalT lang m SymEvalStatistics
 currentStatistics = gets sestStatistics
-
--- We no longer do any normalization: these functions are all slightly wrong,
--- since they were originally thought of for the TLA+ translation
-normalizeTerm :: (SymEvalConstr lang m) => TermMeta lang SymVar -> m (TermMeta lang SymVar)
-normalizeTerm = return -- destrNF >=> removeExcessiveDestArgs >=> constrDestrId
-
--- | Top level symbolic evaluation loop.
-symeval ::
-  (SymEvalConstr lang m) =>
-  TermMeta lang SymVar ->
-  SymEvalT lang m (TermMeta lang SymVar)
-symeval t = do
-  fuelLeft <- currentStatistics
-  shouldStop <- gets sestStoppingCondition
-  if shouldStop fuelLeft
-    then pure t
-    else do
-      t' <- lift $ normalizeTerm t
-      (tOneStepMore, somethingWasEvaluated) <- prune $ runWriterT (symEvalOneStep t')
-      if somethingWasEvaluated == Any False
-        then pure tOneStepMore
-        else symeval tOneStepMore
 
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
@@ -377,10 +328,11 @@ symEvalOneStep t@(R.App hd args) = case hd of
   _ -> justEvaluateArgs
   where
     justEvaluateArgs =
-      R.App hd <$> symEvalMatchesFirst
-        (\case R.TyArg {} -> Nothing ; R.TermArg v -> Just v)
-        R.TermArg
-        args
+      R.App hd
+        <$> symEvalMatchesFirst
+          (\case R.TyArg {} -> Nothing; R.TermArg v -> Just v)
+          R.TermArg
+          args
 
 -- | Strategy for evaluating a set of expression,
 --   but giving priority to destructors over the rest.
@@ -393,31 +345,31 @@ symEvalMatchesFirst ::
   (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
   (a -> Maybe (TermMeta lang SymVar)) ->
   (TermMeta lang SymVar -> a) ->
-  [a] -> WriterT Any (SymEvalT lang m) [a]
+  [a] ->
+  WriterT Any (SymEvalT lang m) [a]
 symEvalMatchesFirst f g exprs = go [] exprs
   where
     -- we came to the end without a match,
     -- so we execute one step in parallel
     go _acc [] = forM exprs $ \x -> case f x of
-                    Nothing -> pure x
-                    Just t -> g <$> symEvalOneStep t
-
+      Nothing -> pure x
+      Just t -> g <$> symEvalOneStep t
     -- first pass, only evaluate destructors
     -- the accumulator is used only if we ever
     -- find that match
     go acc (x : xs)
       | Nothing <- f x = go (x : acc) xs
-      | Just t  <- f x = do
-          mayTyName <- lift $ lift $ isDestructor t
-          case mayTyName of
-            Just tyName -> (reverse acc ++) . (: xs) . g <$> symEvalDestructor t tyName
-            Nothing -> go (x : acc) xs
-
+      | Just t <- f x = do
+        mayTyName <- lift $ lift $ isDestructor t
+        case mayTyName of
+          Just tyName -> (reverse acc ++) . (: xs) . g <$> symEvalDestructor t tyName
+          Nothing -> go (x : acc) xs
 
 isDestructor ::
   forall lang m.
   (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
-  TermMeta lang SymVar -> m (Maybe Name)
+  TermMeta lang SymVar ->
+  m (Maybe Name)
 isDestructor (R.App (R.Free (TermSig n)) _args) = do
   mDefHead <- Just <$> prtDefOf n
   pure $ case mDefHead of
@@ -444,7 +396,8 @@ isDestructor _ = pure Nothing
 symEvalDestructor ::
   forall lang m.
   (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
-  TermMeta lang SymVar -> Name ->
+  TermMeta lang SymVar ->
+  Name ->
   WriterT Any (SymEvalT lang m) (TermMeta lang SymVar)
 symEvalDestructor t@(R.App hd _args) tyName = do
   Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
@@ -468,27 +421,28 @@ symEvalDestructor t@(R.App hd _args) tyName = do
       -- we have a meta, explore every possibility
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
       let tyParams' = map typeFromMeta tyParams
-      asum $ for2 consList cases $ \(consName, consTy) caseTerm -> do
-        let instantiatedTy = R.tyInstantiateN consTy tyParams'
-        let (consArgs, _) = R.tyFunArgs instantiatedTy
-        svars <- lift $ freshSymVars consArgs
-        let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-        let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-        let mconstr = unify term' symbCons
-        -- liftIO $ print mconstr
-        case mconstr of
-          Nothing -> empty
-          Just constr -> do
-            let countAssigns SMT.Bot = 0
-                countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
-                isAssign SMT.Assign {} = True
-                isAssign _ = False
-            -- add weight as many new assignments we get from unification
-            ListT.weight (countAssigns constr) $ do
-              lift $ learn constr
-              moreConstructors (countAssigns constr)
-              signalEvaluation
-              pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+      asum $
+        for2 consList cases $ \(consName, consTy) caseTerm -> do
+          let instantiatedTy = R.tyInstantiateN consTy tyParams'
+          let (consArgs, _) = R.tyFunArgs instantiatedTy
+          svars <- lift $ freshSymVars consArgs
+          let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+          let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+          let mconstr = unify term' symbCons
+          -- liftIO $ print mconstr
+          case mconstr of
+            Nothing -> empty
+            Just constr -> do
+              let countAssigns SMT.Bot = 0
+                  countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
+                  isAssign SMT.Assign {} = True
+                  isAssign _ = False
+              -- add weight as many new assignments we get from unification
+              ListT.weight (countAssigns constr) $ do
+                lift $ learn constr
+                moreConstructors (countAssigns constr)
+                signalEvaluation
+                pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
     (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
       -- we have a particular constructor
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
@@ -547,46 +501,6 @@ zipWithMPlus _ [] [] = return []
 zipWithMPlus _ _ [] = mzero
 zipWithMPlus _ [] _ = mzero
 zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
-
---- TMP CODE
-
-runFor ::
-  (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) =>
-  StoppingCondition ->
-  Name ->
-  Term lang ->
-  m ()
-runFor shouldStop nm t = do
-  paths <- pathsFor shouldStop nm t
-  mapM_ (liftIO . print . pretty) paths
-
-pathsFor ::
-  (LanguagePretty lang, SymEvalConstr lang m, MonadIO m) =>
-  StoppingCondition ->
-  Name ->
-  Term lang ->
-  m [Path lang (TermMeta lang SymVar)]
-pathsFor shouldStop _ t = symevalT shouldStop (runEvaluation t)
-
--- * All the functions related to symbolic execution guarded by user written predicates rather than fuel.
-
-data UserDeclaredConstraints lang = UserDeclaredConstraints
-  { udcInputs :: [(Name, Type lang)],
-    udcOutputCond :: OutCond lang,
-    udcInputCond :: InCond lang,
-    udcAdditionalDefs :: IO [PureSMT.SExpr],
-    udcAxioms :: [UniversalAxiom lang]
-  }
-
-newtype OutCond lang = OutCond (TermMeta lang SymVar -> Constraint lang)
-
-newtype InCond lang = InCond (Constraint lang)
-
-data EvaluationWitness lang
-  = Verified
-  | Discharged
-  | CounterExample (TermMeta lang SymVar) Model
-  deriving (Eq, Show)
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
