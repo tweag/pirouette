@@ -248,7 +248,7 @@ runSymEvalTWorker st symEvalT = do
     -- we'll rely on cvc4 with dbg messages
     -- s = SMT.cvc4_ALL_SUPPORTED True
     -- no debug messages
-    s = SMT.cvc4_ALL_SUPPORTED True
+    s = SMT.cvc4_ALL_SUPPORTED False
 
     lkupTypeDefOf decls name = case M.lookup name decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
@@ -818,7 +818,7 @@ pruneAndValidate cOut cIn axioms =
   SymEvalT $
     StateT $ \st -> do
       contradictProperty <- SMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st)
-      -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ show (pretty cIn) ++ "? " ++ show contradictProperty
+      -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ maybe "--" (show . pretty) cIn ++ "? " ++ show contradictProperty
       return (contradictProperty, st)
 
 instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
@@ -889,7 +889,8 @@ data SolverSharedCtx lang = SolverSharedCtx
   }
 
 solverSharedCtxUsedNames :: SolverSharedCtx lang -> [Name]
-solverSharedCtxUsedNames (SolverSharedCtx tys fns) = map fst tys ++ map fst fns
+solverSharedCtxUsedNames (SolverSharedCtx tys fns) =
+  concatMap (\(n, tdef) -> n : map fst (constructors tdef)) tys ++ map fst fns
 
 data CheckPropertyProblem lang = CheckPropertyProblem
   { cpropOut :: Constraint lang,
@@ -910,10 +911,7 @@ instance (SMT.LanguageSMT lang) => SMT.Solve lang where
   type Problem lang = SolverProblem lang
   initSolver SolverSharedCtx {..} = do
       e <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
-      trace ("decl datatypes: " ++ show e) (return ())
       mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
-      trace ("decl funs: " ++ show (map fst solverCtxUninterpretedFuncs)) (return ())
-
 
   solveProblem (CheckPath CheckPathProblem {..}) = pathIsPlausible cpathState
     where
