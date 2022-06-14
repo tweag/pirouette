@@ -39,7 +39,8 @@ import qualified Data.Set as S
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Monad (termIsMeta)
-import Pirouette.SMT
+import Pirouette.SMT.Base
+import Pirouette.SMT.Constraints
 import qualified PureSMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF

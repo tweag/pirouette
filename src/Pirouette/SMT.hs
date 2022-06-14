@@ -1,246 +1,239 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | This is Pirouette's SMT solver interface; you probably won't need to import
 --  anything under the @SMT/@ folder explicitely unless you're trying to do some
---  very specific things or declaring a language. In which case, you probably
---  want only "Pirouette.SMT.Base" and "Pirouette.SMT.PureSMT" to bring get the necessary
+--  very specific things or declaring a language. If you're declaring a language you probably
+--  want only "Pirouette.SMT.Base" and "PureSMT" to bring the necessary
 --  classes and definitions in scope. Check "Language.Pirouette.PlutusIR.SMT" for an example.
-module Pirouette.SMT
-  ( SolverT (..),
-    checkSat,
-    runSolverT,
-    solverPush,
-    solverPop,
-    declareDatatype,
-    declareDatatypes,
-    supportedUninterpretedFunction,
-    declareRawFun,
-    declareUninterpretedFunction,
-    declareUninterpretedFunctions,
-    declareAsManyUninterpretedFunctionsAsPossible,
-    declareVariables,
-    declareVariable,
-    assert,
-    assertNot,
-    getUnsatCore,
-    getModel,
-
-    -- * Convenient re-exports
-    Constraint (..),
-    AtomicConstraint (..),
-    PureSMT.Result (..),
-    module Base,
-    Branch (..),
-    LanguageSMTBranches (..),
-  )
-where
+module Pirouette.SMT where
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Monad.State.Class
+import Control.Monad.State
 import Control.Monad.Writer
-import qualified Data.Map as M
-import Data.Maybe (catMaybes, mapMaybe)
-import ListT.Weighted (MonadWeightedList)
+import Data.Bifunctor (bimap)
+import Data.Data hiding (eqT)
+import Data.Foldable
+import Data.List (genericLength)
+import qualified Data.List as List
+import qualified Data.Map.Strict as M
+import Data.Maybe (mapMaybe)
+import Data.String (IsString)
+import ListT.Weighted (WeightedListT)
+import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
-import Pirouette.SMT.Base as Base
-import Pirouette.SMT.Constraints
+import Pirouette.Monad.Maybe
+import qualified Pirouette.SMT.Constraints as C
 import qualified PureSMT
-import Pirouette.SMT.Translation
+import Pirouette.SMT.FromTerm
+import qualified Pirouette.SMT.Monadic as SMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import System.IO.Unsafe (unsafePerformIO)
+import Prettyprinter hiding (Pretty (..))
+import Debug.Trace
+import qualified Data.Set as S
+import Pirouette.Term.Symbolic.Eval.Types
 
--- OLD CODE
 
--- | Solver monad for a specific solver, passed as a phantom type variable @s@ (refer to 'IsSolver' for more)
---  to know the supported solvers. That's a phantom type variable used only to distinguish
---  solver-specific operations, such as initialization
-newtype SolverT m a = SolverT {unSolverT :: ReaderT PureSMT.Solver m a}
-  deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadReader PureSMT.Solver, MonadIO, MonadLogger, MonadFail, MonadWeightedList)
+---------- New Solver Interface
 
-instance MonadTrans SolverT where
-  lift = SolverT . lift
+-- | Contains the shared context of a session with the solver. Datatypes will
+-- be declared first, then the uninterpreted functions. Definitions will
+-- be declared in the same order they are provided.
+data SolverSharedCtx lang = SolverSharedCtx
+  { -- | List of datatypes to be declared
+    solverCtxDatatypes :: [(Name, TypeDef lang)],
+    -- | List of functions to be declared as uninterpreted functions.
+    solverCtxUninterpretedFuncs :: [(Name, ([PureSMT.SExpr], PureSMT.SExpr))]
+  }
 
-deriving instance MonadState s m => MonadState s (SolverT m)
+solverSharedCtxUsedNames :: SolverSharedCtx lang -> S.Set Name
+solverSharedCtxUsedNames (SolverSharedCtx tys fns) =
+  S.fromList $ concatMap (\(n, tdef) -> n : map fst (constructors tdef)) tys ++ map fst fns
 
-deriving instance MonadError e m => MonadError e (SolverT m)
+data UniversalAxiom lang = UniversalAxiom
+  { boundVars :: [(Name, Type lang)],
+    axiomBody :: [PureSMT.SExpr] -> PureSMT.SExpr
+  }
 
-deriving instance Alternative m => Alternative (SolverT m)
+data CheckPropertyProblem lang = CheckPropertyProblem
+  { cpropOut :: Constraint lang,
+    cpropIn :: Maybe (Constraint lang),
+    cpropAxioms :: [UniversalAxiom lang],
+    cpropState :: SymEvalSt lang,
+    cpropDefs :: PrtOrderedDefs lang
+  }
 
-deriving instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SolverT m)
+data CheckPathProblem lang = CheckPathProblem
+  { cpathState :: SymEvalSt lang,
+    cpathDefs :: PrtOrderedDefs lang
+  }
 
--- | Runs a computation that requires a session with a solver. The first parameter is
--- an action that launches a solver. Check 'cvc4_ALL_SUPPORTED' for an example.
-runSolverT :: forall m a. (MonadIO m) => IO PureSMT.Solver -> SolverT m a -> m a
-runSolverT s (SolverT comp) = liftIO s >>= runReaderT comp
+-- | Different queries that we know how to solve
+data SolverProblem lang :: * -> * where
+  CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
+  CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
--- | Returns 'Sat', 'Unsat' or 'Unknown' for the current solver session.
-checkSat :: (MonadIO m) => SolverT m PureSMT.Result
-checkSat = do
-  solver <- ask
-  liftIO $ PureSMT.check solver
+newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
+  deriving (Eq, Show)
 
--- | Pushes the solver context, creating a checkpoint. This is useful if you plan to execute
---  many queries that share definitions. A typical use pattern would be:
---
---  > declareDatatypes ...
---  > forM_ varsAndExpr $ \(vars, expr) -> do
---  >   solverPush
---  >   declareVariables vars
---  >   assert expr
---  >   r <- checkSat
---  >   solverPop
---  >   return r
-solverPush :: (MonadIO m) => SolverT m ()
-solverPush = do
-  solver <- ask
-  liftIO $ PureSMT.push solver
+data PruneResult
+  = PruneInconsistentAssumptions
+  | PruneImplicationHolds
+  | PruneCounterFound Model
+  | PruneUnknown
+  deriving (Eq, Show)
 
--- | Pops the current checkpoint, check 'solverPush' for an example.
-solverPop :: (MonadIO m) => SolverT m ()
-solverPop = do
-  solver <- ask
-  liftIO $ PureSMT.pop solver
 
--- | Declare a single datatype in the current solver session.
-declareDatatype :: (LanguageSMT lang, MonadIO m) => Name -> TypeDef lang -> ExceptT String (SolverT m) [Name]
-declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
-  solver <- ask
-  (constr', _) <- runWriterT $ mapM (constructorFromPIR typeVariables) cstrs
-  liftIO $ do
-    PureSMT.declareDatatype
-      solver
-      (toSmtName typeName)
-      (map (toSmtName . fst) typeVariables)
-      constr'
-  return $ typeName : map fst cstrs
+-- HACKS DUE TO #106: https://github.com/tweag/pirouette/issues/106
+type HackSolver lang a = SMT.SolverT (ReaderT (PrtOrderedDefs lang) (PrtT IO)) a
 
--- | Declare a set of datatypes in the current solver session, in the order specified by
--- the list of definitions. For info on sorting definitions, check the 'PirouetteDepOrder' class.
-declareDatatypes ::
-  (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
-declareDatatypes = fmap concat . mapM (uncurry declareDatatype)
+hackSolver :: (MonadIO m) => PureSMT.Solver -> SMT.SolverT m a -> m a
+hackSolver s = flip runReaderT s . SMT.unSolverT
 
--- |If a function can be declared as an uninterpreted function, returns
--- the type of its arguments and the type of its result.
-supportedUninterpretedFunction ::
-  (LanguageSMT lang) => FunDef lang -> Maybe ([PureSMT.SExpr], PureSMT.SExpr)
-supportedUninterpretedFunction FunDef {funTy} = toMaybe $ do
-  let (args, result) = R.tyFunArgs funTy
-  (args', _) <- runWriterT $ mapM translateType args
-  (result', _) <- runWriterT $ translateType result
-  return (args', result')
- where
-   toMaybe = either (const Nothing) Just . runExcept
+hackSolverPrt :: PureSMT.Solver -> PrtOrderedDefs lang -> HackSolver lang a -> IO a
+hackSolverPrt s defs = wrap <=< (mockPrtT . flip runReaderT defs . flip runReaderT s . SMT.unSolverT)
+  where
+    wrap :: (Either String a, [LogMessage]) -> IO a
+    wrap (Left err, _) = error err
+    wrap (Right a, _) = return a
 
-declareRawFun ::
-  (MonadIO m) => Name -> ([PureSMT.SExpr], PureSMT.SExpr) -> SolverT m ()
-declareRawFun n (args, res) = do
-  solver <- ask
-  void $ liftIO $ PureSMT.declareFun solver (toSmtName n) args res
+instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
+  type Ctx lang = SolverSharedCtx lang
+  type Problem lang = SolverProblem lang
+  initSolver SolverSharedCtx {..} s = hackSolver s $ do
+     e <- runExceptT $ SMT.declareDatatypes solverCtxDatatypes
+     mapM_ (uncurry SMT.declareRawFun) solverCtxUninterpretedFuncs
 
--- | Declare a single function signature as uninterpreted
--- in the current solver session.
-declareUninterpretedFunction ::
-  (LanguageSMT lang, MonadIO m) => Name -> FunDef lang -> ExceptT String (SolverT m) Name
-declareUninterpretedFunction fnName FunDef {funTy} = do
-  solver <- ask
-  let (args, result) = R.tyFunArgs funTy
-  (args', _) <- runWriterT $ mapM translateType args
-  (result', _) <- runWriterT $ translateType result
-  _ <- liftIO $ PureSMT.declareFun solver (toSmtName fnName) args' result'
-  return fnName
+  solveProblem (CheckPath CheckPathProblem {..}) s =
+    hackSolverPrt s cpathDefs $ pathIsPlausible cpathState
+    where
+      pathIsPlausible ::
+        (SMT.LanguageSMT lang) =>
+        SymEvalSt lang ->
+        HackSolver lang Bool
+      pathIsPlausible env
+        | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
+        | otherwise = do
+          SMT.solverPush
+          decl <- runExceptT (SMT.declareVariables (sestGamma env))
+          case decl of
+            Right _ -> return ()
+            Left s -> error s
+          -- Here we do not care about the totality of the translation,
+          -- since we want to prune unsatisfiable path.
+          -- And if a partial translation is already unsat,
+          -- so is the translation of the whole set of constraints.
+          void $ assertConstraint (sestKnownNames env) (sestConstraint env)
+          res <- SMT.checkSat
+          SMT.solverPop
+          return $ case res of
+            SMT.Unsat -> False
+            _ -> True
 
-declareUninterpretedFunctions ::
-  (LanguageSMT lang, MonadIO m) =>
-  M.Map Name (Definition lang) ->
-  [R.Arg Name Name] ->
-  ExceptT String (SolverT m) [Name]
-declareUninterpretedFunctions decls orderedNames = do
-  let fnNames = mapMaybe (R.argElim (const Nothing) Just) orderedNames
-  forMaybeM fnNames $ \fnName ->
-    case M.lookup fnName decls of
-      Just (DFunDef fdef) -> Just <$> declareUninterpretedFunction fnName fdef
-      _ -> return Nothing
+  solveProblem (CheckProperty CheckPropertyProblem {..}) s =
+    hackSolverPrt s cpropDefs $ checkProperty cpropOut cpropIn cpropAxioms cpropState
+   where
+    -- Our aim is to prove that
+    -- (pathConstraints /\ cOut) => cIn.
+    -- This is equivalent to the unsatisfiability of
+    -- pathConstraints /\ cOut /\ (not cIn).
+    checkProperty ::
+      (SMT.LanguageSMT lang, LanguagePretty lang) =>
+      Constraint lang ->
+      Maybe (Constraint lang) ->
+      [UniversalAxiom lang] ->
+      SymEvalSt lang ->
+      HackSolver lang PruneResult
+    checkProperty cOut cIn axioms env = do
+      SMT.solverPush
+      let vars = sestGamma env
+      decl <- runExceptT (SMT.declareVariables vars)
+      instantiateAxiomWithVars axioms env
+      case decl of
+        Right _ -> return ()
+        Left s -> error s
+      (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
+      (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
+      inconsistent <- SMT.checkSat
+      case (inconsistent, cIn) of
+        (SMT.Unsat, _) -> do
+          SMT.solverPop
+          return PruneInconsistentAssumptions
+        (_, Nothing) -> do
+          SMT.solverPop
+          return PruneUnknown
+        (_, Just cIn') -> do
+          (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn'
+          let everythingWasTranslated = cstrTotal && outTotal && inTotal
+          -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
+          result <- SMT.checkSat
+          -- liftIO $ print result
+          -- liftIO $ print $ pretty (sestConstraint env)
+          -- liftIO $ print (cstrTotal, outTotal, inTotal)
+          finalResult <- case result of
+            SMT.Unsat -> return PruneImplicationHolds
+            -- If a partial translation of the constraints is SAT,
+            -- it does not guarantee us that the full set of constraints is satisfiable.
+            -- Only in the case in which we could translate the entire thing to prove.
+            SMT.Sat | everythingWasTranslated -> do
+              m <- if null vars then pure [] else SMT.getModel (M.keys vars)
+              pure $ PruneCounterFound (Model m)
+            _ -> return PruneUnknown
+          SMT.solverPop
+          return finalResult
 
-declareAsManyUninterpretedFunctionsAsPossible ::
-  (LanguageSMT lang, MonadIO m) =>
-  [(Name, FunDef lang)] ->
-  ExceptT String (SolverT m) [Name]
-declareAsManyUninterpretedFunctionsAsPossible ds = do
-  forMaybeM ds $ \(fnName, fnDef) ->
-    (Just <$> declareUninterpretedFunction fnName fnDef)
-      `catchError` (\_ -> return Nothing)
 
--- | Declare (name and type) all the variables of the environment in the SMT
--- solver. This step is required before asserting constraints mentioning any of these variables.
-declareVariables :: (LanguageSMT lang, MonadIO m) => M.Map Name (Type lang) -> ExceptT String (SolverT m) ()
-declareVariables = mapM_ (uncurry declareVariable) . M.toList
+assertConstraint,
+  assertNotConstraint ::
+    (PirouetteReadDefs lang m, SMT.LanguageSMT lang, SMT.ToSMT meta, MonadIO m) =>
+    S.Set Name ->
+    C.Constraint lang meta ->
+    SMT.SolverT m (Bool, UsedAnyUFs)
+assertConstraint knownNames c@C.Bot = do
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
+  SMT.assert expr
+  pure (done, usedAnyUFs)
+assertConstraint knownNames (C.And atomics) = do
+  (dones, usedAnyUFs) <-
+    unzip
+      <$> forM
+        atomics
+        ( \atomic -> do
+            -- do it one by one
+            (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames (C.And [atomic])
+            SMT.assert expr
+            pure (done, usedAnyUFs)
+        )
+  pure (and dones, mconcat usedAnyUFs)
+assertNotConstraint knownNames c = do
+  (done, usedAnyUFs, expr) <- C.constraintToSExpr knownNames c
+  SMT.assertNot expr
+  pure (done, usedAnyUFs)
 
--- | Declares a single variable in the current solver session.
-declareVariable :: (LanguageSMT lang, MonadIO m) => Name -> Type lang -> ExceptT String (SolverT m) ()
-declareVariable varName varTy = do
-  solver <- ask
-  (tySExpr, _) <- runWriterT $ translateType varTy
-  liftIO $ void (PureSMT.declare solver (toSmtName varName) tySExpr)
-
--- | Asserts a constraint; check 'Constraint' for more information
--- | The functions 'assert' and 'assertNot' output a boolean,
--- stating if the constraint was fully passed to the SMT solver,
--- or if a part was lost during the translation process.
-assert ::
-  (MonadIO m) =>
-  PureSMT.SExpr ->
-  SolverT m ()
-assert expr =
-  SolverT $
-    ReaderT $ \solver -> do
-      liftIO $ PureSMT.assert solver expr
-
-assertNot ::
-  (MonadIO m) =>
-  PureSMT.SExpr ->
-  SolverT m ()
-assertNot expr =
-  SolverT $
-    ReaderT $ \solver -> do
-      -- liftIO $ putStrLn $ "asserting not " ++ show expr
-      liftIO $ PureSMT.assert solver (PureSMT.not expr)
-
-getUnsatCore ::
-  (MonadIO m) =>
-  SolverT m [String]
-getUnsatCore = SolverT $
-  ReaderT $ \solver ->
-    liftIO $ PureSMT.getUnsatCore solver
-
-getModel ::
-  (MonadIO m) =>
-  [Name] ->
-  SolverT m [(PureSMT.SExpr, PureSMT.Value)]
-getModel names = SolverT $
-  ReaderT $ \solver -> do
-    let exprs = map (PureSMT.symbol . toSmtName) names
-    liftIO $ PureSMT.getExprs solver exprs
-
--- Utility functions
-
-concatForM :: (Traversable t, Monad f) => t a -> (a -> f [b]) -> f [b]
-concatForM xs action = concat <$> forM xs action
-
-forMaybeM :: (Monad f) => [a] -> (a -> f (Maybe b)) -> f [b]
-forMaybeM xs action = catMaybes <$> forM xs action
+instantiateAxiomWithVars :: (SMT.LanguageSMT lang, MonadIO m) => [UniversalAxiom lang] -> SymEvalSt lang -> SMT.SolverT m ()
+instantiateAxiomWithVars axioms env =
+  SMT.SolverT $ do
+    solver <- ask
+    liftIO $
+      mapM_
+        ( \(name, ty) ->
+            mapM_
+              ( \UniversalAxiom {..} ->
+                  when (List.any (\(_, tyV) -> tyV == ty) boundVars) $
+                    if length boundVars == 1
+                      then void $ PureSMT.assert solver (axiomBody [PureSMT.symbol (SMT.toSmtName name)])
+                      else error "Several universally bound variables not handled yet" -- TODO
+              )
+              axioms
+        )
+        (M.toList $ sestGamma env)

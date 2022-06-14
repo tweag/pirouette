@@ -12,7 +12,7 @@
 
 -- | Translation of Pirouette syntactical categories into
 -- smtlib through our copy of the PureSMT library.
-module Pirouette.SMT.Translation where
+module Pirouette.SMT.FromTerm where
 
 import Control.Monad.Except
 import Control.Monad.Writer (Any (..), WriterT (..), tell)

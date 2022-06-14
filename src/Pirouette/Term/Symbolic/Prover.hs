@@ -13,7 +13,7 @@ import Pirouette.Monad (termIsWHNFOrMeta)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
 import PureSMT (SExpr (..))
-import Pirouette.SMT.Translation
+import Pirouette.SMT.FromTerm
 import Pirouette.Term.Symbolic.Eval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R

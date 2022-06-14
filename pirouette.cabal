@@ -34,11 +34,13 @@ library
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
-      Pirouette.SMT.Translation
+      Pirouette.SMT.FromTerm
+      Pirouette.SMT.Monadic
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
       Pirouette.Term.Symbolic.Eval
+      Pirouette.Term.Symbolic.Eval.Types
       Pirouette.Term.Symbolic.Prover
       Pirouette.Term.Symbolic.Prover.Runner
       Pirouette.Term.Syntax

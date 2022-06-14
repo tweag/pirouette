@@ -13,7 +13,7 @@ import Data.Map (Map)
 import Pirouette.Monad
 import Pirouette.SMT.Base
 import qualified PureSMT
-import Pirouette.SMT.Translation
+import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified Data.Set as S
@@ -61,6 +61,7 @@ data Branch lang meta = Branch
     newTerm :: TermMeta lang meta
   }
 
+-- TODO: Maybe this should be merged with 'LanguageSMT'
 class (LanguageSMT lang) => LanguageSMTBranches lang where
   -- | Injection of different cases in the symbolic evaluator.
   -- For example, one can introduce a 'if_then_else' built-in

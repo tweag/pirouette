@@ -14,7 +14,7 @@ import Pirouette.Term.Symbolic.Eval
 import Pirouette.Transformations ( elimEvenOddMutRec )
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Pirouette.SMT as SMT
+import qualified Pirouette.SMT.Constraints as SMT
 import qualified PureSMT as SMT
 
 import Pirouette.Term.SymbolicEvalUtils
