@@ -6,11 +6,8 @@ import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import Numeric (showFFloat, showHex, readHex)
-import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
-import Prettyprinter (Doc)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
 import qualified Prelude as P
-import Data.String (fromString)
 import Text.Read (readMaybe)
 
 -- | Results of checking for satisfiability.
@@ -81,11 +78,6 @@ showsSExprWithoutAs ex =
           (\e m -> showChar ' ' . showsSExprWithoutAs e . m)
           (showChar ')')
           es
-
--- | Show a Value in a Haskell fashion.
-ppValueHaskellish :: Value -> Doc ann
-ppValueHaskellish (Other s) = pretty $ showsSExprHaskellish s
-ppValueHaskellish t = pretty t
 
 -- | Show an s-expression in a Haskell fashion.
 showsSExprHaskellish :: SExpr -> ShowS
@@ -192,16 +184,6 @@ ppSExpr = go 0
             . many (map (new (n + 3)) es)
             . showString ")"
         List es -> showString "(" . many (map (new (n + 2)) es) . showString ")"
-
-instance Pretty Value where
-  pretty (Bool b) = pretty b
-  pretty (Int n) = pretty n
-  pretty (Real r) = pretty r
-  pretty (Bits _n v) = fromString "#x" <> pretty v
-  pretty (Other e) = pretty e
-
-instance Pretty SExpr where
-  pretty p = pretty $ showsSExprWithoutAs p ""
 
 -- | Parse an s-expression.
 readSExpr :: String -> Maybe (SExpr, String)
