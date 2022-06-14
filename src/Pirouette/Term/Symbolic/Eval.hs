@@ -93,6 +93,7 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty (..))
 import Debug.Trace
+import qualified Data.Set as S
 
 -- import Debug.Trace (trace)
 
@@ -134,7 +135,7 @@ data SymEvalSt lang = SymEvalSt
     sestStatistics :: SymEvalStatistics,
     -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
     sestValidated :: Bool,
-    sestKnownNames :: [Name], -- The list of names the SMT solver is aware of
+    sestKnownNames :: S.Set Name, -- The set of names the SMT solver is aware of
     sestStoppingCondition :: StoppingCondition
   }
 
@@ -198,7 +199,7 @@ symevalT ::
   m [Path lang a]
 symevalT shouldStop = runSymEvalT st0
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False [] shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
 
 symevalAnyPath ::
   (SymEvalConstr lang m) =>
@@ -209,7 +210,7 @@ symevalAnyPath ::
 symevalAnyPath shouldStop p =
   ListT.firstThat p . runSymEvalTWorker st0
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False [] shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
 
 runSymEvalTRaw ::
   (Monad m) =>
@@ -240,7 +241,7 @@ runSymEvalTWorker st symEvalT = do
   ctx <- lift prepSolver
   solvPair <- SMT.runSolverT s $ do
     SMT.initSolver ctx
-    let newState = st {sestKnownNames = solverSharedCtxUsedNames ctx ++ sestKnownNames st}
+    let newState = st {sestKnownNames = solverSharedCtxUsedNames ctx `S.union` sestKnownNames st}
     runSymEvalTRaw newState symEvalT
   let paths = uncurry path solvPair
   return paths
@@ -283,7 +284,7 @@ instance (MonadIO m) => MonadIO (SymEvalT lang m) where
 assertConstraint,
   assertNotConstraint ::
     (PirouetteReadDefs lang m, SMT.LanguageSMT lang, SMT.ToSMT meta, MonadIO m) =>
-    [Name] ->
+    S.Set Name ->
     C.Constraint lang meta ->
     SMT.SolverT m (Bool, UsedAnyUFs)
 assertConstraint knownNames c@C.Bot = do
@@ -443,7 +444,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
   R.Free (Builtin builtin) -> do
     -- try to evaluate the built-in
     let translator c = do
-          c' <- runTranslator $ translateTerm [] c
+          c' <- runTranslator $ translateTerm S.empty c
           case c' of
             Left _ -> pure Nothing
             Right (d, _) -> pure $ Just d
@@ -888,9 +889,9 @@ data SolverSharedCtx lang = SolverSharedCtx
     solverCtxUninterpretedFuncs :: [(Name, ([PureSMT.SExpr], PureSMT.SExpr))]
   }
 
-solverSharedCtxUsedNames :: SolverSharedCtx lang -> [Name]
+solverSharedCtxUsedNames :: SolverSharedCtx lang -> S.Set Name
 solverSharedCtxUsedNames (SolverSharedCtx tys fns) =
-  concatMap (\(n, tdef) -> n : map fst (constructors tdef)) tys ++ map fst fns
+  S.fromList $ concatMap (\(n, tdef) -> n : map fst (constructors tdef)) tys ++ map fst fns
 
 data CheckPropertyProblem lang = CheckPropertyProblem
   { cpropOut :: Constraint lang,

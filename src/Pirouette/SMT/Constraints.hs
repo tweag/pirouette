@@ -16,6 +16,7 @@ import qualified PureSMT
 import Pirouette.SMT.Translation
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
+import qualified Data.Set as S
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
@@ -136,7 +137,7 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) whe
 -- Hence, we chose solution #2
 atomicConstraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   AtomicConstraint lang meta ->
   TranslatorT m PureSMT.SExpr
 atomicConstraintToSExpr knownNames (Assign name term) = do
@@ -168,7 +169,7 @@ atomicConstraintToSExpr _knownNames (Native expr) =
 -- A 'False' indicates that some have been forgotten during the translation.
 constraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   Constraint lang meta ->
   m (Bool, UsedAnyUFs, PureSMT.SExpr)
 constraintToSExpr knownNames (And constraints) = do

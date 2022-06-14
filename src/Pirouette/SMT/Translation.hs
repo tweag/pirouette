@@ -16,6 +16,7 @@ module Pirouette.SMT.Translation where
 
 import Control.Monad.Except
 import Control.Monad.Writer (Any (..), WriterT (..), tell)
+import qualified Data.Set as S
 -- import Debug.Trace (trace)
 import Pirouette.Monad
 import Pirouette.SMT.Base
@@ -97,7 +98,7 @@ translateType x =
 translateTerm ::
   forall lang meta m.
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   TermMeta lang meta ->
   TranslatorT m PureSMT.SExpr
 translateTerm _ (Raw.Lam _ann _ty _term) =
@@ -167,7 +168,7 @@ translateTerm knownNames (Raw.App var args) = case var of
 
 translateArg ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   ArgMeta lang meta ->
   TranslatorT m PureSMT.SExpr
 translateArg knownNames (Raw.TermArg term) = translateTerm knownNames term
