@@ -335,33 +335,3 @@ getUnsatCore s =
             "  Expected: " ++ x,
             "  Result: " ++ showsSExpr e ""
           ]
-
-
-{-
-
--- * Async Queues
-
--- |A MStack is a MVar that satisfies the invariant that it never contains
--- an empty list; if that's the case then the MVar is empty.
-type MStack a = MVar [a]
-
-newMStack :: [a] -> IO (MStack a)
-newMStack [] = newEmptyMVar
-newMStack xs = newMVar xs
-
-push :: a -> MStack a -> IO ()
-push a q = do
-  mas <- tryTakeMVar q
-  case mas of
-    Nothing -> putMVar q [a]
-    Just as0 -> putMVar q (a:as0)
-
-pop :: MStack a -> IO a
-pop q = do
-  xss <- takeMVar q
-  case xss of
-    [] -> error "invariant disrespected; MStack should never be empty"
-    [x] -> return x
-    (x:xs) -> putMVar q xs >> return x
-
--}
