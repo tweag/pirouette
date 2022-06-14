@@ -16,7 +16,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Pirouette.Term.Symbolic.Eval
+module Pirouette.Symbolic.Eval
   ( -- * Runners
 
     -- ** General inputs and outputs
@@ -71,11 +71,11 @@ import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
-import Pirouette.SMT
+import Pirouette.Symbolic.Eval.SMT
 import qualified Pirouette.SMT.Constraints as C
 import qualified Pirouette.SMT.FromTerm as Tr
 import qualified Pirouette.SMT.Monadic as SMT
-import Pirouette.Term.Symbolic.Eval.Types as X
+import Pirouette.Symbolic.Eval.Types as X
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty (..))

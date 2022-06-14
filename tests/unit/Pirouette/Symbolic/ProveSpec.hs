@@ -5,7 +5,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Pirouette.Term.SymbolicProveSpec (tests) where
+module Pirouette.Symbolic.ProveSpec (tests) where
 
 import Control.Monad.Reader
 import Data.Maybe (isJust)
@@ -13,9 +13,9 @@ import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity
 import Pirouette.Monad
 import qualified PureSMT
-import Pirouette.Term.Symbolic.Eval
-import Pirouette.Term.Symbolic.Prover
-import Pirouette.Term.SymbolicEvalUtils
+import Pirouette.Symbolic.Eval
+import Pirouette.Symbolic.Prover
+import Pirouette.Symbolic.EvalUtils
 import Pirouette.Term.Syntax
 import Pirouette.Transformations (elimEvenOddMutRec)
 import Pirouette.Transformations.Defunctionalization

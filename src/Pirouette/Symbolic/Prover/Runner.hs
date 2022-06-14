@@ -2,14 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Pirouette.Term.Symbolic.Prover.Runner where
+module Pirouette.Symbolic.Prover.Runner where
 
 import Control.Monad.Reader
 import Pirouette.Monad
-import Pirouette.SMT
 import Pirouette.SMT.Constraints
-import Pirouette.Term.Symbolic.Eval
-import Pirouette.Term.Symbolic.Prover
+import Pirouette.Symbolic.Eval
+import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF (tyFunArgs)
 import Pirouette.Term.TypeChecker

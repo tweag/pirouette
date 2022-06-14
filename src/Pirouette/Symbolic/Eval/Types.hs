@@ -7,7 +7,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MonoLocalBinds #-}
-module Pirouette.Term.Symbolic.Eval.Types where
+module Pirouette.Symbolic.Eval.Types where
 
 import Data.Data hiding (eqT)
 import qualified Data.Map.Strict as M

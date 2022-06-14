@@ -10,7 +10,7 @@
 --  very specific things or declaring a language. If you're declaring a language you probably
 --  want only "Pirouette.SMT.Base" and "PureSMT" to bring the necessary
 --  classes and definitions in scope. Check "Language.Pirouette.PlutusIR.SMT" for an example.
-module Pirouette.SMT where
+module Pirouette.Symbolic.Eval.SMT where
 
 import Control.Monad
 import Control.Monad.Except
@@ -23,7 +23,7 @@ import Pirouette.Monad.Logger
 import qualified Pirouette.SMT.Constraints as C
 import Pirouette.SMT.FromTerm
 import qualified Pirouette.SMT.Monadic as SMT
-import Pirouette.Term.Symbolic.Eval.Types
+import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
 import qualified PureSMT
 

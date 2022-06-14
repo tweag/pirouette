@@ -31,7 +31,6 @@ library
       Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
-      Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
       Pirouette.SMT.FromTerm
@@ -39,10 +38,11 @@ library
       Pirouette.Specializer.PIRTransformations
       Pirouette.Specializer.Rewriting
       Pirouette.Specializer.TypeDecl
-      Pirouette.Term.Symbolic.Eval
-      Pirouette.Term.Symbolic.Eval.Types
-      Pirouette.Term.Symbolic.Prover
-      Pirouette.Term.Symbolic.Prover.Runner
+      Pirouette.Symbolic.Eval
+      Pirouette.Symbolic.Eval.SMT
+      Pirouette.Symbolic.Eval.Types
+      Pirouette.Symbolic.Prover
+      Pirouette.Symbolic.Prover.Runner
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
@@ -111,9 +111,9 @@ test-suite spec
       Language.Pirouette.ExampleSpec
       Language.Pirouette.PlutusIR.BuiltinsSpec
       Language.Pirouette.PlutusIR.ToTermSpec
-      Pirouette.Term.SymbolicEvalSpec
-      Pirouette.Term.SymbolicEvalUtils
-      Pirouette.Term.SymbolicProveSpec
+      Pirouette.Symbolic.EvalSpec
+      Pirouette.Symbolic.EvalUtils
+      Pirouette.Symbolic.ProveSpec
       Pirouette.Term.Syntax.BaseSpec
       Pirouette.Term.Syntax.SystemFSpec
       Pirouette.Term.TransformationsSpec

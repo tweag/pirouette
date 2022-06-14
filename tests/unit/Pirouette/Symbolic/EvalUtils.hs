@@ -1,9 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Pirouette.Term.SymbolicEvalUtils where
+module Pirouette.Symbolic.EvalUtils where
 
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Pretty
-import Pirouette.Term.Symbolic.Eval
+import Pirouette.Symbolic.Eval
 import Test.Tasty.HUnit
 import Prettyprinter (vsep)
 

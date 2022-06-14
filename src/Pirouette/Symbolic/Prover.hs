@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Pirouette.Term.Symbolic.Prover where
+module Pirouette.Symbolic.Prover where
 
 import Control.Monad.Except
 import Control.Monad.State
@@ -14,7 +14,7 @@ import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
 import PureSMT (SExpr (..))
 import Pirouette.SMT.FromTerm
-import Pirouette.Term.Symbolic.Eval
+import Pirouette.Symbolic.Eval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 
