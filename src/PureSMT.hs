@@ -1,13 +1,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
 {-# LANGUAGE TypeApplications #-}
 module PureSMT (module X, Solve(..), solve) where
 
-import PureSMT.Process (Solver)
-import qualified PureSMT.Process as X
+import PureSMT.Process as X
 import PureSMT.SExpr as X
 import Control.Concurrent
 import Control.Monad
@@ -35,15 +32,15 @@ solve ctx = unsafePerformIO $ do
   -- the internals make sure to use 'withMVar' to not mess up the command/response
   -- pairs.
   return $ \problem -> unsafePerformIO $ do
-    ms <- pop allProcs
+    ms <- popMStack allProcs
     r <- withMVar ms $ \solver -> do
       solveProblem @domain problem solver
-    push ms allProcs
+    pushMStack ms allProcs
     return r
 
 launchAll :: forall domain . Solve domain => Ctx domain -> IO [MVar X.Solver]
 launchAll ctx = replicateM nUMWORKERS $ do
-  s <- X.launchSolverWithFinalizer "cvc4" dEBUG
+  s <- X.launchSolverWithFinalizer "cvc4 --lang=smt2 --incremental --fmf-fun" dEBUG
   initSolver @domain ctx s
   newMVar s
 
@@ -63,15 +60,15 @@ newMStack :: [a] -> IO (MStack a)
 newMStack [] = newEmptyMVar
 newMStack xs = newMVar xs
 
-push :: a -> MStack a -> IO ()
-push a q = do
+pushMStack :: a -> MStack a -> IO ()
+pushMStack a q = do
   mas <- tryTakeMVar q
   case mas of
     Nothing -> putMVar q [a]
     Just as0 -> putMVar q (a:as0)
 
-pop :: MStack a -> IO a
-pop q = do
+popMStack :: MStack a -> IO a
+popMStack q = do
   xss <- takeMVar q
   case xss of
     [] -> error "invariant disrespected; MStack should never be empty"
