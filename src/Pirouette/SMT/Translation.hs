@@ -128,7 +128,7 @@ translateTerm knownNames (Raw.App var args) = case var of
     defn <- liftTranslator ("translateApp: Unknown name: " <> show name) (prtDefOf name)
     case defn of
       DConstructor ix tname
-        | name `notElem` knownNames ->
+        | name `S.notMember` knownNames ->
           throwError $ "translateApp: Unknown constructor '" <> show name <> "'"
         | otherwise -> do
           -- bring in the type information
@@ -152,7 +152,7 @@ translateTerm knownNames (Raw.App var args) = case var of
             <*> mapM (translateArg knownNames) restArgs
       -- PureSMT.app (PureSMT.symbol (toSmtName name)) <$> mapM (translateArg knownNames) restArgs
       DFunDef _
-        | name `notElem` knownNames ->
+        | name `S.notMember` knownNames ->
           throwError $ "translateApp: Unknown function '" <> show name <> "'"
         | otherwise -> do
           tell UsedSomeUFs
