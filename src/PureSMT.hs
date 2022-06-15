@@ -10,15 +10,25 @@ import Control.Concurrent
 import Control.Monad
 import System.IO.Unsafe (unsafePerformIO)
 
--- The api to the SMT solver is simple; all the user has to do is inform us how to (A) initialize
--- the solver with a shared context and (B) solve different problems. The @problems@ is supposed
--- to be a GADT in order to fix the different result type of solving different problems.
-
+-- |In order to use the pure 'solve' function, you must provide an instance of 'Solve'
+-- for your particular domain. The methods of the 'Solve' class are not meant to
+-- be called by the user. To provide an instance of 'Solve', you can use the functions
+-- in "PureSMT.Process" and "PureSMT.SExpr" to interact with a 'Solver' in a monadic fashion.
 class Solve domain where
+  -- |Specifies what is the common domain that is supposed to be shared amongst all calls to
+  -- the SMT solver
   type Ctx domain :: *
+  -- |Specifies a GADT for the problems that we can solve for this domain.
   type Problem domain :: * -> *
+
+  -- |How to initialize a solver with the given context;
   initSolver :: Ctx domain -> Solver -> IO ()
+
+  -- |Solves a problem, producing an associated result with it
   solveProblem :: Problem domain result -> Solver -> IO result
+
+-- The code below this point is still not used nor tested; need some thorough testing and
+-- as many pairs of eyes as we can.
 
 {-# NOINLINE solve #-}
 solve :: forall domain res . Solve domain => Ctx domain -> Problem domain res -> res
@@ -27,48 +37,61 @@ solve ctx = unsafePerformIO $ do
   -- we end up with a list of MVars, which we will protect in another MVar.
   allProcs <- launchAll @domain ctx >>= newMStack
 
-  -- Finally, we return the actual length function, which is ran in a 'catch'
-  -- block to make sure we get to respond in case of a bad exception and
-  -- the internals make sure to use 'withMVar' to not mess up the command/response
-  -- pairs.
+  -- Finally, we return the actual closure, the internals make sure
+  -- to use 'withMVar' to not mess up the command/response pairs.
   return $ \problem -> unsafePerformIO $ do
     ms <- popMStack allProcs
     r <- withMVar ms $ \solver -> do
+      -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
+      -- add it to the pool of workers and just retry the problem. In a future implementation
+      -- we could try launching it again
       solveProblem @domain problem solver
     pushMStack ms allProcs
     return r
 
 launchAll :: forall domain . Solve domain => Ctx domain -> IO [MVar X.Solver]
-launchAll ctx = replicateM nUMWORKERS $ do
-  s <- X.launchSolverWithFinalizer "cvc4 --lang=smt2 --incremental --fmf-fun" dEBUG
+launchAll ctx = replicateM numCapabilities $ do
+  s <- X.launchSolverWithFinalizer "cvc4 --lang=smt2 --incremental --fmf-fun" debug0
   initSolver @domain ctx s
   newMVar s
+  where
+    -- TODO: these constants should become parameters at some point; the solver command too!
 
-nUMWORKERS :: Int
-nUMWORKERS = 4
+    numCapabilities :: Int
+    numCapabilities = 4
 
-dEBUG :: Bool
-dEBUG = False
+    debug0 :: Bool
+    debug0 = False
+
+-- * Async Locks
+
+type Lock = MVar ()
+
+newLock :: IO Lock
+newLock = newMVar ()
+
+withLock :: Lock -> IO a -> IO a
+withLock lock act = withMVar lock $ Prelude.const act
 
 -- * Async Queues
 
 -- |A MStack is a MVar that satisfies the invariant that it never contains
 -- an empty list; if that's the case then the MVar is empty.
-type MStack a = MVar [a]
+type MStack a = (Lock, MVar [a])
 
 newMStack :: [a] -> IO (MStack a)
-newMStack [] = newEmptyMVar
-newMStack xs = newMVar xs
+newMStack [] = (,) <$> newLock <*> newEmptyMVar
+newMStack xs = (,) <$> newLock <*> newMVar xs
 
 pushMStack :: a -> MStack a -> IO ()
-pushMStack a q = do
+pushMStack a (l, q) = withLock l $ do
   mas <- tryTakeMVar q
   case mas of
     Nothing -> putMVar q [a]
     Just as0 -> putMVar q (a:as0)
 
 popMStack :: MStack a -> IO a
-popMStack q = do
+popMStack (l, q) = withLock l $ do
   xss <- takeMVar q
   case xss of
     [] -> error "invariant disrespected; MStack should never be empty"
