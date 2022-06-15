@@ -5,47 +5,52 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
--- | Provides the quasiquoters to be able to write @Ex@ programs
+-- | Provides the quasiquoters to be able to write @lang@ programs
 --  directly into Haskell source files. Using the functions
 --  exported by this module requires the @-XQuasiQuotes@ extension.
-module Language.Pirouette.Example.QuasiQuoter (prog, progNoTC, term, ty) where
+--  Check "Language.Pirouette.Example.QuasiQuoter" for an example instantiation.
+module Language.Pirouette.QuasiQuoter (QuasiQuoter, prog, progNoTC, term, ty) where
 
 import Control.Monad.Except (runExcept)
 import qualified Data.Map as M
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax hiding (Name, Type)
-import Language.Pirouette.Example.Syntax
-import Language.Pirouette.Example.ToTerm
+import Language.Pirouette.QuasiQuoter.Syntax
+import Language.Pirouette.QuasiQuoter.ToTerm
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls, typeCheckFunDef)
 import Text.Megaparsec
 
-prog :: QuasiQuoter
+prog :: forall lang . (LanguageParser lang, LanguageBuiltinTypes lang, Language lang) => QuasiQuoter
 prog = quoter $ \str -> do
-  p0 <- parseQ (spaceConsumer *> lexeme parseProgram <* eof) str
+  p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   (decls, DFunDef main@(FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
   _ <- maybeQ (typeCheckDecls decls)
   _ <- maybeQ (typeCheckFunDef decls "main" main)
   [e|(decls, mainTm)|]
 
-progNoTC :: QuasiQuoter
+progNoTC :: forall lang . (LanguageParser lang, Language lang) => QuasiQuoter
 progNoTC = quoter $ \str -> do
-  p0 <- parseQ (spaceConsumer *> lexeme parseProgram <* eof) str
+  p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   (decls, DFunDef (FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
   [e|(decls, mainTm)|]
 
-term :: QuasiQuoter
+term :: forall lang . (LanguageParser lang, Language lang) => QuasiQuoter
 term = quoter $ \str -> do
-  p0 <- parseQ (spaceConsumer *> lexeme parseTerm <* eof) str
+  p0 <- parseQ (spaceConsumer *> lexeme (parseTerm @lang) <* eof) str
   p1 <- trQ (trTerm [] [] p0)
   [e|p1|]
 
-ty :: QuasiQuoter
+ty :: forall lang . (LanguageParser lang, Language lang) => QuasiQuoter
 ty = quoter $ \str -> do
-  p0 <- parseQ (spaceConsumer *> lexeme parseType <* eof) str
+  p0 <- parseQ (spaceConsumer *> lexeme (parseType @lang) <* eof) str
   p1 <- trQ (trType [] p0)
   [e|p1|]
 
@@ -88,24 +93,24 @@ deriving instance Lift Name
 
 deriving instance Lift SystF.Kind
 
-deriving instance Lift (TermBase Ex)
+deriving instance (Lift (Constants lang), Lift (BuiltinTypes lang), Lift (BuiltinTerms lang)) => Lift (TermBase lang)
 
-deriving instance Lift (Var Ex)
+deriving instance (Lift (Constants lang), Lift (BuiltinTypes lang), Lift (BuiltinTerms lang)) => Lift (Var lang)
 
-deriving instance Lift (TypeBase Ex)
+deriving instance Lift (BuiltinTypes lang) => Lift (TypeBase lang)
 
-deriving instance Lift (TyVar Ex)
+deriving instance Lift (BuiltinTypes lang) => Lift (TyVar lang)
 
-deriving instance Lift (Type Ex)
+deriving instance Lift (BuiltinTypes lang) => Lift (Type lang)
 
-deriving instance Lift (Arg Ex)
+deriving instance (Lift (Constants lang), Lift (BuiltinTypes lang), Lift (BuiltinTerms lang)) => Lift (Arg lang)
 
-deriving instance Lift (Term Ex)
+deriving instance (Lift (Constants lang), Lift (BuiltinTypes lang), Lift (BuiltinTerms lang)) => Lift (Term lang)
 
 deriving instance Lift Rec
 
-deriving instance Lift (FunDef Ex)
+deriving instance (Lift (Constants lang), Lift (BuiltinTypes lang), Lift (BuiltinTerms lang)) => Lift (FunDef lang)
 
-deriving instance Lift (TypeDef Ex)
+deriving instance Lift (BuiltinTypes lang) => Lift (TypeDef lang)
 
-deriving instance Lift (Definition Ex)
+deriving instance (Lift (Constants lang), Lift (BuiltinTypes lang), Lift (BuiltinTerms lang)) => Lift (Definition lang)

@@ -17,12 +17,14 @@ library
   exposed-modules:
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
-      Language.Pirouette.Example.QuasiQuoter
-      Language.Pirouette.Example.Syntax
-      Language.Pirouette.Example.ToTerm
-      Language.Pirouette.PlutusIR.Builtins
+      Language.Pirouette.PlutusIR
       Language.Pirouette.PlutusIR.SMT
+      Language.Pirouette.PlutusIR.Syntax
       Language.Pirouette.PlutusIR.ToTerm
+      Language.Pirouette.PlutusIR.Typing
+      Language.Pirouette.QuasiQuoter
+      Language.Pirouette.QuasiQuoter.Syntax
+      Language.Pirouette.QuasiQuoter.ToTerm
       ListT.Extra
       ListT.Weighted
       ListT.Weighted.Examples
@@ -35,9 +37,6 @@ library
       Pirouette.SMT.Constraints
       Pirouette.SMT.FromTerm
       Pirouette.SMT.Monadic
-      Pirouette.Specializer.PIRTransformations
-      Pirouette.Specializer.Rewriting
-      Pirouette.Specializer.TypeDecl
       Pirouette.Symbolic.Eval
       Pirouette.Symbolic.Eval.SMT
       Pirouette.Symbolic.Eval.Types
@@ -109,7 +108,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.Pirouette.ExampleSpec
-      Language.Pirouette.PlutusIR.BuiltinsSpec
+      Language.Pirouette.PlutusIR.SyntaxSpec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Symbolic.EvalSpec
       Pirouette.Symbolic.EvalUtils

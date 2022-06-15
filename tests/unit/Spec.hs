@@ -1,6 +1,6 @@
 import qualified Language.Pirouette.ExampleSpec as Ex
 import qualified Language.Pirouette.PlutusIR.ToTermSpec as FP
-import qualified Language.Pirouette.PlutusIR.BuiltinsSpec as PIRBuiltins
+import qualified Language.Pirouette.PlutusIR.SyntaxSpec as PIRBuiltins
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Symbolic.EvalSpec as SymbolicEval
 import qualified Pirouette.Symbolic.ProveSpec as SymbolicProve
@@ -27,7 +27,7 @@ tests =
          testGroup "Monomorphization" Mono.tests,
          testGroup "Prenex" Prenex.tests],
       testGroup
-        "Term" 
+        "Term"
         [testGroup "Base" Base.tests,
          testGroup "Transformations" Tr.tests],
       testGroup
