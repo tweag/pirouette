@@ -32,8 +32,9 @@ import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter as QQ
 import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Monad (termIsMeta)
-import Pirouette.SMT
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
+import Pirouette.SMT.Base
+import Pirouette.SMT.Constraints
+import qualified PureSMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter (dquotes)
@@ -186,17 +187,17 @@ pattern TString = SystF.TyPure (SystF.Free (TyBuiltin TyString))
 -- | If we want to be able to symbolically evaluate terms of our language, we need to instruct
 -- pirouette on how to translate the builtins, constants and types into SMT
 instance LanguageSMT Ex where
-  translateBuiltinType TyInteger = SimpleSMT.tInt
-  translateBuiltinType TyBool = SimpleSMT.tBool
-  translateBuiltinType TyString = SimpleSMT.tString
-  translateConstant (ConstInt n) = SimpleSMT.int n
-  translateConstant (ConstBool b) = SimpleSMT.bool b
-  translateConstant (ConstString s) = SimpleSMT.string s
-  translateBuiltinTerm TermAdd [x, y] = Just $ SimpleSMT.add x y
-  translateBuiltinTerm TermSub [x, y] = Just $ SimpleSMT.sub x y
-  translateBuiltinTerm TermLt [x, y] = Just $ SimpleSMT.lt x y
-  translateBuiltinTerm TermEq [x, y] = Just $ SimpleSMT.eq x y
-  translateBuiltinTerm TermStrEq [x, y] = Just $ SimpleSMT.eq x y
+  translateBuiltinType TyInteger = PureSMT.tInt
+  translateBuiltinType TyBool = PureSMT.tBool
+  translateBuiltinType TyString = PureSMT.tString
+  translateConstant (ConstInt n) = PureSMT.int n
+  translateConstant (ConstBool b) = PureSMT.bool b
+  translateConstant (ConstString s) = PureSMT.string s
+  translateBuiltinTerm TermAdd [x, y] = Just $ PureSMT.add x y
+  translateBuiltinTerm TermSub [x, y] = Just $ PureSMT.sub x y
+  translateBuiltinTerm TermLt [x, y] = Just $ PureSMT.lt x y
+  translateBuiltinTerm TermEq [x, y] = Just $ PureSMT.eq x y
+  translateBuiltinTerm TermStrEq [x, y] = Just $ PureSMT.eq x y
   -- DO NOT TRANSLATE THIS TO 'ite',
   -- This should be taken care by symbolic evaluation branching,
   -- since it is in fact like 'match'; this is handled in the 'branchesBuiltinTerm'

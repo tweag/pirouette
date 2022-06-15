@@ -1,9 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Pirouette.Term.SymbolicEvalUtils where
+module Pirouette.Symbolic.EvalUtils where
 
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Pretty
-import Pirouette.Term.Symbolic.Eval
+import Pirouette.Symbolic.Eval
+import Pirouette.Symbolic.Prover
 import Test.Tasty.HUnit
 import Prettyprinter (vsep)
 
@@ -14,7 +15,7 @@ thing *=* expected = do
     Left e -> assertFailure $ "finished with errors: " <> e
     Right x -> x @=? expected
 
-satisfies 
+satisfies
   :: (Eq a, Show a)
   => IO (Either String a)
   -> (a -> Bool) -> Assertion
@@ -24,7 +25,7 @@ thing `satisfies` property = do
     Left e -> assertFailure $ "finished with errors: " <> e
     Right x -> assertBool ("property not satisfied: " <> show x) (property x)
 
-pathSatisfies 
+pathSatisfies
   :: (Language lang, Pretty res, Show res)
   => IO (Either String [Path lang res])
   -> ([Path lang res] -> Bool) -> Assertion
@@ -40,7 +41,7 @@ p .&. q = \x -> p x && q x
 (.||.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 p .||. q = \x -> p x || q x
 
-isVerified, isDischarged, isCounter, isNoCounter, ranOutOfFuel 
+isVerified, isDischarged, isCounter, isNoCounter, ranOutOfFuel
   :: Path lang (EvaluationWitness lang) -> Bool
 
 isVerified Path { pathResult = Verified } = True

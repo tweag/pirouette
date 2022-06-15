@@ -45,7 +45,6 @@ in {
 
         # haskell development tools pulled from regular nixpkgs
         hpack
-        hlint
         ormolu
         haskellPackages.happy
         cvc4 # required to run pirouette once its built

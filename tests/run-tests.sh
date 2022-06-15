@@ -70,30 +70,9 @@ run_cabal_test() {
   return $cabal_res
 }
 
-## Runs hlint on a project; creates artifacts with potential failures
-run_hlint() {
-  local proj=$1
-  echo "Running 'hlint' on $proj"
-
-  ## Since SimpleSMT is an external library, we want to minimize the difference.
-  ## Hence, we do not run `hlint` on it.
-  local hlint_res=0
-  if $ci; then
-    hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs" | tee "./${proj}-hlint.out"
-    hlint_res=$?
-    echo "run_hlint:$hlint_res" >> "./${proj}-hlint.res"
-  else
-    hlint . --ignore-glob="src/Pirouette/SMT/SimpleSMT.hs"
-    hlint_res=$?
-  fi
-
-  return $hlint_res
-}
-
 ormolu_ok=true
 cabal_build_ok=true
 cabal_test_ok=true
-hlint_ok=true
 
 ## Generate cabal file and build pirouette
 hpack
@@ -119,17 +98,11 @@ if [[ "$?" -ne "0" ]]; then
   cabal_test_ok=false
 fi
 
-run_hlint "pirouette"
-if [[ "$?" -ne "0" ]]; then
-  echo "[FAILURE] 'hlint' failed; check the respective artifact."
-  hlint_ok=false
-fi
-
 ## When running in CI, always return 0; we should use a subsequent job to check the
 ## produced files.
 if $ci; then
   exit 0
-elif $cabal_test_ok && $ormolu_ok && $hlint_ok; then
+elif $cabal_test_ok && $ormolu_ok; then
   exit 0
 else
   exit 1

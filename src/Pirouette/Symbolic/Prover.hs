@@ -2,8 +2,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module Pirouette.Term.Symbolic.Prover where
+module Pirouette.Symbolic.Prover where
 
 import Control.Monad.Except
 import Control.Monad.State
@@ -12,11 +13,12 @@ import qualified Data.Text as T
 import Pirouette.Monad (termIsWHNFOrMeta)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
-import Pirouette.SMT.SimpleSMT (SExpr (..))
-import Pirouette.SMT.Translation
-import Pirouette.Term.Symbolic.Eval
+import PureSMT (SExpr (..))
+import Pirouette.SMT.FromTerm
+import Pirouette.Symbolic.Eval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
+import Prettyprinter hiding (pretty, Pretty)
 
 -- | A problem represents a triple that should be checked.
 -- It should be the case that assuming 'problemAssume',
@@ -35,11 +37,28 @@ data Problem lang = Problem
   }
   deriving (Eq, Show)
 
+data EvaluationWitness lang
+  = Verified
+  | Discharged
+  | CounterExample (TermMeta lang SymVar) Model
+  deriving (Eq, Show)
+
+instance LanguagePretty lang => Pretty (EvaluationWitness lang) where
+  pretty Verified = "Verified"
+  pretty Discharged = "Discharged"
+  pretty (CounterExample t model) =
+    vsep
+      [ "COUNTER-EXAMPLE",
+        "Result:" <+> pretty t,
+        "Model:" <+> pretty model
+      ]
+
 type SymTerm lang = TermMeta lang SymVar
 
 rESULTNAME :: Name
 rESULTNAME = "__result"
 
+-- |Executes the problem returning /all/ paths (up to some stopping condition).
 prove ::
   (SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
@@ -47,6 +66,10 @@ prove ::
   m [Path lang (EvaluationWitness lang)]
 prove shouldStop problem = symevalT shouldStop $ proveRaw problem
 
+-- |Executes the problem while the stopping condition is valid until
+-- the supplied predicate returns @True@. A return value of @Nothing@
+-- means that on all paths that we looked at they were either verified or
+-- they reached the stopping condition.
 proveAny ::
   (SymEvalConstr lang m, MonadIO m) =>
   StoppingCondition ->
@@ -154,7 +177,4 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' (Model [])
         else do
-          normBodyTerm <- lift $ normalizeTerm bodyTerm'
-          normAssumeTerm <- lift $ normalizeTerm assumeTerm'
-          normProveTerm <- lift $ normalizeTerm proveTerm'
-          worker resultVar normBodyTerm normAssumeTerm normProveTerm
+          worker resultVar bodyTerm' assumeTerm' proveTerm'

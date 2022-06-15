@@ -4,8 +4,8 @@ import qualified Data.Text as Text
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
 import qualified PlutusCore as P
+import qualified PureSMT
 
 instance LanguageSMT PlutusIR where
   translateBuiltinType = trPIRType
@@ -18,31 +18,33 @@ instance LanguageSMT PlutusIR where
 instance LanguageSMTBranches PlutusIR where
   branchesBuiltinTerm _tm _translator _args = pure Nothing
 
-trPIRType :: PIRBuiltinType -> SimpleSMT.SExpr
-trPIRType PIRTypeInteger = SimpleSMT.tInt
-trPIRType PIRTypeBool = SimpleSMT.tBool
-trPIRType PIRTypeString = SimpleSMT.tString
-trPIRType PIRTypeByteString = SimpleSMT.tString
-trPIRType PIRTypeUnit = SimpleSMT.tUnit
--- TODO: Have an actual represention of data
-trPIRType PIRTypeData = SimpleSMT.tUnit
+trPIRType :: PIRBuiltinType -> PureSMT.SExpr
+trPIRType PIRTypeInteger = PureSMT.tInt
+trPIRType PIRTypeBool = PureSMT.tBool
+trPIRType PIRTypeString = PureSMT.tString
+trPIRType PIRTypeByteString = PureSMT.tString
+trPIRType PIRTypeUnit = PureSMT.tUnit
+trPIRType PIRTypeData = PureSMT.tUnit -- TODO: Temporary represention of data
+-- Note: why do Pair have maybes?
+-- Note answer, because types can be partially applied in System F,
+-- and `Pair a` is represented by `PIRTypePair (pirType a) Nothing`
 trPIRType (PIRTypePair (Just pirType1) (Just pirType2)) =
-  SimpleSMT.tTuple [trPIRType pirType1, trPIRType pirType2]
+  PureSMT.tTuple [trPIRType pirType1, trPIRType pirType2]
 trPIRType pirType =
   error $ "Translate builtin type to smtlib: " <> show pirType <> " not yet handled."
 
 -- TODO Implement remaining constants
-trPIRConstant :: PIRConstant -> SimpleSMT.SExpr
-trPIRConstant (PIRConstInteger n) = SimpleSMT.int n
+trPIRConstant :: PIRConstant -> PureSMT.SExpr
+trPIRConstant (PIRConstInteger n) = PureSMT.int n
 trPIRConstant (PIRConstByteString bs) = error "Not implemented: PIRConstByteString to SMT"
-trPIRConstant PIRConstUnit = SimpleSMT.unit
-trPIRConstant (PIRConstBool b) = SimpleSMT.bool b
-trPIRConstant (PIRConstString txt) = SimpleSMT.string (Text.unpack txt)
+trPIRConstant PIRConstUnit = PureSMT.unit
+trPIRConstant (PIRConstBool b) = PureSMT.bool b
+trPIRConstant (PIRConstString txt) = PureSMT.string (Text.unpack txt)
 trPIRConstant (PIRConstList l) = error "Not implemented: PIRConstList to SMT"
 trPIRConstant (PIRConstPair x y) = error "Not implemented: PIRConstPair to SMT"
 trPIRConstant (PIRConstData dat) = error "Not implemented: PIRConstData to SMT"
 
-trPIRFun :: P.DefaultFun -> [SimpleSMT.SExpr] -> Maybe SimpleSMT.SExpr
+trPIRFun :: P.DefaultFun -> [PureSMT.SExpr] -> Maybe PureSMT.SExpr
 
 -- TODO Implement remaining builtins: those used by the "Auction" example
 -- validator are marked with an [A] and as commented out lines in the
@@ -125,7 +127,7 @@ trPIRFun :: P.DefaultFun -> [SimpleSMT.SExpr] -> Maybe SimpleSMT.SExpr
 -- Unary
 trPIRFun op [x] =
   case op of
-    P.Trace -> Just $ SimpleSMT.List [x]
+    P.Trace -> Just $ PureSMT.List [x]
     -- P.FstPair ->
     -- P.SndPair ->
     -- P.HeadList ->
@@ -141,17 +143,17 @@ trPIRFun op [x] =
 -- Binary
 trPIRFun op [x, y] =
   case op of
-    P.AddInteger -> Just $ SimpleSMT.add x y
-    P.SubtractInteger -> Just $ SimpleSMT.sub x y
-    P.MultiplyInteger -> Just $ SimpleSMT.mul x y
-    P.DivideInteger -> Just $ SimpleSMT.div x y
-    P.ModInteger -> Just $ SimpleSMT.mod x y
-    P.EqualsInteger -> Just $ SimpleSMT.eq x y
-    P.LessThanInteger -> Just $ SimpleSMT.lt x y
-    P.LessThanEqualsInteger -> Just $ SimpleSMT.leq x y
-    P.EqualsByteString -> Just $ SimpleSMT.eq x y
-    P.EqualsString -> Just $ SimpleSMT.eq x y
-    P.EqualsData -> Just $ SimpleSMT.eq x y
+    P.AddInteger -> Just $ PureSMT.add x y
+    P.SubtractInteger -> Just $ PureSMT.sub x y
+    P.MultiplyInteger -> Just $ PureSMT.mul x y
+    P.DivideInteger -> Just $ PureSMT.div x y
+    P.ModInteger -> Just $ PureSMT.mod x y
+    P.EqualsInteger -> Just $ PureSMT.eq x y
+    P.LessThanInteger -> Just $ PureSMT.lt x y
+    P.LessThanEqualsInteger -> Just $ PureSMT.leq x y
+    P.EqualsByteString -> Just $ PureSMT.eq x y
+    P.EqualsString -> Just $ PureSMT.eq x y
+    P.EqualsData -> Just $ PureSMT.eq x y
     _ ->
       error $
         "Translate builtin to SMT: "
