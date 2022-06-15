@@ -284,6 +284,9 @@ class (PirouetteReadDefs lang m) => PirouetteDepOrder lang m where
 instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
   prtDependencyOrder = asks prtDepOrder
 
+getPrtOrderedDefs :: (PirouetteDepOrder lang m) => m (PrtOrderedDefs lang)
+getPrtOrderedDefs = PrtOrderedDefs <$> prtAllDefs <*> prtDependencyOrder <*> prtMain
+
 -- ** A 'PirouetteBase' Implementation:
 
 -- | Read-only internal options

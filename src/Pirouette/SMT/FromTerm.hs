@@ -11,15 +11,16 @@
 {-# HLINT ignore "Replace case with maybe" #-}
 
 -- | Translation of Pirouette syntactical categories into
--- smtlib through our copy of the SimpleSMT library.
-module Pirouette.SMT.Translation where
+-- smtlib through our copy of the PureSMT library.
+module Pirouette.SMT.FromTerm where
 
 import Control.Monad.Except
 import Control.Monad.Writer (Any (..), WriterT (..), tell)
+import qualified Data.Set as S
 -- import Debug.Trace (trace)
 import Pirouette.Monad
 import Pirouette.SMT.Base
-import qualified Pirouette.SMT.SimpleSMT as SmtLib
+import qualified PureSMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as Raw
 
@@ -75,18 +76,18 @@ translateTypeBase ::
   forall lang m.
   (LanguageSMT lang, Monad m) =>
   TypeBase lang ->
-  m SmtLib.SExpr
+  m PureSMT.SExpr
 translateTypeBase (TyBuiltin pirType) = return $ translateBuiltinType @lang pirType
-translateTypeBase (TySig name) = return $ SmtLib.symbol (toSmtName name)
+translateTypeBase (TySig name) = return $ PureSMT.symbol (toSmtName name)
 
 translateType ::
   (LanguageSMT lang, ToSMT meta, Monad m) =>
   TypeMeta lang meta ->
-  TranslatorT m SmtLib.SExpr
+  TranslatorT m PureSMT.SExpr
 translateType (Raw.TyApp (Raw.Free ty) args) =
-  SmtLib.app <$> translateTypeBase ty <*> mapM translateType args
+  PureSMT.app <$> translateTypeBase ty <*> mapM translateType args
 translateType (Raw.TyApp (Raw.Bound (Raw.Ann ann) _index) args) =
-  SmtLib.app (SmtLib.symbol (toSmtName ann)) <$> mapM translateType args
+  PureSMT.app (PureSMT.symbol (toSmtName ann)) <$> mapM translateType args
 translateType x =
   throwError $ "Translate type to smtlib: cannot handle " <> show x
 
@@ -97,9 +98,9 @@ translateType x =
 translateTerm ::
   forall lang meta m.
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   TermMeta lang meta ->
-  TranslatorT m SmtLib.SExpr
+  TranslatorT m PureSMT.SExpr
 translateTerm _ (Raw.Lam _ann _ty _term) =
   throwError "Translate term to smtlib: Lambda abstraction in term"
 translateTerm _ (Raw.Abs _ann _kind _term) =
@@ -111,7 +112,7 @@ translateTerm knownNames (Raw.App var args) = case var of
   Raw.Free Bottom ->
     throwError "translateApp: Bottom; unclear how to translate that. WIP"
   -- meta go to ToSMT
-  Raw.Meta h -> SmtLib.app (translate h) <$> mapM (translateArg knownNames) args
+  Raw.Meta h -> PureSMT.app (translate h) <$> mapM (translateArg knownNames) args
   -- constants and builtins go to LanguageSMT
   Raw.Free (Constant c) ->
     if null args
@@ -127,7 +128,7 @@ translateTerm knownNames (Raw.App var args) = case var of
     defn <- liftTranslator ("translateApp: Unknown name: " <> show name) (prtDefOf name)
     case defn of
       DConstructor ix tname
-        | name `notElem` knownNames ->
+        | name `S.notMember` knownNames ->
           throwError $ "translateApp: Unknown constructor '" <> show name <> "'"
         | otherwise -> do
           -- bring in the type information
@@ -146,16 +147,16 @@ translateTerm knownNames (Raw.App var args) = case var of
           -- there must be exactly as many arguments as required
           guard (length argTys == length restArgs)
           -- finally build the term
-          SmtLib.app
-            <$> (SmtLib.as (SmtLib.symbol (toSmtName name)) <$> translateType resultTy)
+          PureSMT.app
+            <$> (PureSMT.as (PureSMT.symbol (toSmtName name)) <$> translateType resultTy)
             <*> mapM (translateArg knownNames) restArgs
-      -- SmtLib.app (SmtLib.symbol (toSmtName name)) <$> mapM (translateArg knownNames) restArgs
+      -- PureSMT.app (PureSMT.symbol (toSmtName name)) <$> mapM (translateArg knownNames) restArgs
       DFunDef _
-        | name `notElem` knownNames ->
+        | name `S.notMember` knownNames ->
           throwError $ "translateApp: Unknown function '" <> show name <> "'"
         | otherwise -> do
           tell UsedSomeUFs
-          SmtLib.app (SmtLib.symbol (toSmtName name)) <$> mapM (translateArg knownNames) args
+          PureSMT.app (PureSMT.symbol (toSmtName name)) <$> mapM (translateArg knownNames) args
       DTypeDef _ ->
         throwError "translateApp: Type name in function name"
       -- DO NEVER TRY TO TRANSLATE THESE!!
@@ -167,9 +168,9 @@ translateTerm knownNames (Raw.App var args) = case var of
 
 translateArg ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   ArgMeta lang meta ->
-  TranslatorT m SmtLib.SExpr
+  TranslatorT m PureSMT.SExpr
 translateArg knownNames (Raw.TermArg term) = translateTerm knownNames term
 -- TODO: This case is known to create invalid SMT terms,
 -- since in SMT solver, application of a term to a type is not allowed.
@@ -183,7 +184,7 @@ constructorFromPIR ::
   (LanguageSMT builtins, ToSMT meta, Monad m) =>
   [typeVariable] ->
   (Name, TypeMeta builtins meta) ->
-  TranslatorT m (String, [(String, SmtLib.SExpr)])
+  TranslatorT m (String, [(String, PureSMT.SExpr)])
 constructorFromPIR tyVars (name, constructorType) = do
   -- Fields of product types must be named: we append ids to the constructor name
   let fieldNames = map (((toSmtName name ++ "_") ++) . show) [1 :: Int ..]

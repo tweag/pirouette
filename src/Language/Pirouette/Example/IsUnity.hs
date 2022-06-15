@@ -4,7 +4,7 @@ module Language.Pirouette.Example.IsUnity where
 
 import Language.Pirouette.Example.QuasiQuoter
 import Language.Pirouette.Example.Syntax
-import Pirouette.Term.Symbolic.Prover.Runner
+import Pirouette.Symbolic.Prover.Runner
 import Pirouette.Term.Syntax.Base
 import qualified Test.Tasty.HUnit as Test
 

@@ -12,10 +12,11 @@ import Data.List (intersperse)
 import Data.Map (Map)
 import Pirouette.Monad
 import Pirouette.SMT.Base
-import qualified Pirouette.SMT.SimpleSMT as SimpleSMT
-import Pirouette.SMT.Translation
+import qualified PureSMT
+import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
+import qualified Data.Set as S
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
@@ -41,7 +42,7 @@ data AtomicConstraint lang meta
   | NonInlinableSymbolEq (TermMeta lang meta) (TermMeta lang meta)
   | NonInlinableSymbolNotEq (TermMeta lang meta) (TermMeta lang meta)
   | OutOfFuelEq (TermMeta lang meta) (TermMeta lang meta)
-  | Native SimpleSMT.SExpr
+  | Native PureSMT.SExpr
   deriving (Eq, Show)
 
 data Constraint lang meta
@@ -60,6 +61,7 @@ data Branch lang meta = Branch
     newTerm :: TermMeta lang meta
   }
 
+-- TODO: Maybe this should be merged with 'LanguageSMT'
 class (LanguageSMT lang) => LanguageSMTBranches lang where
   -- | Injection of different cases in the symbolic evaluator.
   -- For example, one can introduce a 'if_then_else' built-in
@@ -67,7 +69,7 @@ class (LanguageSMT lang) => LanguageSMTBranches lang where
   branchesBuiltinTerm ::
     (ToSMT meta, PirouetteReadDefs lang m) =>
     BuiltinTerms lang ->
-    (TermMeta lang meta -> m (Maybe SimpleSMT.SExpr)) ->
+    (TermMeta lang meta -> m (Maybe PureSMT.SExpr)) ->
     [ArgMeta lang meta] ->
     m (Maybe [Branch lang meta])
   branchesBuiltinTerm _ _ _ = pure Nothing
@@ -136,29 +138,29 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) whe
 -- Hence, we chose solution #2
 atomicConstraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   AtomicConstraint lang meta ->
-  TranslatorT m SimpleSMT.SExpr
+  TranslatorT m PureSMT.SExpr
 atomicConstraintToSExpr knownNames (Assign name term) = do
   let smtName = translate name
   d <- translateTerm knownNames term
-  return $ smtName `SimpleSMT.eq` d
+  return $ smtName `PureSMT.eq` d
 atomicConstraintToSExpr _knownNames (VarEq a b) = do
   let aName = translate a
   let bName = translate b
-  return $ aName `SimpleSMT.eq` bName
+  return $ aName `PureSMT.eq` bName
 atomicConstraintToSExpr knownNames (NonInlinableSymbolEq term1 term2) = do
   t1 <- translateTerm knownNames term1
   t2 <- translateTerm knownNames term2
-  return $ t1 `SimpleSMT.eq` t2
+  return $ t1 `PureSMT.eq` t2
 atomicConstraintToSExpr knownNames (NonInlinableSymbolNotEq term1 term2) = do
   t1 <- translateTerm knownNames term1
   t2 <- translateTerm knownNames term2
-  return $ SimpleSMT.not (t1 `SimpleSMT.eq` t2)
+  return $ PureSMT.not (t1 `PureSMT.eq` t2)
 atomicConstraintToSExpr knownNames (OutOfFuelEq term1 term2) = do
   t1 <- translateTerm knownNames term1
   t2 <- translateTerm knownNames term2
-  return $ t1 `SimpleSMT.eq` t2
+  return $ t1 `PureSMT.eq` t2
 atomicConstraintToSExpr _knownNames (Native expr) =
   return expr
 
@@ -168,11 +170,11 @@ atomicConstraintToSExpr _knownNames (Native expr) =
 -- A 'False' indicates that some have been forgotten during the translation.
 constraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  [Name] ->
+  S.Set Name ->
   Constraint lang meta ->
-  m (Bool, UsedAnyUFs, SimpleSMT.SExpr)
+  m (Bool, UsedAnyUFs, PureSMT.SExpr)
 constraintToSExpr knownNames (And constraints) = do
   atomTrads <- mapM (runTranslator . atomicConstraintToSExpr knownNames) constraints
   let (translations, usedUFs) = unzip (rights atomTrads)
-  return (all isRight atomTrads, mconcat usedUFs, SimpleSMT.andMany translations)
-constraintToSExpr _ Bot = return (True, NotUsedAnyUFs, SimpleSMT.bool False)
+  return (all isRight atomTrads, mconcat usedUFs, PureSMT.andMany translations)
+constraintToSExpr _ Bot = return (True, NotUsedAnyUFs, PureSMT.bool False)

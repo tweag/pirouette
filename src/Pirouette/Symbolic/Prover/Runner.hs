@@ -2,13 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Pirouette.Term.Symbolic.Prover.Runner where
+module Pirouette.Symbolic.Prover.Runner where
 
 import Control.Monad.Reader
 import Pirouette.Monad
-import Pirouette.SMT
-import Pirouette.Term.Symbolic.Eval
-import Pirouette.Term.Symbolic.Prover
+import Pirouette.SMT.Constraints
+import Pirouette.Symbolic.Eval
+import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF (tyFunArgs)
 import Pirouette.Term.TypeChecker
@@ -17,6 +17,7 @@ import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
+import Pirouette.Term.Syntax (pretty)
 
 data AssumeProve lang = Term lang :==>: Term lang
   deriving (Eq, Show)
@@ -69,7 +70,7 @@ printIRResult _ (Right (Just Path {pathResult = CounterExample _ model})) = do
   setSGR [SetColor Foreground Vivid Yellow]
   putStrLn "💸 COUNTEREXAMPLE FOUND"
   setSGR [Reset]
-  print $ showModelHaskellish model
+  print $ pretty model
 printIRResult steps (Right _) = do
   setSGR [SetColor Foreground Vivid Green]
   putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"

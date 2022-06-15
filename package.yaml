@@ -27,6 +27,7 @@ dependencies:
   - deriving-compat
   - simple-smt
   - process
+  - typed-process
   - tlaplus
   - tlaplus-qq
   - flat >= 0.4.5

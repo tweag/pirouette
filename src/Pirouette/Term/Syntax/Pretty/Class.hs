@@ -12,6 +12,7 @@ import Data.Void
 import Prettyprinter hiding (Pretty, pretty)
 import qualified Prettyprinter as Prettyprint (pretty)
 import Prettyprinter.Render.Text
+import PureSMT.SExpr
 
 -- | Renders a doc in a single line.
 renderSingleLine :: Doc ann -> Text
@@ -125,3 +126,13 @@ instance {-# OVERLAPPABLE #-} (Pretty a) => Pretty [a] where
 
 instance Pretty ShowS where
   pretty = pretty . ($ "")
+
+instance Pretty Value where
+  pretty (Bool b) = pretty b
+  pretty (Int n) = pretty n
+  pretty (Real r) = pretty r
+  pretty (Bits _n v) = "#x" <> pretty v
+  pretty (Other e) = pretty e
+
+instance Pretty SExpr where
+  pretty p = pretty $ showsSExprHaskellish p
