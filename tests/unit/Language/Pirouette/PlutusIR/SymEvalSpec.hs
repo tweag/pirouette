@@ -58,7 +58,7 @@ tests =
       [ testCase "just evaluation" $ 
           execFromPIRFile proveUnbounded 
             "tests/unit/resources/fromPlutusIRSpec-01.pir"
-            ( [pirTy| Bool |], [pir| \(x : Integer) . add1 x |])
+            ( [pirTy| Bool |], [pir| \(x : Integer) . addone x |])
             ( [pir| \(result : Integer) (x : Integer) . 0 < result |],
               [pir| \(result : Integer) (x : Integer) . 0 < x |]
             )
