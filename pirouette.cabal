@@ -110,6 +110,8 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.Pirouette.ExampleSpec
+      Language.Pirouette.PlutusIR.Common
+      Language.Pirouette.PlutusIR.SymEvalSpec
       Language.Pirouette.PlutusIR.SyntaxSpec
       Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Symbolic.EvalSpec

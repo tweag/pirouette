@@ -65,6 +65,13 @@ prove ::
   m [Path lang (EvaluationWitness lang)]
 prove shouldStop problem = symeval shouldStop $ proveRaw problem
 
+-- |Prove without any stopping condition.
+proveUnbounded ::
+  (SymEvalConstr lang m, MonadIO m) =>
+  Problem lang ->
+  m [Path lang (EvaluationWitness lang)]
+proveUnbounded = prove (const False)
+
 -- |Executes the problem while the stopping condition is valid until
 -- the supplied predicate returns @True@. A return value of @Nothing@
 -- means that on all paths that we looked at they were either verified or

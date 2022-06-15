@@ -61,5 +61,11 @@
         [{{ TxConstraints Bool } Bool } 
           [[ { Cons TxConstraint } [MustBeTrue False] ] { Nil TxConstraint } ] ]
     )
+    (termbind 
+      (strict)
+        (vardecl addone (fun integer integer))
+        (lam x integer 
+          [(builtin addInteger) x (con integer 1)]
+        ))
     long
 ))
