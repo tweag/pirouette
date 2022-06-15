@@ -20,9 +20,6 @@ module Pirouette.SMT.Monadic
     declareDatatypes,
     supportedUninterpretedFunction,
     declareRawFun,
-    declareUninterpretedFunction,
-    declareUninterpretedFunctions,
-    declareAsManyUninterpretedFunctionsAsPossible,
     declareVariables,
     declareVariable,
     assert,
@@ -46,7 +43,6 @@ import Control.Monad.Reader
 import Control.Monad.State.Class
 import Control.Monad.Writer
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, mapMaybe)
 import ListT.Weighted (MonadWeightedList)
 import Pirouette.Monad
 import Pirouette.Monad.Logger
@@ -56,7 +52,6 @@ import qualified PureSMT
 import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import System.IO.Unsafe (unsafePerformIO)
 
 -- OLD CODE
 
@@ -130,8 +125,10 @@ declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
 declareDatatypes = fmap concat . mapM (uncurry declareDatatype)
 
--- |If a function can be declared as an uninterpreted function, returns
--- the type of its arguments and the type of its result.
+-- |Returns whether or not a function @f@ can be declared as an uninterpreted function and,
+-- if it can, return the type of its arguments and result.
+-- A function can be declared if its type can be translate to SmtLib, an uninterpreted function
+-- has no body after all, so no need to worry about it.
 supportedUninterpretedFunction ::
   (LanguageSMT lang) => FunDef lang -> Maybe ([PureSMT.SExpr], PureSMT.SExpr)
 supportedUninterpretedFunction FunDef {funTy} = toMaybe $ do
@@ -142,44 +139,12 @@ supportedUninterpretedFunction FunDef {funTy} = toMaybe $ do
  where
    toMaybe = either (const Nothing) Just . runExcept
 
+-- |Declares a function with a given name, type of arguments and type of result.
 declareRawFun ::
   (MonadIO m) => Name -> ([PureSMT.SExpr], PureSMT.SExpr) -> SolverT m ()
 declareRawFun n (args, res) = do
   solver <- ask
   void $ liftIO $ PureSMT.declareFun solver (toSmtName n) args res
-
--- | Declare a single function signature as uninterpreted
--- in the current solver session.
-declareUninterpretedFunction ::
-  (LanguageSMT lang, MonadIO m) => Name -> FunDef lang -> ExceptT String (SolverT m) Name
-declareUninterpretedFunction fnName FunDef {funTy} = do
-  solver <- ask
-  let (args, result) = R.tyFunArgs funTy
-  (args', _) <- runWriterT $ mapM translateType args
-  (result', _) <- runWriterT $ translateType result
-  _ <- liftIO $ PureSMT.declareFun solver (toSmtName fnName) args' result'
-  return fnName
-
-declareUninterpretedFunctions ::
-  (LanguageSMT lang, MonadIO m) =>
-  M.Map Name (Definition lang) ->
-  [R.Arg Name Name] ->
-  ExceptT String (SolverT m) [Name]
-declareUninterpretedFunctions decls orderedNames = do
-  let fnNames = mapMaybe (R.argElim (const Nothing) Just) orderedNames
-  forMaybeM fnNames $ \fnName ->
-    case M.lookup fnName decls of
-      Just (DFunDef fdef) -> Just <$> declareUninterpretedFunction fnName fdef
-      _ -> return Nothing
-
-declareAsManyUninterpretedFunctionsAsPossible ::
-  (LanguageSMT lang, MonadIO m) =>
-  [(Name, FunDef lang)] ->
-  ExceptT String (SolverT m) [Name]
-declareAsManyUninterpretedFunctionsAsPossible ds = do
-  forMaybeM ds $ \(fnName, fnDef) ->
-    (Just <$> declareUninterpretedFunction fnName fnDef)
-      `catchError` (\_ -> return Nothing)
 
 -- | Declare (name and type) all the variables of the environment in the SMT
 -- solver. This step is required before asserting constraints mentioning any of these variables.
@@ -231,11 +196,3 @@ getModel names = SolverT $
   ReaderT $ \solver -> do
     let exprs = map (PureSMT.symbol . toSmtName) names
     liftIO $ PureSMT.getExprs solver exprs
-
--- Utility functions
-
-concatForM :: (Traversable t, Monad f) => t a -> (a -> f [b]) -> f [b]
-concatForM xs action = concat <$> forM xs action
-
-forMaybeM :: (Monad f) => [a] -> (a -> f (Maybe b)) -> f [b]
-forMaybeM xs action = catMaybes <$> forM xs action
