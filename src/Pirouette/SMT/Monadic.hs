@@ -117,11 +117,16 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
       constr'
   return $ typeName : map fst cstrs
 
--- | Declare a set of datatypes in the current solver session, in the order specified by
--- the list of definitions. For info on sorting definitions, check the 'PirouetteDepOrder' class.
+-- | Declare a set of datatypes (all at once) in the current solver session.
 declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
-declareDatatypes = fmap concat . mapM (uncurry declareDatatype)
+declareDatatypes dts = do
+  solver <- ask
+  (dts', _) <- runWriterT $ forM dts $ \(typeName, Datatype _ typeVariables _ cstrs) -> do
+    cstrs' <- mapM (constructorFromPIR typeVariables) cstrs
+    pure (toSmtName typeName, map (toSmtName . fst) typeVariables, cstrs')
+  liftIO $ PureSMT.declareDatatypes solver dts'
+  return $ concat [typeName : map fst cstrs | (typeName, Datatype _ _ _ cstrs) <- dts]
 
 -- |Returns whether or not a function @f@ can be declared as an uninterpreted function and,
 -- if it can, return the type of its arguments and result.

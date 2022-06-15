@@ -156,23 +156,35 @@ declareDatatype ::
   -- | constructors
   [(String, [(String, SExpr)])] ->
   IO ()
-declareDatatype solver t [] cs =
-  ackCommand solver $
-    fun
-      "declare-datatype"
-      [ Atom t,
-        List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
-      ]
 declareDatatype solver t ps cs =
   ackCommand solver $
     fun
       "declare-datatype"
       [ Atom t,
-        fun
-          "par"
-          [ List (map Atom ps),
-            List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
-          ]
+        datatypeDefn ps cs
+      ]
+
+-- | Declare an ADT using the format introduced in SmtLib 2.6.
+declareDatatypes ::
+  Solver ->
+  [(String, [String], [(String, [(String, SExpr)])])] ->
+  IO ()
+declareDatatypes solver dts =
+  ackCommand solver $
+    fun
+      "declare-datatypes"
+      [ List [ List [ Atom nm, Atom (show $ length args) ] | (nm, args, _) <- dts ],
+        List [datatypeDefn args cstrs | (_, args, cstrs) <- dts]
+      ]
+
+-- | Shared part of 'declareDatatype' and 'declareDatatypes'
+datatypeDefn :: [String] -> [(String, [(String, SExpr)])] -> SExpr
+datatypeDefn [] cs =
+  List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
+datatypeDefn ps cs =
+  fun "par"
+      [ List (map Atom ps),
+        List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
       ]
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
