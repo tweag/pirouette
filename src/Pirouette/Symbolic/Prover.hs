@@ -163,8 +163,8 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     _ -> do
       -- one step of evaluation on each,
       -- but going into matches first
-      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $ runWriterT $
-        symEvalMatchesFirst Just id [bodyTerm, assumeTerm, proveTerm]
+      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $
+        symEvalParallel [bodyTerm, assumeTerm, proveTerm]
       -- liftIO $ putStrLn "ONE STEP"
       -- liftIO $ print (pretty bodyTerm')
       -- liftIO $ print (pretty assumeTerm')

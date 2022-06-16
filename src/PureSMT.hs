@@ -42,6 +42,8 @@ solve ctx = unsafePerformIO $ do
       -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
+      -- pid <- unsafeSolverPid solver
+      -- print pid
       solveProblem @domain problem solver
     pushMStack ms allProcs
     return r
@@ -55,10 +57,10 @@ launchAll ctx = replicateM numCapabilities $ do
     -- TODO: these constants should become parameters at some point; the solver command too!
 
     numCapabilities :: Int
-    numCapabilities = 4
+    numCapabilities = 3
 
     debug0 :: Bool
-    debug0 = True
+    debug0 = False
 
 -- * Async Locks
 
@@ -80,15 +82,18 @@ newMStack :: [a] -> IO (MStack a)
 newMStack [] = (,) <$> newLock <*> newEmptyMVar
 newMStack xs = (,) <$> newLock <*> newMVar xs
 
+-- Weirdly enough... removing the withLock makes it work and multiple solvers correctly
+-- pick their tasks
+
 pushMStack :: a -> MStack a -> IO ()
-pushMStack a (l, q) = withLock l $ do
+pushMStack a (l, q) = do
   mas <- tryTakeMVar q
   case mas of
     Nothing -> putMVar q [a]
     Just as0 -> putMVar q (a:as0)
 
 popMStack :: MStack a -> IO a
-popMStack (l, q) = withLock l $ do
+popMStack (l, q) = do
   xss <- takeMVar q
   case xss of
     [] -> error "invariant disrespected; MStack should never be empty"
