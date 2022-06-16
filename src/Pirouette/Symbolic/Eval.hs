@@ -352,7 +352,10 @@ symEvalOneStep t@(R.App hd args) = case hd of
           R.TermArg
           args
 
--- A-ha... it's the state monad annoying us
+-- A-ha... it's the state monad annoying us. Maybe if we can understand whether
+-- we really need the state monad we can better understand the parallelism possibilities
+-- in here. If we do really need the monad, we can only paralellize the prune and pruneAndValidate
+-- functions, if not, we could paralellize everything.
 symEvalParallel ::
   forall lang .
   (SymEvalConstr lang) =>
@@ -373,7 +376,7 @@ symEvalMatchesFirst ::
   (TermMeta lang SymVar -> a) ->
   [a] ->
   WriterT Any (SymEval lang) [a]
-symEvalMatchesFirst f g exprs = withStrategy (parList rpar) <$> go [] exprs
+symEvalMatchesFirst f g exprs = go [] exprs
   where
     -- we came to the end without a match,
     -- so we execute one step in parallel
