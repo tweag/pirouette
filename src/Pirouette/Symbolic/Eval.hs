@@ -30,6 +30,7 @@ module Pirouette.Symbolic.Eval
     -- ** Incorrectness logic
     symevalAnyPath,
     symEvalMatchesFirst,
+    symEvalParallel,
     UniversalAxiom (..),
     Model (..),
 
@@ -198,10 +199,23 @@ instance (SymEvalConstr lang) => Alternative (SymEval lang) where
 -- | Prune the set of paths in the current set.
 prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
 prune xs = SymEval $
-  ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st -> do
-    (x, st') <- runSymEvalRaw solvers defs st xs
-    guard (solvePathProblem solvers (CheckPathProblem st' defs))
-    return (x, st')
+  ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st ->
+    weightedParFilter
+      (\(_, st') -> solvePathProblem solvers (CheckPathProblem st' defs))
+      (runSymEvalRaw solvers defs st xs)
+
+weightedParFilter :: (a -> Bool) -> WeightedList a -> WeightedList a
+weightedParFilter _ ListT.Fail = ListT.Fail
+weightedParFilter f (ListT.Weight n w) =
+  case weightedParFilter f w of
+    ListT.Fail -> ListT.Fail
+    other -> ListT.Weight n other
+weightedParFilter f (ListT.Action (Identity w)) = weightedParFilter f w
+weightedParFilter f (ListT.Yield a w) =
+  let (keep, rest) =
+        withStrategy (parTuple2 rpar rpar)
+        (f a , weightedParFilter f w)
+   in if keep then ListT.Yield a rest else rest
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
@@ -337,6 +351,14 @@ symEvalOneStep t@(R.App hd args) = case hd of
           (\case R.TyArg {} -> Nothing; R.TermArg v -> Just v)
           R.TermArg
           args
+
+-- A-ha... it's the state monad annoying us
+symEvalParallel ::
+  forall lang .
+  (SymEvalConstr lang) =>
+  [TermMeta lang SymVar] ->
+  SymEval lang ([TermMeta lang SymVar], Any)
+symEvalParallel = runWriterT . mapM symEvalOneStep
 
 -- | Strategy for evaluating a set of expression,
 --   but giving priority to destructors over the rest.
