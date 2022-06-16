@@ -88,7 +88,7 @@ deriving instance PirouetteReadDefs lang m => PirouetteReadDefs lang (SymEvalT l
 deriving instance MonadError e m => MonadError e (SymEvalT lang m)
 
 type SymEvalConstr lang m =
-  (PirouetteDepOrder lang m, LanguagePretty lang, SMT.LanguageSMTBranches lang, MonadFail m, MonadIO m)
+  (PirouetteDepOrder lang m, LanguagePretty lang, LanguageSymEval lang, MonadFail m, MonadIO m)
 
 symevalT ::
   (SymEvalConstr lang m) =>
@@ -269,7 +269,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
           case c' of
             Left _ -> pure Nothing
             Right (d, _) -> pure $ Just d
-    mayBranches <- lift $ SMT.branchesBuiltinTerm @lang builtin translator args
+    mayBranches <- lift $ branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
       Just branches -> asum $

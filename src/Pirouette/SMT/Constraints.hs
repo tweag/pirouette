@@ -61,19 +61,6 @@ data Branch lang meta = Branch
     newTerm :: TermMeta lang meta
   }
 
--- TODO: Maybe this should be merged with 'LanguageSMT'
-class (LanguageSMT lang) => LanguageSMTBranches lang where
-  -- | Injection of different cases in the symbolic evaluator.
-  -- For example, one can introduce a 'if_then_else' built-in
-  -- and implement this method to look at both possibilities.
-  branchesBuiltinTerm ::
-    (ToSMT meta, PirouetteReadDefs lang m) =>
-    BuiltinTerms lang ->
-    (TermMeta lang meta -> m (Maybe PureSMT.SExpr)) ->
-    [ArgMeta lang meta] ->
-    m (Maybe [Branch lang meta])
-  branchesBuiltinTerm _ _ _ = pure Nothing
-
 -- Essentially list concatenation, with the specificity that `Bot` is absorbing.
 andConstr :: Constraint lang meta -> Constraint lang meta -> Constraint lang meta
 andConstr Bot _ = Bot

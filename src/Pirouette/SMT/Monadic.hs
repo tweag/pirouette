@@ -33,7 +33,6 @@ module Pirouette.SMT.Monadic
     PureSMT.Result (..),
     module Base,
     Branch (..),
-    LanguageSMTBranches (..),
   )
 where
 

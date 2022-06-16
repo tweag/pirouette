@@ -6,7 +6,6 @@ module Pirouette.Symbolic.Prover.Runner where
 
 import Control.Monad.Reader
 import Pirouette.Monad
-import Pirouette.SMT.Constraints
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax.Base
@@ -33,7 +32,7 @@ data IncorrectnessParams lang = IncorrectnessParams
   }
 
 runIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSMTBranches lang) =>
+  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   IncorrectnessParams lang ->
   IO (IncorrectnessResult lang)
 runIncorrectnessLogic
@@ -76,7 +75,7 @@ assertIRResult _ = return ()
 -- | Check for counterexamples for an incorrectness logic triple and
 -- pretty-print the result
 replIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSMTBranches lang) =>
+  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogic params@IncorrectnessParams {..} =
@@ -85,7 +84,7 @@ replIncorrectnessLogic params@IncorrectnessParams {..} =
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
 assertIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSMTBranches lang) =>
+  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   IncorrectnessParams lang ->
   Test.Assertion
 assertIncorrectnessLogic params =

@@ -1,24 +1,56 @@
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Pirouette.Symbolic.Eval.Types where
 
 import Data.Data hiding (eqT)
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import Data.String (IsString)
+import Pirouette.Monad
 import qualified Pirouette.SMT.Base as SMT
 import qualified Pirouette.SMT.Constraints as SMT
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
-import qualified Data.Set as S
+import qualified PureSMT
 
--- import Debug.Trace (trace)
+-- | The 'LanguageSymEval' class is used to instruct the symbolic evaluator on how to branch on certain builtins.
+-- It is inherently different from 'SMT.LanguageSMT' in the sense that, for instance, the 'SMT.LanguageSMT'
+-- translation of a primitive @if@ statement might use the @ifthenelse@ SMT primitive. However, the
+-- 'LanguageSymEval' should instruct the symbolic evaluation engine on how to branch when that primitive is found.
+-- In particular, two branches should be created:
+--
+--   1. Add @condition = True@ to the list of known things, continue with the then term,
+--   2. Add @condition = False@ to the list of known things, continue with the else term.
+--
+-- This is the topmost class in the Pirouette universe, the relation between all the classes is:
+--
+-- > LanguageBuiltins --> defines the built-ins (both terms and types)
+-- >   |     \
+-- >   |      LanguageBuiltinTypes --> defines the typing rules of each built-in term
+-- >   |
+-- > LanguageSMT --> defines translation of built-ins into SMT
+-- >   |             (not every term can be translated)
+-- >   |
+-- > LanguageSymEval --> defines at which points the symbolic evaluator has to do sth. special
+class (SMT.LanguageSMT lang) => LanguageSymEval lang where
+  -- | Injection of different cases in the symbolic evaluator.
+  -- For example, one can introduce a 'if_then_else' built-in
+  -- and implement this method to look at both possibilities.
+  branchesBuiltinTerm ::
+    (SMT.ToSMT meta, PirouetteReadDefs lang m) =>
+    BuiltinTerms lang ->
+    (TermMeta lang meta -> m (Maybe PureSMT.SExpr)) ->
+    [ArgMeta lang meta] ->
+    m (Maybe [SMT.Branch lang meta])
+  branchesBuiltinTerm _ _ _ = pure Nothing
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable, IsString)

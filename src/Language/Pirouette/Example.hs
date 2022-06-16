@@ -36,6 +36,7 @@ import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import qualified PureSMT
 import Pirouette.Term.Syntax
+import Pirouette.Symbolic.Eval.Types
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter (dquotes)
 import Text.Megaparsec
@@ -235,9 +236,25 @@ isConstant (BConstant _) = True
 isConstant (SConstant _) = True
 isConstant _ = False
 
--- | Finally, you might want to customize the behavior of the symbolic execution engine...
--- TODO: @serras, can you write a paragraph or two on this instance and why it is important?
-instance LanguageSMTBranches Ex where
+-- | Finally, you might need to customize the behavior of the symbolic execution engine. Take
+-- the interpretation of @if@ statements as an example. If you just rely on the SMT @ifthenelse@
+-- construct, you might end up generating bogus counter-examples due to the SMT assuming
+-- wrong things out of uninterpreted functions due to a lack of information.
+--
+-- Say we translate the builtin @if@ statement to its SMT counterpart and evaluate:
+--
+-- > (assert (= x (ifthenelse (isEven 5) 42 0)))
+-- > (assert (= x 0))
+-- > (check-sat)
+--
+-- The SMT will say the above is unsat, and will give a model that assumes @isEven 5@ to be true,
+-- yielding @x = 42@. That's because @isEven@ is an uninterpreted function, so the SMT has no information
+-- about it.
+--
+-- The rule of thumb is easy: any primitive of your language that should branch the symbolic execution engine
+-- should receive special treatment in 'LanguageSymEval'; branching should always be handled by the symbolic
+-- engine and never delegated to the SMT solver.
+instance LanguageSymEval Ex where
   -- translate arithmetic operations applied to constants
   branchesBuiltinTerm op _translator [SystF.TermArg (IConstant x), SystF.TermArg (IConstant y)]
     | exTermIsArithOp op =
