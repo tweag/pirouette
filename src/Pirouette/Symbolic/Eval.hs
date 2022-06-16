@@ -193,27 +193,21 @@ instance (SymEvalConstr lang) => Alternative (SymEval lang) where
       runSymEvalRaw solvers defs st xs
         <|> runSymEvalRaw solvers defs st ys
 
-{-
 -- | Prune the set of paths in the current set.
-prune :: forall lang m a. (SymEvalConstr lang m) => SymEval lang m a -> SymEval lang m a
+prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
 prune xs = SymEval $
-  StateT $ \st -> do
-    (x, st') <- runSymEvalRaw st xs
-    -- trace ("  X is " ++ show (pretty x)) $ return ()
-    -- trace ("  in the context " ++ show (pretty st')) $ return ()
-    solver <- ask
-    defs <- lift $ lift getPrtOrderedDefs
-    ok <- liftIO $ PureSMT.solveProblem (CheckPath $ CheckPathProblem st' defs) solver
-    guard ok
+  ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st -> do
+    (x, st') <- runSymEvalRaw solvers defs st xs
+    guard (sesPath solvers (CheckPathProblem st' defs))
     return (x, st')
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
 --  of whether or not we had already validated it before.
-learn :: (SymEvalConstr lang m) => Constraint lang -> SymEval lang m ()
+learn :: (SymEvalConstr lang) => Constraint lang -> SymEval lang ()
 learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
 
-declSymVars :: (SymEvalConstr lang m) => [(Name, Type lang)] -> SymEval lang m [SymVar]
+declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
   modify (\st -> st {sestGamma = M.union (sestGamma st) (M.fromList vs)})
   return $ map (SymVar . fst) vs
@@ -221,7 +215,7 @@ declSymVars vs = do
 -- freshSymVar :: (SymEvalConstr lang m) => Type lang -> SymEval lang m SymVar
 -- freshSymVar ty = head <$> freshSymVars [ty]
 
-freshSymVars :: (SymEvalConstr lang m) => [Type lang] -> SymEval lang m [SymVar]
+freshSymVars :: (SymEvalConstr lang) => [Type lang] -> SymEval lang [SymVar]
 freshSymVars [] = return []
 freshSymVars tys = do
   let n = length tys
@@ -230,8 +224,9 @@ freshSymVars tys = do
   let vars = zipWith (\i ty -> (Name "s" (Just i), ty)) [ctr ..] tys
   declSymVars vars
 
-currentStatistics :: (SymEvalConstr lang m) => SymEval lang m SymEvalStatistics
+currentStatistics :: (SymEvalConstr lang) => SymEval lang SymEvalStatistics
 currentStatistics = gets sestStatistics
+{-
 
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
