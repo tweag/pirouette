@@ -6,7 +6,6 @@
 
 module Pirouette.Symbolic.Prover where
 
-import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Text as T
@@ -60,7 +59,7 @@ rESULTNAME = "__result"
 
 -- |Executes the problem returning /all/ paths (up to some stopping condition).
 prove ::
-  (SymEvalConstr lang m, MonadIO m) =>
+  (SymEvalConstr lang m) =>
   StoppingCondition ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
@@ -71,7 +70,7 @@ prove shouldStop problem = symevalT shouldStop $ proveRaw problem
 -- means that on all paths that we looked at they were either verified or
 -- they reached the stopping condition.
 proveAny ::
-  (SymEvalConstr lang m, MonadIO m) =>
+  (SymEvalConstr lang m) =>
   StoppingCondition ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->

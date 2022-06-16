@@ -34,7 +34,7 @@ data IncorrectnessParams lang = IncorrectnessParams
 runIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   IncorrectnessParams lang ->
-  IO (IncorrectnessResult lang)
+  IncorrectnessResult lang
 runIncorrectnessLogic
   (IncorrectnessParams definitions target (post :==>: pre) maxCstrs) = do
     let shouldStop = \st -> sestConstructors st > maxCstrs
@@ -46,7 +46,7 @@ runIncorrectnessLogic
           fmap (fmap tyFunArgs) $
             flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
               typeInferTerm target
-    flip runReaderT orderedDecls $ do
+    flip runReader orderedDecls $ do
       proveAny shouldStop isCounter (Problem resultTy target post pre)
     where
       isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
@@ -79,7 +79,7 @@ replIncorrectnessLogic ::
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogic params@IncorrectnessParams {..} =
-  runIncorrectnessLogic params >>= printIRResult ipMaxCstrs
+  printIRResult ipMaxCstrs (runIncorrectnessLogic params)
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
@@ -88,4 +88,4 @@ assertIncorrectnessLogic ::
   IncorrectnessParams lang ->
   Test.Assertion
 assertIncorrectnessLogic params =
-  runIncorrectnessLogic params >>= assertIRResult
+  assertIRResult (runIncorrectnessLogic params)
