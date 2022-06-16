@@ -9,7 +9,7 @@ module Pirouette.Symbolic.Prover where
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Text as T
-import Pirouette.Monad (termIsWHNFOrMeta)
+import Pirouette.Monad (termIsWHNFOrMeta, PirouetteDepOrder)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
 import PureSMT (SExpr (..))
@@ -59,18 +59,18 @@ rESULTNAME = "__result"
 
 -- |Executes the problem returning /all/ paths (up to some stopping condition).
 prove ::
-  (SymEvalConstr lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   StoppingCondition ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-prove shouldStop problem = symevalT shouldStop $ proveRaw problem
+prove shouldStop problem = symeval shouldStop $ proveRaw problem
 
 -- |Executes the problem while the stopping condition is valid until
 -- the supplied predicate returns @True@. A return value of @Nothing@
 -- means that on all paths that we looked at they were either verified or
 -- they reached the stopping condition.
 proveAny ::
-  (SymEvalConstr lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   StoppingCondition ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
@@ -78,10 +78,10 @@ proveAny ::
 proveAny shouldStop p problem = symevalAnyPath shouldStop p $ proveRaw problem
 
 proveRaw ::
-  forall lang m.
-  SymEvalConstr lang m =>
+  forall lang.
+  SymEvalConstr lang =>
   Problem lang ->
-  SymEvalT lang m (EvaluationWitness lang)
+  SymEval lang (EvaluationWitness lang)
 proveRaw Problem {..} = do
   -- get types for lambdas
   let (lams, _) = R.getHeadLams problemBody
@@ -106,13 +106,13 @@ proveRaw Problem {..} = do
     refineWitness _ w = w
 
 worker ::
-  forall lang m.
-  SymEvalConstr lang m =>
+  forall lang.
+  SymEvalConstr lang =>
   SymVar ->
   SymTerm lang ->
   SymTerm lang ->
   SymTerm lang ->
-  SymEvalT lang m (EvaluationWitness lang)
+  SymEval lang (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
   -- liftIO $ putStrLn "ONE STEP"
   -- liftIO $ print (pretty bodyTerm)
