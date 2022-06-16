@@ -49,27 +49,6 @@ runTranslator = runExceptT . runWriterT
 pattern TranslatorT :: m (Either e (a, w)) -> WriterT w (ExceptT e m) a
 pattern TranslatorT x = WriterT (ExceptT x)
 
-liftTranslator ::
-  MonadError s m =>
-  String ->
-  m a ->
-  TranslatorT m a
-liftTranslator errorMessage action =
-  TranslatorT $
-    catchError
-      (Right . (,NotUsedAnyUFs) <$> action)
-      (\_ -> return $ Left errorMessage)
-
-liftTranslatorMaybe ::
-  MonadError s m =>
-  m a ->
-  TranslatorT m (Maybe a)
-liftTranslatorMaybe action =
-  TranslatorT $
-    catchError
-      (Right . (,NotUsedAnyUFs) . Just <$> action)
-      (\_ -> return $ Right (Nothing, NotUsedAnyUFs))
-
 -- * Translating Terms and Types to SMTLIB
 
 translateTypeBase ::
@@ -125,17 +104,14 @@ translateTerm knownNames (Raw.App var args) = case var of
       Just t -> return t
   Raw.Free (TermSig name) -> do
     _ <- traceMe ("translateApp: " ++ show name) (return ())
-    defn <- liftTranslator ("translateApp: Unknown name: " <> show name) (prtDefOf name)
+    defn <- lift $ lift $ prtDefOf name
     case defn of
       DConstructor ix tname
         | name `S.notMember` knownNames ->
           throwError $ "translateApp: Unknown constructor '" <> show name <> "'"
         | otherwise -> do
           -- bring in the type information
-          Datatype {constructors} <-
-            liftTranslator
-              ("translateApp: Unknown type '" <> show tname <> "'")
-              (prtTypeDefOf tname)
+          Datatype {constructors} <- lift $ lift $ prtTypeDefOf tname
           -- we assume that if everything is well-typed
           -- the constructor actually exists, hence the use of (!!)
           let cstrTy = snd (constructors !! ix)

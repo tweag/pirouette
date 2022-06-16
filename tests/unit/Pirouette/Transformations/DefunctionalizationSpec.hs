@@ -5,9 +5,11 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Transformations.DefunctionalizationSpec (tests) where
 
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Data.Map as Map
 import Language.Pirouette.Example
@@ -189,12 +191,11 @@ defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
   [ testCase "Nested closures are generated" $
       case monoDefunc (uDefs bug) of
-        Left err -> assertFailure err
-        Right _ -> return ()
+        PrtOrderedDefs !x !y !z -> return ()
   ]
   where
-    monoDefunc :: PrtUnorderedDefs Ex -> Either String (PrtOrderedDefs Ex)
-    monoDefunc = mockPrt . elimEvenOddMutRec . defunctionalize . monomorphize
+    monoDefunc :: PrtUnorderedDefs Ex -> PrtOrderedDefs Ex
+    monoDefunc = elimEvenOddMutRec . defunctionalize . monomorphize
 
 
 bug :: Program Ex

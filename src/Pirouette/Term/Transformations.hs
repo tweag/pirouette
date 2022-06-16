@@ -13,7 +13,6 @@ import Data.Functor
 import Data.Generics.Uniplate.Data
 import Data.String (fromString)
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -58,7 +57,7 @@ import Data.List (elemIndex)
 --  > v = [d/Bool x T[thunk := Unit] F[thunk := Unit]]
 --  Generally v = [d/Bool T F] since `thunk` has no reason to appear in `T` and `F`.
 removeExcessiveDestArgs :: (Show meta, Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
-removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybeT . go)
+removeExcessiveDestArgs = rewriteM (runMaybeT . go)
   where
     go :: (Show meta, PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go t = do
@@ -66,7 +65,6 @@ removeExcessiveDestArgs = pushCtx "removeExcessiveDestArgs" . rewriteM (runMaybe
       if null excess
         then fail "No excessive destr arguments"
         else do
-          logTrace $ show n
           Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
           let cons' = map (second typeToMeta) cons
           return $
@@ -129,7 +127,7 @@ expandDefs ::
   (PirouetteReadDefs lang m, Pretty (Constants lang), Pretty (BuiltinTerms lang), Pretty (BuiltinTypes lang)) =>
   Term lang ->
   m (Term lang)
-expandDefs = fmap deshadowBoundNames . pushCtx "expandDefs" . rewriteM (runMaybeT . go)
+expandDefs = fmap deshadowBoundNames . rewriteM (runMaybeT . go)
   where
     go :: Term lang -> MaybeT m (Term lang)
     go (SystF.App (SystF.Free (TermSig n)) args) = do
@@ -138,9 +136,7 @@ expandDefs = fmap deshadowBoundNames . pushCtx "expandDefs" . rewriteM (runMaybe
         then fail "expandDefs: wont expand"
         else do
           def <- MaybeT (fromTermDef <$> prtDefOf n)
-          logTrace ("Expanding: " ++ show n ++ " " ++ show (pretty args) ++ "\n" ++ show (pretty def))
           let res = SystF.appN def args
-          logTrace ("Result: " ++ show (pretty res))
           return res
     go _ = fail "expandDefs: not an SystF.App"
 
@@ -168,7 +164,7 @@ expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
 --
 --  > [d/Maybe [c/Just X] N (\ J)] == [J X]
 constrDestrId :: (Show meta, Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
-constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
+constrDestrId = rewriteM (runMaybeT . go)
   where
     go :: (Show meta, PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go t = do
@@ -176,7 +172,6 @@ constrDestrId = pushCtx "constrDestrId" . rewriteM (runMaybeT . go)
       UnConsMeta tyN' _xTyArgs xIdx xArgs <- unCons x
       guard (tyN == tyN')
       let xCase = unsafeIdx "constrDestrId" cases xIdx
-      logTrace $ show tyN
       return $ SystF.appN (SystF.appN xCase (map SystF.TermArg xArgs)) excess
 
 -- `chooseHeadCase f tyf [st,INPUT,param] INPUT` creates a term which contains the body of `f`
@@ -198,11 +193,11 @@ chooseHeadCase t ty args fstArg =
   let argLength = length args
    in let tyOut = snd (SystF.tyFunArgs ty)
        in case elemIndex fstArg args of
-            Nothing -> throwError' $ PEOther "No argument declared as input"
+            Nothing -> prtError $ PEOther "No argument declared as input"
             Just index ->
               let tyInput = unsafeIdx "chooseHeadCase" (fst $ SystF.tyFunArgs ty) index
                in case nameOf tyInput of
-                    Nothing -> throwError' $ PEOther "The input is not of a pattern-matchable type"
+                    Nothing -> prtError $ PEOther "The input is not of a pattern-matchable type"
                     Just tyName -> do
                       dest <- blindDest tyOut <$> prtTypeDefOf tyName
                       let transiAbsInput =
@@ -276,7 +271,7 @@ chooseHeadCase t ty args fstArg =
 --
 --  that is, we push the application of f down to the branches of the "case" statement.
 destrNF :: forall lang m meta. (Show meta, Data meta, Typeable meta, PirouetteReadDefs lang m) => TermMeta lang meta -> m (TermMeta lang meta)
-destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
+destrNF = rewriteM (runMaybeT . go)
   where
     -- Returns a term that is a destructor from a list of terms respecting
     -- the invariant that if @splitDest t == Just (xs , d , ys)@, then @t == xs ++ [d] ++ ys@
@@ -328,7 +323,6 @@ destrNF = pushCtx "destrNF" . rewriteM (runMaybeT . go)
                   cases
           -- TODO: This is still wrong, the destructor now doesn't return something of type `ret`,
           --       but instead, it returns something of whichever type f returns.
-          logTrace $ "Pushing " ++ show fn ++ " through " ++ show dn
           return $
             SystF.App (SystF.Free (TermSig dn)) $
               map SystF.TyArg tyArgs ++ [SystF.TermArg x, SystF.TyArg ret] ++ map SystF.TermArg cases'

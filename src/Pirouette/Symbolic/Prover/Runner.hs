@@ -22,8 +22,7 @@ import Pirouette.Term.Syntax (pretty)
 data AssumeProve lang = Term lang :==>: Term lang
   deriving (Eq, Show)
 
-type IncorrectnessResult lang =
-  Either String (Maybe (Path lang (EvaluationWitness lang)))
+type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 
 -- | Parameters for an incorrectness logic run
 data IncorrectnessParams lang = IncorrectnessParams
@@ -40,18 +39,16 @@ runIncorrectnessLogic ::
 runIncorrectnessLogic
   (IncorrectnessParams definitions target (post :==>: pre) maxCstrs) = do
     let shouldStop = \st -> sestConstructors st > maxCstrs
-    (result, _logs) <- mockPrtT $ do
-      let prog0 = uncurry PrtUnorderedDefs definitions
-      let prog1 = monomorphize prog0
-      let decls = defunctionalize prog1
-      orderedDecls <- elimEvenOddMutRec decls
-      let Right (Just (_, resultTy)) =
-            fmap (fmap tyFunArgs) $
-              flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
-                typeInferTerm target
-      flip runReaderT orderedDecls $ do
-        proveAny shouldStop isCounter (Problem resultTy target post pre)
-    return result
+    let prog0 = uncurry PrtUnorderedDefs definitions
+    let prog1 = monomorphize prog0
+    let decls = defunctionalize prog1
+    let orderedDecls = elimEvenOddMutRec decls
+    let Right (Just (_, resultTy)) =
+          fmap (fmap tyFunArgs) $
+            flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
+              typeInferTerm target
+    flip runReaderT orderedDecls $ do
+      proveAny shouldStop isCounter (Problem resultTy target post pre)
     where
       isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
         | s /= OutOfFuel = True
@@ -61,26 +58,20 @@ printIRResult ::
   Int ->
   IncorrectnessResult lang ->
   IO ()
-printIRResult _ (Left e) = do
-  setSGR [SetColor Foreground Vivid Red]
-  putStrLn "UNEXPECTED ERROR"
-  setSGR [Reset]
-  putStrLn e
-printIRResult _ (Right (Just Path {pathResult = CounterExample _ model})) = do
+printIRResult _ (Just Path {pathResult = CounterExample _ model}) = do
   setSGR [SetColor Foreground Vivid Yellow]
   putStrLn "💸 COUNTEREXAMPLE FOUND"
   setSGR [Reset]
   print $ pretty model
-printIRResult steps (Right _) = do
+printIRResult steps _ = do
   setSGR [SetColor Foreground Vivid Green]
   putStrLn $ "✔️ NO COUNTEREXAMPLES FOUND AFTER " <> show steps <> " STEPS"
   setSGR [Reset]
 
 assertIRResult :: IncorrectnessResult lang -> Test.Assertion
-assertIRResult (Left _) = Test.assertFailure "Unexpected error"
-assertIRResult (Right (Just Path {pathResult = CounterExample _ _})) =
+assertIRResult (Just Path {pathResult = CounterExample _ _}) =
   Test.assertFailure "Counterexample found"
-assertIRResult (Right _) = return ()
+assertIRResult _ = return ()
 
 -- | Check for counterexamples for an incorrectness logic triple and
 -- pretty-print the result

@@ -4,15 +4,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Monad where
 
-import Control.Arrow (first)
-import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Identity
 import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as Lazy
 import qualified Control.Monad.State.Strict as Strict
@@ -20,10 +16,8 @@ import Data.Data (Data)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 import qualified Data.Set as Set
-import qualified Data.Text as Text
 import ListT (ListT)
 import ListT.Weighted (WeightedListT)
-import Pirouette.Monad.Logger
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -57,57 +51,40 @@ data PrtError
   | PEOther String
   deriving (Eq, Show)
 
--- | And the actual error raised by the error monad. Make sure to raise these
---  with 'throwError'', so you can get the logger context in your error messages
---  for free.
-data PrtErrorCtx = PrtErrorCtx
-  { logCtx :: [String],
-    message :: PrtError
-  }
-  deriving (Eq, Show)
-
--- | The base monadic layer we use in most places.
-type PirouetteBase m = (MonadError PrtErrorCtx m, MonadLogger m, MonadFail m)
-
--- | 'throwError' variant that automatically gets the logger context.
-throwError' :: (PirouetteBase m) => PrtError -> m a
-throwError' msg = do
-  err <- flip PrtErrorCtx msg <$> context
-  throwError err
+prtError :: PrtError -> a
+prtError = error . show
 
 -- ** Pirouette Definitions
 
 -- | Whenever we need access to the list of definitions in the current PIR program
 --  being compiled, we probably want to use 'PirouetteReadDefs' instead of 'PirouetteBase'
-class (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang m | m -> lang where
+class (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang m | m -> lang where
   -- | Returns all declarations in scope
   prtAllDefs :: m (Map.Map Name (Definition lang))
 
   -- | Returns the main program
   prtMain :: m (Term lang)
 
-  -- | Returns the definition associated with a given name. Raises a 'PEUndefined'
-  --  if the name doesn't exist.
-  prtDefOf :: Name -> m (Definition lang)
-  prtDefOf n = do
-    defs <- prtAllDefs
-    case Map.lookup n defs of
-      Nothing -> throwError' $ PEUndefined n
-      Just x -> return x
+-- | Returns the definition associated with a given name. Raises a 'PEUndefined'
+--  if the name doesn't exist.
+prtDefOf :: (PirouetteReadDefs lang m) => Name -> m (Definition lang)
+prtDefOf n = do
+  defs <- prtAllDefs
+  case Map.lookup n defs of
+    Nothing -> prtError $ PEUndefined n
+    Just x -> return x
 
-  prtTypeDefOf :: Name -> m (TypeDef lang)
-  prtTypeDefOf n = prtDefOf n >>= maybe (throwError' $ PENotAType n) return . fromTypeDef
+prtTypeDefOf :: (PirouetteReadDefs lang m) => Name -> m (TypeDef lang)
+prtTypeDefOf n = prtDefOf n >>= maybe (prtError $ PENotAType n) return . fromTypeDef
 
-  prtTermDefOf :: Name -> m (Term lang)
-  prtTermDefOf n = prtDefOf n >>= maybe (throwError' $ PENotATerm n) return . fromTermDef
+prtTermDefOf :: (PirouetteReadDefs lang m) => Name -> m (Term lang)
+prtTermDefOf n = prtDefOf n >>= maybe (prtError $ PENotATerm n) return . fromTermDef
 
-  prtIsDest :: Name -> MaybeT m TyName
-  prtIsDest n = MaybeT $ fromDestDef <$> prtDefOf n
+prtIsDest :: (PirouetteReadDefs lang m) => Name -> MaybeT m TyName
+prtIsDest n = MaybeT $ fromDestDef <$> prtDefOf n
 
-  prtIsConst :: Name -> MaybeT m (Int, TyName)
-  prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf n
-
-  {-# MINIMAL prtAllDefs, prtMain #-}
+prtIsConst :: (PirouetteReadDefs lang m) => Name -> MaybeT m (Int, TyName)
+prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf n
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Lazy.StateT s m) where
   prtAllDefs = lift prtAllDefs
@@ -129,20 +106,6 @@ instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs la
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 
--- | Given a prefix, if there is a single declared name with the given
---  prefix, returns it. Throws an error otherwise.
-nameForPrefix :: (PirouetteReadDefs lang m) => Text.Text -> m Name
-nameForPrefix pref = pushCtx "nameForPrefix" $ do
-  decls <- prtAllDefs
-  let d = Map.toList $ Map.filterWithKey (\k _ -> pref `Text.isPrefixOf` nameString k) decls
-  case d of
-    [] -> throwError' $ PEOther $ "No declaration with prefix: " ++ Text.unpack pref
-    [(n, _)] -> return n
-    _ -> do
-      logWarn $ "Too many declarations with prefix: " ++ Text.unpack pref ++ ": " ++ show (map fst d)
-      logWarn "  will return the first one"
-      return $ fst $ head d
-
 -- | Returns the type of an identifier
 typeOfIdent :: (PirouetteReadDefs lang m) => Name -> m (Type lang)
 typeOfIdent n = do
@@ -151,7 +114,7 @@ typeOfIdent n = do
     (DFunction _ _ ty) -> return ty
     (DConstructor i t) -> snd . (!! i) . constructors <$> prtTypeDefOf t
     (DDestructor t) -> destructorTypeFor n <$> prtTypeDefOf t
-    (DTypeDef _) -> throwError' $ PEOther $ show n ++ " is a type"
+    (DTypeDef _) -> prtError $ PEOther $ show n ++ " is a type"
 
 -- | Returns the direct dependencies of a term. This is never cached and
 --  is computed freshly everytime its called. Say we call @directDepsOf "f"@,
@@ -248,13 +211,13 @@ data PrtUnorderedDefs lang = PrtUnorderedDefs
 addDecls :: Decls builtins -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
 addDecls decls defs = defs {prtUODecls = prtUODecls defs <> decls}
 
-instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
+instance (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
   prtAllDefs = asks prtUODecls
   prtMain = asks prtUOMainTerm
 
 instance
   {-# OVERLAPPING #-}
-  (LanguageBuiltins lang, PirouetteBase m) =>
+  (LanguageBuiltins lang, Monad m) =>
   PirouetteReadDefs lang (Strict.StateT (PrtUnorderedDefs lang) m)
   where
   prtAllDefs = Strict.gets prtUODecls
@@ -273,7 +236,7 @@ data PrtOrderedDefs lang = PrtOrderedDefs
 prtOrderedDefs :: PrtUnorderedDefs lang -> [SystF.Arg Name Name] -> PrtOrderedDefs lang
 prtOrderedDefs uod ord = PrtOrderedDefs (prtUODecls uod) ord (prtUOMainTerm uod)
 
-instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
+instance (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
   prtAllDefs = asks prtDecls
   prtMain = asks prtMainTerm
 
@@ -281,78 +244,11 @@ class (PirouetteReadDefs lang m) => PirouetteDepOrder lang m where
   -- | Returns the dependency ordering of the currently declared terms.
   prtDependencyOrder :: m [SystF.Arg Name Name]
 
-instance (LanguageBuiltins lang, PirouetteBase m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
+instance (LanguageBuiltins lang, Monad m) => PirouetteDepOrder lang (ReaderT (PrtOrderedDefs lang) m) where
   prtDependencyOrder = asks prtDepOrder
 
 getPrtOrderedDefs :: (PirouetteDepOrder lang m) => m (PrtOrderedDefs lang)
 getPrtOrderedDefs = PrtOrderedDefs <$> prtAllDefs <*> prtDependencyOrder <*> prtMain
-
--- ** A 'PirouetteBase' Implementation:
-
--- | Read-only internal options
-data PrtOpts = PrtOpts
-  { logLevel :: LogLevel,
-    logFocus :: [String]
-  }
-  deriving (Show)
-
-newtype PrtT m a = PrtT
-  {unPirouette :: ReaderT PrtOpts (ExceptT PrtErrorCtx (LoggerT m)) a}
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadError PrtErrorCtx,
-      MonadReader PrtOpts,
-      MonadIO
-    )
-
-instance (Monad m) => MonadLogger (PrtT m) where
-  logMsg lvl msg = PrtT $ do
-    l <- asks logLevel
-    focus <- asks logFocus
-    ctx <- lift $ lift context
-    when
-      (lvl >= l && isFocused ctx focus)
-      (lift . lift . logMsg lvl $ msg)
-    where
-      isFocused _ [] = True
-      isFocused ctx focus = any (`elem` focus) ctx
-
-  context = PrtT $ lift $ lift context
-  pushCtx ctx = PrtT . mapReaderT (mapExceptT $ pushCtx ctx) . unPirouette
-
-instance (Monad m) => MonadFail (PrtT m) where
-  fail msg = throwError' (PEOther msg)
-
--- | Runs a 'PrtT' computation, ignoring the resulting state
-runPrtT ::
-  (Monad m) =>
-  PrtOpts ->
-  PrtT m a ->
-  m (Either PrtErrorCtx a, [LogMessage])
-runPrtT opts = runLoggerT . runExceptT . flip runReaderT opts . unPirouette
-
--- | Mocks a 'PrtT' computation, running it with default options, omitting any logging
---  and displaying errors as strings already.
-mockPrtT :: (Monad m) => PrtT m a -> m (Either String a, [LogMessage])
-mockPrtT f = first (either (Left . show) Right) <$> runPrtT opts f
-  where
-    opts = PrtOpts CRIT []
-
--- | Pure variant of 'mockPrtT', over the Identity monad
-mockPrt :: PrtT Identity a -> Either String a
-mockPrt = fst . runIdentity . mockPrtT
-
--- | If we have a 'MonadIO' in our stack, we can ask for all the logs produced so far.
---  This is useful for the main function, to output the logs of different stages as these stages
---  complte.
---
---  If you have to add a @(MonadIO m) => ...@ constraint in order to use 'flushLogs' please
---  think three times. Often you can get by with using @Debug.Trace@ and not polluting the
---  code with unecesary IO.
-flushLogs :: (MonadIO m) => PrtT m a -> PrtT m a
-flushLogs = PrtT . mapReaderT (mapExceptT flushLogger) . unPirouette
 
 -- * Some useful syntactical utilities
 
