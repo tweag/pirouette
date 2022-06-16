@@ -55,7 +55,7 @@ launchAll ctx = replicateM numCapabilities $ do
     -- TODO: these constants should become parameters at some point; the solver command too!
 
     numCapabilities :: Int
-    numCapabilities = 4
+    numCapabilities = 1
 
     debug0 :: Bool
     debug0 = False
