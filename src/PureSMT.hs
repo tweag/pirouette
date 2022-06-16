@@ -42,8 +42,8 @@ solve ctx = unsafePerformIO $ do
       -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
-      -- pid <- unsafeSolverPid solver
-      -- print pid
+      pid <- unsafeSolverPid solver
+      print pid
       solveProblem @domain problem solver
     pushMStack ms allProcs
     return r
@@ -76,24 +76,39 @@ withLock lock act = withMVar lock $ Prelude.const act
 
 -- |A MStack is a MVar that satisfies the invariant that it never contains
 -- an empty list; if that's the case then the MVar is empty.
-type MStack a = (Lock, MVar [a])
+type MStack a = MVar [a]
 
 newMStack :: [a] -> IO (MStack a)
-newMStack [] = (,) <$> newLock <*> newEmptyMVar
-newMStack xs = (,) <$> newLock <*> newMVar xs
+newMStack [] = newEmptyMVar
+newMStack xs = newMVar xs
 
 -- Weirdly enough... removing the withLock makes it work and multiple solvers correctly
 -- pick their tasks
 
+-- Problematic trace:
+--
+-- q is full with [a,b,c]
+-- thread1: executes (popMStack q), taking q; xss <- [a,b,c]
+-- thread2: executes (pushMStack q d), but q is empty, goes to nothing branch
+--
+-- Two things can happen:
+--
+-- A: thread1 executes putMVar q [b,c] first,
+--    thread2 executes putMVar q [d] second and blocks
+--
+-- B: reverse happens
+--
+-- Which means we need a better MStack; one that works would be great!
+
 pushMStack :: a -> MStack a -> IO ()
-pushMStack a (l, q) = do
+pushMStack a q = do
   mas <- tryTakeMVar q
   case mas of
     Nothing -> putMVar q [a]
     Just as0 -> putMVar q (a:as0)
 
 popMStack :: MStack a -> IO a
-popMStack (l, q) = do
+popMStack q = do
   xss <- takeMVar q
   case xss of
     [] -> error "invariant disrespected; MStack should never be empty"
