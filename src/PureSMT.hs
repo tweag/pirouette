@@ -55,10 +55,10 @@ launchAll ctx = replicateM numCapabilities $ do
     -- TODO: these constants should become parameters at some point; the solver command too!
 
     numCapabilities :: Int
-    numCapabilities = 1
+    numCapabilities = 4
 
     debug0 :: Bool
-    debug0 = False
+    debug0 = True
 
 -- * Async Locks
 
