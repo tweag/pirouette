@@ -43,6 +43,7 @@ dependencies:
   - optics-core
   - optics-th
   - ansi-terminal
+  - parallel
 
 library:
   source-dirs: src
@@ -50,6 +51,7 @@ library:
     -Wall
     -Wno-orphans
     -fplugin=StackTrace.Plugin
+    -threaded
 
 tests:
   spec:
@@ -58,3 +60,5 @@ tests:
       - tests/unit
     dependencies:
       - pirouette
+    ghc-options:
+      -threaded

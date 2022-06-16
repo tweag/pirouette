@@ -48,7 +48,8 @@ module Pirouette.Symbolic.Eval
     PruneResult (..),
     SymEvalSt (..),
     currentStatistics,
-  ) where
+  )
+where
 
 import Control.Applicative
 import Control.Monad
@@ -57,6 +58,7 @@ import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Parallel.Strategies
 import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
@@ -161,7 +163,7 @@ runSymEvalWorker defs st f = do
   let sharedSolve :: SolverProblem lang res -> res
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
-  let st' = st { sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st }
+  let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   solvPair <- runSymEvalRaw solvers defs st' f
   let paths = uncurry path solvPair
   return paths
@@ -187,8 +189,11 @@ instance (SymEvalConstr lang) => Alternative (SymEval lang) where
   empty = SymEval $ ReaderT $ \_ -> ReaderT $ \_ -> StateT $ const empty
   xs <|> ys = SymEval $
     ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st ->
-      runSymEvalRaw solvers defs st xs
-        <|> runSymEvalRaw solvers defs st ys
+      let (xs', ys') =
+            withStrategy
+              (parTuple2 rpar rpar)
+              (runSymEvalRaw solvers defs st xs, runSymEvalRaw solvers defs st ys)
+       in xs' <|> ys'
 
 -- | Prune the set of paths in the current set.
 prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
@@ -228,7 +233,7 @@ currentStatistics = gets sestStatistics
 -- We wrap everything in an additional 'Writer' which tells us
 -- whether a step was taken at all.
 symEvalOneStep ::
-  forall lang .
+  forall lang.
   (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
   WriterT Any (SymEval lang) (TermMeta lang SymVar)
@@ -346,7 +351,7 @@ symEvalMatchesFirst ::
   (TermMeta lang SymVar -> a) ->
   [a] ->
   WriterT Any (SymEval lang) [a]
-symEvalMatchesFirst f g exprs = go [] exprs
+symEvalMatchesFirst f g exprs = withStrategy (parList rpar) <$> go [] exprs
   where
     -- we came to the end without a match,
     -- so we execute one step in parallel
@@ -506,6 +511,7 @@ pruneAndValidate ::
   [UniversalAxiom lang] ->
   SymEval lang PruneResult
 pruneAndValidate cOut cIn axioms =
-  SymEval $ ReaderT $ \defs -> ReaderT $ \solvers ->
-    StateT $ \st -> do
-      return (solvePropProblem solvers (CheckPropertyProblem cOut cIn axioms st defs), st)
+  SymEval $
+    ReaderT $ \defs -> ReaderT $ \solvers ->
+      StateT $ \st -> do
+        return (solvePropProblem solvers (CheckPropertyProblem cOut cIn axioms st defs), st)
