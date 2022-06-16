@@ -161,7 +161,8 @@ runSymEvalWorker defs st f = do
   let sharedSolve :: SolverProblem lang res -> res
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
-  solvPair <- runSymEvalRaw solvers defs st f
+  let st' = st { sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st }
+  solvPair <- runSymEvalRaw solvers defs st' f
   let paths = uncurry path solvPair
   return paths
   where
