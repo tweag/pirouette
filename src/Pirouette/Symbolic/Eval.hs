@@ -10,16 +10,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Pirouette.Symbolic.Eval where
-
-{-
+module Pirouette.Symbolic.Eval
   ( -- * Runners
+    symeval,
 
     -- ** General inputs and outputs
     AvailableFuel (..),
@@ -41,7 +39,6 @@ module Pirouette.Symbolic.Eval where
     -- * Internal, used to build on top of 'SymEval'
     SymEvalConstr,
     SymEval,
-    symevalT,
     runSymEval,
     declSymVars,
     learn,
@@ -51,8 +48,7 @@ module Pirouette.Symbolic.Eval where
     PruneResult (..),
     SymEvalSt (..),
     currentStatistics,
-  )
--}
+  ) where
 
 import Control.Applicative
 import Control.Monad
@@ -80,8 +76,8 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified PureSMT
 
 data SymEvalSolvers lang = SymEvalSolvers
-  { sesPath :: CheckPathProblem lang -> Bool,
-    sesProp :: CheckPropertyProblem lang -> PruneResult
+  { solvePathProblem :: CheckPathProblem lang -> Bool,
+    solvePropProblem :: CheckPropertyProblem lang -> PruneResult
   }
 
 -- | A 'SymEval' is equivalent to a function with type:
@@ -97,17 +93,17 @@ newtype SymEval lang a = SymEval
   deriving (Functor)
   deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
 
-solvePathProblem :: CheckPathProblem lang -> SymEval lang Bool
-solvePathProblem p = SymEval $ do
-  solver <- lift (asks sesPath)
-  return (solver p)
+type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
-solvePropertyProblem :: CheckPropertyProblem lang -> SymEval lang PruneResult
-solvePropertyProblem p = SymEval $ do
-  solver <- lift (asks sesProp)
-  return (solver p)
+instance (SymEvalConstr lang) => PirouetteReadDefs lang (SymEval lang) where
+  prtAllDefs = SymEval (asks prtDecls)
+  prtMain = SymEval (asks prtMainTerm)
 
-type SymEvalConstr lang = (LanguagePretty lang, LanguageSymEval lang)
+instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEval lang) where
+  prtDependencyOrder = SymEval (asks prtDepOrder)
+
+instance MonadFail (SymEval lang) where
+  fail = error
 
 symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
@@ -198,7 +194,7 @@ prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
 prune xs = SymEval $
   ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st -> do
     (x, st') <- runSymEvalRaw solvers defs st xs
-    guard (sesPath solvers (CheckPathProblem st' defs))
+    guard (solvePathProblem solvers (CheckPathProblem st' defs))
     return (x, st')
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
@@ -226,16 +222,15 @@ freshSymVars tys = do
 
 currentStatistics :: (SymEvalConstr lang) => SymEval lang SymEvalStatistics
 currentStatistics = gets sestStatistics
-{-
 
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
 -- whether a step was taken at all.
 symEvalOneStep ::
-  forall lang m.
-  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  forall lang .
+  (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
-  WriterT Any (SymEval lang m) (TermMeta lang SymVar)
+  WriterT Any (SymEval lang) (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
@@ -291,7 +286,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
-    mDefHead <- Just <$> lift (lift $ prtDefOf n)
+    mDefHead <- Just <$> lift (prtDefOf n)
     case mDefHead of
       -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
       Nothing -> justEvaluateArgs
@@ -344,12 +339,12 @@ symEvalOneStep t@(R.App hd args) = case hd of
 --   Term, so we can reuse this function either
 --   with Arg (as done above), or with regular Term.
 symEvalMatchesFirst ::
-  forall lang m a.
-  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  forall lang a.
+  (SymEvalConstr lang) =>
   (a -> Maybe (TermMeta lang SymVar)) ->
   (TermMeta lang SymVar -> a) ->
   [a] ->
-  WriterT Any (SymEval lang m) [a]
+  WriterT Any (SymEval lang) [a]
 symEvalMatchesFirst f g exprs = go [] exprs
   where
     -- we came to the end without a match,
@@ -363,14 +358,14 @@ symEvalMatchesFirst f g exprs = go [] exprs
     go acc (x : xs)
       | Nothing <- f x = go (x : acc) xs
       | Just t <- f x = do
-        mayTyName <- lift $ lift $ isDestructor t
+        mayTyName <- lift $ isDestructor t
         case mayTyName of
           Just tyName -> (reverse acc ++) . (: xs) . g <$> symEvalDestructor t tyName
           Nothing -> go (x : acc) xs
 
 isDestructor ::
   forall lang m.
-  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  (SymEvalConstr lang, PirouetteReadDefs lang m) =>
   TermMeta lang SymVar ->
   m (Maybe Name)
 isDestructor (R.App (R.Free (TermSig n)) _args) = do
@@ -397,14 +392,14 @@ isDestructor _ = pure Nothing
 -- Naturally, the first path is already impossible so we do not need to
 -- move on to evaluate N.
 symEvalDestructor ::
-  forall lang m.
-  (SymEvalConstr lang m, PirouetteReadDefs lang m) =>
+  forall lang.
+  (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
   Name ->
-  WriterT Any (SymEval lang m) (TermMeta lang SymVar)
+  WriterT Any (SymEval lang) (TermMeta lang SymVar)
 symEvalDestructor t@(R.App hd _args) tyName = do
-  Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ lift $ runMaybeT (unDest t)
-  _dt@(Datatype _ _ _ consList) <- lift $ lift $ prtTypeDefOf tyName
+  Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
+  _dt@(Datatype _ _ _ consList) <- lift $ prtTypeDefOf tyName
   -- We know what is the type of all the possible term results, its whatever
   -- type we're destructing applied to its arguments, making sure it contains
   -- no meta variables.
@@ -457,16 +452,16 @@ symEvalDestructor t@(R.App hd _args) tyName = do
 symEvalDestructor _ _ = error "should never be called with anything else than App"
 
 -- | Indicate that something has been evaluated.
-signalEvaluation :: Functor m => WriterT Any (SymEval lang m) ()
+signalEvaluation :: WriterT Any (SymEval lang) ()
 signalEvaluation = tell (Any True)
 
 -- | Consume one unit of fuel.
 -- This also tells the symbolic evaluator that a step was taken.
-consumeFuel :: (SymEvalConstr lang m) => WriterT Any (SymEval lang m) ()
+consumeFuel :: (SymEvalConstr lang) => WriterT Any (SymEval lang) ()
 consumeFuel = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConsumedFuel = 1}})
 
-moreConstructors :: (SymEvalConstr lang m) => Int -> WriterT Any (SymEval lang m) ()
+moreConstructors :: (SymEvalConstr lang) => Int -> WriterT Any (SymEval lang) ()
 moreConstructors n = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
@@ -504,18 +499,12 @@ zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
-  (SymEvalConstr lang m) =>
+  (SymEvalConstr lang) =>
   Constraint lang ->
   Maybe (Constraint lang) ->
   [UniversalAxiom lang] ->
-  SymEval lang m PruneResult
+  SymEval lang PruneResult
 pruneAndValidate cOut cIn axioms =
-  SymEval $
+  SymEval $ ReaderT $ \defs -> ReaderT $ \solvers ->
     StateT $ \st -> do
-      solver <- ask
-      defs <- lift $ lift getPrtOrderedDefs
-      contradictProperty <- liftIO $ PureSMT.solveProblem (CheckProperty $ CheckPropertyProblem cOut cIn axioms st defs) solver
-      -- liftIO $ putStrLn $ show (pretty cOut) ++ " => " ++ maybe "--" (show . pretty) cIn ++ "? " ++ show contradictProperty
-      return (contradictProperty, st)
-
--}
+      return (solvePropProblem solvers (CheckPropertyProblem cOut cIn axioms st defs), st)
