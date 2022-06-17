@@ -83,5 +83,5 @@ pushMStack a (sem, q) = do
 popMStack :: MStack a -> IO a
 popMStack (sem, q) = do
   waitQSem sem
-  modifyMVar q $ \case []     -> error "invariant disrespected; MStack should never be empty"
+  modifyMVar q $ \case []     -> error "invariant disrespected; MStack should not be empty if QSem gives passage"
                        (x:xs) -> pure (xs, x)
