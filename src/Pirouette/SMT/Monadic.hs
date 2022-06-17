@@ -120,6 +120,9 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
 -- | Declare a set of datatypes (all at once) in the current solver session.
 declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
+declareDatatypes [] = 
+  -- we need to handle this especially because SMTLIB doesn't like an empty set of types
+  pure []
 declareDatatypes dts = do
   solver <- ask
   (dts', _) <- runWriterT $ forM dts $ \(typeName, Datatype _ typeVariables _ cstrs) -> do
