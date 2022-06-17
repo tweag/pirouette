@@ -23,8 +23,25 @@ import qualified PureSMT
 
 -- | The 'LanguageSymEval' class is used to instruct the symbolic evaluator on how to branch on certain builtins.
 -- It is inherently different from 'SMT.LanguageSMT' in the sense that, for instance, the 'SMT.LanguageSMT'
--- translation of a primitive @if@ statement might use the @ifthenelse@ SMT primitive. However, the
--- 'LanguageSymEval' should instruct the symbolic evaluation engine on how to branch when that primitive is found.
+-- translation of a primitive @if@ statement might use the @ifthenelse@ SMT primitive.
+-- If you just rely on the SMT @ifthenelse@ construct for symbolic evaluation, though, you might end up receiving
+-- bogus counter-examples due to the SMT assuming wrong things out of uninterpreted functions
+-- due to a lack of information.
+--
+-- Say we translate the builtin @if@ statement to its SMT counterpart and evaluate:
+--
+-- > (assert (= x (ifthenelse (isEven 5) 42 0)))
+-- > (assert (= x 0))
+-- > (check-sat)
+--
+-- The SMT will say the above is unsat, and will give a model that assumes @isEven 5@ to be true,
+-- yielding @x = 42@. That's because @isEven@ is an uninterpreted function, so the SMT has no information
+-- about it.
+--
+-- The rule of thumb is easy: any primitive of your language that should branch the symbolic execution engine
+-- should receive special treatment in 'LanguageSymEval'; branching should always be handled by the symbolic
+-- engine and never delegated to the SMT solver. In this example, the 'LanguageSymEval' should instruct
+-- the symbolic evaluation engine on how to branch when that primitive is found.
 -- In particular, two branches should be created:
 --
 --   1. Add @condition = True@ to the list of known things, continue with the then term,
@@ -40,17 +57,29 @@ import qualified PureSMT
 -- >   |             (not every term can be translated)
 -- >   |
 -- > LanguageSymEval --> defines at which points the symbolic evaluator has to do sth. special
+--
+-- If you require nothing special for your particular language, defining:
+--
+-- > branchesBuiltinTerm _ _ _ = pure Nothing
+--
+-- is a fine implementation
 class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   -- | Injection of different cases in the symbolic evaluator.
   -- For example, one can introduce a 'if_then_else' built-in
   -- and implement this method to look at both possibilities.
   branchesBuiltinTerm ::
     (SMT.ToSMT meta, PirouetteReadDefs lang m) =>
+    -- | Head of the application to translate
     BuiltinTerms lang ->
+    -- | Translation function to SMT, in case you need to recursively translate an argument
     (TermMeta lang meta -> m (Maybe PureSMT.SExpr)) ->
+    -- | Arguments of the application to translate
     [ArgMeta lang meta] ->
+    -- | If 'Nothing', this means that this built-in term does not require anything special from the
+    -- symbolic evaluator. For example, it might be that it's translated fine by 'LanguageSMT'.
+    -- If 'Just', it provides information of what to assume in each branch and the term to
+    -- symbolically evaluate further.
     m (Maybe [SMT.Branch lang meta])
-  branchesBuiltinTerm _ _ _ = pure Nothing
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable, IsString)
