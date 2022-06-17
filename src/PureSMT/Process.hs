@@ -60,7 +60,7 @@ recv solver = do
     Nothing -> fail "no response from solver"
     Just (sexpr, _) -> do
       pid <- unsafeSolverPid solver
-      when (debug solver) $ do
+      when (debug solver && sexpr /= Atom "success") $ do
         putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
       return sexpr
 
