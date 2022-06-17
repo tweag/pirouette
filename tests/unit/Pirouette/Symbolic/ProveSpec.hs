@@ -24,16 +24,15 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 exec ::
-  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
+  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) IO a) ->
   (Program Ex, Type Ex, Term Ex) ->
   (Term Ex, Term Ex) ->
-  IO (Either String a)
-exec toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
-  mockPrtT $ do
-    let decls = uncurry PrtUnorderedDefs program
-    orderedDecls <- elimEvenOddMutRec decls
-    flip runReaderT orderedDecls $
-      toDo (Problem tyRes fn assume toProve)
+  IO a
+exec toDo (program, tyRes, fn) (assume, toProve) = do
+  let decls = uncurry PrtUnorderedDefs program
+  let orderedDecls = elimEvenOddMutRec decls
+  flip runReaderT orderedDecls $
+    toDo (Problem tyRes fn assume toProve)
 
 add1 :: (Program Ex, Type Ex, Term Ex)
 add1 =
@@ -385,21 +384,20 @@ condIsUnity =
   )
 
 execFull ::
-  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) (PrtT IO) a) ->
+  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) IO a) ->
   (Program Ex, Type Ex, Term Ex) ->
   (Term Ex, Term Ex) ->
-  IO (Either String a)
-execFull toDo (program, tyRes, fn) (assume, toProve) = fmap fst $
-  mockPrtT $ do
-    let prog0 = uncurry PrtUnorderedDefs program
-    -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
-    let prog1 = monomorphize prog0
-    -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
-    let decls = defunctionalize prog1
-    -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
-    orderedDecls <- elimEvenOddMutRec decls
-    flip runReaderT orderedDecls $
-      toDo (Problem tyRes fn assume toProve)
+  IO a
+execFull toDo (program, tyRes, fn) (assume, toProve) = do
+  let prog0 = uncurry PrtUnorderedDefs program
+  -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
+  let prog1 = monomorphize prog0
+  -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
+  let decls = defunctionalize prog1
+  -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
+  let orderedDecls = elimEvenOddMutRec decls
+  flip runReaderT orderedDecls $
+    toDo (Problem tyRes fn assume toProve)
 
 isUnityTest :: TestTree
 isUnityTest =

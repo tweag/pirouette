@@ -5,7 +5,6 @@
 module Language.Pirouette.PlutusIR.ToTermSpec where
 
 import Control.Monad.Except
-import Control.Monad.Identity
 import Control.Monad.Reader
 import Data.Either (fromRight, isRight)
 import qualified Data.Map as M
@@ -15,7 +14,6 @@ import qualified Data.Text.IO as T
 import Debug.Trace
 import Language.Pirouette.PlutusIR.ToTerm
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import Pirouette.Term.Syntax
 import Pirouette.Term.Transformations
 import qualified PlutusCore as P
@@ -58,7 +56,7 @@ tests = (:[]) $ withResource acquire (const $ return ()) $ \progAct ->
         let shortN = head $ filter ((== "short") . nameString) $ M.keys decls
         let (DFunction _ long _) = fromJust $ M.lookup longN decls
         let (DFunction _ short _) = fromJust $ M.lookup shortN decls
-        mockPrt (runReaderT (expandDefs long) (mocked decls)) @?= Right short
+        runReader (expandDefs long) (mocked decls) @?= short
     ]
   where
     mocked = flip PrtUnorderedDefs undefined

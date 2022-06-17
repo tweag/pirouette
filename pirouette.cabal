@@ -1,6 +1,6 @@
 cabal-version: 2.4
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.34.7.
 --
 -- see: https://github.com/sol/hpack
 
@@ -30,7 +30,6 @@ library
       ListT.Weighted.Examples
       Pirouette
       Pirouette.Monad
-      Pirouette.Monad.Logger
       Pirouette.Monad.Maybe
       Pirouette.Pipeline
       Pirouette.SMT.Base
@@ -61,6 +60,8 @@ library
       PureSMT.Process
       PureSMT.SExpr
   other-modules:
+      Paths_pirouette
+  autogen-modules:
       Paths_pirouette
   hs-source-dirs:
       src
@@ -120,6 +121,8 @@ test-suite spec
       Pirouette.Transformations.EtaExpandSpec
       Pirouette.Transformations.MonomorphizationSpec
       Pirouette.Transformations.PrenexSpec
+      Paths_pirouette
+  autogen-modules:
       Paths_pirouette
   hs-source-dirs:
       tests/unit

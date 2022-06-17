@@ -36,6 +36,7 @@ import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import qualified PureSMT
 import Pirouette.Term.Syntax
+import Pirouette.Symbolic.Eval.Types
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter (dquotes)
 import Text.Megaparsec
@@ -235,9 +236,10 @@ isConstant (BConstant _) = True
 isConstant (SConstant _) = True
 isConstant _ = False
 
--- | Finally, you might want to customize the behavior of the symbolic execution engine...
--- TODO: @serras, can you write a paragraph or two on this instance and why it is important?
-instance LanguageSMTBranches Ex where
+-- | Finally, this is where we customiz the behavior of the symbolic execution engine.
+-- In particular, with respect to @if@ statements in our case. Check the respective
+-- class documentation for more details.
+instance LanguageSymEval Ex where
   -- translate arithmetic operations applied to constants
   branchesBuiltinTerm op _translator [SystF.TermArg (IConstant x), SystF.TermArg (IConstant y)]
     | exTermIsArithOp op =

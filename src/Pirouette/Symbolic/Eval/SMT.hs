@@ -24,7 +24,6 @@ import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import qualified Pirouette.SMT.Constraints as C
 import Pirouette.SMT.FromTerm
 import qualified Pirouette.SMT.Monadic as SMT
@@ -103,17 +102,13 @@ instance Pretty Model where
       f other = other
 
 -- HACKS DUE TO #106: https://github.com/tweag/pirouette/issues/106
-type HackSolver lang a = SMT.SolverT (ReaderT (PrtOrderedDefs lang) (PrtT IO)) a
+type HackSolver lang a = SMT.SolverT (ReaderT (PrtOrderedDefs lang) IO) a
 
 hackSolver :: (MonadIO m) => PureSMT.Solver -> SMT.SolverT m a -> m a
 hackSolver s = flip runReaderT s . SMT.unSolverT
 
 hackSolverPrt :: PureSMT.Solver -> PrtOrderedDefs lang -> HackSolver lang a -> IO a
-hackSolverPrt s defs = wrap <=< (mockPrtT . flip runReaderT defs . flip runReaderT s . SMT.unSolverT)
-  where
-    wrap :: (Either String a, [LogMessage]) -> IO a
-    wrap (Left err, _) = error err
-    wrap (Right a, _) = return a
+hackSolverPrt s defs = flip runReaderT defs . flip runReaderT s . SMT.unSolverT
 
 -- |Instance necessary to call the 'PureSMT.solve' function.
 instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where

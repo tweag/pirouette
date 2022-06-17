@@ -1,24 +1,85 @@
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Pirouette.Symbolic.Eval.Types where
 
 import Data.Data hiding (eqT)
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import Data.String (IsString)
+import Pirouette.Monad
 import qualified Pirouette.SMT.Base as SMT
 import qualified Pirouette.SMT.Constraints as SMT
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
-import qualified Data.Set as S
+import qualified PureSMT
 
--- import Debug.Trace (trace)
+-- | The 'LanguageSymEval' class is used to instruct the symbolic evaluator on how to branch on certain builtins.
+-- It is inherently different from 'SMT.LanguageSMT' in the sense that, for instance, the 'SMT.LanguageSMT'
+-- translation of a primitive @if@ statement might use the @ifthenelse@ SMT primitive.
+-- If you just rely on the SMT @ifthenelse@ construct for symbolic evaluation, though, you might end up receiving
+-- bogus counter-examples due to the SMT assuming wrong things out of uninterpreted functions
+-- due to a lack of information.
+--
+-- Say we translate the builtin @if@ statement to its SMT counterpart and evaluate:
+--
+-- > (assert (= x (ifthenelse (isEven 5) 42 0)))
+-- > (assert (= x 0))
+-- > (check-sat)
+--
+-- The SMT will say the above is unsat, and will give a model that assumes @isEven 5@ to be true,
+-- yielding @x = 42@. That's because @isEven@ is an uninterpreted function, so the SMT has no information
+-- about it.
+--
+-- The rule of thumb is easy: any primitive of your language that should branch the symbolic execution engine
+-- should receive special treatment in 'LanguageSymEval'; branching should always be handled by the symbolic
+-- engine and never delegated to the SMT solver. In this example, the 'LanguageSymEval' should instruct
+-- the symbolic evaluation engine on how to branch when that primitive is found.
+-- In particular, two branches should be created:
+--
+--   1. Add @condition = True@ to the list of known things, continue with the then term,
+--   2. Add @condition = False@ to the list of known things, continue with the else term.
+--
+-- This is the topmost class in the Pirouette universe, the relation between all the classes is:
+--
+-- > LanguageBuiltins --> defines the built-ins (both terms and types)
+-- >   |     \
+-- >   |      LanguageBuiltinTypes --> defines the typing rules of each built-in term
+-- >   |
+-- > LanguageSMT --> defines translation of built-ins into SMT
+-- >   |             (not every term can be translated)
+-- >   |
+-- > LanguageSymEval --> defines at which points the symbolic evaluator has to do sth. special
+--
+-- If you require nothing special for your particular language, defining:
+--
+-- > branchesBuiltinTerm _ _ _ = pure Nothing
+--
+-- is a fine implementation
+class (SMT.LanguageSMT lang) => LanguageSymEval lang where
+  -- | Injection of different cases in the symbolic evaluator.
+  -- For example, one can introduce a 'if_then_else' built-in
+  -- and implement this method to look at both possibilities.
+  branchesBuiltinTerm ::
+    (SMT.ToSMT meta, PirouetteReadDefs lang m) =>
+    -- | Head of the application to translate
+    BuiltinTerms lang ->
+    -- | Translation function to SMT, in case you need to recursively translate an argument
+    (TermMeta lang meta -> m (Maybe PureSMT.SExpr)) ->
+    -- | Arguments of the application to translate
+    [ArgMeta lang meta] ->
+    -- | If 'Nothing', this means that this built-in term does not require anything special from the
+    -- symbolic evaluator. For example, it might be that it's translated fine by 'LanguageSMT'.
+    -- If 'Just', it provides information of what to assume in each branch and the term to
+    -- symbolically evaluate further.
+    m (Maybe [SMT.Branch lang meta])
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable, IsString)

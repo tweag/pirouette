@@ -17,23 +17,19 @@ thing *=* expected = do
 
 satisfies
   :: (Eq a, Show a)
-  => IO (Either String a)
+  => IO a
   -> (a -> Bool) -> Assertion
 thing `satisfies` property = do
-  given <- thing
-  case given of
-    Left e -> assertFailure $ "finished with errors: " <> e
-    Right x -> assertBool ("property not satisfied: " <> show x) (property x)
+  x <- thing
+  assertBool ("property not satisfied: " <> show x) (property x)
 
 pathSatisfies
   :: (Language lang, Pretty res, Show res)
-  => IO (Either String [Path lang res])
+  => IO [Path lang res]
   -> ([Path lang res] -> Bool) -> Assertion
 thing `pathSatisfies` property = do
-  given <- thing
-  case given of
-    Left e -> assertFailure $ "finished with errors: " <> e
-    Right paths -> assertBool ("property not satisfied:\n" <> show (vsep $ map pretty paths)) (property paths)
+  paths <- thing
+  assertBool ("property not satisfied:\n" <> show (vsep $ map pretty paths)) (property paths)
 
 (.&.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 p .&. q = \x -> p x && q x

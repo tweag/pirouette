@@ -33,7 +33,6 @@ module Pirouette.SMT.Monadic
     PureSMT.Result (..),
     module Base,
     Branch (..),
-    LanguageSMTBranches (..),
   )
 where
 
@@ -45,7 +44,6 @@ import Control.Monad.Writer
 import qualified Data.Map as M
 import ListT.Weighted (MonadWeightedList)
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import Pirouette.SMT.Base as Base
 import Pirouette.SMT.Constraints
 import qualified PureSMT
@@ -60,7 +58,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 --  solver-specific operations, such as initialization
 newtype SolverT m a = SolverT {unSolverT :: ReaderT PureSMT.Solver m a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadReader PureSMT.Solver, MonadIO, MonadLogger, MonadFail, MonadWeightedList)
+  deriving newtype (Applicative, Monad, MonadReader PureSMT.Solver, MonadIO, MonadFail, MonadWeightedList)
 
 instance MonadTrans SolverT where
   lift = SolverT . lift

@@ -10,7 +10,6 @@ import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 
@@ -51,7 +50,7 @@ transitiveDepsOfCached ::
   (PirouetteReadDefs lang m, MonadState TranDepsCache m) =>
   Name ->
   m (S.Set (R.Arg Name Name))
-transitiveDepsOfCached n = pushCtx ("transitiveDepsOf " ++ show n) $ go S.empty n
+transitiveDepsOfCached = go S.empty
   where
     go :: S.Set Name -> Name -> m (S.Set (R.Arg Name Name))
     go stack n0 = do

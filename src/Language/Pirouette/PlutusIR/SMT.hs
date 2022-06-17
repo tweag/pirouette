@@ -2,6 +2,7 @@ module Language.Pirouette.PlutusIR.SMT where
 
 import qualified Data.Text as Text
 import Language.Pirouette.PlutusIR.Syntax
+import Pirouette.Symbolic.Eval.Types
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import qualified PlutusCore as P
@@ -15,7 +16,7 @@ instance LanguageSMT PlutusIR where
   translateConstant = trPIRConstant
   isStuckBuiltin = error "isStuckBuiltin (t :: TermMeta PlutusIR meta): not yet impl"
 
-instance LanguageSMTBranches PlutusIR where
+instance LanguageSymEval PlutusIR where
   branchesBuiltinTerm _tm _translator _args = pure Nothing
 
 trPIRType :: PIRBuiltinType -> PureSMT.SExpr

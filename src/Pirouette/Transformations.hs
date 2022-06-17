@@ -6,6 +6,7 @@
 --  for term transformations, check "Pirouette.Term.Transformations"
 module Pirouette.Transformations where
 
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Generics.Uniplate.Operations
@@ -14,7 +15,6 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Pirouette.Monad
-import Pirouette.Monad.Logger
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.Transformations
@@ -23,8 +23,8 @@ import Pirouette.Term.TransitiveDeps
 -- | Removes all Even-Odd mutually recursive functions from the program.
 --  When successfull, sets the 'tord' state field with a list of names indicating the order in which
 --  they should be defined so that the dependencies of a term @T@ are defined before @T@.
-elimEvenOddMutRec :: forall lang m. (LanguageBuiltins lang, PirouetteBase m) => PrtUnorderedDefs lang -> m (PrtOrderedDefs lang)
-elimEvenOddMutRec udefs = do
+elimEvenOddMutRec :: forall lang. (LanguageBuiltins lang) => PrtUnorderedDefs lang -> PrtOrderedDefs lang
+elimEvenOddMutRec udefs = runIdentity $ do
   ordWithCycles <- runReaderT sortAllDeps udefs
   (ord, udefs') <- runStateT (foldM (\res c -> (++ res) <$> elimDepCycles c) [] ordWithCycles) udefs
   return $ prtOrderedDefs udefs' ord
@@ -46,11 +46,11 @@ elimEvenOddMutRec udefs = do
     -- > g x = h x + 2
     --
     elimDepCycles ::
-      (LanguageBuiltins lang, PirouetteBase m) =>
+      (LanguageBuiltins lang, Monad m) =>
       NonEmpty (SystF.Arg Name Name) ->
       StateT (PrtUnorderedDefs lang) m [SystF.Arg Name Name]
     elimDepCycles (e :| []) = return [e]
-    elimDepCycles (e :| es) = pushCtx ("elimDepCycles " ++ show (e : es)) $ go (e : es)
+    elimDepCycles (e :| es) = go (e : es)
       where
         snoc x xs = xs ++ [x]
 
@@ -59,12 +59,11 @@ elimEvenOddMutRec udefs = do
         -- dependency classes that involve terms or types exclusively.
         go [] = return []
         go d@(SystF.TyArg _t : ts) = do
-          unless (all SystF.isTyArg ts) $ throwError' $ PEOther "Mixed dependencies"
-          logWarn "MutRec Types: TLA+ will error if BoundedSetOf is needed for any of these types."
+          unless (all SystF.isTyArg ts) $ prtError $ PEOther "Mixed dependencies"
           return d
         go d@(SystF.TermArg _n : _ns) =
           case mapM SystF.fromArg d of
-            Nothing -> throwError' $ PEOther "Mixed dependencies"
+            Nothing -> prtError $ PEOther "Mixed dependencies"
             Just as -> map SystF.TermArg <$> solveTermDeps 0 as
 
         -- In order to break the cycle for a class of mutually dependend terms ds, we'll
@@ -75,7 +74,7 @@ elimEvenOddMutRec udefs = do
         solveTermDeps _ [] = return []
         solveTermDeps _ [x] = return [x]
         solveTermDeps ctr nss@(n : ns)
-          | ctr == length nss = throwError' $ PEMutRecDeps nss
+          | ctr == length nss = prtError $ PEMutRecDeps nss
           | otherwise = do
             isRec <- termIsRecursive n
             if isRec
@@ -84,7 +83,7 @@ elimEvenOddMutRec udefs = do
                 mapM_ (expandDefInSt n) ns
                   >> snoc n <$> solveTermDeps 0 ns
 
-        expandDefInSt :: Name -> Name -> StateT (PrtUnorderedDefs lang) m ()
+        expandDefInSt :: (Monad m) => Name -> Name -> StateT (PrtUnorderedDefs lang) m ()
         expandDefInSt n m = do
           defn <- prtTermDefOf n
           modify (\st -> st {prtUODecls = fst $ expandDefsIn (Map.singleton n defn) (prtUODecls st) m})
@@ -147,14 +146,11 @@ inlineAll _ _ = Nothing
 -- | Checks that all deBruijn indices make sense, this gets run whenever pirouette
 --  is ran with the @--sanity-check@ flag.
 checkDeBruijnIndices :: (PirouetteReadDefs lang m, LanguagePretty lang) => m ()
-checkDeBruijnIndices = pushCtx "checkDeBruijn" $ do
+checkDeBruijnIndices = do
   allDefs <- prtAllDefs
-  forM_ (Map.toList allDefs) $ \(n, def) -> do
+  forM_ (Map.toList allDefs) $ \(_, def) -> do
     case defTermMapM (\t -> go 0 0 t >> return t) def of
-      Left err ->
-        logError ("Invalid de Bruijn index for " ++ show n ++ "; " ++ show err)
-          >> logError (renderSingleLineStr (pretty def))
-          >> throwError' (PEOther "Invalid de Bruijn index")
+      Left err -> prtError $ PEOther $ "Invalid de Bruijn index" ++ show err
       Right _ -> return ()
   where
     go :: Integer -> Integer -> Term lang -> Either String ()

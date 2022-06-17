@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Transformations.MonomorphizationSpec (tests) where
 
@@ -65,10 +66,7 @@ sampleUDefs = uncurry PrtUnorderedDefs sampleProgram
 withSampleUDefs ::
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
-withSampleUDefs m =
-  case mockPrt (runReaderT m sampleUDefs) of
-    Left err -> assertFailure err
-    Right t -> t
+withSampleUDefs m = runReader m sampleUDefs
 
 tests :: [TestTree]
 tests =

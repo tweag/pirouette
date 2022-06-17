@@ -20,7 +20,7 @@ withUnorderedDecls ::
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
 withUnorderedDecls (decls, main) m =
-  case mockPrt (runReaderT m (PrtUnorderedDefs decls main)) of
+  case runReaderT m (PrtUnorderedDefs decls main) of
     Left err -> assertFailure err
     Right t  -> t
 

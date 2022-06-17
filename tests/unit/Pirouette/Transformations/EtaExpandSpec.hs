@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Transformations.EtaExpandSpec (tests) where
 
@@ -19,10 +20,7 @@ withUnorderedDecls ::
   Program Ex ->
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
-withUnorderedDecls (decls, main) m =
-  case mockPrt (runReaderT m (PrtUnorderedDefs decls main)) of
-    Left err -> assertFailure err
-    Right t -> t
+withUnorderedDecls (decls, main) m = runReader m (PrtUnorderedDefs decls main)
 
 sampleProgram :: Program Ex
 sampleProgram =
