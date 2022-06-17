@@ -6,6 +6,7 @@ module Language.Pirouette.PlutusIR.SymEvalSpec where
 
 import Control.Monad.Except ( runExcept )
 import Control.Monad.Reader ( ReaderT(runReaderT) )
+import qualified Data.Map as M
 import Language.Pirouette.PlutusIR
 import Language.Pirouette.PlutusIR.Syntax
 import Language.Pirouette.PlutusIR.ToTerm
@@ -14,6 +15,7 @@ import Pirouette.Symbolic.EvalUtils
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax
 import Pirouette.Transformations (elimEvenOddMutRec)
+import Pirouette.Transformations.Contextualize
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import PlutusCore (DefaultUni (..))
@@ -28,28 +30,29 @@ import Test.Tasty.HUnit
 import Test.Tasty.ExpectedFailure (expectFail)
 
 execFromPIRFile ::
-  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) (PrtT IO) a) ->
+  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) IO a) ->
   FilePath -> (Type PlutusIR, Term PlutusIR) ->
   (Term PlutusIR, Term PlutusIR) ->
-  IO (Either String a)
+  IO a
 execFromPIRFile toDo path (tyRes, fn) (assume, toProve) = do
   pir <- openAndParsePIR path
   exec toDo (pir, tyRes, fn) (assume, toProve)
 
 exec ::
   (PIRConstraint tyname name P.DefaultFun, Show loc) =>
-  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) (PrtT IO) a) ->
+  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) IO a) ->
   (PIR.Program tyname name DefaultUni P.DefaultFun loc, Type PlutusIR, Term PlutusIR) ->
   (Term PlutusIR, Term PlutusIR) ->
-  IO (Either String a)
-exec toDo (pirProgram, tyRes, fn) (assume, toProve) =
-  case runExcept $ trProgram pirProgram of
-    Left e -> pure (Left $ show e)
-    Right (main, decls) ->
-      fmap fst $ mockPrtT $ do
-        orderedDecls <- elimEvenOddMutRec $ PrtUnorderedDefs decls main
-        flip runReaderT orderedDecls $
-          toDo (Problem tyRes fn assume toProve)
+  IO a
+exec toDo (pirProgram, tyRes, fn) (assume, toProve) = do
+  let Right (main, decls) = runExcept $ trProgram pirProgram
+  let orderedDecls = elimEvenOddMutRec $ PrtUnorderedDefs decls main
+  flip runReaderT orderedDecls $ do
+    tyRes' <- contextualizeType tyRes
+    fn' <- contextualizeTerm fn
+    assume' <- contextualizeTerm assume
+    toProve' <- contextualizeTerm toProve
+    toDo (Problem tyRes' fn' assume' toProve')
 
 tests :: [TestTree]
 tests =

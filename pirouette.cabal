@@ -51,6 +51,7 @@ library
       Pirouette.Term.TransitiveDeps
       Pirouette.Term.TypeChecker
       Pirouette.Transformations
+      Pirouette.Transformations.Contextualize
       Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.EtaExpand
       Pirouette.Transformations.Monomorphization
