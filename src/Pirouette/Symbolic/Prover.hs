@@ -67,7 +67,7 @@ prove shouldStop problem = symeval shouldStop $ proveRaw problem
 
 -- |Prove without any stopping condition.
 proveUnbounded ::
-  (SymEvalConstr lang m, MonadIO m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
 proveUnbounded = prove (const False)
