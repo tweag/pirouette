@@ -1,36 +1,20 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Language.Pirouette.PlutusIR.ToTermSpec where
 
 import Control.Monad.Except
 import Control.Monad.Reader
-import Data.Either (fromRight, isRight)
 import qualified Data.Map as M
 import Data.Maybe (fromJust)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import Debug.Trace
 import Language.Pirouette.PlutusIR.ToTerm
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Transformations
-import qualified PlutusCore as P
-import qualified PlutusIR.Core.Type as PIR (Program)
-import qualified PlutusIR.Parser as PIR
 import Test.Tasty
 import Test.Tasty.HUnit
-import Text.Megaparsec.Error (errorBundlePretty)
 
-openAndParsePIR ::
-  FilePath ->
-  IO (PIR.Program P.TyName P.Name P.DefaultUni P.DefaultFun PIR.SourcePos)
-openAndParsePIR fileName = do
-  !content <- T.readFile fileName
-  case PIR.parse (PIR.program @P.DefaultUni @P.DefaultFun) fileName content of
-    Left err -> print err >> error "Couldn't parse"
-    Right p -> return p
+import Language.Pirouette.PlutusIR.Common
 
 tests :: [TestTree]
 tests = (:[]) $ withResource acquire (const $ return ()) $ \progAct ->

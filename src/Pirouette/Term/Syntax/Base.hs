@@ -276,6 +276,10 @@ data Definition lang
 pattern DFunction :: Rec -> Term lang -> Type lang -> Definition lang
 pattern DFunction r t ty = DFunDef (FunDef r t ty)
 
+isTypeDef :: Definition lang -> Bool
+isTypeDef DTypeDef {} = True
+isTypeDef _ = False
+
 {-# COMPLETE DFunction, DConstructor, DDestructor, DTypeDef #-}
 
 -- TODO investigate whether this COMPLETE pragma will be still needed when we upgrade to ghc 9.0/9.2

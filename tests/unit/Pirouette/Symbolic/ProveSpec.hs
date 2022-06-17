@@ -326,8 +326,6 @@ ohearnTestPeano =
 switchSides :: (Term Ex, Term Ex) -> (Term Ex, Term Ex)
 switchSides (assume, prove) = (prove, assume)
 
-proveUnbounded = prove (const False)
-
 tests :: [TestTree]
 tests =
   [ testGroup
