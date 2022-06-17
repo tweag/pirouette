@@ -10,7 +10,11 @@ import Pirouette.Term.Syntax.SystemF as SystF
 -- refer to those in the context.
 -- This is especially useful when working with lonely terms
 -- created by the quasiquoter, but which ultimately need
--- to refer back to elements in a 'Program'.
+-- to refer back to elements in a 'Program'. In particular, the `nameUnique` part might need adjustments.
+-- Say you called the quasiquoter with @[pir| \x : Integer -> fib x |]@, you'd want `fib` to refers to something 
+-- from the context. The `fib` in the context will actually be called @Name "fib" (Just u)@, where `u` is a 
+-- unique identifier but the `fib` that came from the quasiquoter will be @Name "fib" Nothing@, hence we
+-- need to adjust the 'nameUnique' portions.
 contextualizeTerm :: (PirouetteReadDefs lang m) => Term lang -> m (Term lang)
 contextualizeTerm tm = fixContextTerm <$> prtAllDefs <*> pure tm
 
