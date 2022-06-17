@@ -12,6 +12,7 @@ import Control.Concurrent.MVar
 import Control.Concurrent.QSem
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad
+import GHC.Conc (numCapabilities)
 
 -- |In order to use the pure 'solve' function, you must provide an instance of 'Solve'
 -- for your particular domain. The methods of the 'Solve' class are not meant to
@@ -57,11 +58,6 @@ launchAll ctx = replicateM numCapabilities $ do
   initSolver @domain ctx s
   newMVar s
   where
-    -- TODO: these constants should become parameters at some point; the solver command too!
-
-    numCapabilities :: Int
-    numCapabilities = 3
-
     debug0 :: Bool
     debug0 = False
 
