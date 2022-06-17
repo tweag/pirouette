@@ -2,11 +2,14 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
+
 module PureSMT (module X, Solve(..), solve) where
 
 import PureSMT.Process as X
 import PureSMT.SExpr as X
 import Control.Concurrent.MVar
+import Control.Concurrent.QSem
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad
 
@@ -42,8 +45,8 @@ solve ctx = unsafePerformIO $ do
       -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
-      pid <- unsafeSolverPid solver
-      print pid
+      --pid <- unsafeSolverPid solver
+      --print pid
       solveProblem @domain problem solver
     pushMStack ms allProcs
     return r
@@ -62,55 +65,23 @@ launchAll ctx = replicateM numCapabilities $ do
     debug0 :: Bool
     debug0 = False
 
--- * Async Locks
+-- * Async Stacks
 
-type Lock = MVar ()
-
-newLock :: IO Lock
-newLock = newMVar ()
-
-withLock :: Lock -> IO a -> IO a
-withLock lock act = withMVar lock $ Prelude.const act
-
--- * Async Queues
-
--- |A MStack is a MVar that satisfies the invariant that it never contains
--- an empty list; if that's the case then the MVar is empty.
-type MStack a = MVar [a]
+-- |An 'MStack a' is an 'MVar' having a list of 'a's,
+-- which can be popped off the list and pushed back onto it.
+-- Popping off an 'MStack' that has no available 'a's just blocks until one becomes available.
+type MStack a = (QSem, MVar [a])
 
 newMStack :: [a] -> IO (MStack a)
-newMStack [] = newEmptyMVar
-newMStack xs = newMVar xs
-
--- Weirdly enough... removing the withLock makes it work and multiple solvers correctly
--- pick their tasks
-
--- Problematic trace:
---
--- q is full with [a,b,c]
--- thread1: executes (popMStack q), taking q; xss <- [a,b,c]
--- thread2: executes (pushMStack q d), but q is empty, goes to nothing branch
---
--- Two things can happen:
---
--- A: thread1 executes putMVar q [b,c] first,
---    thread2 executes putMVar q [d] second and blocks
---
--- B: reverse happens
---
--- Which means we need a better MStack; one that works would be great!
+newMStack xs = (,) <$> newQSem (length xs) <*> newMVar xs
 
 pushMStack :: a -> MStack a -> IO ()
-pushMStack a q = do
-  mas <- tryTakeMVar q
-  case mas of
-    Nothing -> putMVar q [a]
-    Just as0 -> putMVar q (a:as0)
+pushMStack a (sem, q) = do
+  modifyMVar_ q $ pure . (a :)
+  signalQSem sem
 
 popMStack :: MStack a -> IO a
-popMStack q = do
-  xss <- takeMVar q
-  case xss of
-    [] -> error "invariant disrespected; MStack should never be empty"
-    [x] -> return x
-    (x:xs) -> putMVar q xs >> return x
+popMStack (sem, q) = do
+  waitQSem sem
+  modifyMVar q $ \case []     -> error "invariant disrespected; MStack should not be empty if QSem gives passage"
+                       (x:xs) -> pure (xs, x)
