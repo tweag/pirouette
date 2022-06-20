@@ -20,28 +20,56 @@ instance LanguageSMT PlutusIR where
   -- translateBuiltinTerm = error "translateBuiltinTerm (t :: BuiltinTerms PlutusIR): not yet impl"
   translateBuiltinTerm = trPIRFun
   translateConstant = trPIRConstant
-  isStuckBuiltin = error "isStuckBuiltin (t :: TermMeta PlutusIR meta): not yet impl"
+
+  isStuckBuiltin e
+    | termIsConstant e = True
+    | Just _ <- termIsMeta e = True
+  isStuckBuiltin (App (Free (Builtin op)) args)
+    | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
+    = let args' = map (\(TermArg a) -> a) args
+      in all isStuckBuiltin args' && not (all termIsConstant args')
+  isStuckBuiltin _ = False
 
   builtinTypeDefinitions =
-    [("list", listTypeDef), ("unit", unitTypeDef)]
+    [("list", listTypeDef), ("unit", unitTypeDef), ("data", dataTypeDef)]
     where
+      base nm = TyApp (Free $ TySig nm) []
+      builtin :: PIRBuiltinType -> Type PlutusIR
+      builtin nm = TyApp (Free $ TyBuiltin nm) []
+
+      a = TyApp (Bound (Ann "a") 0) []
+
       listTypeDef = Datatype {
         kind = KTo KStar KStar
       , typeVariables = [("a", KStar)]
       , destructor = "list_match"
       , constructors = [
-          ("Nil", TyAll (Ann "a") KStar listOfA)
-        , ("Cons", TyAll (Ann "a") KStar (TyFun variableA (TyFun listOfA listOfA)))
+          ("Nil", TyAll (Ann "a") KStar (listOf a))
+        , ("Cons", TyAll (Ann "a") KStar (TyFun a (TyFun (listOf a) (listOf a))))
         ]
       }
-      variableA = TyApp (Bound (Ann "a") 0) []
-      listOfA = TyApp (Free $ TySig "list") [variableA]
+
+      listOf x = TyApp (Free $ TySig "list") [x]
 
       unitTypeDef = Datatype {
         kind = KStar
       , typeVariables = []
       , destructor = "unit_match"
-      , constructors = [("Unit", TyApp (Free $ TySig "unit") [])]
+      , constructors = [("Unit", base "unit")]
+      }
+
+      -- defined following https://github.com/input-output-hk/plutus/blob/master/plutus-core/plutus-core/src/PlutusCore/Data.hs
+      dataTypeDef = Datatype {
+        kind = KStar
+      , typeVariables = []
+      , destructor = "data_match"
+      , constructors = [
+          ("Constr", TyFun (builtin PIRTypeInteger) (TyFun (listOf (base "data")) (base "data")))
+        , ("Map", TyFun (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) (base "data"))
+        , ("List", TyFun (listOf (base "data")) (base "data"))
+        , ("I", TyFun (builtin PIRTypeInteger) (base "data"))
+        , ("B", TyFun (builtin PIRTypeByteString) (base "data"))
+        ]
       }
 
 trPIRType :: PIRBuiltinType -> PureSMT.SExpr
@@ -73,6 +101,17 @@ trPIRConstant (PIRConstList lst) = go lst
         go (x:xs) = PureSMT.fun "Cons" [trPIRConstant x, go xs]
 trPIRConstant (PIRConstPair x y) = PureSMT.tuple [trPIRConstant x, trPIRConstant y]
 trPIRConstant (PIRConstData _dat) = error "Not implemented: PIRConstData to SMT"
+
+plutusIRBasicOps :: [P.DefaultFun]
+plutusIRBasicOps = [
+  P.AddInteger, P.SubtractInteger, P.MultiplyInteger,
+  P.DivideInteger, P.ModInteger, P.QuotientInteger, P.RemainderInteger,
+  P.AppendString ]
+
+plutusIRBasicRels :: [P.DefaultFun]
+plutusIRBasicRels = [
+  P.EqualsInteger, P.LessThanInteger, P.LessThanEqualsInteger,
+  P.EqualsByteString, P.EqualsString, P.EqualsData ]
 
 trPIRFun :: P.DefaultFun -> [PureSMT.SExpr] -> Maybe PureSMT.SExpr
 
@@ -170,13 +209,16 @@ trPIRFun op [x, y] =
         "Translate builtin to SMT: "
           <> show op
           <> " is not an implemented binary operator/function"
--- Pattern matching in disguise
-trPIRFun P.IfThenElse _ = Nothing
+-- Pattern matching in disguise,
+-- so we return here Nothing and then "translate"
+-- into an actual match in 'branchesBuiltinTerm'
 trPIRFun P.ChooseList _ = Nothing
 trPIRFun P.HeadList _ = Nothing
 trPIRFun P.TailList _ = Nothing
 trPIRFun P.ChooseUnit _ = Nothing
 trPIRFun P.ChooseData _ = Nothing
+-- If-then-else is complicated
+trPIRFun P.IfThenElse _ = Nothing
 -- Remainder
 trPIRFun op _ =
   error $

@@ -190,6 +190,10 @@ termIsBuiltin :: TermMeta lang meta -> Bool
 termIsBuiltin (SystF.App (SystF.Free (Builtin _)) _args) = True
 termIsBuiltin _ = False
 
+termIsConstant :: TermMeta lang meta -> Bool
+termIsConstant (SystF.App (SystF.Free (Constant _)) _args) = True
+termIsConstant _ = False
+
 -- | Returns whether a term is in Weak Head Normal Form,
 -- that is, a constant or a constructor followed by any arguments.
 termIsWHNFOrMeta :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m Bool

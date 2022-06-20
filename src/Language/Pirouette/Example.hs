@@ -31,7 +31,7 @@ import qualified Data.Set as S
 import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter as QQ
 import Language.Pirouette.QuasiQuoter.Syntax
-import Pirouette.Monad (termIsMeta)
+import Pirouette.Monad (termIsConstant, termIsMeta)
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import qualified PureSMT
@@ -209,11 +209,11 @@ instance LanguageSMT Ex where
 
   -- they are stuck if they are constants, or a not-ite builtin
   isStuckBuiltin e
-    | isConstant e = True
+    | termIsConstant  e = True
   isStuckBuiltin (SystF.App (SystF.Free (Builtin op)) args)
     | exTermIsArithOp op || exTermIsStringOp op =
       let args' = map (\(SystF.TermArg a) -> a) args
-       in all isStuckBuiltin args' && not (all isConstant args')
+       in all isStuckBuiltin args' && not (all termIsConstant args')
   isStuckBuiltin tm = isJust (termIsMeta tm)
 
 pattern BConstant :: Bool -> TermMeta Ex meta
@@ -230,12 +230,6 @@ pattern IConstant n = SystF.App (SystF.Free (Constant (ConstInt n))) []
 
 pattern SConstant :: String -> TermMeta Ex meta
 pattern SConstant s = SystF.App (SystF.Free (Constant (ConstString s))) []
-
-isConstant :: TermMeta Ex meta -> Bool
-isConstant (IConstant _) = True
-isConstant (BConstant _) = True
-isConstant (SConstant _) = True
-isConstant _ = False
 
 -- | Finally, this is where we customize the behavior of the symbolic execution engine.
 -- In particular, with respect to @if@ statements in our case. Check the respective
