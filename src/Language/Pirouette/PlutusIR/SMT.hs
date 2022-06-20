@@ -233,12 +233,21 @@ trPIRFun op _ =
       <> " is not an implemented constant/operator/function"
 
 instance LanguageSymEval PlutusIR where
-  branchesBuiltinTerm P.ChooseList _translator args = 
+  branchesBuiltinTerm P.ChooseList _ args = 
     continueWithMatch "Nil_match" args
-  branchesBuiltinTerm P.ChooseUnit _translator args = 
+  branchesBuiltinTerm P.ChooseUnit _ args = 
     continueWithMatch "Unit_match" args
-  branchesBuiltinTerm P.ChooseData _translator args = 
+  branchesBuiltinTerm P.ChooseData _ args = 
     continueWithMatch "Data_match" args
+
+  branchesBuiltinTerm P.FstPair _ [tyA@(TyArg a), tyB@(TyArg b)] =
+    continueWithMatch "Tuple2_match"
+      [ tyA, tyB, tyA
+      , TermArg $ Lam (Ann "x") a $ Lam (Ann "y") b $ App (Bound (Ann "x") 1) [] ]
+  branchesBuiltinTerm P.SndPair _ [tyA@(TyArg a), tyB@(TyArg b)] =
+    continueWithMatch "Tuple2_match"
+      [ tyA, tyB, tyA
+      , TermArg $ Lam (Ann "x") a $ Lam (Ann "y") b $ App (Bound (Ann "y") 0) [] ]
 
   branchesBuiltinTerm _rest _translator _args = 
     pure Nothing
