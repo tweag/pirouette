@@ -2,6 +2,7 @@
 
 module Language.Pirouette.PlutusIR.SMT where
 
+import Data.Text (Text)
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval.Types
@@ -9,6 +10,7 @@ import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
+import Pirouette.Transformations.Contextualize (contextualizeTermName)
 import qualified PlutusCore as P
 import qualified PureSMT
 
@@ -31,12 +33,17 @@ instance LanguageSMT PlutusIR where
   isStuckBuiltin _ = False
 
   builtinTypeDefinitions =
-    [("list", listTypeDef), ("unit", unitTypeDef), ("data", dataTypeDef)]
+    [ -- list, pair, and unit are defined whenever they are needed
+      -- in the PIR files themselves
+      {- ("list", listTypeDef), ("unit", unitTypeDef), -}
+      ("Data", dataTypeDef)]
     where
       base nm = TyApp (Free $ TySig nm) []
       builtin :: PIRBuiltinType -> Type PlutusIR
       builtin nm = TyApp (Free $ TyBuiltin nm) []
+      listOf x = TyApp (Free $ TySig "List") [x]
 
+      {-
       a = TyApp (Bound (Ann "a") 0) []
 
       listTypeDef = Datatype {
@@ -49,20 +56,19 @@ instance LanguageSMT PlutusIR where
         ]
       }
 
-      listOf x = TyApp (Free $ TySig "list") [x]
-
       unitTypeDef = Datatype {
         kind = KStar
       , typeVariables = []
       , destructor = "unit_match"
       , constructors = [("Unit", base "unit")]
       }
+      -}
 
       -- defined following https://github.com/input-output-hk/plutus/blob/master/plutus-core/plutus-core/src/PlutusCore/Data.hs
       dataTypeDef = Datatype {
         kind = KStar
       , typeVariables = []
-      , destructor = "data_match"
+      , destructor = "Data_match"
       , constructors = [
           ("Constr", TyFun (builtin PIRTypeInteger) (TyFun (listOf (base "data")) (base "data")))
         , ("Map", TyFun (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) (base "data"))
@@ -77,15 +83,15 @@ trPIRType PIRTypeInteger = PureSMT.tInt
 trPIRType PIRTypeBool = PureSMT.tBool
 trPIRType PIRTypeString = PureSMT.tString
 trPIRType PIRTypeByteString = PureSMT.tString
-trPIRType PIRTypeUnit = PureSMT.fun "unit" []
+trPIRType PIRTypeUnit = PureSMT.fun "Unit" []
 trPIRType PIRTypeData = PureSMT.tUnit -- TODO: Temporary represention of data
 -- Note: why do Pair have maybes?
 -- Note answer, because types can be partially applied in System F,
 -- and `Pair a` is represented by `PIRTypePair (pirType a) Nothing`
 trPIRType (PIRTypePair (Just pirType1) (Just pirType2)) =
-  PureSMT.tTuple [trPIRType pirType1, trPIRType pirType2]
+  PureSMT.fun "Tuple2" [trPIRType pirType1, trPIRType pirType2]
 trPIRType (PIRTypeList (Just pirType)) =
-  PureSMT.fun "list" [trPIRType pirType]
+  PureSMT.fun "List" [trPIRType pirType]
 trPIRType pirType =
   error $ "Translate builtin type to smtlib: " <> show pirType <> " not yet handled."
 
@@ -99,7 +105,7 @@ trPIRConstant (PIRConstString txt) = PureSMT.text txt
 trPIRConstant (PIRConstList lst) = go lst 
   where go [] = PureSMT.fun "Nil" []
         go (x:xs) = PureSMT.fun "Cons" [trPIRConstant x, go xs]
-trPIRConstant (PIRConstPair x y) = PureSMT.tuple [trPIRConstant x, trPIRConstant y]
+trPIRConstant (PIRConstPair x y) = PureSMT.fun "Tuple2" [trPIRConstant x, trPIRConstant y]
 trPIRConstant (PIRConstData _dat) = error "Not implemented: PIRConstData to SMT"
 
 plutusIRBasicOps :: [P.DefaultFun]
@@ -168,8 +174,6 @@ trPIRFun op [x] =
     P.Trace -> Just $ PureSMT.List [x]
     -- some simple operations
     P.NullList -> Just $ PureSMT.eq x (PureSMT.fun "Nil" [])
-    P.FstPair -> Just $ PureSMT.tupleSel 0 x
-    P.SndPair -> Just $ PureSMT.tupleSel 1 x
     -- constructors
     -- those are defined as unary functions for historical reasons
     P.MkNilData -> Just $ PureSMT.fun "Nil" []
@@ -213,10 +217,12 @@ trPIRFun op [x, y] =
 -- so we return here Nothing and then "translate"
 -- into an actual match in 'branchesBuiltinTerm'
 trPIRFun P.ChooseList _ = Nothing
-trPIRFun P.HeadList _ = Nothing
-trPIRFun P.TailList _ = Nothing
 trPIRFun P.ChooseUnit _ = Nothing
 trPIRFun P.ChooseData _ = Nothing
+trPIRFun P.FstPair _ = Nothing
+trPIRFun P.SndPair _ = Nothing
+trPIRFun P.HeadList _ = Nothing
+trPIRFun P.TailList _ = Nothing
 -- If-then-else is complicated
 trPIRFun P.IfThenElse _ = Nothing
 -- Remainder
@@ -228,18 +234,19 @@ trPIRFun op _ =
 
 instance LanguageSymEval PlutusIR where
   branchesBuiltinTerm P.ChooseList _translator args = 
-    continueWithMatch "list_match" args
+    continueWithMatch "Nil_match" args
   branchesBuiltinTerm P.ChooseUnit _translator args = 
-    continueWithMatch "unit_match" args
+    continueWithMatch "Unit_match" args
   branchesBuiltinTerm P.ChooseData _translator args = 
-    continueWithMatch "data_match" args
+    continueWithMatch "Data_match" args
 
   branchesBuiltinTerm _rest _translator _args = 
     pure Nothing
 
 continueWithMatch :: 
   (ToSMT meta, PirouetteReadDefs lang m) =>
-  Name -> [ArgMeta lang meta] ->
+  Text -> [ArgMeta lang meta] ->
   m (Maybe [Branch lang meta])
-continueWithMatch destr args =
-  pure $ Just [ Branch { additionalInfo = mempty, newTerm = App (Free $ TermSig destr) args }]
+continueWithMatch destr args = do
+  destr' <- contextualizeTermName destr
+  pure $ Just [ Branch { additionalInfo = mempty, newTerm = App (Free $ TermSig destr') args }]

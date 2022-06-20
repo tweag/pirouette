@@ -26,6 +26,11 @@ contextualizeTerm tm = fixContextTerm <$> prtAllDefs <*> pure tm
 contextualizeType :: (PirouetteReadDefs lang m) => Type lang -> m (Type lang)
 contextualizeType tm = fixContextType <$> prtAllDefs <*> pure tm
 
+-- | Make a 'Name's in the type with empty uniques
+-- refer to those in the context.
+contextualizeTermName :: (PirouetteReadDefs lang m) => T.Text -> m Name
+contextualizeTermName nm = fixContextName FixTerm <$> prtAllDefs <*> pure (Name nm Nothing)
+
 fixContextName :: FixContextElement -> Map.Map Name (Definition lang) -> Name -> Name
 fixContextName elt inScope nm
   | Just _ <- nameUnique nm = nm  -- if it has a unique, don't change it
