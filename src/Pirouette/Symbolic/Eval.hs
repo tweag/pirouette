@@ -288,6 +288,7 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
 -- If we're evaluating an application, we distinguish between a number
 -- of constituent cases:
 symEvalOneStep t@(R.App hd args) = case hd of
+  R.Free Bottom -> empty -- we end in a bottom, so that branch is not useful
   R.Free (Builtin builtin) -> do
     -- try to evaluate the built-in
     let translator c = do

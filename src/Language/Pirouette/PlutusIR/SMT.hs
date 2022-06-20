@@ -9,7 +9,7 @@ import Pirouette.Symbolic.Eval.Types
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.SystemF
+import Pirouette.Term.Syntax.SystemF as SystemF
 import Pirouette.Transformations.Contextualize (contextualizeTermName)
 import qualified PlutusCore as P
 import qualified PureSMT
@@ -39,9 +39,6 @@ instance LanguageSMT PlutusIR where
       ("Data", dataTypeDef)]
     where
       base nm = TyApp (Free $ TySig nm) []
-      builtin :: PIRBuiltinType -> Type PlutusIR
-      builtin nm = TyApp (Free $ TyBuiltin nm) []
-      listOf x = TyApp (Free $ TySig "List") [x]
 
       {-
       a = TyApp (Bound (Ann "a") 0) []
@@ -154,20 +151,6 @@ trPIRFun :: P.DefaultFun -> [PureSMT.SExpr] -> Maybe PureSMT.SExpr
 --     P.DecodeUtf8
 --
 
--- ** Data **
-
---
---     P.ConstrData
---     P.MapData
---     P.ListData
---     P.IData
---     P.BData
--- [A] P.UnConstrData
---     P.UnMapData
---     P.UnListData
--- [A] P.UnIData
--- [A] P.UnBData
-
 -- Unary
 trPIRFun op [x] =
   case op of
@@ -178,6 +161,11 @@ trPIRFun op [x] =
     -- those are defined as unary functions for historical reasons
     P.MkNilData -> Just $ PureSMT.fun "Nil" []
     P.MkNilPairData -> Just $ PureSMT.fun "Nil" []
+    -- and these are for Data
+    P.MapData -> Just $ PureSMT.fun "Map" [x]
+    P.ListData -> Just $ PureSMT.fun "List" [x]
+    P.IData -> Just $ PureSMT.fun "I" [x]
+    P.BData -> Just $ PureSMT.fun "B" [x]
     _ ->
       error $
         "Translate builtin to SMT: "
@@ -208,6 +196,7 @@ trPIRFun op [x, y] =
     -- constructors
     P.MkCons -> Just $ PureSMT.fun "Cons" [x, y]
     P.MkPairData -> Just $ PureSMT.fun "Tuple2" [x, y]
+    P.ConstrData -> Just $ PureSMT.fun "Constr" [x, y]
     _ ->
       error $
         "Translate builtin to SMT: "
@@ -223,6 +212,11 @@ trPIRFun P.FstPair _ = Nothing
 trPIRFun P.SndPair _ = Nothing
 trPIRFun P.HeadList _ = Nothing
 trPIRFun P.TailList _ = Nothing
+trPIRFun P.UnConstrData _ = Nothing
+trPIRFun P.UnMapData _ = Nothing
+trPIRFun P.UnListData _ = Nothing
+trPIRFun P.UnIData _ = Nothing
+trPIRFun P.UnBData _ = Nothing
 -- If-then-else is complicated
 trPIRFun P.IfThenElse _ = Nothing
 -- Remainder
@@ -233,29 +227,123 @@ trPIRFun op _ =
       <> " is not an implemented constant/operator/function"
 
 instance LanguageSymEval PlutusIR where
-  branchesBuiltinTerm P.ChooseList _ args = 
-    continueWithMatch "Nil_match" args
-  branchesBuiltinTerm P.ChooseUnit _ args = 
-    continueWithMatch "Unit_match" args
-  branchesBuiltinTerm P.ChooseData _ args = 
-    continueWithMatch "Data_match" args
+  -- applying constructors functions during evaluation
+  -- is quite useful because we tend can interact with
+  -- the pattern matching much better b/c we know
+  -- the constructor that has been applied
 
-  branchesBuiltinTerm P.FstPair _ [tyA@(TyArg a), tyB@(TyArg b)] =
-    continueWithMatch "Tuple2_match"
-      [ tyA, tyB, tyA
+  branchesBuiltinTerm P.MkNilData _ _args =
+    continueWith "Nil" []
+  branchesBuiltinTerm P.MkNilPairData _ _args =
+    continueWith "Nil" []
+  branchesBuiltinTerm P.MkCons _ _args =
+    continueWith "Nil" []
+
+  branchesBuiltinTerm P.ConstrData _ args =
+    continueWith "Constr" args
+  branchesBuiltinTerm P.MapData _ args =
+    continueWith "Map" args
+  branchesBuiltinTerm P.ListData _ args =
+    continueWith "List" args
+  branchesBuiltinTerm P.IData _ args =
+    continueWith "I" args
+  branchesBuiltinTerm P.BData _ args =
+    continueWith "B" args
+
+  -- pattern matching and built-in matchers
+
+  branchesBuiltinTerm P.ChooseList _ args = 
+    continueWith "Nil_match" args
+  branchesBuiltinTerm P.ChooseUnit _ args = 
+    continueWith "Unit_match" args
+  branchesBuiltinTerm P.ChooseData _ args = 
+    continueWith "Data_match" args
+
+  branchesBuiltinTerm P.FstPair _ [tyA@(TyArg a), tyB@(TyArg b), tuple] =
+    continueWith "Tuple2_match"
+      [ tyA, tyB, tuple, tyA
       , TermArg $ Lam (Ann "x") a $ Lam (Ann "y") b $ App (Bound (Ann "x") 1) [] ]
-  branchesBuiltinTerm P.SndPair _ [tyA@(TyArg a), tyB@(TyArg b)] =
-    continueWithMatch "Tuple2_match"
-      [ tyA, tyB, tyA
+  branchesBuiltinTerm P.SndPair _ [tyA@(TyArg a), tyB@(TyArg b), tuple] =
+    continueWith "Tuple2_match"
+      [ tyA, tyB, tuple, tyB
       , TermArg $ Lam (Ann "x") a $ Lam (Ann "y") b $ App (Bound (Ann "y") 0) [] ]
+
+  branchesBuiltinTerm P.HeadList _ [tyA@(TyArg a), lst] =
+    continueWith "List_match"
+      [ tyA, lst, tyA
+      , TermArg errorTerm
+      , TermArg $ Lam (Ann "x") a $ Lam (Ann "xs") (listOf a) $ App (Bound (Ann "x") 1) [] ]
+  branchesBuiltinTerm P.TailList _ [tyA@(TyArg a), lst] =
+    continueWith "List_match"
+      [ tyA, lst, TyArg (listOf a)
+      , TermArg errorTerm
+      , TermArg $ Lam (Ann "x") a $ Lam (Ann "xs") (listOf a) $ App (Bound (Ann "xs") 0) [] ]
+
+  branchesBuiltinTerm P.NullList _ [tyA@(TyArg a), lst] =
+    continueWith "List_match"
+      [ tyA, lst, TyArg (builtin PIRTypeBool)
+      , TermArg $ App (Free $ TermSig "True") []
+      , TermArg $ Lam (Ann "x") a $ Lam (Ann "xs") (listOf a) $ App (Free $ TermSig "False") [] ]
+
+  branchesBuiltinTerm P.UnConstrData _ [d] =
+    continueWith "Data_match"
+      [ d, TyArg (builtin (PIRTypePair (Just PIRTypeInteger) (Just PIRTypeData)))
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger) 
+                $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) 
+                $ App (Free $ TermSig "Tuple2") [TermArg $ App (Bound (Ann "i") 1) [], TermArg $ App (Bound (Ann "ds") 0) []]
+      , TermArg $ Lam (Ann "es") (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) errorTerm
+      , TermArg $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger) errorTerm
+      , TermArg $ Lam (Ann "b") (builtin PIRTypeByteString) errorTerm ]
+  branchesBuiltinTerm P.UnMapData _ [d] =
+    continueWith "Data_match"
+      [ d, TyArg (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData))))
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger)  $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "es") (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) $ App (Bound (Ann "es") 0) []
+      , TermArg $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger) errorTerm
+      , TermArg $ Lam (Ann "b") (builtin PIRTypeByteString) errorTerm ]
+  branchesBuiltinTerm P.UnListData _ [d] =
+    continueWith "Data_match"
+      [ d, TyArg (listOf (builtin PIRTypeData))
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger)  $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "es") (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) $ App (Bound (Ann "es") 0) []
+      , TermArg $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger) errorTerm
+      , TermArg $ Lam (Ann "b") (builtin PIRTypeByteString) errorTerm ]
+  branchesBuiltinTerm P.UnIData _ [d] =
+    continueWith "Data_match"
+      [ d, TyArg (builtin PIRTypeInteger)
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger)  $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "es") (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) errorTerm
+      , TermArg $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger) $ App (Bound (Ann "es") 0) []
+      , TermArg $ Lam (Ann "b") (builtin PIRTypeByteString) errorTerm ]
+  branchesBuiltinTerm P.UnBData _ [d] =
+    continueWith "Data_match"
+      [ d, TyArg (builtin PIRTypeByteString)
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger)  $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "es") (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) errorTerm
+      , TermArg $ Lam (Ann "ds") (listOf (builtin PIRTypeData)) errorTerm
+      , TermArg $ Lam (Ann "i") (builtin PIRTypeInteger) errorTerm
+      , TermArg $ Lam (Ann "b") (builtin PIRTypeByteString) $ App (Bound (Ann "es") 0) [] ]
 
   branchesBuiltinTerm _rest _translator _args = 
     pure Nothing
 
-continueWithMatch :: 
+continueWith :: 
   (ToSMT meta, PirouetteReadDefs lang m) =>
   Text -> [ArgMeta lang meta] ->
   m (Maybe [Branch lang meta])
-continueWithMatch destr args = do
+continueWith destr args = do
   destr' <- contextualizeTermName destr
   pure $ Just [ Branch { additionalInfo = mempty, newTerm = App (Free $ TermSig destr') args }]
+
+errorTerm :: AnnTerm ty ann (SystemF.VarMeta meta ann (TermBase lang))
+errorTerm = App (Free Bottom) []
+
+listOf :: AnnType ann (SystemF.VarMeta meta ann (TypeBase lang)) -> AnnType ann (SystemF.VarMeta meta ann (TypeBase lang))
+listOf x = TyApp (Free $ TySig "List") [x]
+
+builtin :: PIRBuiltinType -> AnnType ann (SystemF.VarMeta meta ann (TypeBase PlutusIR))
+builtin nm = TyApp (Free $ TyBuiltin nm) []
