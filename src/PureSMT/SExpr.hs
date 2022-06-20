@@ -5,6 +5,7 @@ import Data.Bits (testBit)
 import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
+import qualified Data.Text
 import Numeric (showFFloat, showHex, readHex)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
 import qualified Prelude as P
@@ -341,10 +342,21 @@ real x
 string :: String -> SExpr
 string str = Atom ("\"" <> str <> "\"")
 
+-- | String literals, from Text
+text :: Data.Text.Text -> SExpr
+text str = Atom ("\"" <> Data.Text.unpack str <> "\"")
+
 -- | The unit value: a tuple of arity 0
 -- Tweag
 unit :: SExpr
 unit = const "mkTuple"
+
+-- | Create a new tuple
+tuple :: [SExpr] -> SExpr
+tuple = fun "mkTuple"
+
+tupleSel :: Integer -> SExpr -> SExpr
+tupleSel n t = List [fun "_" [Atom "tupSel", int n], t]
 
 -- | A bit vector represented in binary.
 --
