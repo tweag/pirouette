@@ -207,7 +207,7 @@ trPIRFun op [x, y] =
     P.EqualsData -> Just $ PureSMT.eq x y
     -- constructors
     P.MkCons -> Just $ PureSMT.fun "Cons" [x, y]
-    P.MkPairData -> Just $ PureSMT.tuple [x, y]
+    P.MkPairData -> Just $ PureSMT.fun "Tuple2" [x, y]
     _ ->
       error $
         "Translate builtin to SMT: "
