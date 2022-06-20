@@ -151,6 +151,24 @@ trPIRFun :: P.DefaultFun -> [PureSMT.SExpr] -> Maybe PureSMT.SExpr
 --     P.DecodeUtf8
 --
 
+-- Pattern matching in disguise,
+-- so we return here Nothing and then "translate"
+-- into an actual match in 'branchesBuiltinTerm'
+trPIRFun P.ChooseList _ = Nothing
+trPIRFun P.ChooseUnit _ = Nothing
+trPIRFun P.ChooseData _ = Nothing
+trPIRFun P.FstPair _ = Nothing
+trPIRFun P.SndPair _ = Nothing
+trPIRFun P.HeadList _ = Nothing
+trPIRFun P.TailList _ = Nothing
+trPIRFun P.UnConstrData _ = Nothing
+trPIRFun P.UnMapData _ = Nothing
+trPIRFun P.UnListData _ = Nothing
+trPIRFun P.UnIData _ = Nothing
+trPIRFun P.UnBData _ = Nothing
+-- If-then-else is complicated
+trPIRFun P.IfThenElse _ = Nothing
+
 -- Unary
 trPIRFun op [x] =
   case op of
@@ -171,6 +189,7 @@ trPIRFun op [x] =
         "Translate builtin to SMT: "
           <> show op
           <> " is not an implemented unary operator/function"
+
 -- Binary operations and relations
 trPIRFun op [x, y] =
   case op of
@@ -202,23 +221,7 @@ trPIRFun op [x, y] =
         "Translate builtin to SMT: "
           <> show op
           <> " is not an implemented binary operator/function"
--- Pattern matching in disguise,
--- so we return here Nothing and then "translate"
--- into an actual match in 'branchesBuiltinTerm'
-trPIRFun P.ChooseList _ = Nothing
-trPIRFun P.ChooseUnit _ = Nothing
-trPIRFun P.ChooseData _ = Nothing
-trPIRFun P.FstPair _ = Nothing
-trPIRFun P.SndPair _ = Nothing
-trPIRFun P.HeadList _ = Nothing
-trPIRFun P.TailList _ = Nothing
-trPIRFun P.UnConstrData _ = Nothing
-trPIRFun P.UnMapData _ = Nothing
-trPIRFun P.UnListData _ = Nothing
-trPIRFun P.UnIData _ = Nothing
-trPIRFun P.UnBData _ = Nothing
--- If-then-else is complicated
-trPIRFun P.IfThenElse _ = Nothing
+
 -- Remainder
 trPIRFun op _ =
   error $
