@@ -9,6 +9,7 @@ module Pirouette.Symbolic.Prover where
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Text as T
+import Debug.Trace
 import Pirouette.Monad (termIsWHNFOrMeta, PirouetteDepOrder)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
@@ -112,6 +113,12 @@ proveRaw Problem {..} = do
       CounterExample tm (Model [(Atom n, t) | (Atom n, t) <- m, n `elem` allVars])
     refineWitness _ w = w
 
+debugPutStr :: String -> SymEval lang ()
+debugPutStr = traceM
+
+debugPrint :: (Show a) => a -> SymEval lang ()
+debugPrint = traceShowM
+
 worker ::
   forall lang.
   SymEvalConstr lang =>
@@ -121,11 +128,11 @@ worker ::
   SymTerm lang ->
   SymEval lang (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  -- liftIO $ putStrLn "ONE STEP"
-  -- liftIO $ print (pretty bodyTerm)
-  -- liftIO $ print (pretty assumeTerm)
-  -- liftIO $ print (pretty proveTerm)
-  -- gets sestConstraint >>= liftIO . print . pretty
+  -- debugPutStr "ONE STEP"
+  -- debugPrint (pretty bodyTerm)
+  -- debugPrint (pretty assumeTerm)
+  -- debugPrint (pretty proveTerm)
+  -- gets sestConstraint >>= debugPrint . pretty
   -- _ <- liftIO getLine
 
   -- terms are only useful if they are in WHNF or are stuck
@@ -149,16 +156,16 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   case mayBodyTerm of
     Right _ -> learn $ And [Assign resultVar bodyTerm]
     _ -> pure ()
-  -- liftIO $ print $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
+  -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
   result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
     -- if everything can be translated, try to prune with it
     (Right _, Right assumeCond, Left _) -> do
-      -- liftIO $ putStrLn "prunning with unknown prove..."
+      -- debugPutStr "prunning with unknown prove..."
       -- _ <- liftIO getLine
       pruneAndValidate (And [Native assumeCond]) Nothing []
     (Right _, Right assumeCond, Right proveCond) -> do
-      -- liftIO $ putStrLn "prunning..."
+      -- debugPutStr "prunning..."
       -- _ <- liftIO getLine
       pruneAndValidate (And [Native assumeCond]) (Just $ And [Native proveCond]) []
     _ -> pure PruneUnknown
@@ -172,11 +179,11 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- but going into matches first
       ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $
         symEvalParallel [bodyTerm, assumeTerm, proveTerm]
-      -- liftIO $ putStrLn "ONE STEP"
-      -- liftIO $ print (pretty bodyTerm')
-      -- liftIO $ print (pretty assumeTerm')
-      -- liftIO $ print (pretty proveTerm')
-      -- liftIO $ print somethingWasEval
+      -- debugPutStr "ONE STEP"
+      -- debugPrint (pretty bodyTerm')
+      -- debugPrint (pretty assumeTerm')
+      -- debugPrint (pretty proveTerm')
+      -- debugPrint somethingWasEval
       -- check the fuel
       noMoreFuel <- gets sestStoppingCondition >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
