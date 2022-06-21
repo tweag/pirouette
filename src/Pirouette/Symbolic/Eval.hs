@@ -83,14 +83,19 @@ data SymEvalSolvers lang = SymEvalSolvers
     solvePropProblem :: CheckPropertyProblem lang -> PruneResult
   }
 
+data SymEvalEnv lang = SymEvalEnv
+  { seeDefs :: PrtOrderedDefs lang,
+    seeSolvers :: SymEvalSolvers lang
+  }
+
 -- | A 'SymEval' is equivalent to a function with type:
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
 newtype SymEval lang a = SymEval
   { symEval ::
       ReaderT
-        (PrtOrderedDefs lang)
-        (ReaderT (SymEvalSolvers lang) (StateT (SymEvalSt lang) WeightedList))
+        (SymEvalEnv lang)
+        (StateT (SymEvalSt lang) WeightedList)
         a
   }
   deriving (Functor)
@@ -99,11 +104,11 @@ newtype SymEval lang a = SymEval
 type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
 instance (SymEvalConstr lang) => PirouetteReadDefs lang (SymEval lang) where
-  prtAllDefs = SymEval (asks prtDecls)
-  prtMain = SymEval (asks prtMainTerm)
+  prtAllDefs = SymEval (asks $ prtDecls . seeDefs)
+  prtMain = SymEval (asks $ prtMainTerm . seeDefs)
 
 instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEval lang) where
-  prtDependencyOrder = SymEval (asks prtDepOrder)
+  prtDependencyOrder = SymEval (asks $ prtDepOrder . seeDefs)
 
 instance MonadFail (SymEval lang) where
   fail = error
@@ -143,13 +148,12 @@ runSymEval defs st = runIdentity . ListT.toList . runSymEvalWorker defs st
 
 runSymEvalRaw ::
   (SymEvalConstr lang) =>
-  SymEvalSolvers lang ->
-  PrtOrderedDefs lang ->
+  SymEvalEnv lang ->
   SymEvalSt lang ->
   SymEval lang a ->
   WeightedList (a, SymEvalSt lang)
-runSymEvalRaw solvers defs st act =
-  runStateT (runReaderT (runReaderT (symEval act) defs) solvers) st
+runSymEvalRaw env st act =
+  runStateT (runReaderT (symEval act) env) st
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -165,7 +169,7 @@ runSymEvalWorker defs st f = do
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  solvPair <- runSymEvalRaw solvers defs st' f
+  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers) st' f
   let paths = uncurry path solvPair
   return paths
   where
@@ -187,22 +191,22 @@ runSymEvalWorker defs st f = do
        in SolverSharedCtx types fns
 
 instance (SymEvalConstr lang) => Alternative (SymEval lang) where
-  empty = SymEval $ ReaderT $ \_ -> ReaderT $ \_ -> StateT $ const empty
+  empty = SymEval $ ReaderT $ \_ -> StateT $ const empty
   xs <|> ys = SymEval $
-    ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st ->
+    ReaderT $ \env -> StateT $ \st ->
       let (xs', ys') =
             withStrategy
               (parTuple2 rpar rpar)
-              (runSymEvalRaw solvers defs st xs, runSymEvalRaw solvers defs st ys)
+              (runSymEvalRaw env st xs, runSymEvalRaw env st ys)
        in xs' <|> ys'
 
 -- | Prune the set of paths in the current set.
 prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
 prune xs = SymEval $
-  ReaderT $ \defs -> ReaderT $ \solvers -> StateT $ \st ->
+  ReaderT $ \env -> StateT $ \st ->
     weightedParFilter
-      (\(_, st') -> solvePathProblem solvers (CheckPathProblem st' defs))
-      (runSymEvalRaw solvers defs st xs)
+      (\(_, st') -> solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env)))
+      (runSymEvalRaw env st xs)
 
 weightedParFilter :: (a -> Bool) -> WeightedList a -> WeightedList a
 weightedParFilter _ ListT.Fail = ListT.Fail
@@ -537,6 +541,6 @@ pruneAndValidate ::
   SymEval lang PruneResult
 pruneAndValidate cOut cIn axioms =
   SymEval $
-    ReaderT $ \defs -> ReaderT $ \solvers ->
-      StateT $ \st -> do
-        return (solvePropProblem solvers (CheckPropertyProblem cOut cIn axioms st defs), st)
+    ReaderT $ \env ->
+      StateT $ \st ->
+        return (solvePropProblem (seeSolvers env) (CheckPropertyProblem cOut cIn axioms st (seeDefs env)), st)
