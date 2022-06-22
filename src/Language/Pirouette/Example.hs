@@ -237,7 +237,7 @@ isConstant (BConstant _) = True
 isConstant (SConstant _) = True
 isConstant _ = False
 
--- | Finally, this is where we customiz the behavior of the symbolic execution engine.
+-- | Finally, this is where we customize the behavior of the symbolic execution engine.
 -- In particular, with respect to @if@ statements in our case. Check the respective
 -- class documentation for more details.
 instance LanguageSymEval Ex where
