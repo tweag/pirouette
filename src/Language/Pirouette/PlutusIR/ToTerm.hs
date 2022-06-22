@@ -173,7 +173,7 @@ trBindings bs = do
   (terms', additionalDecls) <-
     runWriterT $
       mapM (secondM $ splitSndM fst (uncurry2 trTermType)) termBinds
-  let termDeclsList = map (\(r, (n, (t, ty))) -> (n, termToDef r t ty)) terms'
+  let termDeclsList = map (\(r, (n, (t, ty))) -> ((TermNamespace, n), termToDef r t ty)) terms'
   let termDecls = M.fromList termDeclsList
   return $ termDecls <> additionalDecls <> mconcat datatypeDecls
 
@@ -297,13 +297,13 @@ trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons))
   let tyName = toName $ PIR._tyVarDeclName tyvard
       tyKind = trKind $ PIR._tyVarDeclKind tyvard
       tyVars = map ((toName . PIR._tyVarDeclName) &&& (trKind . PIR._tyVarDeclKind)) args
-      tyCons = zipWith (\c i -> (toName $ PIR._varDeclName c, DConstructor i tyName)) cons [0 ..]
+      tyCons = zipWith (\c i -> ((TermNamespace, toName $ PIR._varDeclName c), DConstructor i tyName)) cons [0 ..]
    in do
         cons' <- mapM (rstr . ((toName . PIR._varDeclName) &&& (trTypeWithArgs tyVars . PIR._varDeclType))) cons
         let tyRes = Datatype tyKind tyVars (toName dest) cons'
         return $
-          M.singleton tyName (DTypeDef tyRes)
-            <> M.singleton (toName dest) (DDestructor tyName)
+          M.singleton (TypeNamespace, tyName) (DTypeDef tyRes)
+            <> M.singleton (TermNamespace, toName dest) (DDestructor tyName)
             <> M.fromList tyCons
 
 trKind :: PIR.Kind loc -> SystF.Kind

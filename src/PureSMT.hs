@@ -59,7 +59,7 @@ launchAll ctx = replicateM numCapabilities $ do
   newMVar s
   where
     debug0 :: Bool
-    debug0 = True -- False
+    debug0 = False
 
 -- * Async Stacks
 

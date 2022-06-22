@@ -199,15 +199,15 @@ instance LanguageSymEval PlutusIR where
     continueWith "Nil" []
 
   branchesBuiltinTerm P.ConstrData _ args =
-    continueWith "Constr" args
+    continueWith "Data_Constr" args
   branchesBuiltinTerm P.MapData _ args =
-    continueWith "Map" args
+    continueWith "Data_Map" args
   branchesBuiltinTerm P.ListData _ args =
-    continueWith "List" args
+    continueWith "Data_List" args
   branchesBuiltinTerm P.IData _ args =
-    continueWith "I" args
+    continueWith "Data_I" args
   branchesBuiltinTerm P.BData _ args =
-    continueWith "B" args
+    continueWith "Data_B" args
 
   -- pattern matching and built-in matchers
 

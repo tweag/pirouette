@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -24,14 +25,14 @@ trProgram ::
   (LanguageParser lang) =>
   M.Map String (Either (DataDecl lang) (FunDecl lang)) ->
   FunDecl lang ->
-  TrM (M.Map Name (Definition lang), Definition lang)
+  TrM (M.Map (Namespace, Name) (Definition lang), Definition lang)
 trProgram env main@FunDecl {} =
-  let decls =
-        mapM (uncurry (\s -> either (trDataDecl s) (fmap ((: []) . (fromString s,)) . trFunDecl))) $
-          M.toList env
+  let decls = forM (M.toList env) $ \case
+                (s, Left td) -> trDataDecl s td
+                (s, Right f) -> (\r -> [((TermNamespace, fromString s), r)]) <$> trFunDecl f
    in (,) <$> (decls >>= toDecls . concat) <*> trFunDecl main
   where
-    toDecls :: [(Name, Definition lang)] -> TrM (Decls lang)
+    toDecls :: [((Namespace, Name), Definition lang)] -> TrM (Decls lang)
     toDecls ds =
       let names = map fst ds
           repeated = names \\ nub names
@@ -43,16 +44,16 @@ trFunDecl :: (LanguageParser lang) => FunDecl lang -> TrM (Definition lang)
 trFunDecl (FunDecl rec ty expr) =
   DFunDef <$> (FunDef rec <$> trTerm [] [] expr <*> trType [] ty)
 
-trDataDecl :: String -> DataDecl lang -> TrM [(Name, Definition lang)]
+trDataDecl :: String -> DataDecl lang -> TrM [((Namespace, Name), Definition lang)]
 trDataDecl sName (DataDecl vars cons) = do
   let ki = foldr (SystF.KTo . snd) SystF.KStar vars
   let name = fromString sName
   let destName = fromString $ "match_" ++ sName
   constrs <- mapM (\(n, ty) -> (fromString n,) <$> trTypeWithEnv (reverse vars) ty) cons
   return $
-    (name, DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs) :
-    (destName, DDestructor name) :
-    zipWith (\n i -> (fst n, DConstructor i name)) constrs [0 ..]
+    ((TypeNamespace, name), DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs) :
+    ((TermNamespace, destName), DDestructor name) :
+    zipWith (\n i -> ((TermNamespace, fst n), DConstructor i name)) constrs [0 ..]
 
 trTypeWithEnv :: [(String, SystF.Kind)] -> Ty lang -> TrM (Type lang)
 trTypeWithEnv env ty = do

@@ -68,7 +68,7 @@ defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -
 
           tyVars :: [Var lang]
           tyVars = [t | t@(SystF.Bound _ _) <- universeBi funTy]
-       in if n `M.member` hofs
+       in if (TermNamespace, n) `M.member` hofs
             then
               if null termAbs && null tyArgs && null tyVars
                 then Right ()
@@ -159,16 +159,16 @@ mkClosureTypes infos = M.fromList $ typeDecls <> ctorDecls <> dtorDecls
   where
     types = M.toList $ M.fromListWith (<>) [(closureTypeName $ hofType $ hofArgInfo info, [info]) | info <- infos]
     typeDecls =
-      [ (tyName, typeDecl)
+      [ ((TypeNamespace, tyName), typeDecl)
         | (tyName, infos') <- types,
           let info2ctor ClosureCtorInfo {..} = (ctorName, foldr SystF.TyFun (SystF.Free (TySig tyName) `SystF.TyApp` []) ctorArgs),
           let typeDecl = DTypeDef $ Datatype SystF.KStar [] (dtorName tyName) (info2ctor <$> sortOn ctorIdx infos')
       ]
     ctorDecls =
-      [ (ctorName, DConstructor ctorIdx $ closureTypeName hofType)
+      [ ((TermNamespace, ctorName), DConstructor ctorIdx $ closureTypeName hofType)
         | ClosureCtorInfo {hofArgInfo = DefunHofArgInfo {..}, ..} <- infos
       ]
-    dtorDecls = [(dtorName tyName, DDestructor tyName) | tyName <- fst <$> types]
+    dtorDecls = [((TermNamespace, dtorName tyName), DDestructor tyName) | tyName <- fst <$> types]
 
 dtorName :: Name -> Name
 dtorName tyName = [i|match_#{tyName}|]
@@ -181,7 +181,7 @@ mkApplyFuns infos = M.fromList funDecls
     funs = M.toList $ M.fromListWith (<>) [(applyFunName $ hofType $ hofArgInfo info, [info]) | info <- infos]
 
     funDecls =
-      [ (funName, DFunDef $ FunDef NonRec funBody funTy)
+      [ ((TermNamespace, funName), DFunDef $ FunDef NonRec funBody funTy)
         | (funName, infos') <- funs,
           let infos'' = sortOn ctorIdx infos',
           let DefunHofArgInfo {..} = hofArgInfo $ head infos'',
@@ -316,7 +316,7 @@ traverseDefs ::
   PrtUnorderedDefs lang ->
   m (PrtUnorderedDefs lang)
 traverseDefs f defs = do
-  decls' <- forM defsList $ \(name, def) -> (name,) <$> f name def
+  decls' <- forM defsList $ \(name@(_, inner), def) -> (name,) <$> f inner def
   pure $ defs {prtUODecls = M.fromList decls'}
   where
     defsList = M.toList $ prtUODecls defs

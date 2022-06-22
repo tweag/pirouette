@@ -64,8 +64,8 @@ instance LanguageBuiltins PlutusIR where
   builtinTypeDefinitions definedTypes =
     -- only define List and Unit if they are not yet defined
     [ ("List", listTypeDef) | not (isDefined "List")]
-    ++ [ ("Unit", unitTypeDef) | not (isDefined "Unit") ]
-    ++ [ ("Tuple2", tuple2TypeDef) | not (isDefined "Tuple2") ]
+    ++ [ ("unit", unitTypeDef) | not (isDefined "Unit") ]
+    ++ [ ("pair", tuple2TypeDef) | not (isDefined "Tuple2") ]
     ++ [ ("Data", dataTypeDef) ]
     where
       a = TyApp (Bound (Ann "a") 0) []
@@ -110,11 +110,11 @@ instance LanguageBuiltins PlutusIR where
       , typeVariables = []
       , destructor = "Data_match"
       , constructors = [
-          ("Constr", TyFun (builtin PIRTypeInteger) (TyFun tyListData tyData))
-        , ("Map", TyFun (builtin $ PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) tyData)
-        , ("List", TyFun tyListData tyData)
-        , ("I", TyFun (builtin PIRTypeInteger) tyData)
-        , ("B", TyFun (builtin PIRTypeByteString) tyData)
+          ("Data_Constr", TyFun (builtin PIRTypeInteger) (TyFun tyListData tyData))
+        , ("Data_Map", TyFun (builtin $ PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) tyData)
+        , ("Data_List", TyFun tyListData tyData)
+        , ("Data_I", TyFun (builtin PIRTypeInteger) tyData)
+        , ("Data_B", TyFun (builtin PIRTypeByteString) tyData)
         ]
       }
 

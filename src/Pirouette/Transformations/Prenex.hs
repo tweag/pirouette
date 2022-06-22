@@ -109,7 +109,7 @@ prenexExpr newDecls = goTerm
        in case hd of
             -- we only change the applications of known names
             SystemF.Free (TermSig name)
-              | Just (DFunDef FunDef {funTy}) <- Map.lookup name newDecls ->
+              | Just (DFunDef FunDef {funTy}) <- Map.lookup (TermNamespace, name) newDecls ->
                 SystemF.App hd (zipArgs prenexArgs funTy)
             _other -> SystemF.App hd prenexArgs
 

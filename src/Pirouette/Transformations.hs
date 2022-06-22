@@ -119,7 +119,7 @@ expandAllNonRec keep prtDefs =
       let (decls', kDef) = expandDefsIn inlinableDecls currDecls k
        in if SystF.TermArg k `Set.member` termNames kDef || keep k
             then (SystF.TermArg k : names, decls', inlinableDecls)
-            else (names, Map.delete k decls', Map.insert k kDef inlinableDecls)
+            else (names, Map.delete (TermNamespace, k) decls', Map.insert k kDef inlinableDecls)
 
 expandDefsIn ::
   (LanguageBuiltins lang) =>
@@ -128,11 +128,11 @@ expandDefsIn ::
   Name ->
   (Decls lang, Term lang)
 expandDefsIn inlinables decls k =
-  case Map.lookup k decls of
+  case Map.lookup (TermNamespace, k) decls of
     Nothing -> error $ "expandDefsIn: term " ++ show k ++ " undefined in decls"
     Just (DFunction r t ty) ->
       let t' = deshadowBoundNames $ rewrite (inlineAll inlinables) t
-       in (Map.insert k (DFunction r t' ty) decls, t')
+       in (Map.insert (TermNamespace, k) (DFunction r t' ty) decls, t')
     Just _ -> error $ "expandDefsIn: term " ++ show k ++ " not a function"
 
 inlineAll :: (LanguageBuiltins lang) => Map.Map Name (Term lang) -> Term lang -> Maybe (Term lang)

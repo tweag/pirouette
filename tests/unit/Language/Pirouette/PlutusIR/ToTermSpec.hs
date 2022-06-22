@@ -28,16 +28,16 @@ tests = (:[]) $ withResource acquire (const $ return ()) $ \progAct ->
       -- Test that two declarations are present
       testCase "Decls contain 'long' and 'short' terms" $ do
         decls <- progAct
-        let longN = head $ filter ((== "long") . nameString) $ M.keys decls
-        let shortN = head $ filter ((== "short") . nameString) $ M.keys decls
+        let longN = head $ filter ((== "long") . nameString . snd) $ M.keys decls
+        let shortN = head $ filter ((== "short") . nameString . snd) $ M.keys decls
         case (,) <$> M.lookup longN decls <*> M.lookup shortN decls of
           Just _ -> return ()
           Nothing -> assertFailure "long/short not declared",
       -- Test that expanding one declaration yields the other declaration
       testCase "expandDefs produces NF terms" $ do
         decls <- progAct
-        let longN = head $ filter ((== "long") . nameString) $ M.keys decls
-        let shortN = head $ filter ((== "short") . nameString) $ M.keys decls
+        let longN = head $ filter ((== "long") . nameString . snd) $ M.keys decls
+        let shortN = head $ filter ((== "short") . nameString . snd) $ M.keys decls
         let (DFunction _ long _) = fromJust $ M.lookup longN decls
         let (DFunction _ short _) = fromJust $ M.lookup shortN decls
         runReader (expandDefs long) (mocked decls) @?= short

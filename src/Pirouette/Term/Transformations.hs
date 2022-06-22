@@ -135,7 +135,7 @@ expandDefs = fmap deshadowBoundNames . rewriteM (runMaybeT . go)
       if isRec
         then fail "expandDefs: wont expand"
         else do
-          def <- MaybeT (fromTermDef <$> prtDefOf n)
+          def <- MaybeT (fromTermDef <$> prtDefOf TermNamespace n)
           let res = SystF.appN def args
           return res
     go _ = fail "expandDefs: not an SystF.App"

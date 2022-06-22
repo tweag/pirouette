@@ -5,6 +5,7 @@
 module Language.Pirouette.PlutusIR.SyntaxSpec where
 
 import Control.Monad.Except
+import Data.Map (keys)
 import Data.Foldable (toList)
 import GHC.Float (rationalToDouble)
 import Language.Pirouette.PlutusIR
@@ -43,7 +44,9 @@ assertTrProgramOk flatFilePath = do
     Left err -> assertFailure $ "Translate program: " ++ show err
     Right (_, decls) -> do
       -- writeFile "decls.pirouette" (show $ pretty decls)
-      case typeCheckDecls (builtinTypeDecls decls <> decls) of
+      let allDecls = builtinTypeDecls decls <> decls
+      -- print $ pretty allDecls
+      case typeCheckDecls allDecls of
         Left err -> assertFailure $ "Typecheck program: " ++ show (pretty err)
         Right _ -> return ()
   return ()
