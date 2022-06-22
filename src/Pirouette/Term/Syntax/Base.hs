@@ -20,6 +20,8 @@ import Control.Arrow ((&&&))
 import Control.Monad.Identity
 import Data.Data
 import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as Text
@@ -338,6 +340,20 @@ class (LanguageConstrs lang) => LanguageBuiltins lang where
   type BuiltinTypes lang :: *
   type BuiltinTerms lang :: *
   type Constants lang :: *
+
+  -- | Definitions required for built-in types
+  builtinTypeDefinitions :: 
+    [(Name, TypeDef lang)]    -- ^ types which are already defined
+    -> [(Name, TypeDef lang)] -- ^ additional definitions supporting those
+  builtinTypeDefinitions _ = []
+
+builtinTypeDecls :: (LanguageBuiltins lang) => Decls lang -> Decls lang
+builtinTypeDecls m = 
+  let defs = flip mapMaybe (Map.toList m) $ \(nm, def) -> case def of
+               DTypeDef td -> Just (nm, td)
+               _ -> Nothing
+      newTypeDefs = builtinTypeDefinitions defs
+  in Map.fromList [(nm, DTypeDef td) | (nm, td) <- newTypeDefs]
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =

@@ -2,7 +2,6 @@
 
 module Language.Pirouette.PlutusIR.SMT where
 
-import Data.Maybe (isJust)
 import Data.Text (Text)
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Monad
@@ -31,62 +30,6 @@ instance LanguageSMT PlutusIR where
     = let args' = map (\(TermArg a) -> a) args
       in all isStuckBuiltin args' && not (all termIsConstant args')
   isStuckBuiltin _ = False
-
-  builtinTypeDefinitions definedTypes =
-    -- only define List and Unit if they are not yet defined
-    [ ("List", listTypeDef) | not (isDefined "List")]
-    ++ [ ("Unit", unitTypeDef) | not (isDefined "Unit") ]
-    ++ [ ("Tuple2", tuple2TypeDef) | not (isDefined "Tuple2") ]
-    ++ [ ("Data", dataTypeDef) ]
-    where
-      a = TyApp (Bound (Ann "a") 0) []
-      b = TyApp (Bound (Ann "a") 1) []
-
-      isDefined nm = isJust (lookup nm definedTypes)
-
-      listTypeDef = Datatype {
-        kind = KTo KStar KStar
-      , typeVariables = [("a", KStar)]
-      , destructor = "Nil_match"
-      , constructors = [
-          ("Nil", TyAll (Ann "a") KStar (listOf a))
-        , ("Cons", TyAll (Ann "a") KStar (TyFun a (TyFun (listOf a) (listOf a))))
-        ]
-      }
-
-      unitTypeDef = Datatype {
-        kind = KStar
-      , typeVariables = []
-      , destructor = "Unit_match"
-      , constructors = [("Unit", builtin PIRTypeUnit)]
-      }
- 
-      -- !! warning, we define it as "Tuple2 b a" to reuse 'a' for both list and tuple
-      tuple2TypeDef = Datatype {
-        kind = KTo KStar (KTo KStar KStar)
-      , typeVariables = [("b", KStar), ("a", KStar)]
-      , destructor = "Tuple2_match"
-      , constructors = [
-          ("Tuple2", TyAll (Ann "b") KStar $ TyAll (Ann "a") KStar $ TyFun b (TyFun a (tuple2Of b a)))
-        ]
-      }
-
-      -- defined following https://github.com/input-output-hk/plutus/blob/master/plutus-core/plutus-core/src/PlutusCore/Data.hs
-      dataTypeDef = Datatype {
-        kind = KStar
-      , typeVariables = []
-      , destructor = "Data_match"
-      , constructors = [
-          ("Constr", TyFun (builtin PIRTypeInteger) (TyFun tyListData tyData))
-        , ("Map", TyFun (builtin $ PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) tyData)
-        , ("List", TyFun tyListData tyData)
-        , ("I", TyFun (builtin PIRTypeInteger) tyData)
-        , ("B", TyFun (builtin PIRTypeByteString) tyData)
-        ]
-      }
-
-      tyListData = builtin (PIRTypeList (Just PIRTypeData))
-      tyData = builtin PIRTypeData
 
 trPIRType :: PIRBuiltinType -> PureSMT.SExpr
 trPIRType PIRTypeInteger = PureSMT.tInt
@@ -268,12 +211,13 @@ instance LanguageSymEval PlutusIR where
 
   -- pattern matching and built-in matchers
 
-  branchesBuiltinTerm P.ChooseList _ args = 
-    continueWith "Nil_match" args
-  branchesBuiltinTerm P.ChooseUnit _ args = 
-    continueWith "Unit_match" args
-  branchesBuiltinTerm P.ChooseData _ args = 
-    continueWith "Data_match" args
+  -- they take the arguments in a different order
+  branchesBuiltinTerm P.ChooseList _ (tyA : tyR : lst : rest) = 
+    continueWith "Nil_match" (tyA : lst : tyR : rest)
+  branchesBuiltinTerm P.ChooseUnit _ (tyR : unit : rest) = 
+    continueWith "Unit_match" (unit : tyR : rest)
+  branchesBuiltinTerm P.ChooseData _ (tyR : dat : rest) = 
+    continueWith "Data_match" (dat : tyR : rest)
 
   branchesBuiltinTerm P.FstPair _ [tyA@(TyArg a), tyB@(TyArg b), tuple] =
     continueWith "Tuple2_match"

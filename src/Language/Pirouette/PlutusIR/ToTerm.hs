@@ -444,6 +444,11 @@ trTerm mn t = do
         Nothing -> do
           args <- lift $ getTransitiveDepsAsArgs (toName n)
           return $ SystF.App (SystF.Free $ TermSig (toName n)) args
+    -- See [HACK: Translation of 'Bool']
+    go (PIR.TyInst _ (PIR.Apply _ v@(PIR.Var _ n) x) tyR)
+      | toName n == "Bool_match"
+      = SystF.app <$> (SystF.app <$> go v <*> lift (SystF.TyArg <$> trType tyR))
+                  <*> (SystF.TermArg <$> go x)
     go (PIR.Constant _ (P.Some (P.ValueOf tx x))) =
       return $ SystF.termPure $ SystF.Free $ Constant $ defUniToConstant tx x
     go (PIR.Builtin _ f) = return $ SystF.termPure $ SystF.Free $ Builtin f
