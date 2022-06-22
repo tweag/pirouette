@@ -1,10 +1,13 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Language.Pirouette.PlutusIR.SMT where
 
 import Data.Text (Text)
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Monad
+import Pirouette.Symbolic.Eval.Helpers
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
@@ -185,7 +188,65 @@ trPIRFun op _ =
       <> show op
       <> " is not an implemented constant/operator/function"
 
+
+pattern K :: Constants lang -> AnnTerm ty ann (SystemF.VarMeta meta ann (TermBase lang))
+pattern K n = App (Free (Constant n)) []
+
 instance LanguageSymEval PlutusIR where
+  -- basic operations over constants
+  
+  branchesBuiltinTerm op _ [TermArg (K (PIRConstInteger x)), TermArg (K (PIRConstInteger y))]
+    | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
+    = (\r -> pure $ Just [ Branch { additionalInfo = mempty, newTerm = K r }]) $
+      case op of
+        P.AddInteger -> PIRConstInteger $ x + y
+        P.SubtractInteger -> PIRConstInteger $ x - y
+        P.MultiplyInteger ->PIRConstInteger $  x * y
+        P.DivideInteger -> PIRConstInteger $ x `div` y
+        P.ModInteger -> PIRConstInteger $ x `mod` y
+        P.QuotientInteger -> PIRConstInteger $ x `quot` y
+        P.RemainderInteger -> PIRConstInteger $ x `rem` y
+        P.EqualsInteger -> PIRConstBool $ x == y
+        P.LessThanInteger -> PIRConstBool $ x < y
+        P.LessThanEqualsInteger -> PIRConstBool $ x <= y
+        _ -> error "ill-typed application"
+
+  branchesBuiltinTerm op _ [TermArg (K (PIRConstByteString x)), TermArg (K (PIRConstByteString y))]
+    | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
+    = (\r -> pure $ Just [ Branch { additionalInfo = mempty, newTerm = K r }]) $
+      case op of
+        P.EqualsByteString -> PIRConstBool $ x == y
+        _ -> error "ill-typed application"
+
+  branchesBuiltinTerm op _ [TermArg (K (PIRConstString x)), TermArg (K (PIRConstString y))]
+    | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
+    = (\r -> pure $ Just [ Branch { additionalInfo = mempty, newTerm = K r }]) $
+      case op of
+        P.EqualsString -> PIRConstBool $ x == y
+        _ -> error "ill-typed application"
+
+  branchesBuiltinTerm op _ [TermArg (K (PIRConstData x)), TermArg (K (PIRConstData y))]
+    | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
+    = (\r -> pure $ Just [ Branch { additionalInfo = mempty, newTerm = K r }]) $
+      case op of
+        P.EqualsData -> PIRConstBool $ x == y
+        _ -> error "ill-typed application"
+
+  -- if-then-else goes to the helpers
+  branchesBuiltinTerm P.IfThenElse _  (TyArg _ : TermArg c : TermArg t : TermArg e : excess) =
+    let isEq P.EqualsInteger = True
+        isEq P.EqualsString = True
+        isEq P.EqualsByteString = True
+        isEq P.EqualsData = True
+        isEq _ = False
+        isTrue (K (PIRConstBool True)) = True
+        isTrue _ = False
+        isFalse (K (PIRConstBool False)) = True
+        isFalse _ = False
+    in ifThenElseBranching
+         isTrue (K (PIRConstBool True)) isFalse (K (PIRConstBool False))
+         isEq c t e excess
+
   -- applying constructors functions during evaluation
   -- is quite useful because we tend can interact with
   -- the pattern matching much better b/c we know
