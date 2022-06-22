@@ -2,6 +2,7 @@
 
 module Language.Pirouette.PlutusIR.SMT where
 
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Monad
@@ -10,7 +11,6 @@ import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF as SystemF
-import Pirouette.Transformations.Contextualize (contextualizeTermName)
 import qualified PlutusCore as P
 import qualified PureSMT
 
@@ -32,21 +32,22 @@ instance LanguageSMT PlutusIR where
       in all isStuckBuiltin args' && not (all termIsConstant args')
   isStuckBuiltin _ = False
 
-  builtinTypeDefinitions =
-    [ -- list, pair, and unit are defined whenever they are needed
-      -- in the PIR files themselves
-      {- ("list", listTypeDef), ("unit", unitTypeDef), -}
-      ("Data", dataTypeDef)]
+  builtinTypeDefinitions definedTypes =
+    -- only define List and Unit if they are not yet defined
+    [ ("List", listTypeDef) | not (isDefined "List")]
+    ++ [ ("Unit", unitTypeDef) | not (isDefined "Unit") ]
+    ++ [ ("Tuple2", tuple2TypeDef) | not (isDefined "Tuple2") ]
+    ++ [ ("Data", dataTypeDef) ]
     where
-      base nm = TyApp (Free $ TySig nm) []
-
-      {-
       a = TyApp (Bound (Ann "a") 0) []
+      b = TyApp (Bound (Ann "a") 1) []
+
+      isDefined nm = isJust (lookup nm definedTypes)
 
       listTypeDef = Datatype {
         kind = KTo KStar KStar
       , typeVariables = [("a", KStar)]
-      , destructor = "list_match"
+      , destructor = "Nil_match"
       , constructors = [
           ("Nil", TyAll (Ann "a") KStar (listOf a))
         , ("Cons", TyAll (Ann "a") KStar (TyFun a (TyFun (listOf a) (listOf a))))
@@ -56,10 +57,19 @@ instance LanguageSMT PlutusIR where
       unitTypeDef = Datatype {
         kind = KStar
       , typeVariables = []
-      , destructor = "unit_match"
-      , constructors = [("Unit", base "unit")]
+      , destructor = "Unit_match"
+      , constructors = [("Unit", builtin PIRTypeUnit)]
       }
-      -}
+ 
+      -- !! warning, we define it as "Tuple2 b a" to reuse 'a' for both list and tuple
+      tuple2TypeDef = Datatype {
+        kind = KTo KStar (KTo KStar KStar)
+      , typeVariables = [("b", KStar), ("a", KStar)]
+      , destructor = "Tuple2_match"
+      , constructors = [
+          ("Tuple2", TyAll (Ann "b") KStar $ TyAll (Ann "a") KStar $ TyFun b (TyFun a (tuple2Of b a)))
+        ]
+      }
 
       -- defined following https://github.com/input-output-hk/plutus/blob/master/plutus-core/plutus-core/src/PlutusCore/Data.hs
       dataTypeDef = Datatype {
@@ -67,28 +77,31 @@ instance LanguageSMT PlutusIR where
       , typeVariables = []
       , destructor = "Data_match"
       , constructors = [
-          ("Constr", TyFun (builtin PIRTypeInteger) (TyFun (listOf (base "data")) (base "data")))
-        , ("Map", TyFun (listOf (builtin (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) (base "data"))
-        , ("List", TyFun (listOf (base "data")) (base "data"))
-        , ("I", TyFun (builtin PIRTypeInteger) (base "data"))
-        , ("B", TyFun (builtin PIRTypeByteString) (base "data"))
+          ("Constr", TyFun (builtin PIRTypeInteger) (TyFun tyListData tyData))
+        , ("Map", TyFun (builtin $ PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) tyData)
+        , ("List", TyFun tyListData tyData)
+        , ("I", TyFun (builtin PIRTypeInteger) tyData)
+        , ("B", TyFun (builtin PIRTypeByteString) tyData)
         ]
       }
+
+      tyListData = builtin (PIRTypeList (Just PIRTypeData))
+      tyData = builtin PIRTypeData
 
 trPIRType :: PIRBuiltinType -> PureSMT.SExpr
 trPIRType PIRTypeInteger = PureSMT.tInt
 trPIRType PIRTypeBool = PureSMT.tBool
 trPIRType PIRTypeString = PureSMT.tString
 trPIRType PIRTypeByteString = PureSMT.tString
-trPIRType PIRTypeUnit = PureSMT.fun "Unit" []
-trPIRType PIRTypeData = PureSMT.tUnit -- TODO: Temporary represention of data
+trPIRType PIRTypeUnit = PureSMT.fun "pir_Unit" []
+trPIRType PIRTypeData = PureSMT.fun "pir_Data" []
 -- Note: why do Pair have maybes?
 -- Note answer, because types can be partially applied in System F,
 -- and `Pair a` is represented by `PIRTypePair (pirType a) Nothing`
 trPIRType (PIRTypePair (Just pirType1) (Just pirType2)) =
-  PureSMT.fun "Tuple2" [trPIRType pirType1, trPIRType pirType2]
+  PureSMT.fun "pir_Tuple2" [trPIRType pirType1, trPIRType pirType2]
 trPIRType (PIRTypeList (Just pirType)) =
-  PureSMT.fun "List" [trPIRType pirType]
+  PureSMT.fun "pir_List" [trPIRType pirType]
 trPIRType pirType =
   error $ "Translate builtin type to smtlib: " <> show pirType <> " not yet handled."
 
@@ -339,14 +352,21 @@ continueWith ::
   Text -> [ArgMeta lang meta] ->
   m (Maybe [Branch lang meta])
 continueWith destr args = do
-  destr' <- contextualizeTermName destr
-  pure $ Just [ Branch { additionalInfo = mempty, newTerm = App (Free $ TermSig destr') args }]
+  let destr' = Name destr Nothing
+      tm     = App (Free $ TermSig destr') args
+  pure $ Just [ Branch { additionalInfo = mempty, newTerm = tm }]
 
 errorTerm :: AnnTerm ty ann (SystemF.VarMeta meta ann (TermBase lang))
 errorTerm = App (Free Bottom) []
 
-listOf :: AnnType ann (SystemF.VarMeta meta ann (TypeBase lang)) -> AnnType ann (SystemF.VarMeta meta ann (TypeBase lang))
+listOf :: AnnType ann (SystemF.VarMeta meta ann (TypeBase lang))
+       -> AnnType ann (SystemF.VarMeta meta ann (TypeBase lang))
 listOf x = TyApp (Free $ TySig "List") [x]
+
+tuple2Of :: AnnType ann (SystemF.VarMeta meta ann (TypeBase lang)) 
+         -> AnnType ann (SystemF.VarMeta meta ann (TypeBase lang))
+         -> AnnType ann (SystemF.VarMeta meta ann (TypeBase lang))
+tuple2Of x y = TyApp (Free $ TySig "Tuple2") [x, y]
 
 builtin :: PIRBuiltinType -> AnnType ann (SystemF.VarMeta meta ann (TypeBase PlutusIR))
 builtin nm = TyApp (Free $ TyBuiltin nm) []

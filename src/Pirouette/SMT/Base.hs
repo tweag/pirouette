@@ -18,8 +18,10 @@ class (LanguageBuiltins lang) => LanguageSMT lang where
   translateConstant :: Constants lang -> PureSMT.SExpr
   isStuckBuiltin :: TermMeta lang meta -> Bool
   -- | Definitions required for built-in types
-  builtinTypeDefinitions :: [(Name, TypeDef lang)]
-  builtinTypeDefinitions = []
+  builtinTypeDefinitions :: 
+    [(Name, TypeDef lang)]    -- ^ types which are already defined
+    -> [(Name, TypeDef lang)] -- ^ additional definitions supporting those
+  builtinTypeDefinitions _ = []
 
 -- | Captures arbitrary types that can be translated to SMTLIB.
 class (Show t) => ToSMT t where

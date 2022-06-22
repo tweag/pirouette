@@ -24,6 +24,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.Set as S
+import Data.Text (Text)
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -34,6 +35,13 @@ import qualified PlutusIR.Core.Type as PIR
 import Data.Function (on)
 
 -- * Translating 'PIR.Type's and 'PIR.Term's
+
+-- [HACK: Translation of 'Bool']
+-- Many PIR files define their own 'Bool' type as an ADT
+-- with their own 'True' and 'False'. However, this breaks
+-- our translation, since this 'Bool' is *not* the built-in.
+-- So instead we transform any usage of a 'PIRType' with
+-- 'Bool' into the built-in one.
 
 -- | Plutus' Internal Representation AST requires a lot of type variables
 --  and constraints; we'll just add a constraint synonym to make it easier
@@ -249,7 +257,9 @@ tyCtxDeps ::
   PIR.Type tyname uni loc ->
   S.Set (Dep Name)
 tyCtxDeps _ _ (PIR.TyBuiltin _ _) = S.empty
-tyCtxDeps ts deps (PIR.TyVar _ n) =
+tyCtxDeps ts deps (PIR.TyVar _ n)
+  | toName n == "Bool" = S.empty
+  | otherwise =
    case L.elemIndex (toName n) (map fst ts) of
     Just i -> S.singleton $ uncurry (TypeDep i) $ unsafeIdx "tyCtxDeps" ts i
     Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
@@ -279,7 +289,11 @@ trDataOrTypeBinding (PIR.TypeBind _ tyvard tybody) =
         ty <- trType tybody
         modify (\st -> st { stTypeSynonyms = M.insert tyName ty (stTypeSynonyms st) })
         return M.empty
-trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons)) =
+trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons))
+  -- See [HACK: Translation of 'Bool']
+  | toName (PIR._tyVarDeclName tyvard) == "Bool" 
+  = pure mempty
+  | otherwise =
   let tyName = toName $ PIR._tyVarDeclName tyvard
       tyKind = trKind $ PIR._tyVarDeclKind tyvard
       tyVars = map ((toName . PIR._tyVarDeclName) &&& (trKind . PIR._tyVarDeclKind)) args
@@ -318,7 +332,11 @@ trType (PIR.TyLam _ v k body) =
   SystF.TyLam (SystF.Ann $ toName v) (trKind k) <$> local (pushType (toName v) (trKind k)) (trType body)
 trType (PIR.TyForall _ v k body) =
   SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType (toName v) (trKind k)) (trType body)
-trType (PIR.TyVar _ tyn) = do
+trType (PIR.TyVar _ tyn)
+  -- See [HACK: Translation of 'Bool']
+  | toName tyn == "Bool"
+  = return $ SystF.TyPure (SystF.Free $ TyBuiltin PIRTypeBool)
+  | otherwise = do
   let tyName = toName tyn
   -- First we try to see if this type is a bound variable
   bounds <- asks (map fst . typeStack)
@@ -411,7 +429,15 @@ trTerm mn t = do
     go ::
       PIR.Term tyname name DefaultUni P.DefaultFun loc ->
       WriterT (Decls PlutusIR) (TrM loc) (Term PlutusIR)
-    go (PIR.Var _ n) = do
+    go (PIR.Var _ n) 
+      -- See [HACK: Translation of 'Bool']
+      | toName n == "True"
+      = return $ SystF.termPure $ SystF.Free $ Constant (PIRConstBool True)
+      | toName n == "False"
+      = return $ SystF.termPure $ SystF.Free $ Constant (PIRConstBool False)
+      | toName n == "Bool_match"
+      = return $ SystF.termPure $ SystF.Free $ Builtin P.IfThenElse
+      | otherwise = do
       vs <- asks termStack
       case L.elemIndex (toName n) (map fst vs) of
         Just i -> return $ SystF.termPure (SystF.Bound (SystF.Ann $ toName n) $ fromIntegral i)
@@ -524,10 +550,24 @@ uncurry2 f (a, (b, c)) = f a b c
 -- * Pretty instances for Plutus-specific goodies
 
 instance ToName P.Name where
-  toName pn = Name (P.nameString pn) (Just $ P.unUnique $ P.nameUnique pn)
+  toName pn
+    -- do not translate some built-ins
+    -- why? because we then define it in the SMT translation
+    -- and we need them to appear *exactly* as they were
+    | P.nameString pn `elem` plutusIrBuiltInNames
+    = Name (P.nameString pn) Nothing
+    | otherwise
+    = Name (P.nameString pn) (Just $ P.unUnique $ P.nameUnique pn)
 
 instance ToName P.TyName where
   toName = toName . P.unTyName
 
 instance Pretty P.DefaultFun where
   pretty = P.pretty
+
+plutusIrBuiltInNames :: [Text]
+plutusIrBuiltInNames = [
+    "List", "List_match", "Nil_match", "Nil", "Cons", 
+    "Tuple2", "Tuple2_match", "Unit", "Unit_match",
+    "Bool", "Bool_match", "True", "False"
+  ]

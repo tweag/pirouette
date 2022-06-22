@@ -181,8 +181,8 @@ runSymEvalWorker defs st f = do
     solverCtx =
       let decls = prtDecls defs
           dependencyOrder = prtDepOrder defs
-          types = SMT.builtinTypeDefinitions 
-                    <> mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
+          definedTypes = mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
+          types = SMT.builtinTypeDefinitions definedTypes <> definedTypes
           allFns = mapMaybe (R.argElim (const Nothing) (lkupFunDefOf decls)) dependencyOrder
           fns = mapMaybe (\(n, fd) -> (n,) <$> SMT.supportedUninterpretedFunction fd) allFns
        in SolverSharedCtx types fns
