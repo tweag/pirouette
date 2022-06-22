@@ -58,7 +58,7 @@ tests :: [TestTree]
 tests =
   [ testGroup
       "simple triples"
-      [ expectFail $ testCase "just evaluation" $
+      [ testCase "[input > 0] add 1 [result > 0] counter" $
           execFromPIRFile proveUnbounded 
             "tests/unit/resources/fromPlutusIRSpec-01.pir"
             ( [pirTy| Integer |], [pir| \(x : Integer) . addone x |])
@@ -66,5 +66,13 @@ tests =
               [pir| \(result : Integer) (x : Integer) . 0 < x |]
             )
             `pathSatisfies` (isSingleton .&. all isCounter)
+      , expectFail $ testCase "[input > 0] add 1 [result > 1] verified" $
+          execFromPIRFile proveUnbounded 
+            "tests/unit/resources/fromPlutusIRSpec-01.pir"
+            ( [pirTy| Integer |], [pir| \(x : Integer) . addone x |])
+            ( [pir| \(result : Integer) (x : Integer) . 0 < result |],
+              [pir| \(result : Integer) (x : Integer) . 1 < x |]
+            )
+            `pathSatisfies` (isSingleton .&. all isVerified)
       ]
   ]

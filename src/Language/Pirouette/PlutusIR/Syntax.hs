@@ -64,8 +64,8 @@ instance LanguageBuiltins PlutusIR where
   builtinTypeDefinitions definedTypes =
     -- only define List and Unit if they are not yet defined
     [ ("List", listTypeDef) | not (isDefined "List")]
-    ++ [ ("unit", unitTypeDef) | not (isDefined "Unit") ]
-    ++ [ ("pair", tuple2TypeDef) | not (isDefined "Tuple2") ]
+    ++ [ ("Unit", unitTypeDef) | not (isDefined "Unit") ]
+    ++ [ ("Tuple2", tuple2TypeDef) | not (isDefined "Tuple2") ]
     ++ [ ("Data", dataTypeDef) ]
     where
       a = TyApp (Bound (Ann "a") 0) []
