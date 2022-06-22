@@ -45,7 +45,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 
 -- * Language Definition
 
--- | The language builtins definition
+-- | A type-level name for the example language
 data Ex deriving (Data)
 
 -- | This instance tells Pirouette that 'Ex' /is a language/, as in,
