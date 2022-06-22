@@ -202,7 +202,8 @@ instance LanguageSMT Ex where
   -- DO NOT TRANSLATE THIS TO 'ite',
   -- This should be taken care by symbolic evaluation branching,
   -- since it is in fact like 'match'; this is handled in the 'branchesBuiltinTerm'
-  -- defined a litle below.
+  -- defined a litle below. See the documentation of class 'LanguageSymEval' for
+  -- more details.
   translateBuiltinTerm TermIte [_, _c, _t, _e] = Nothing
   translateBuiltinTerm _ _ = Nothing
 
