@@ -4,6 +4,7 @@
 
 module Language.Pirouette.PlutusIR.SMT where
 
+import qualified Data.ByteString as BS
 import Data.Text (Text)
 import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Monad
@@ -68,31 +69,19 @@ plutusIRBasicOps :: [P.DefaultFun]
 plutusIRBasicOps = [
   P.AddInteger, P.SubtractInteger, P.MultiplyInteger,
   P.DivideInteger, P.ModInteger, P.QuotientInteger, P.RemainderInteger,
-  P.AppendString ]
+  P.AppendString, P.AppendByteString, P.ConsByteString, P.IndexByteString, P.SliceByteString ]
 
 plutusIRBasicRels :: [P.DefaultFun]
 plutusIRBasicRels = [
   P.EqualsInteger, P.LessThanInteger, P.LessThanEqualsInteger,
-  P.EqualsByteString, P.EqualsString, P.EqualsData ]
+  P.EqualsByteString, P.EqualsString, P.EqualsData,
+  P.LessThanByteString, P.LessThanEqualsByteString ]
 
 trPIRFun :: P.DefaultFun -> [PureSMT.SExpr] -> Maybe PureSMT.SExpr
 
 -- TODO Implement remaining builtins: those used by the "Auction" example
 -- validator are marked with an [A] and as commented out lines in the
 -- code afterwards
-
--- ** Bytestrings **
-
---
---     P.AppendByteString
---     P.ConsByteString
---     P.SliceByteString
---     P.LengthOfByteString
---     P.IndexByteString
---     P.EqualsByteString
---     P.LessThanByteString
---     P.LessThanEqualsByteString
---
 
 -- ** Hash and signatures **
 
@@ -215,13 +204,37 @@ instance LanguageSymEval PlutusIR where
     | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
     = (\r -> pure $ Just [ Branch { additionalInfo = mempty, newTerm = K r }]) $
       case op of
+        P.AppendByteString -> PIRConstByteString (x <> y)
         P.EqualsByteString -> PIRConstBool $ x == y
+        P.LessThanByteString -> PIRConstBool $ x < y
+        P.LessThanEqualsByteString -> PIRConstBool $ x <= y
         _ -> error "ill-typed application"
+
+  branchesBuiltinTerm P.LengthOfByteString _ [TermArg (K (PIRConstByteString b))]
+    = let r = K $ PIRConstInteger (fromIntegral $ BS.length b)
+      in pure $ Just [ Branch { additionalInfo = mempty, newTerm = r }]
+
+  branchesBuiltinTerm P.ConsByteString _ 
+    [TermArg (K (PIRConstInteger i)), TermArg (K (PIRConstByteString b))]
+    = let r = K $ PIRConstByteString (BS.cons (fromInteger i) b)
+      in pure $ Just [ Branch { additionalInfo = mempty, newTerm = r }]
+
+  branchesBuiltinTerm P.IndexByteString _ 
+    [TermArg (K (PIRConstByteString b)), TermArg (K (PIRConstInteger i))]
+    = let r = if i < 0 then errorTerm
+                       else K $ PIRConstInteger $ fromIntegral (BS.index b (fromInteger i))
+      in pure $ Just [ Branch { additionalInfo = mempty, newTerm = r }]
+
+  branchesBuiltinTerm P.IndexByteString _ 
+    [TermArg (K (PIRConstInteger start)), TermArg (K (PIRConstInteger n)), TermArg (K (PIRConstByteString xs))]
+    = let r = K $ PIRConstByteString $ BS.take (fromInteger n) (BS.drop (fromInteger start) xs)
+      in pure $ Just [ Branch { additionalInfo = mempty, newTerm = r }]
 
   branchesBuiltinTerm op _ [TermArg (K (PIRConstString x)), TermArg (K (PIRConstString y))]
     | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
     = (\r -> pure $ Just [ Branch { additionalInfo = mempty, newTerm = K r }]) $
       case op of
+        P.AppendString -> PIRConstString $ x <> y
         P.EqualsString -> PIRConstBool $ x == y
         _ -> error "ill-typed application"
 

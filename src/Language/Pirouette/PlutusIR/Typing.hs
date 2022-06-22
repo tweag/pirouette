@@ -57,10 +57,16 @@ instance LanguageBuiltinTypes PlutusIR where
   typeOfConstant = systfType . cstToBuiltinType
 
   typeOfBuiltin P.AddInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.SubtractInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.MultiplyInteger = tInt :->: tInt :->: tInt
   typeOfBuiltin P.DivideInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.ModInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.QuotientInteger = tInt :->: tInt :->: tInt
+  typeOfBuiltin P.RemainderInteger = tInt :->: tInt :->: tInt
   typeOfBuiltin P.EqualsInteger = tInt :->: tInt :->: tBool
   typeOfBuiltin P.LessThanInteger = tInt :->: tInt :->: tBool
   typeOfBuiltin P.LessThanEqualsInteger = tInt :->: tInt :->: tBool
+  typeOfBuiltin P.EqualsString = tString :->: tString :->: tBool
   typeOfBuiltin P.EqualsByteString = tByteString :->: tByteString :->: tBool
   typeOfBuiltin P.IfThenElse = forall "a" (tBool :->: tVar "a" 0 :->: tVar "a" 0 :->: tVar "a" 0)
   typeOfBuiltin P.Trace = forall "a" (tString :->: tVar "a" 0 :->: tVar "a" 0)
