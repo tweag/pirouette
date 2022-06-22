@@ -45,7 +45,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 
 -- * Language Definition
 
--- | The language builtins definition
+-- | A type-level name for the example language
 data Ex deriving (Data)
 
 -- | This instance tells Pirouette that 'Ex' /is a language/, as in,
@@ -202,7 +202,8 @@ instance LanguageSMT Ex where
   -- DO NOT TRANSLATE THIS TO 'ite',
   -- This should be taken care by symbolic evaluation branching,
   -- since it is in fact like 'match'; this is handled in the 'branchesBuiltinTerm'
-  -- defined a litle below.
+  -- defined a litle below. See the documentation of class 'LanguageSymEval' for
+  -- more details.
   translateBuiltinTerm TermIte [_, _c, _t, _e] = Nothing
   translateBuiltinTerm _ _ = Nothing
 
@@ -236,7 +237,7 @@ isConstant (BConstant _) = True
 isConstant (SConstant _) = True
 isConstant _ = False
 
--- | Finally, this is where we customiz the behavior of the symbolic execution engine.
+-- | Finally, this is where we customize the behavior of the symbolic execution engine.
 -- In particular, with respect to @if@ statements in our case. Check the respective
 -- class documentation for more details.
 instance LanguageSymEval Ex where
