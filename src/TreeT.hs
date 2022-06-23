@@ -5,7 +5,6 @@
 {-# language FlexibleInstances #-}
 {-# language GADTs #-}
 {-# language RankNTypes #-}
-{-# language TupleSections #-}
 {-# language ScopedTypeVariables #-}
 {-# language UndecidableInstances #-}
 
