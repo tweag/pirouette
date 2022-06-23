@@ -10,8 +10,8 @@
 
 module TreeT where
 
-import Control.Applicative
 import Control.Monad
+import Control.Monad.Identity
 import Control.Monad.Trans
 import Control.Monad.Reader
 import Control.Monad.State.Class
@@ -30,35 +30,78 @@ data Branch tag state a
   deriving (Eq, Show, Functor, Foldable)
 
 -- | Runs a 'TreeT' computation, resulting in a 'Tree'.
-runTreeT :: Monad m => TreeT tag state m a -> state -> m (Tree tag state a)
--- the simple ones
-runTreeT EmptyT _ = pure Stop
-runTreeT (LiftT action) s = Done s <$> action
-runTreeT GetT s = pure (Done s s)
-runTreeT (PutT newS) _ = pure (Done newS ())
--- splitting choices
-runTreeT (SplitT choices) s = do
-  branches <- forM choices \(tg, nxt) -> Branch tg <$> runTreeT nxt s
-  pure (Split s branches)
--- the ap (for performance win, since we can do better than the ap from Control.Monad)
-runTreeT (ApT f x) s = do
-  f' <- runTreeT f s
-  go f'
+runTreeT :: forall tag state m a. Monad m
+         => TreeT tag state m a -> state -> m (Tree tag state a)
+runTreeT = go id
   where
-    go Stop = pure Stop
-    go (Done s' fs) =
-      fmap fs <$> runTreeT x s'
-    go (Split s' bs) =
-      Split s' <$> forM bs \(Branch tg t) ->
-        Branch tg <$> go t
--- the bind
-runTreeT (BindT this nxt) s = do
-  this' <- runTreeT this s
-  go this'
+    go :: forall b r. (b -> r) -- when we fmap we build a continuation here
+       -> TreeT tag state m b -> state
+       -> m (Tree tag state r)
+    -- the simple ones
+    go _ EmptyT _ = pure Stop
+    go f (LiftT action) s = Done s . f <$> action
+    go f GetT s = pure (Done s (f s))
+    go f (PutT newS) _ = pure (Done newS (f ()))
+    -- splitting choices
+    go f (SplitT choices) s = do
+      branches <- forM choices \(tg, nxt) -> Branch tg <$> go f nxt s
+      pure (Split s branches)
+    -- the fmap (for performance win, since we can do better than the liftM from Control.Monad)
+    go f (FmapT g x) s = go (f . g) x s
+    -- the ap (for performance win, since we can do better than the ap from Control.Monad)
+    go f (ApT fs xs) s = do
+      f' <- go id fs s
+      goAp f'
+      where
+        goAp Stop = pure Stop
+        goAp (Done s' gs) =
+          fmap (f . gs) <$> go id xs s'
+        goAp (Split s' bs) =
+          Split s' <$> forM bs \(Branch tg t) ->
+            Branch tg <$> goAp t
+    -- the bind
+    go f (BindT this nxt) s = do
+      this' <- runTreeT this s
+      goBind this'
+      where
+        goBind Stop = pure Stop
+        goBind (Done s' x) = go f (nxt x) s'
+        goBind (Split s' bs) = Split s' <$> forM bs \(Branch tg t) -> Branch tg <$> goBind t
+
+-- | Specialized version of the runner for the 'Identity' monad.
+runTreeI :: forall tag state a. TreeT tag state Identity a -> state -> Tree tag state a
+runTreeI = go id
   where
-    go Stop = pure Stop
-    go (Done s' x) = runTreeT (nxt x) s'
-    go (Split s' bs) = Split s' <$> forM bs \(Branch tg t) -> Branch tg <$> go t
+    go :: forall b r. (b -> r) -- when we fmap we build a continuation here
+       -> TreeT tag state Identity b -> state
+       -> Tree tag state r
+    -- the simple ones
+    go _ EmptyT _ = Stop
+    go f (LiftT (Identity action)) s = Done s (f action)
+    go f GetT s = Done s (f s)
+    go f (PutT newS) _ = Done newS (f ())
+    -- splitting choices
+    go f (SplitT choices) s =
+      let branches = flip map choices \(tg, nxt) -> Branch tg (go f nxt s)
+      in Split s branches
+    -- the fmap (for performance win, since we can do better than the liftM from Control.Monad)
+    go f (FmapT g x) s = go (f . g) x s
+    -- the ap (for performance win, since we can do better than the ap from Control.Monad)
+    go f (ApT fs xs) s = goAp (go id fs s)
+      where
+        goAp Stop = Stop
+        goAp (Done s' gs) = fmap (f . gs) (go id xs s')
+        goAp (Split s' bs) =
+          let branches = flip map bs \(Branch tg t) -> Branch tg (goAp t)
+          in Split s' branches
+    -- the bind
+    go f (BindT this nxt) s = goBind (runTreeI this s)
+      where
+        goBind Stop = Stop
+        goBind (Done s' x) = go f (nxt x) s'
+        goBind (Split s' bs) = 
+          let branches = flip map bs \(Branch tg t) -> Branch tg (goBind t)
+          in Split s' branches 
 
 -- | Defines a class of monad which support pruning and branching.
 class Monad m => MonadTree tag m | m -> tag where
@@ -71,6 +114,7 @@ data TreeT tag state m a where
   -- Monad
   EmptyT :: TreeT tag state m a
   LiftT  :: m a -> TreeT tag state m a
+  FmapT  :: (a -> b) -> TreeT tag state m a -> TreeT tag state m b
   ApT    :: TreeT tag state m (a -> b) -> TreeT tag state m a -> TreeT tag state m b
   BindT  :: TreeT tag state m a -> (a -> TreeT tag state m b) -> TreeT tag state m b
   -- Different branches
@@ -87,6 +131,7 @@ hoistTreeT f = go
     go :: forall b. TreeT tag state m b -> TreeT tag state n b
     go EmptyT = EmptyT
     go (LiftT x) = LiftT (f x)
+    go (FmapT g x) = FmapT g (go x)
     go (ApT x y) = ApT (go x) (go y)
     go (BindT x nxt) = BindT (go x) (go . nxt)
     go (SplitT bs) = SplitT [(tg, go b) | (tg, b) <- bs]
@@ -94,7 +139,7 @@ hoistTreeT f = go
     go (PutT x) = PutT x
 
 instance Applicative m => Functor (TreeT tag state m) where
-  fmap = liftA
+  fmap = FmapT
 
 instance Applicative m => Applicative (TreeT tag state m) where
   pure  = return

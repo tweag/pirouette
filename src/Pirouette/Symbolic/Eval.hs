@@ -159,7 +159,7 @@ runSymEval defs st f = do
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   let f' = do r <- f ; path r <$> get
-  runIdentity $ runTreeT (runReaderT (symEval f') (SymEvalEnv defs solvers)) st'
+  runTreeI (runReaderT (symEval f') (SymEvalEnv defs solvers)) st'
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
