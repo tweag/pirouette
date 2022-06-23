@@ -16,6 +16,7 @@ import Control.Monad.Trans
 import Control.Monad.Reader
 import Control.Monad.State.Class
 import Control.Monad.Writer
+import Control.Parallel.Strategies
 
 -- These are the result data types
 
@@ -61,7 +62,7 @@ runTreeT = go id
             Branch tg <$> goAp t
     -- the bind
     go f (BindT this nxt) s = do
-      this' <- runTreeT this s
+      this' <- go id this s
       goBind this'
       where
         goBind Stop = pure Stop
@@ -69,8 +70,10 @@ runTreeT = go id
         goBind (Split s' bs) = Split s' <$> forM bs \(Branch tg t) -> Branch tg <$> goBind t
 
 -- | Specialized version of the runner for the 'Identity' monad.
-runTreeI :: forall tag state a. TreeT tag state Identity a -> state -> Tree tag state a
-runTreeI = go id
+runTreeI :: forall tag state a. 
+            (forall x. Strategy x -> Strategy [x]) ->
+            TreeT tag state Identity a -> state -> Tree tag state a
+runTreeI strat = go id
   where
     go :: forall b r. (b -> r) -- when we fmap we build a continuation here
        -> TreeT tag state Identity b -> state
@@ -82,7 +85,9 @@ runTreeI = go id
     go f (PutT newS) _ = Done newS (f ())
     -- splitting choices
     go f (SplitT choices) s =
-      let branches = flip map choices \(tg, nxt) -> Branch tg (go f nxt s)
+      let branches = withStrategy (strat rseq) $ 
+                       flip map choices \(tg, nxt) ->
+                        Branch tg (go f nxt s)
       in Split s branches
     -- the fmap (for performance win, since we can do better than the liftM from Control.Monad)
     go f (FmapT g x) s = go (f . g) x s
@@ -92,15 +97,19 @@ runTreeI = go id
         goAp Stop = Stop
         goAp (Done s' gs) = fmap (f . gs) (go id xs s')
         goAp (Split s' bs) =
-          let branches = flip map bs \(Branch tg t) -> Branch tg (goAp t)
+          let branches = withStrategy (strat rseq) $ 
+                           flip map bs \(Branch tg t) -> 
+                             Branch tg (goAp t)
           in Split s' branches
     -- the bind
-    go f (BindT this nxt) s = goBind (runTreeI this s)
+    go f (BindT this nxt) s = goBind (go id this s)
       where
         goBind Stop = Stop
         goBind (Done s' x) = go f (nxt x) s'
         goBind (Split s' bs) = 
-          let branches = flip map bs \(Branch tg t) -> Branch tg (goBind t)
+          let branches = withStrategy (strat rseq) $
+                           flip map bs \(Branch tg t) -> 
+                             Branch tg (goBind t)
           in Split s' branches 
 
 -- | Defines a class of monad which support pruning and branching.
