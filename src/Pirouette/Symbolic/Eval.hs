@@ -103,9 +103,10 @@ data Tag lang = FromBuiltin (BuiltinTerms lang)
               | FromConstructor Name
 type SymEvalResult lang a = Tree (Tag lang) (SymEvalSt lang) a
 
--- | A 'SymEval' is equivalent to a function with type:
+-- | Our symbolic evaluation monad.
 --
--- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
+-- It keeps the environment and a connection to the solver in a Reader,
+-- other than that it's the 'TreeT' monad.
 newtype SymEval lang a = SymEval
   { symEval ::
       ReaderT (SymEvalEnv lang) (TreeT (Tag lang) (SymEvalSt lang) Identity) a
