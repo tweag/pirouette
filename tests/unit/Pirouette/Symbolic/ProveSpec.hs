@@ -8,6 +8,7 @@
 module Pirouette.Symbolic.ProveSpec (tests) where
 
 import Control.Monad.Reader
+import Data.Foldable (toList)
 import Data.Maybe (isJust)
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity
@@ -22,6 +23,15 @@ import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import Test.Tasty
 import Test.Tasty.HUnit
+
+execList ::
+  (Foldable f) =>
+  (Problem Ex -> ReaderT (PrtOrderedDefs Ex) IO (f a)) ->
+  (Program Ex, Type Ex, Term Ex) ->
+  (Term Ex, Term Ex) ->
+  IO [a]
+execList toDo (program, tyRes, fn) (assume, toProve) =
+  toList <$> exec toDo (program, tyRes, fn) (assume, toProve)
 
 exec ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) IO a) ->
@@ -331,17 +341,17 @@ tests =
   [ testGroup
       "incorrectness triples"
       [ testCase "[input > 0] add 1 [result > 0] counter" $
-          exec proveUnbounded add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
+          execList proveUnbounded add1 input0Output0 `pathSatisfies` (isSingleton .&. all isCounter),
         testCase "[input > 0] add 1 [result > 1] verified" $
-          exec proveUnbounded add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
+          execList proveUnbounded add1 input0Output1 `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "[isNothing x] isJust x [not result] verified" $
-          exec
+          execList
             proveUnbounded
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isNothing x|])
             `pathSatisfies` (all isNoCounter .&. any isVerified),
         testCase "[isJust x] isJust x [not result] counter" $
-          exec
+          execList
             proveUnbounded
             (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
             ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isJust x|])
@@ -350,12 +360,12 @@ tests =
     testGroup
       "Hoare triples"
       [ testCase "{input > 0} add 1 {result > 0} verified" $
-          exec proveUnbounded add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
+          execList proveUnbounded add1 (switchSides input0Output0) `pathSatisfies` (isSingleton .&. all isVerified),
         testCase "{input > 0} add 1 {result > 1} verified" $
-          exec proveUnbounded add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
+          execList proveUnbounded add1 (switchSides input0Output1) `pathSatisfies` (isSingleton .&. all isVerified)
       ],
     ohearnTest,
-    ohearnTestPeano,
+    -- ohearnTestPeano,
     isUnityTest
   ]
 

@@ -63,14 +63,14 @@ prove ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   StoppingCondition ->
   Problem lang ->
-  m [Path lang (EvaluationWitness lang)]
+  m (SymEvalResult lang (Path lang (EvaluationWitness lang)))
 prove shouldStop problem = symeval shouldStop $ proveRaw problem
 
 -- |Prove without any stopping condition.
 proveUnbounded ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Problem lang ->
-  m [Path lang (EvaluationWitness lang)]
+  m (SymEvalResult lang (Path lang (EvaluationWitness lang)))
 proveUnbounded = prove (const False)
 
 -- |Executes the problem while the stopping condition is valid until

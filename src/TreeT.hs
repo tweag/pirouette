@@ -1,9 +1,11 @@
 {-# language BlockArguments #-}
+{-# language DeriveFoldable #-}
 {-# language DeriveFunctor #-}
 {-# language FunctionalDependencies #-}
 {-# language FlexibleInstances #-}
 {-# language GADTs #-}
 {-# language RankNTypes #-}
+{-# language TupleSections #-}
 {-# language ScopedTypeVariables #-}
 {-# language UndecidableInstances #-}
 
@@ -21,11 +23,11 @@ data Tree tag state a
   = Stop
   | Done  state a
   | Split state [Branch tag state a]
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable)
 
 data Branch tag state a
   = Branch { tag :: tag, next :: Tree tag state a }
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable)
 
 -- | Runs a 'TreeT' computation, resulting in a 'Tree'.
 runTreeT :: Monad m => TreeT tag state m a -> state -> m (Tree tag state a)

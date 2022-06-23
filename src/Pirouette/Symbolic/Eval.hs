@@ -33,6 +33,7 @@ module Pirouette.Symbolic.Eval
     symEvalParallel,
     UniversalAxiom (..),
     Model (..),
+    SymEvalResult,
 
     -- * Re-export types
     module X,
@@ -52,21 +53,17 @@ module Pirouette.Symbolic.Eval
   )
 where
 
-import Control.Applicative
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Parallel.Strategies
 import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
-import ListT.Weighted (WeightedList)
-import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import qualified Pirouette.SMT.Constraints as C
@@ -74,9 +71,22 @@ import qualified Pirouette.SMT.FromTerm as Tr
 import qualified Pirouette.SMT.Monadic as SMT
 import Pirouette.Symbolic.Eval.SMT
 import Pirouette.Symbolic.Eval.Types as X
+    ( StoppingCondition,
+      SymEvalStatistics(..),
+      SymEvalSt(..),
+      AvailableFuel(..),
+      Path(..),
+      PathStatus(..),
+      Constraint,
+      SymVar(..),
+      LanguageSymEval(..),
+      symVarEq,
+      (=:=),
+      path )
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified PureSMT
+import TreeT
 
 data SymEvalSolvers lang = SymEvalSolvers
   { solvePathProblem :: CheckPathProblem lang -> Bool,
@@ -88,18 +98,19 @@ data SymEvalEnv lang = SymEvalEnv
     seeSolvers :: SymEvalSolvers lang
   }
 
+data Tag lang = FromBuiltin (BuiltinTerms lang)
+              | FromConstructor Name
+type SymEvalResult lang a = Tree (Tag lang) (SymEvalSt lang) a
+
 -- | A 'SymEval' is equivalent to a function with type:
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
 newtype SymEval lang a = SymEval
   { symEval ::
-      ReaderT
-        (SymEvalEnv lang)
-        (StateT (SymEvalSt lang) WeightedList)
-        a
+      ReaderT (SymEvalEnv lang) (TreeT (Tag lang) (SymEvalSt lang) Identity) a
   }
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
+  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), MonadTree (Tag lang))
 
 type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
@@ -117,7 +128,7 @@ symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   StoppingCondition ->
   SymEval lang a ->
-  m [Path lang a]
+  m (SymEvalResult lang (Path lang a))
 symeval shouldStop prob = do
   defs <- getPrtOrderedDefs
   return $ runSymEval defs st0 prob
@@ -130,48 +141,25 @@ symevalAnyPath ::
   (Path lang a -> Bool) ->
   SymEval lang a ->
   m (Maybe (Path lang a))
-symevalAnyPath shouldStop p prob = do
-  defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThat p $ runSymEvalWorker defs st0 prob
-  where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
+symevalAnyPath shouldStop p prob =
+  Data.Foldable.find p <$> symeval shouldStop prob
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEval ::
-  (SymEvalConstr lang) =>
-  PrtOrderedDefs lang ->
-  SymEvalSt lang ->
-  SymEval lang a ->
-  [Path lang a]
-runSymEval defs st = runIdentity . ListT.toList . runSymEvalWorker defs st
-
-runSymEvalRaw ::
-  (SymEvalConstr lang) =>
-  SymEvalEnv lang ->
-  SymEvalSt lang ->
-  SymEval lang a ->
-  WeightedList (a, SymEvalSt lang)
-runSymEvalRaw env st act =
-  runStateT (runReaderT (symEval act) env) st
-
--- | Running a symbolic execution will prepare the solver only once, then use a persistent session
---  to make all the necessary queries.
-runSymEvalWorker ::
   forall lang a.
   (SymEvalConstr lang) =>
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
-  WeightedList (Path lang a)
-runSymEvalWorker defs st f = do
+  SymEvalResult lang (Path lang a)
+runSymEval defs st f = do
   let sharedSolve :: SolverProblem lang res -> res
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers) st' f
-  let paths = uncurry path solvPair
-  return paths
+  let f' = do r <- f ; path r <$> get
+  runIdentity $ runTreeT (runReaderT (symEval f') (SymEvalEnv defs solvers)) st'
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
@@ -191,36 +179,15 @@ runSymEvalWorker defs st f = do
           fns = mapMaybe (\(n, fd) -> (n,) <$> SMT.supportedUninterpretedFunction fd) allFns
        in SolverSharedCtx types fns
 
-instance (SymEvalConstr lang) => Alternative (SymEval lang) where
-  empty = SymEval $ ReaderT $ \_ -> StateT $ const empty
-  xs <|> ys = SymEval $
-    ReaderT $ \env -> StateT $ \st ->
-      let (xs', ys') =
-            withStrategy
-              (parTuple2 rpar rpar)
-              (runSymEvalRaw env st xs, runSymEvalRaw env st ys)
-       in xs' <|> ys'
-
 -- | Prune the set of paths in the current set.
 prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
-prune xs = SymEval $
-  ReaderT $ \env -> StateT $ \st ->
-    weightedParFilter
-      (\(_, st') -> solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env)))
-      (runSymEvalRaw env st xs)
-
-weightedParFilter :: (a -> Bool) -> WeightedList a -> WeightedList a
-weightedParFilter _ ListT.Fail = ListT.Fail
-weightedParFilter f (ListT.Weight n w) =
-  case weightedParFilter f w of
-    ListT.Fail -> ListT.Fail
-    other -> ListT.Weight n other
-weightedParFilter f (ListT.Action (Identity w)) = weightedParFilter f w
-weightedParFilter f (ListT.Yield a w) =
-  let (keep, rest) =
-        withStrategy (parTuple2 rpar rpar)
-        (f a , weightedParFilter f w)
-   in if keep then ListT.Yield a rest else rest
+prune (SymEval xs) = SymEval $ do
+  x <- xs   -- do it first, so we go over each element!
+  SymEvalEnv defs solvers <- ask
+  st <- get -- current status
+  if solvePathProblem solvers (CheckPathProblem st defs)
+     then pure x
+     else stop
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
@@ -292,7 +259,7 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
 -- If we're evaluating an application, we distinguish between a number
 -- of constituent cases:
 symEvalOneStep t@(R.App hd args) = case hd of
-  R.Free Bottom -> empty -- we end in a bottom, so that branch is not useful
+  R.Free Bottom -> stop -- we end in a bottom, so that branch is not useful
   R.Free (Builtin builtin) -> do
     -- try to evaluate the built-in
     let translator c = do
@@ -303,7 +270,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
     mayBranches <- lift $ branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
-      Just branches -> asum $
+      Just branches -> branch $ map (FromBuiltin builtin, ) $
         flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
           lift $ learn additionalInfo
           consumeFuel
@@ -456,28 +423,26 @@ symEvalDestructor t@(R.App hd _args) tyName = do
       -- we have a meta, explore every possibility
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
       let tyParams' = map typeFromMeta tyParams
-      asum $
-        for2 consList cases $ \(consName, consTy) caseTerm -> do
-          let instantiatedTy = R.tyInstantiateN consTy tyParams'
-          let (consArgs, _) = R.tyFunArgs instantiatedTy
-          svars <- lift $ freshSymVars consArgs
-          let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-          let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-          let mconstr = unify term' symbCons
-          -- liftIO $ print mconstr
-          case mconstr of
-            Nothing -> empty
-            Just constr -> do
-              let countAssigns SMT.Bot = 0
-                  countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
-                  isAssign SMT.Assign {} = True
-                  isAssign _ = False
-              -- add weight as many new assignments we get from unification
-              ListT.weight (countAssigns constr) $ do
-                lift $ learn constr
-                moreConstructors (countAssigns constr)
-                signalEvaluation
-                pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+      branch $ for2 consList cases $ \(consName, consTy) caseTerm -> (FromConstructor consName,) $ do
+        let instantiatedTy = R.tyInstantiateN consTy tyParams'
+        let (consArgs, _) = R.tyFunArgs instantiatedTy
+        svars <- lift $ freshSymVars consArgs
+        let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+        let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+        let mconstr = unify term' symbCons
+        -- liftIO $ print mconstr
+        case mconstr of
+          Nothing -> stop
+          Just constr -> do
+            let countAssigns SMT.Bot = 0
+                countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
+                isAssign SMT.Assign {} = True
+                isAssign _ = False
+            -- add weight as many new assignments we get from unification
+            lift $ learn constr
+            moreConstructors (countAssigns constr)
+            signalEvaluation
+            pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
     (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
       -- we have a particular constructor
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
@@ -541,8 +506,8 @@ pruneAndValidate ::
   Maybe (Constraint lang) ->
   [UniversalAxiom lang] ->
   SymEval lang PruneResult
-pruneAndValidate cOut cIn axioms =
-  SymEval $
-    ReaderT $ \env ->
-      StateT $ \st ->
-        return (solvePropProblem (seeSolvers env) (CheckPropertyProblem cOut cIn axioms st (seeDefs env)), st)
+pruneAndValidate cOut cIn axioms = SymEval $ do
+  SymEvalEnv defs solvers <- ask
+  st <- get
+  return $ solvePropProblem solvers (CheckPropertyProblem cOut cIn axioms st defs)
+    

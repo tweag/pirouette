@@ -6,6 +6,7 @@ module Language.Pirouette.PlutusIR.SymEvalSpec where
 
 import Control.Monad.Except ( runExcept )
 import Control.Monad.Reader ( ReaderT(runReaderT) )
+import Data.Foldable (toList)
 import qualified Data.Map as M
 import Language.Pirouette.PlutusIR
 import Language.Pirouette.PlutusIR.Syntax
@@ -30,20 +31,21 @@ import Test.Tasty.HUnit
 import Test.Tasty.ExpectedFailure (expectFail)
 
 execFromPIRFile ::
-  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) IO a) ->
+  (Foldable f) =>
+  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) IO (f a)) ->
   FilePath -> (Type PlutusIR, Term PlutusIR) ->
   (Term PlutusIR, Term PlutusIR) ->
-  IO a
+  IO [a]
 execFromPIRFile toDo path (tyRes, fn) (assume, toProve) = do
   pir <- openAndParsePIR path
   exec toDo (pir, tyRes, fn) (assume, toProve)
 
 exec ::
-  (PIRConstraint tyname name P.DefaultFun, Show loc) =>
-  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) IO a) ->
+  (PIRConstraint tyname name P.DefaultFun, Show loc, Foldable f) =>
+  (Problem PlutusIR -> ReaderT (PrtOrderedDefs PlutusIR) IO (f a)) ->
   (PIR.Program tyname name DefaultUni P.DefaultFun loc, Type PlutusIR, Term PlutusIR) ->
   (Term PlutusIR, Term PlutusIR) ->
-  IO a
+  IO [a]
 exec toDo (pirProgram, tyRes, fn) (assume, toProve) = do
   let Right (main, decls) = runExcept $ trProgram pirProgram
   let orderedDecls = elimEvenOddMutRec $ PrtUnorderedDefs decls main
@@ -52,7 +54,7 @@ exec toDo (pirProgram, tyRes, fn) (assume, toProve) = do
     fn' <- contextualizeTerm fn
     assume' <- contextualizeTerm assume
     toProve' <- contextualizeTerm toProve
-    toDo (Problem tyRes' fn' assume' toProve')
+    toList <$> toDo (Problem tyRes' fn' assume' toProve')
 
 tests :: [TestTree]
 tests =
