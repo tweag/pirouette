@@ -10,6 +10,7 @@
 
 module TreeT where
 
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Reader
@@ -39,6 +40,17 @@ runTreeT (PutT newS) _ = pure (Done newS ())
 runTreeT (SplitT choices) s = do
   branches <- forM choices \(tg, nxt) -> Branch tg <$> runTreeT nxt s
   pure (Split s branches)
+-- the ap (for performance win, since we can do better than the ap from Control.Monad)
+runTreeT (ApT f x) s = do
+  f' <- runTreeT f s
+  go f'
+  where
+    go Stop = pure Stop
+    go (Done s' fs) =
+      fmap fs <$> runTreeT x s'
+    go (Split s' bs) =
+      Split s' <$> forM bs \(Branch tg t) ->
+        Branch tg <$> go t
 -- the bind
 runTreeT (BindT this nxt) s = do
   this' <- runTreeT this s
@@ -59,6 +71,7 @@ data TreeT tag state m a where
   -- Monad
   EmptyT :: TreeT tag state m a
   LiftT  :: m a -> TreeT tag state m a
+  ApT    :: TreeT tag state m (a -> b) -> TreeT tag state m a -> TreeT tag state m b
   BindT  :: TreeT tag state m a -> (a -> TreeT tag state m b) -> TreeT tag state m b
   -- Different branches
   SplitT :: [(tag, TreeT tag state m a)] -> TreeT tag state m a
@@ -67,23 +80,25 @@ data TreeT tag state m a where
   PutT   :: state -> TreeT tag state m ()
 
 hoistTreeT :: forall tag state m n a. Functor n
-         => (forall x. m x -> n x) -> TreeT tag state m a -> TreeT tag state n a
+           => (forall x. m x -> n x)
+           -> TreeT tag state m a -> TreeT tag state n a
 hoistTreeT f = go
   where
     go :: forall b. TreeT tag state m b -> TreeT tag state n b
     go EmptyT = EmptyT
     go (LiftT x) = LiftT (f x)
+    go (ApT x y) = ApT (go x) (go y)
     go (BindT x nxt) = BindT (go x) (go . nxt)
     go (SplitT bs) = SplitT [(tg, go b) | (tg, b) <- bs]
     go GetT = GetT
     go (PutT x) = PutT x
 
 instance Applicative m => Functor (TreeT tag state m) where
-  fmap = liftM
+  fmap = liftA
 
 instance Applicative m => Applicative (TreeT tag state m) where
   pure  = return
-  (<*>) = ap
+  (<*>) = ApT
 
 instance Applicative m => Monad (TreeT tag state m) where
   return = LiftT . pure
