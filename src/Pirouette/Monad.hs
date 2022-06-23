@@ -16,11 +16,10 @@ import Data.Data (Data)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 import qualified Data.Set as Set
-import ListT (ListT)
-import ListT.Weighted (WeightedListT)
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import TreeT
 
 -- * The Pirouette Monad(s)
 
@@ -109,11 +108,7 @@ instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs la
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 
-instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (ListT m) where
-  prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
-
-instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (WeightedListT m) where
+instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (TreeT tag state m) where
   prtAllDefs = lift prtAllDefs
   prtMain = lift prtMain
 

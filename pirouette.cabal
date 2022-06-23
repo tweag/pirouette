@@ -25,9 +25,6 @@ library
       Language.Pirouette.QuasiQuoter
       Language.Pirouette.QuasiQuoter.Syntax
       Language.Pirouette.QuasiQuoter.ToTerm
-      ListT.Extra
-      ListT.Weighted
-      ListT.Weighted.Examples
       Pirouette
       Pirouette.Monad
       Pirouette.Monad.Maybe

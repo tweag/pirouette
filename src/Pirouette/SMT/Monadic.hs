@@ -42,7 +42,6 @@ import Control.Monad.Reader
 import Control.Monad.State.Class
 import Control.Monad.Writer
 import qualified Data.Map as M
-import ListT.Weighted (MonadWeightedList)
 import Pirouette.Monad
 import Pirouette.SMT.Base as Base
 import Pirouette.SMT.Constraints
@@ -50,6 +49,7 @@ import qualified PureSMT
 import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
+import TreeT (MonadTree)
 
 -- OLD CODE
 
@@ -58,7 +58,7 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 --  solver-specific operations, such as initialization
 newtype SolverT m a = SolverT {unSolverT :: ReaderT PureSMT.Solver m a}
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadReader PureSMT.Solver, MonadIO, MonadFail, MonadWeightedList)
+  deriving newtype (Applicative, Monad, MonadReader PureSMT.Solver, MonadIO, MonadFail, MonadTree tag)
 
 instance MonadTrans SolverT where
   lift = SolverT . lift
