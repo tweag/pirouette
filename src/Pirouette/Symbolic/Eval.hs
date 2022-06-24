@@ -144,7 +144,7 @@ symevalAnyPath ::
   SymEval lang a ->
   m (Maybe (Path lang a))
 symevalAnyPath shouldStop p prob =
-  Data.Foldable.find p <$> symeval shouldStop prob
+  treeFind p <$> symeval shouldStop prob
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.

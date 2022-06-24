@@ -10,6 +10,7 @@
 
 module TreeT where
 
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.Trans
@@ -42,6 +43,17 @@ levels t = go (S.singleton t)
         Stop -> go xs
         Done _ x -> x S.:<| go xs
         Split _ bs -> go (xs S.>< S.fromList (map next bs))
+
+treeFind :: Alternative f => (a -> Bool) -> Tree tag state a -> f a
+treeFind p = go
+  where
+    go Stop = empty
+    go (Done _ x) = x <$ guard (p x)
+    go (Split _ bs) = goBranches bs
+    goBranches [] = empty
+    goBranches (Branch _ nxt : rest) =
+      go nxt <|> goBranches rest
+{-# SPECIALIZE treeFind :: (a -> Bool) -> Tree tag state a -> Maybe a #-}
 
 -- | Runs a 'TreeT' computation, resulting in a 'Tree'.
 runTreeT :: forall tag state m a. Monad m
