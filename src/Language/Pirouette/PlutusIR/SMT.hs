@@ -32,6 +32,7 @@ instance LanguageSMT PlutusIR where
     | Just _ <- termIsMeta e = True
   isStuckBuiltin (App (Free (Builtin op)) args)
     | op `elem` plutusIRBasicOps || op `elem` plutusIRBasicRels
+    , all isArg args  -- this ensures that we only have TermArg
     = let args' = map (\(TermArg a) -> a) args
       in all isStuckBuiltin args' && not (all termIsConstant args')
   isStuckBuiltin _ = False
@@ -66,12 +67,18 @@ trPIRConstant (PIRConstList lst) = go lst
 trPIRConstant (PIRConstPair x y) = PureSMT.fun "Tuple2" [trPIRConstant x, trPIRConstant y]
 trPIRConstant (PIRConstData _dat) = error "Not implemented: PIRConstData to SMT"
 
+-- | These operations can be fully evaluated
+-- if the given arguments are constants.
+-- For example, @3 + 4@ is *not* stuck.
 plutusIRBasicOps :: [P.DefaultFun]
 plutusIRBasicOps = [
   P.AddInteger, P.SubtractInteger, P.MultiplyInteger,
   P.DivideInteger, P.ModInteger, P.QuotientInteger, P.RemainderInteger,
   P.AppendString, P.AppendByteString, P.ConsByteString, P.IndexByteString, P.SliceByteString ]
 
+-- | These relations can be fully evaluated
+-- if the given arguments are constants.
+  -- For example, @3 < 4@ is *not* stuck.
 plutusIRBasicRels :: [P.DefaultFun]
 plutusIRBasicRels = [
   P.EqualsInteger, P.LessThanInteger, P.LessThanEqualsInteger,
@@ -340,7 +347,9 @@ instance LanguageSymEval PlutusIR where
   branchesBuiltinTerm _rest _translator _args = 
     pure Nothing
 
-
+-- | Indicates that the next step in the evaluation of that
+-- built-in is the given function with the given arguments.
+-- There's quite some boilerplate around it, hence this utility.
 continueWith :: 
   (ToSMT meta, Applicative m) =>
   Text -> [ArgMeta lang meta] ->
@@ -350,6 +359,9 @@ continueWith destr args = do
       tm     = App (Free $ TermSig destr') args
   pure $ Just [ Branch { additionalInfo = mempty, newTerm = tm }]
 
+-- | Indicates that the next step is an application of
+-- the List destructor. Note that this function does *not*
+-- include any check for well-scopedness, so be careful!
 continueWithListMatch ::
   (ToSMT meta, Applicative m, lang ~ PlutusIR) =>
   TypeMeta lang meta -> TypeMeta lang meta -> TermMeta lang meta ->
@@ -361,6 +373,9 @@ continueWithListMatch tyA tyR lst caseNil caseCons excess =
     , TermArg $ caseNil `appN` excess
     , TermArg $ Lam (Ann "x") tyA $ Lam (Ann "xs") (listOf tyA) $ caseCons `appN` excess ]
 
+-- | Indicates that the next step is an application of
+-- the Data destructor. Note that this function does *not*
+-- include any check for well-scopedness, so be careful!
 continueWithDataMatch ::
   (ToSMT meta, Applicative m, lang ~ PlutusIR) =>
   ArgMeta lang meta -> ArgMeta lang meta ->
