@@ -17,7 +17,7 @@ import Control.Monad.Trans
 import Control.Monad.Reader
 import Control.Monad.State.Class
 import Control.Monad.Writer
-import Control.Parallel.Strategies
+import Data.Foldable (asum)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as S
 
@@ -84,9 +84,8 @@ runTreeT = go (\s x -> pure (Done s x))
 
 -- | Specialized version of the runner for the 'Identity' monad.
 runTreeI :: forall tag state a. 
-            (forall x. Strategy x -> Strategy [x]) ->
             TreeT tag state Identity a -> state -> Tree tag state a
-runTreeI strat = go Done
+runTreeI = go Done
   where
     go :: forall b r. 
           (state -> b -> Tree tag state r)  -- continuation
@@ -99,9 +98,7 @@ runTreeI strat = go Done
     go k (PutT newS) _ = k newS ()
     -- splitting choices
     go k (SplitT choices) s =
-      let branches = withStrategy (strat rseq) $ 
-                       flip map choices \(tg, nxt) ->
-                        Branch tg (go k nxt s)
+      let branches = flip map choices \(tg, nxt) -> Branch tg (go k nxt s)
       in Split s branches
     -- the fmap (for performance win, since we can do better than the liftM from Control.Monad)
     go k (FmapT g x) s = 
@@ -112,6 +109,33 @@ runTreeI strat = go Done
     -- the bind
     go k (BindT this nxt) s = 
       go (\s1 x -> go k (nxt x) s1) this s
+
+-- | Specialized version to check a property.
+runTreeAny :: forall tag state f a r.
+              Alternative f =>
+              (a -> f r) ->
+              TreeT tag state Identity a -> state -> f r
+runTreeAny predicate = go (const predicate)
+  where
+    go :: (state -> b -> f q)
+       -> TreeT tag state Identity b
+       -> state -> f q
+    go _ EmptyT _ = empty
+    go p (LiftT (Identity action)) s = p s action
+    go p GetT s = p s s
+    go p (PutT newS) _ = p newS ()
+    go p (SplitT choices) s =
+      asum $ flip map choices \(_tg, nxt) -> go p nxt s
+    go p (FmapT g x) s = 
+      go (\s' x' -> p s' (g x')) x s
+    go p (ApT fs xs) s =
+      go (\s1 f -> go (\s2 x -> p s2 (f x)) xs s1) fs s
+    go p (BindT this nxt) s = 
+      go (\s1 x -> go p (nxt x) s1) this s
+
+{-# SPECIALIZE runTreeAny :: forall tag state a r.
+                             (a -> Maybe r) ->
+                             TreeT tag state Identity a -> state -> Maybe r #-}
 
 -- | Defines a class of monad which support pruning and branching.
 class Monad m => MonadTree tag m | m -> tag where

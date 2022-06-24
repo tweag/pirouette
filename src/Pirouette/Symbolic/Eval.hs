@@ -59,7 +59,6 @@ import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Parallel.Strategies
 import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
@@ -131,11 +130,7 @@ symeval ::
   StoppingCondition ->
   SymEval lang a ->
   m (SymEvalResult lang (Path lang a))
-symeval shouldStop prob = do
-  defs <- getPrtOrderedDefs
-  return $ runSymEval defs st0 prob
-  where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
+symeval = symeval_ runTreeI
 
 symevalAnyPath ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
@@ -143,25 +138,37 @@ symevalAnyPath ::
   (Path lang a -> Bool) ->
   SymEval lang a ->
   m (Maybe (Path lang a))
-symevalAnyPath shouldStop p prob =
-  treeFind p <$> symeval shouldStop prob
+symevalAnyPath shouldStop p = symeval_ (runTreeAny (\x -> if p x then Just x else Nothing)) shouldStop
+
+symeval_ ::
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (TreeT (Tag lang) (SymEvalSt lang) Identity (Path lang a) -> SymEvalSt lang -> r) ->
+  StoppingCondition ->
+  SymEval lang a ->
+  m r
+symeval_ runner shouldStop prob = do
+  defs <- getPrtOrderedDefs
+  return $ runSymEval runner defs st0 prob
+  where
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEval ::
-  forall lang a.
+  forall lang a r.
   (SymEvalConstr lang) =>
+  (TreeT (Tag lang) (SymEvalSt lang) Identity (Path lang a) -> SymEvalSt lang -> r) ->
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
-  SymEvalResult lang (Path lang a)
-runSymEval defs st f = do
+  r
+runSymEval runner defs st f = do
   let sharedSolve :: SolverProblem lang res -> res
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   let f' = do r <- f ; path r <$> get
-  runTreeI parList (runReaderT (symEval f') (SymEvalEnv defs solvers)) st'
+  runner (runReaderT (symEval f') (SymEvalEnv defs solvers)) st'
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
