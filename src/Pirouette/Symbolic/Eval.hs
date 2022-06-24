@@ -31,7 +31,7 @@ module Pirouette.Symbolic.Eval
 
     -- ** Incorrectness logic
     symevalAnyPath,
-    symEvalMatchesFirst,
+
     symEvalParallel,
     UniversalAxiom (..),
     Model (..),
