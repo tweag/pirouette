@@ -23,6 +23,7 @@ import Control.Monad (MonadPlus (..), ap)
 import Control.Monad.Except (ExceptT (..), MonadError (..))
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Reader (MonadReader (..), ReaderT (..))
+import Control.Monad.RWS.Strict (RWST (..))
 import Control.Monad.State (MonadState (..), StateT (..))
 import Control.Monad.Trans (MonadTrans (..))
 import Control.Monad.Writer (WriterT (..))
@@ -166,3 +167,6 @@ instance MonadWeightedList m => MonadWeightedList (StateT r m) where
 
 instance MonadWeightedList m => MonadWeightedList (WriterT r m) where
   weight n (WriterT r) = WriterT (weight n r)
+
+instance MonadWeightedList m => MonadWeightedList (RWST r w s m) where
+  weight n (RWST act) = RWST (\r s -> weight n $ act r s)
