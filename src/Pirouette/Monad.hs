@@ -60,31 +60,42 @@ prtError = error . show
 --  being compiled, we probably want to use 'PirouetteReadDefs' instead of 'PirouetteBase'
 class (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang m | m -> lang where
   -- | Returns all declarations in scope
-  prtAllDefs :: m (Map.Map Name (Definition lang))
+  prtAllDefs :: m (Map.Map (Namespace, Name) (Definition lang))
 
   -- | Returns the main program
   prtMain :: m (Term lang)
 
 -- | Returns the definition associated with a given name. Raises a 'PEUndefined'
 --  if the name doesn't exist.
-prtDefOf :: (PirouetteReadDefs lang m) => Name -> m (Definition lang)
-prtDefOf n = do
+prtDefOf :: (PirouetteReadDefs lang m) => Namespace -> Name -> m (Definition lang)
+prtDefOf space n = do
   defs <- prtAllDefs
-  case Map.lookup n defs of
+  case Map.lookup (space, n) defs of
     Nothing -> prtError $ PEUndefined n
     Just x -> return x
 
+prtDefOfAnyNamespace :: (PirouetteReadDefs lang m) => Name -> m (Definition lang)
+prtDefOfAnyNamespace n = do
+  defs <- prtAllDefs
+  let tm = Map.lookup (TermNamespace, n) defs
+      ty = Map.lookup (TypeNamespace, n) defs
+  case (tm, ty) of
+    (Just _, Just _)  -> prtError $ PEUndefined n
+    (Just t, Nothing) -> pure t
+    (Nothing, Just t) -> pure t
+    _ -> prtError $ PEUndefined n
+
 prtTypeDefOf :: (PirouetteReadDefs lang m) => Name -> m (TypeDef lang)
-prtTypeDefOf n = prtDefOf n >>= maybe (prtError $ PENotAType n) return . fromTypeDef
+prtTypeDefOf n = prtDefOf TypeNamespace n >>= maybe (prtError $ PENotAType n) return . fromTypeDef
 
 prtTermDefOf :: (PirouetteReadDefs lang m) => Name -> m (Term lang)
-prtTermDefOf n = prtDefOf n >>= maybe (prtError $ PENotATerm n) return . fromTermDef
+prtTermDefOf n = prtDefOf TermNamespace n >>= maybe (prtError $ PENotATerm n) return . fromTermDef
 
 prtIsDest :: (PirouetteReadDefs lang m) => Name -> MaybeT m TyName
-prtIsDest n = MaybeT $ fromDestDef <$> prtDefOf n
+prtIsDest n = MaybeT $ fromDestDef <$> prtDefOf TermNamespace n
 
 prtIsConst :: (PirouetteReadDefs lang m) => Name -> MaybeT m (Int, TyName)
-prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf n
+prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf TermNamespace n
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Lazy.StateT s m) where
   prtAllDefs = lift prtAllDefs
@@ -109,7 +120,7 @@ instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs la
 -- | Returns the type of an identifier
 typeOfIdent :: (PirouetteReadDefs lang m) => Name -> m (Type lang)
 typeOfIdent n = do
-  dn <- prtDefOf n
+  dn <- prtDefOf TermNamespace n
   case dn of
     (DFunction _ _ ty) -> return ty
     (DConstructor i t) -> snd . (!! i) . constructors <$> prtTypeDefOf t
@@ -127,7 +138,7 @@ typeOfIdent n = do
 --  @SystF.Arg "f"@ in the result aswell, use "Pirouette.Term.TransitiveDeps.transitiveDepsOf" instead.
 directDepsOf :: (PirouetteReadDefs lang m) => Name -> m (Set.Set (SystF.Arg Name Name))
 directDepsOf n = do
-  ndef <- prtDefOf n
+  ndef <- prtDefOfAnyNamespace n
   return $ case ndef of
     DFunction _ t ty -> typeNames ty <> termNames t
     DTypeDef d ->
@@ -173,7 +184,7 @@ termIsWHNF (SystF.App vm args) = case vm of
   SystF.Meta {} -> pure Nothing
   SystF.Free (Constant c) -> pure $ Just (WHNFConstant c)
   SystF.Free (TermSig n) -> do
-    mDef <- prtDefOf n
+    mDef <- prtDefOf TermNamespace n
     case mDef of
       DConstructor ix ty -> pure $ Just (WHNFConstructor ix ty args)
       _ -> pure Nothing
@@ -189,6 +200,10 @@ termIsMeta _ = Nothing
 termIsBuiltin :: TermMeta lang meta -> Bool
 termIsBuiltin (SystF.App (SystF.Free (Builtin _)) _args) = True
 termIsBuiltin _ = False
+
+termIsConstant :: TermMeta lang meta -> Bool
+termIsConstant (SystF.App (SystF.Free (Constant _)) _args) = True
+termIsConstant _ = False
 
 -- | Returns whether a term is in Weak Head Normal Form,
 -- that is, a constant or a constructor followed by any arguments.

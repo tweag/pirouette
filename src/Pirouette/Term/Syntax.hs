@@ -84,13 +84,13 @@ declsUniqueNames decls mainFun = first Map.fromList (go (Map.toList decls))
     onPairM f g (x, y) = (,) <$> f x <*> g y
 
     go ::
-      [(Name, Definition lang)] ->
-      ([(Name, Definition lang)], Term lang)
+      [((Namespace, Name), Definition lang)] ->
+      ([((Namespace, Name), Definition lang)], Term lang)
     go ds =
       let (_, ks) =
-            flip runState Map.empty $ mapM (onPairM unNameCollect defUNCollect) ds
+            flip runState Map.empty $ mapM (onPairM (onPairM pure unNameCollect) defUNCollect) ds
        in runReader
-            (onPairM (mapM (onPairM unNameSubst defUNSubst)) termUNSubst (ds, mainFun))
+            (onPairM (mapM (onPairM (onPairM pure unNameSubst) defUNSubst)) termUNSubst (ds, mainFun))
             (Map.map Set.toList ks)
 
 -- *** Auxiliar Definitions for Unique Naming

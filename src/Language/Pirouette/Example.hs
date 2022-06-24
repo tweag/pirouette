@@ -31,11 +31,12 @@ import qualified Data.Set as S
 import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter as QQ
 import Language.Pirouette.QuasiQuoter.Syntax
-import Pirouette.Monad (termIsMeta)
+import Pirouette.Monad (termIsConstant, termIsMeta)
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
 import qualified PureSMT
 import Pirouette.Term.Syntax
+import Pirouette.Symbolic.Eval.Helpers
 import Pirouette.Symbolic.Eval.Types
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter (dquotes)
@@ -209,11 +210,11 @@ instance LanguageSMT Ex where
 
   -- they are stuck if they are constants, or a not-ite builtin
   isStuckBuiltin e
-    | isConstant e = True
+    | termIsConstant  e = True
   isStuckBuiltin (SystF.App (SystF.Free (Builtin op)) args)
     | exTermIsArithOp op || exTermIsStringOp op =
       let args' = map (\(SystF.TermArg a) -> a) args
-       in all isStuckBuiltin args' && not (all isConstant args')
+       in all isStuckBuiltin args' && not (all termIsConstant args')
   isStuckBuiltin tm = isJust (termIsMeta tm)
 
 pattern BConstant :: Bool -> TermMeta Ex meta
@@ -230,12 +231,6 @@ pattern IConstant n = SystF.App (SystF.Free (Constant (ConstInt n))) []
 
 pattern SConstant :: String -> TermMeta Ex meta
 pattern SConstant s = SystF.App (SystF.Free (Constant (ConstString s))) []
-
-isConstant :: TermMeta Ex meta -> Bool
-isConstant (IConstant _) = True
-isConstant (BConstant _) = True
-isConstant (SConstant _) = True
-isConstant _ = False
 
 -- | Finally, this is where we customize the behavior of the symbolic execution engine.
 -- In particular, with respect to @if@ statements in our case. Check the respective
@@ -262,64 +257,11 @@ instance LanguageSymEval Ex where
       let isEq TermEq = True
           isEq TermStrEq = True
           isEq _ = False
-          t' = t `SystF.appN` excess
-          e' = e `SystF.appN` excess
-       in case c of
-            BTrue -> pure $ Just [Branch (And []) t]
-            BFalse -> pure $ Just [Branch (And []) e]
-            SystF.App (SystF.Free (Builtin eq)) [SystF.TermArg x, SystF.TermArg y]
-              -- try to generate the best type of constraint
-              -- from the available equality ones
-              | isEq eq,
-                Just x1 <- termIsMeta x,
-                Just y1 <- termIsMeta y ->
-                pure $
-                  Just
-                    [ -- either they are equal
-                      Branch (And [VarEq x1 y1]) t',
-                      -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq x y]) e'
-                    ]
-              | isEq eq,
-                Just x1 <- termIsMeta x,
-                isStuckBuiltin y ->
-                pure $
-                  Just
-                    [ -- either they are equal
-                      Branch (And [Assign x1 y]) t',
-                      -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq x y]) e'
-                    ]
-              | isEq eq,
-                isStuckBuiltin x,
-                Just y1 <- termIsMeta y ->
-                pure $
-                  Just
-                    [ -- either they are equal
-                      Branch (And [Assign y1 x]) t',
-                      -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq y x]) e'
-                    ]
-              | isEq eq,
-                isStuckBuiltin x,
-                isStuckBuiltin y ->
-                pure $
-                  Just
-                    [ -- either they are equal
-                      Branch (And [NonInlinableSymbolEq x y]) t',
-                      -- or they are not
-                      Branch (And [NonInlinableSymbolNotEq x y]) e'
-                    ]
-            _
-              | Just v <- termIsMeta c ->
-                pure $
-                  Just
-                    [ -- c is True => t is executed
-                      Branch (And [Assign v BTrue]) t',
-                      -- c is False => e is executed
-                      Branch (And [Assign v BFalse]) e'
-                    ]
-            _ -> pure Nothing
+          isTrue BTrue = True
+          isTrue _ = False
+          isFalse BFalse = True
+          isFalse _ = False
+       in ifThenElseBranching isTrue BTrue isFalse BFalse isEq c t e excess
   branchesBuiltinTerm _ _ _ = pure Nothing
 
 -- * QuasiQuoters

@@ -26,60 +26,66 @@ contextualizeTerm tm = fixContextTerm <$> prtAllDefs <*> pure tm
 contextualizeType :: (PirouetteReadDefs lang m) => Type lang -> m (Type lang)
 contextualizeType tm = fixContextType <$> prtAllDefs <*> pure tm
 
-fixContextName :: FixContextElement -> Map.Map Name (Definition lang) -> Name -> Name
-fixContextName elt inScope nm
+-- | Make a 'Name's in the type with empty uniques
+-- refer to those in the context.
+contextualizeTermName :: (PirouetteReadDefs lang m) => T.Text -> m Name
+contextualizeTermName nm = fixContextName <$> prtAllDefs <*> pure TermNamespace <*> pure (Name nm Nothing)
+
+-- | Make a 'Name's in the type with empty uniques
+-- refer to those in the context.
+resolve :: (PirouetteReadDefs lang m) => T.Text -> m Name
+resolve = contextualizeTermName
+
+fixContextName :: Map.Map (Namespace, Name) (Definition lang) -> Namespace -> Name -> Name
+fixContextName inScope space nm
   | Just _ <- nameUnique nm = nm  -- if it has a unique, don't change it
   | otherwise =
-    let sameName = Map.filterWithKey (\k d -> nameString k == nameString nm && chooseElement elt d) inScope
+    let sameName = Map.filterWithKey (\(s, k) _ -> nameString k == nameString nm && s == space) inScope
     in case Map.size sameName of
       0 -> nm
-      1 -> fst $ head $ Map.toList sameName  -- we know we have just one
+      1 -> snd $ fst $ head $ Map.toList sameName  -- we know we have just one
       _ -> error $ "cannot fix " <> T.unpack (nameString nm)
 
 
-fixContextTermVar :: Map.Map Name (Definition lang)
+fixContextTermVar :: Map.Map (Namespace, Name) (Definition lang)
                   -> SystF.VarMeta meta ann (TermBase lang)
                   -> SystF.VarMeta meta ann (TermBase lang)
-fixContextTermVar inScope (Free (TermSig nm)) = Free (TermSig (fixContextName FixTerm inScope nm))
+fixContextTermVar inScope (Free (TermSig nm)) = Free (TermSig (fixContextName inScope TermNamespace nm))
 fixContextTermVar _inScope other = other
 
-fixContextTypeVar :: Map.Map Name (Definition lang)
+fixContextTypeVar :: Map.Map (Namespace, Name) (Definition lang)
                   -> SystF.VarMeta meta ann (TypeBase lang)
                   -> SystF.VarMeta meta ann (TypeBase lang)
-fixContextTypeVar inScope (Free (TySig nm)) = Free (TySig (fixContextName FixType inScope nm))
+fixContextTypeVar inScope (Free (TySig nm)) = Free (TySig (fixContextName inScope TypeNamespace nm))
 fixContextTypeVar _inScope other = other
 
-fixContextTerm :: Map.Map Name (Definition lang) -> Term lang -> Term lang
+fixContextTerm :: Map.Map (Namespace, Name) (Definition lang) -> Term lang -> Term lang
 fixContextTerm inScope (App var args) =
   App (fixContextTermVar inScope var)
       [argMap (fixContextType inScope) (fixContextTerm inScope) arg | arg <- args]
 fixContextTerm inScope (Abs var@(Ann this) ki body) = 
   let -- remove shadowed types from scope
-      inScope' = removeFromScope FixType inScope this
+      inScope' = removeFromScope inScope TypeNamespace this
   in Abs var ki (fixContextTerm inScope' body)
 fixContextTerm inScope (Lam var@(Ann this) ty body) = 
   let -- remove shadowed terms from scope
-      inScope' = removeFromScope FixTerm inScope this
+      inScope' = removeFromScope inScope TermNamespace this
   in Lam var (fixContextType inScope' ty) (fixContextTerm inScope' body)
 
-fixContextType :: Map.Map Name (Definition lang) -> Type lang -> Type lang
+fixContextType :: Map.Map (Namespace, Name) (Definition lang) -> Type lang -> Type lang
 fixContextType inScope (TyApp v args) =
   TyApp (fixContextTypeVar inScope v) [fixContextType inScope arg | arg <- args]
 fixContextType inScope (TyFun a b) =
   TyFun (fixContextType inScope a) (fixContextType inScope b)
 fixContextType inScope (TyLam var@(Ann this) ki rest) =
-  let inScope' = removeFromScope FixType inScope this
+  let inScope' = removeFromScope inScope TypeNamespace this
   in TyLam var ki (fixContextType inScope' rest)
 fixContextType inScope (TyAll var@(Ann this) ki rest) =
-  let inScope' = removeFromScope FixType inScope this
+  let inScope' = removeFromScope inScope TypeNamespace this
   in TyAll var ki (fixContextType inScope' rest)
 
-data FixContextElement = FixType | FixTerm
-
-chooseElement :: FixContextElement -> Definition lang -> Bool
-chooseElement FixType = isTypeDef
-chooseElement FixTerm = not . isTypeDef
-
-removeFromScope :: FixContextElement -> Map.Map Name (Definition lang) -> Name -> Map.Map Name (Definition lang)
-removeFromScope elt inScope nm =
-  Map.filterWithKey (\k d -> nameString k /= nameString nm && chooseElement elt d) inScope
+removeFromScope :: Map.Map (Namespace, Name) (Definition lang)
+                -> Namespace -> Name
+                -> Map.Map (Namespace, Name) (Definition lang)
+removeFromScope inScope space nm =
+  Map.delete (space, nm) inScope

@@ -173,11 +173,11 @@ runSymEvalWorker defs st f = do
   let paths = uncurry path solvPair
   return paths
   where
-    lkupTypeDefOf decls name = case M.lookup name decls of
+    lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
       _ -> Nothing
 
-    lkupFunDefOf decls name = case M.lookup name decls of
+    lkupFunDefOf decls name = case M.lookup (TermNamespace, name) decls of
       Just (DFunDef fdef) -> Just (name, fdef)
       _ -> Nothing
 
@@ -185,7 +185,8 @@ runSymEvalWorker defs st f = do
     solverCtx =
       let decls = prtDecls defs
           dependencyOrder = prtDepOrder defs
-          types = mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
+          definedTypes = mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
+          types = builtinTypeDefinitions definedTypes <> definedTypes
           allFns = mapMaybe (R.argElim (const Nothing) (lkupFunDefOf decls)) dependencyOrder
           fns = mapMaybe (\(n, fd) -> (n,) <$> SMT.supportedUninterpretedFunction fd) allFns
        in SolverSharedCtx types fns
@@ -291,6 +292,7 @@ symEvalOneStep t@(R.Lam (R.Ann _x) _ty _) = do
 -- If we're evaluating an application, we distinguish between a number
 -- of constituent cases:
 symEvalOneStep t@(R.App hd args) = case hd of
+  R.Free Bottom -> empty -- we end in a bottom, so that branch is not useful
   R.Free (Builtin builtin) -> do
     -- try to evaluate the built-in
     let translator c = do
@@ -310,7 +312,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
-    mDefHead <- Just <$> lift (prtDefOf n)
+    mDefHead <- Just <$> lift (prtDefOf TermNamespace n)
     case mDefHead of
       -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
       Nothing -> justEvaluateArgs
@@ -404,7 +406,7 @@ isDestructor ::
   TermMeta lang SymVar ->
   m (Maybe Name)
 isDestructor (R.App (R.Free (TermSig n)) _args) = do
-  mDefHead <- Just <$> prtDefOf n
+  mDefHead <- Just <$> prtDefOf TermNamespace n
   pure $ case mDefHead of
     Just (DDestructor tyName) -> Just tyName
     _ -> Nothing

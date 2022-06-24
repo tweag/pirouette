@@ -34,27 +34,27 @@ data HofDef lang = HofDef
   }
   deriving (Show, Eq, Ord)
 
-type HOFDefs lang = M.Map Name (HofDef lang)
+type HOFDefs lang = M.Map (Namespace, Name) (HofDef lang)
 
 findFuns ::
   LanguageBuiltins lang =>
-  [(Name, Definition lang)] ->
+  [((space, Name), Definition lang)] ->
   (FunDef lang -> Bool) ->
-  [(Name, HofDef lang)]
+  [((space, Name), HofDef lang)]
 findFuns declsPairs funPred =
-  [ (name, HofDef name $ HDBFun funDef)
-    | (name, DFunDef funDef) <- declsPairs,
+  [ ((sp, name), HofDef name $ HDBFun funDef)
+    | ((sp, name), DFunDef funDef) <- declsPairs,
       funPred funDef
   ]
 
 findTypes ::
   LanguageBuiltins lang =>
-  [(Name, Definition lang)] ->
+  [((space, Name), Definition lang)] ->
   (Name -> TypeDef lang -> Bool) ->
-  [(Name, HofDef lang)]
+  [((space, Name), HofDef lang)]
 findTypes declsPairs tyPred =
-  [ (name, HofDef tyName $ HDBType typeDef)
-    | (tyName, DTypeDef typeDef) <- declsPairs,
+  [ ((sp, name), HofDef tyName $ HDBType typeDef)
+    | ((sp, tyName), DTypeDef typeDef) <- declsPairs,
       tyPred tyName typeDef,
       name <- tyName : destructor typeDef : (fst <$> constructors typeDef)
   ]
@@ -64,7 +64,7 @@ findHOFDefs ::
   LanguageBuiltins lang =>
   (FunDef lang -> Bool) ->
   (Name -> TypeDef lang -> Bool) ->
-  [(Name, Definition lang)] ->
+  [((Namespace, Name), Definition lang)] ->
   HOFDefs lang
 findHOFDefs funPred tyPred declsPairs =
   M.fromList $ findFuns declsPairs funPred' <> findTypes declsPairs tyPred'

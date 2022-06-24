@@ -72,26 +72,27 @@ tests :: [TestTree]
 tests =
   [ -- We expect that 'Monoid' is a higher-order definition and is picked by findPolyHOFDefs
     testCase "findPolyHOFDefs picks 'Monoid'" $
-      assertBool "not there" $ "Monoid" `M.member` findPolyHOFDefs (prtUODecls sampleUDefs),
+      assertBool "not there" $ (TypeNamespace, "Monoid") `M.member` findPolyHOFDefs (prtUODecls sampleUDefs),
     -- In order to get the transitive closure of all the definitions that use ho-defs,
     -- we rely on 'hofsClosure'.
     testCase "hofsClosure picks the expected defs" $
       let ds = prtUODecls sampleUDefs
-       in M.keys (hofsClosure ds (findPolyHOFDefs ds)) @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],
+       in sort (map snd (M.keys (hofsClosure ds (findPolyHOFDefs ds)))) 
+             @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
       [ testCase "specFunApp (id @Bool True) == (id@Bool True, [SpecRequest ...])" $
-           runWriter (specFunApp (M.singleton "id" idDef) [term| id @Bool True |])
+           runWriter (specFunApp (M.singleton (TermNamespace, "id") idDef) [term| id @Bool True |])
                 @?= ([term| id!TyBool True |], [SpecRequest idDef [[ty| Bool |]]]),
         testCase "specFunApp (const @Integer @Bool 42 False) == (const!Integer!Bool 42 False, [SpecRequest ...])" $
-           runWriter (specFunApp (M.singleton "const" constDef) [term| const @Integer @Bool 42 True |])
+           runWriter (specFunApp (M.singleton (TermNamespace, "const") constDef) [term| const @Integer @Bool 42 True |])
                 @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest constDef [[ty| Integer |], [ty| Bool |]]])
       ],
     testGroup
       "executeSpecRequest"
       [ testCase "specTyApp (Either3 Bool Integer) fixes type-variables and produces correct constructors" $
-          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton "Either3" either3Def) [ty| Either3 Bool Integer |])
+          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton (TypeNamespace, "Either3") either3Def) [ty| Either3 Bool Integer |])
             @?= either3Def_Bool_Integer_decls
       ]
   ]
@@ -126,7 +127,7 @@ either3Def =
 either3Def_Bool_Integer_decls :: Decls Ex
 either3Def_Bool_Integer_decls =
   M.fromList
-    [ ( "Either3!TyBool!TyInteger",
+    [ ( (TypeNamespace, "Either3!TyBool!TyInteger"),
         DTypeDef
           Datatype
             { kind = SystF.KTo SystF.KStar SystF.KStar,
@@ -139,8 +140,8 @@ either3Def_Bool_Integer_decls =
                 ]
             }
       ),
-      ("match_Either3!TyBool!TyInteger", DDestructor "Either3!TyBool!TyInteger"),
-      ("Left!TyBool!TyInteger", DConstructor 0 "Either3!TyBool!TyInteger"),
-      ("Mid!TyBool!TyInteger", DConstructor 1 "Either3!TyBool!TyInteger"),
-      ("Right!TyBool!TyInteger", DConstructor 2 "Either3!TyBool!TyInteger")
+      ((TermNamespace, "match_Either3!TyBool!TyInteger"), DDestructor "Either3!TyBool!TyInteger"),
+      ((TermNamespace, "Left!TyBool!TyInteger"), DConstructor 0 "Either3!TyBool!TyInteger"),
+      ((TermNamespace, "Mid!TyBool!TyInteger"), DConstructor 1 "Either3!TyBool!TyInteger"),
+      ((TermNamespace, "Right!TyBool!TyInteger"), DConstructor 2 "Either3!TyBool!TyInteger")
     ]

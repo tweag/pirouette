@@ -89,6 +89,8 @@ quoter quote =
 
 deriving instance Lift ann => Lift (SystF.Ann ann)
 
+deriving instance Lift Namespace
+
 deriving instance Lift Name
 
 deriving instance Lift SystF.Kind

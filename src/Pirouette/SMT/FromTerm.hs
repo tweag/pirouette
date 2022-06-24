@@ -104,7 +104,7 @@ translateTerm knownNames (Raw.App var args) = case var of
       Just t -> return t
   Raw.Free (TermSig name) -> do
     _ <- traceMe ("translateApp: " ++ show name) (return ())
-    defn <- lift $ lift $ prtDefOf name
+    defn <- lift $ lift $ prtDefOf TermNamespace name
     case defn of
       DConstructor ix tname
         | name `S.notMember` knownNames ->

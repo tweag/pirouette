@@ -37,6 +37,7 @@ library
       Pirouette.SMT.FromTerm
       Pirouette.SMT.Monadic
       Pirouette.Symbolic.Eval
+      Pirouette.Symbolic.Eval.Helpers
       Pirouette.Symbolic.Eval.SMT
       Pirouette.Symbolic.Eval.Types
       Pirouette.Symbolic.Prover

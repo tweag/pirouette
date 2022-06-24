@@ -86,7 +86,12 @@ instance (Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang) where
                   ++ map (\(n, ty) -> pretty n <+> ":" <+> pretty ty) cs
             )
 
+instance Pretty Namespace where
+  pretty TypeNamespace = "type"
+  pretty TermNamespace = "term"
+
 instance (LanguagePretty lang) => Pretty (Decls lang) where
   pretty = align . vsep . map prettyDef . Map.toList
     where
-      prettyDef (name, def) = vsep [pretty name <+> "|->", indent 2 (pretty def)]
+      prettyDef ((namespace, name), def) = 
+        vsep [pretty namespace <+> pretty name <+> "|->", indent 2 (pretty def)]

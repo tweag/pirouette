@@ -23,7 +23,7 @@ typeCheckDecls ::
   Decls lang ->
   Either (TypeError lang) ()
 typeCheckDecls decls = do
-  _ <- flip Map.traverseWithKey decls $ \name decl -> case decl of
+  _ <- flip Map.traverseWithKey decls $ \(_, name) decl -> case decl of
     DFunDef FunDef {funBody, funTy} ->
       flip runReaderT ((decls, []), [DeclPath name]) $
         void $ typeCheckTerm funTy funBody
@@ -69,12 +69,18 @@ type TyVar lang = Var Name (TypeBase lang)
 
 type TermVar lang = Var Name (TermBase lang)
 
+data NameUnknownReason
+  = TypeUnknown Name
+  | ConstructorIndexUnknown Int
+  | NameLookupFailed
+  deriving (Eq, Show)
+
 data TypeErrorKind lang
   = TypeAppDifferentHeads (Type lang) (Type lang)
   | TypeAppArgumentLength (Type lang) (Type lang)
   | TypeJustDifferent (Type lang) (Type lang)
   | KindJustDifferent Kind Kind
-  | NameUnknown Name
+  | NameUnknown NameUnknownReason Name
   | BoundUnknown Integer
   | TermLambdaButNoFunction (Type lang)
   | TermAppExpectedTyFun (Type lang)
@@ -112,7 +118,7 @@ typeOfFree ::
   m (Type lang)
 typeOfFree nm = do
   ((decls, _), _) <- ask
-  case Map.lookup nm decls of
+  case Map.lookup (TermNamespace, nm) decls of
     Just (DFunction _ _ ty) -> pure ty
     Just (DDestructor t) -> do
       tdef <- typeDef nm t
@@ -121,8 +127,8 @@ typeOfFree nm = do
       tdef <- typeDef nm t
       case safeIx (constructors tdef) i of
         Just (_, ty) -> pure ty
-        Nothing -> err $ NameUnknown nm
-    _ -> err $ NameUnknown nm
+        Nothing -> err $ NameUnknown (ConstructorIndexUnknown i) nm
+    _ -> err $ NameUnknown NameLookupFailed nm
 
 -- | Find a type definition in the context.
 typeDef ::
@@ -132,9 +138,9 @@ typeDef ::
   m (TypeDef lang)
 typeDef origin nm = do
   ((decls, _), _) <- ask
-  case Map.lookup nm decls of
+  case Map.lookup (TypeNamespace, nm) decls of
     Just (DTypeDef def) -> pure def
-    _ -> err $ NameUnknown origin
+    _ -> err $ NameUnknown (TypeUnknown nm) origin
 
 -- | Find the type of a bound variable in the context.
 typeOfBound ::
@@ -367,6 +373,12 @@ instance Pretty ErrorPathElement where
   pretty (TermPathAppTermArg n) = "arg" <+> pretty n
   pretty TermPathAppResult = "app result"
 
+instance Pretty NameUnknownReason
+  where
+  pretty (TypeUnknown nm) = "type" <+> pretty nm
+  pretty (ConstructorIndexUnknown ix) = "constructor" <+> pretty ix
+  pretty NameLookupFailed = "lookup"
+
 instance
   (LanguagePretty lang) =>
   Pretty (TypeErrorKind lang)
@@ -379,8 +391,8 @@ instance
     prettyCouldNotMatchError ty1 ty2
   pretty (KindJustDifferent ki1 ki2) =
     prettyCouldNotMatchError ki1 ki2
-  pretty (NameUnknown na) =
-    "Unknown name" <+> quoted na
+  pretty (NameUnknown reason na) =
+    "Unknown name" <+> parens (pretty reason) <+> quoted na
   pretty (BoundUnknown n) =
     "Unbound variable with level" <+> pretty n
   pretty (TermLambdaButNoFunction at) =

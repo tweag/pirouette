@@ -25,7 +25,7 @@
         (tyvardecl a (type))
         (tyvardecl b (type))
         TxConstraints_match
-        (vardecl TxConstraint (fun [List TxConstraint] [[TxConstraint a] b]))))
+        (vardecl Txs (fun [List TxConstraint] [[TxConstraint a] b]))))
     (termbind
       (strict)
       (vardecl build (all a (type) (fun (all b (type) (fun (fun a (fun b b)) (fun b b))) [List a])))
@@ -36,7 +36,7 @@
       (strict)
       (vardecl mustBeTrue (all a (type) (all b (type) (fun Bool [[TxConstraints a] b]))))
       (abs a (type) (abs b (type) (lam x Bool
-        [ {{ TxConstraints a } b } 
+        [ {{ Txs a } b } 
           [ {build TxConstraint} 
             (abs k (type) (lam c (fun TxConstraint (fun k k)) (lam n k
              [[c [MustBeTrue x] ] n ]
@@ -58,7 +58,7 @@
     (termbind
       (strict)
         (vardecl short [[TxConstraints Bool] Bool])
-        [{{ TxConstraints Bool } Bool } 
+        [{{ Txs Bool } Bool } 
           [[ { Cons TxConstraint } [MustBeTrue False] ] { Nil TxConstraint } ] ]
     )
     (termbind 

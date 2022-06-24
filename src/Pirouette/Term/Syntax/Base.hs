@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -20,6 +21,8 @@ import Control.Arrow ((&&&))
 import Control.Monad.Identity
 import Data.Data
 import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as Text
@@ -312,8 +315,11 @@ fromConstDef _ = Nothing
 
 -- * Declarations
 
+data Namespace = TermNamespace | TypeNamespace
+  deriving (Eq, Ord, Show, Data, Typeable)
+
 -- | A program will be translated into a number of term and type declarations.
-type Decls lang = Map Name (Definition lang)
+type Decls lang = Map (Namespace, Name) (Definition lang)
 
 -- | A program consists in a set of declarations and a main term.
 type Program lang = (Decls lang, Term lang)
@@ -338,6 +344,24 @@ class (LanguageConstrs lang) => LanguageBuiltins lang where
   type BuiltinTypes lang :: *
   type BuiltinTerms lang :: *
   type Constants lang :: *
+
+  -- | Definitions required for built-in types
+  builtinTypeDefinitions :: 
+    [(Name, TypeDef lang)]    -- ^ types which are already defined
+    -> [(Name, TypeDef lang)] -- ^ additional definitions supporting those
+  builtinTypeDefinitions _ = []
+
+builtinTypeDecls :: (LanguageBuiltins lang) => Decls lang -> Decls lang
+builtinTypeDecls m = 
+  let defs = flip mapMaybe (Map.toList m) $ \((_, nm), def) -> case def of
+               DTypeDef td -> Just (nm, td)
+               _ -> Nothing
+      newTypeDefs = builtinTypeDefinitions defs
+  in Map.fromList $ do
+    (nm, td@Datatype { destructor, constructors }) <- newTypeDefs
+    [ ((TypeNamespace, nm), DTypeDef td), ((TermNamespace, destructor), DDestructor nm) ]
+      ++ [ ((TermNamespace, constructorName), DConstructor i nm )
+         | (i, (constructorName, _)) <- zip [0 ..] constructors ]
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =

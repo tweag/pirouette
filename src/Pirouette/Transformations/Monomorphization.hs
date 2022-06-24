@@ -166,7 +166,7 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
               funIsRec
               (funBody `SystF.appN` map SystF.TyArg specArgs)
               (funTy `SystF.tyInstantiateN` specArgs)
-       in [(fixName hofDefName, newDef)]
+       in [((TermNamespace, fixName hofDefName), newDef)]
     HDBType Datatype {..} ->
       let tyName = fixName hofDefName
           dtorName = fixName destructor
@@ -182,10 +182,10 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
                 (fixName destructor)
                 ctors -- TODO does this only apply to `kind ~ *`?
        in trace (show specArgs) $
-            [ (tyName, newDef),
-              (dtorName, DDestructor tyName)
+            [ ((TypeNamespace, tyName), newDef),
+              ((TermNamespace, dtorName), DDestructor tyName)
             ]
-              <> [ (ctorName, DConstructor i tyName)
+              <> [ ((TermNamespace, ctorName), DConstructor i tyName)
                    | (ctorName, _) <- ctors
                    | i <- [0 ..]
                  ]
@@ -227,7 +227,7 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
 specFunApp :: forall lang. (LanguageBuiltins lang) => HOFDefs lang -> SpecFunApp lang
 specFunApp hofDefs (SystF.App (SystF.Free (TermSig name)) args)
   -- We compare the entire name, not just the nameString part: x0 /= x1.
-  | Just someDef <- name `M.lookup` hofDefs,
+  | Just someDef <- (TermNamespace, name) `M.lookup` hofDefs,
     -- Now we ensure that there is something to specialize and that the type arguments we've
     -- gathered are specializable arguments (ie, no bound type-variables)
     let tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args,
@@ -253,7 +253,7 @@ specFunApp _ x = pure x
 --  See the docs for 'specFunApp' for more details.
 specTyApp :: (LanguageBuiltins lang) => HOFDefs lang -> SpecTyApp lang
 specTyApp hofDefs (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
-  | Just someDef <- name `M.lookup` hofDefs,
+  | Just someDef <- (TypeNamespace, name) `M.lookup` hofDefs,
     not (null tyArgs),
     all isSpecArg tyArgs = do
     let (specArgs, remainingArgs) = splitAt (length tyArgs) tyArgs
@@ -281,8 +281,8 @@ findPolyHOFDefs = findHOFDefs (isPolyType . funTy) (const $ const True) . M.toLi
 findPolyFuns ::
   LanguageBuiltins lang =>
   (FunDef lang -> Bool) ->
-  [(Name, Definition lang)] ->
-  [(Name, HofDef lang)]
+  [((space, Name), Definition lang)] ->
+  [((space, Name), HofDef lang)]
 findPolyFuns predi = flip findFuns (\f -> isPolyType (funTy f) && predi f)
 
 isPolyType :: SystF.AnnType ann ty -> Bool
@@ -310,5 +310,5 @@ hofsClosure decls = go
 
         hasHofName :: (Data a) => a -> Bool
         hasHofName entity =
-          not (null [() | TySig name <- universeBi entity :: [TypeBase lang], name `M.member` hofs])
-            || not (null [() | TermSig name <- universeBi entity :: [TermBase lang], name `M.member` hofs])
+          not (null [() | TySig name <- universeBi entity :: [TypeBase lang], (TypeNamespace, name) `M.member` hofs])
+            || not (null [() | TermSig name <- universeBi entity :: [TermBase lang], (TermNamespace, name) `M.member` hofs])

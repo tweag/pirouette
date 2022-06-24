@@ -122,7 +122,7 @@ findType ::
   Var lang ->
   Maybe (Type lang)
 findType decls _env (SystF.Free (TermSig f)) =
-  case M.lookup f decls of
+  case M.lookup (TermNamespace, f) decls of
     Just (DFunction _ _ ty) -> pure ty
     Just (DDestructor t) -> do
       tdef <- typeDef decls t
@@ -145,6 +145,6 @@ typeDef ::
   Name ->
   Maybe (TypeDef lang)
 typeDef decls nm = do
-  case M.lookup nm decls of
+  case M.lookup (TypeNamespace, nm) decls of
     Just (DTypeDef def) -> pure def
     _ -> Nothing
