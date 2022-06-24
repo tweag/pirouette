@@ -17,6 +17,8 @@ import Control.Monad.Reader
 import Control.Monad.State.Class
 import Control.Monad.Writer
 import Control.Parallel.Strategies
+import Data.Sequence (Seq)
+import qualified Data.Sequence as S
 
 -- These are the result data types
 
@@ -29,6 +31,17 @@ data Tree tag state a
 data Branch tag state a
   = Branch { tag :: tag, next :: Tree tag state a }
   deriving (Eq, Show, Functor, Foldable)
+
+-- | Traverse the tree breadth-first.
+levels :: Tree tag state a -> Seq a
+levels t = go (S.singleton t)
+  where
+    go S.Empty = S.empty
+    go (v S.:<| xs) =
+      case v of
+        Stop -> go xs
+        Done _ x -> x S.:<| go xs
+        Split _ bs -> go (xs S.>< S.fromList (map next bs))
 
 -- | Runs a 'TreeT' computation, resulting in a 'Tree'.
 runTreeT :: forall tag state m a. Monad m
