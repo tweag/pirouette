@@ -177,7 +177,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     _ -> do
       -- one step of evaluation on each,
       -- but going into matches first
-      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $
+      ([bodyTerm', assumeTerm', proveTerm'], evalResult) <- prune $
         symEvalParallel [bodyTerm, assumeTerm, proveTerm]
       -- debugPutStr "ONE STEP"
       -- debugPrint (pretty bodyTerm')
@@ -187,7 +187,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- check the fuel
       noMoreFuel <- gets sestStoppingCondition >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
-      if noMoreFuel || somethingWasEval == Any False
+      if noMoreFuel || serEvaluated evalResult == Any False
         then pure $ CounterExample bodyTerm' (Model [])
         else do
           worker resultVar bodyTerm' assumeTerm' proveTerm'

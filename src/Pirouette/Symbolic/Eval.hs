@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -26,6 +27,7 @@ module Pirouette.Symbolic.Eval
 
     -- ** Base symbolic evaluation
     SymEvalStatistics (..),
+    SymEvalResult (..),
 
     -- ** Incorrectness logic
     symevalAnyPath,
@@ -64,7 +66,9 @@ import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
+import Data.Monoid.Generic
 import qualified Data.Set as S
+import GHC.Generics
 import ListT.Weighted (WeightedList)
 import qualified ListT.Weighted as ListT
 import Pirouette.Monad
@@ -112,6 +116,13 @@ instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEval lang) where
 
 instance MonadFail (SymEval lang) where
   fail = error
+
+data SymEvalResult lang = SymEvalResult
+  { serEvaluated :: Any       -- ^ At least one evaluation step was taken
+  }
+  deriving (Generic)
+  deriving Semigroup via GenericSemigroup (SymEvalResult lang)
+  deriving Monoid via GenericMonoid (SymEvalResult lang)
 
 symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
@@ -255,7 +266,7 @@ symEvalOneStep ::
   forall lang.
   (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
-  WriterT Any (SymEval lang) (TermMeta lang SymVar)
+  WriterT (SymEvalResult lang) (SymEval lang) (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
@@ -366,7 +377,7 @@ symEvalParallel ::
   forall lang .
   (SymEvalConstr lang) =>
   [TermMeta lang SymVar] ->
-  SymEval lang ([TermMeta lang SymVar], Any)
+  SymEval lang ([TermMeta lang SymVar], SymEvalResult lang)
 symEvalParallel = runWriterT . mapM symEvalOneStep
 
 -- | Strategy for evaluating a set of expression,
@@ -381,7 +392,7 @@ symEvalMatchesFirst ::
   (a -> Maybe (TermMeta lang SymVar)) ->
   (TermMeta lang SymVar -> a) ->
   [a] ->
-  WriterT Any (SymEval lang) [a]
+  WriterT (SymEvalResult lang) (SymEval lang) [a]
 symEvalMatchesFirst f g exprs = go [] exprs
   where
     -- we came to the end without a match,
@@ -433,22 +444,22 @@ symEvalDestructor ::
   (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
   Name ->
-  WriterT Any (SymEval lang) (TermMeta lang SymVar)
+  WriterT (SymEvalResult lang) (SymEval lang) (TermMeta lang SymVar)
 symEvalDestructor t@(R.App hd _args) tyName = do
   Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
   _dt@(Datatype _ _ _ consList) <- lift $ prtTypeDefOf tyName
   -- We know what is the type of all the possible term results, its whatever
   -- type we're destructing applied to its arguments, making sure it contains
   -- no meta variables.
-  (term', somethingWasEvaluated) <- listen $ symEvalOneStep term
-  tell somethingWasEvaluated -- just in case
+  (term', evalResult) <- listen $ symEvalOneStep term
+  tell evalResult
   -- We only do the case distinction if we haven't taken any step
   -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
   let motiveIsMeta = termIsMeta term'
   motiveWHNF <- lift $ termIsWHNF term'
   let bailOutArgs = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
       bailOutTerm = R.App hd (map R.TyArg tyParams ++ bailOutArgs ++ excess)
-  case (somethingWasEvaluated, motiveIsMeta, motiveWHNF) of
+  case (serEvaluated evalResult, motiveIsMeta, motiveWHNF) of
     (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
     (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
     (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
@@ -489,16 +500,16 @@ symEvalDestructor t@(R.App hd _args) tyName = do
 symEvalDestructor _ _ = error "should never be called with anything else than App"
 
 -- | Indicate that something has been evaluated.
-signalEvaluation :: WriterT Any (SymEval lang) ()
-signalEvaluation = tell (Any True)
+signalEvaluation :: (Monad m) => WriterT (SymEvalResult lang) m ()
+signalEvaluation = tell (mempty { serEvaluated = Any True })
 
 -- | Consume one unit of fuel.
 -- This also tells the symbolic evaluator that a step was taken.
-consumeFuel :: (SymEvalConstr lang) => WriterT Any (SymEval lang) ()
+consumeFuel :: (SymEvalConstr lang) => WriterT (SymEvalResult lang) (SymEval lang) ()
 consumeFuel = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConsumedFuel = 1}})
 
-moreConstructors :: (SymEvalConstr lang) => Int -> WriterT Any (SymEval lang) ()
+moreConstructors :: (SymEvalConstr lang) => Int -> WriterT (SymEvalResult lang) (SymEval lang) ()
 moreConstructors n = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 

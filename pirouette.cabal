@@ -77,6 +77,7 @@ library
     , containers
     , deriving-compat
     , flat >=0.4.5
+    , generic-monoid
     , gitrev
     , haskell-stack-trace-plugin
     , hspec
@@ -141,6 +142,7 @@ test-suite spec
     , containers
     , deriving-compat
     , flat >=0.4.5
+    , generic-monoid
     , gitrev
     , haskell-stack-trace-plugin
     , hspec

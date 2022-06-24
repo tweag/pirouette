@@ -44,6 +44,7 @@ dependencies:
   - optics-th
   - ansi-terminal
   - parallel
+  - generic-monoid
 
 library:
   source-dirs: src
