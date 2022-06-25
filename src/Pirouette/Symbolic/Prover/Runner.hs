@@ -47,11 +47,11 @@ runIncorrectnessLogic
             flip runReaderT ((prtDecls orderedDecls, []), [DeclPath "validator"]) $
               typeInferTerm target
     flip runReader orderedDecls $ do
-      proveAny shouldStop isCounter (Problem resultTy target post pre)
+      proveAny shouldStop isCounterExample (Problem resultTy target post pre)
     where
-      isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
+      isCounterExample Path {pathResult = CounterExample _ _, pathStatus = s}
         | s /= OutOfFuel = True
-      isCounter _ = False
+      isCounterExample _ = False
 
 printIRResult ::
   Int ->
