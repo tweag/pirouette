@@ -79,7 +79,12 @@ launchAll ctx = replicateM numCapabilities $ do
 -- |An 'MStack a' is an 'MVar' having a list of 'a's,
 -- which can be popped off the list and pushed back onto it.
 -- Popping off an 'MStack' that has no available 'a's just blocks until one becomes available.
-type MStack a = (QSem, MVar [a])
+type MStack a =
+    -- Invariants:
+    -- * The qsem has no more resources than the length of the list in the MVar
+    -- * For every element added the list in the MVar, eventually one resource
+    -- is added in the qsem.
+    (QSem, MVar [a])
 
 newMStack :: [a] -> IO (MStack a)
 newMStack xs = (,) <$> newQSem (length xs) <*> newMVar xs
