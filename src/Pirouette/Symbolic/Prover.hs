@@ -22,7 +22,7 @@ import Prettyprinter hiding (pretty, Pretty)
 
 -- | A problem represents a triple that should be checked.
 -- It should be the case that assuming 'problemAssume',
--- the execution of 'problemTerm' always leaves us in a
+-- the execution of 'problemBody' always leaves us in a
 -- scenario in which 'problemProve' holds.
 --
 -- It *must* be the case that 'problemAssume' and 'problemProve'
