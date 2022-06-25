@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | A re-implementation of @weighted-search@
+-- | A re-implementation of @https://hackage.haskell.org/package/weighted-search@
 -- as a monad transformer.
 module ListT.Weighted
   ( WeightedListT(..),
