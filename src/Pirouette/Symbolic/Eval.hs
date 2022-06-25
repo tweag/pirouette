@@ -79,7 +79,9 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified PureSMT
 
 data SymEvalSolvers lang = SymEvalSolvers
-  { solvePathProblem :: CheckPathProblem lang -> Bool,
+  { -- | Check whether a path is plausible
+    solvePathProblem :: CheckPathProblem lang -> Bool,
+    -- | Check whether a certain property currently holds over a given path
     solvePropProblem :: CheckPropertyProblem lang -> PruneResult
   }
 
