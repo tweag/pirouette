@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LambdaCase #-}
 
+-- | This module implements a pool of external processes, each running an
+-- SMT solver.
 module PureSMT (module X, Solve(..), solve) where
 
 import PureSMT.Process as X
@@ -14,7 +16,10 @@ import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad
 import GHC.Conc (numCapabilities)
 
--- |In order to use the pure 'solve' function, you must provide an instance of 'Solve'
+-- | This class provides an interface to communicate with an individual
+-- SMT solver, while the `solve` function provides access to the pool.
+--
+-- In order to use the pure 'solve' function, you must provide an instance of 'Solve'
 -- for your particular domain. The methods of the 'Solve' class are not meant to
 -- be called by the user. To provide an instance of 'Solve', you can use the functions
 -- in "PureSMT.Process" and "PureSMT.SExpr" to interact with a 'Solver' in a monadic fashion.
@@ -31,6 +36,14 @@ class Solve domain where
   -- |Solves a problem, producing an associated result with it
   solveProblem :: Problem domain result -> Solver -> IO result
 
+-- | Evaluates a 'Problem' with an SMT solver chosen from a global pool of
+-- SMT solvers.
+--
+-- At least one pool is started for each value of @Ctx domain@. Note that
+-- multiple pools of SMT solvers might be created for the same value of
+-- @Ctx domain@ if @solve@ is called from different modules, or if GHC
+-- optimizations fail to apply CSE over calls to solve in the same module.
+--
 {-# NOINLINE solve #-}
 solve :: forall domain res . Solve domain => Ctx domain -> Problem domain res -> res
 solve ctx = unsafePerformIO $ do
