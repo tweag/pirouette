@@ -79,7 +79,9 @@ import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified PureSMT
 
 data SymEvalSolvers lang = SymEvalSolvers
-  { solvePathProblem :: CheckPathProblem lang -> Bool,
+  { -- | Check whether a path is plausible
+    solvePathProblem :: CheckPathProblem lang -> Bool,
+    -- | Check whether a certain property currently holds over a given path
     solvePropProblem :: CheckPropertyProblem lang -> PruneResult
   }
 
@@ -165,7 +167,12 @@ runSymEvalWorker ::
   SymEval lang a ->
   WeightedList (Path lang a)
 runSymEvalWorker defs st f = do
-  let sharedSolve :: SolverProblem lang res -> res
+  let -- sharedSolve is here to hint to GHC not to create more than one pool
+      -- of SMT solvers, which could happen if sharedSolve were inlined.
+      -- TODO: Write a test to check that only one SMT pool is actually created over
+      --       multiple calls to runSymEvalWorker.
+      {-# NOINLINE sharedSolve #-}
+      sharedSolve :: SolverProblem lang res -> res
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
