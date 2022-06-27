@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Pirouette.Symbolic.Eval
   ( -- * Runners
@@ -51,6 +52,7 @@ module Pirouette.Symbolic.Eval
     PruneResult (..),
     SymEvalSt (..),
     currentStatistics,
+    rwt2st,
   )
 where
 
@@ -81,6 +83,7 @@ import Pirouette.Symbolic.Eval.Types as X
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified PureSMT
+import Control.Monad.RWS.Strict
 
 data SymEvalSolvers lang = SymEvalSolvers
   { solvePathProblem :: CheckPathProblem lang -> Bool,
@@ -96,14 +99,10 @@ data SymEvalEnv lang = SymEvalEnv
 --
 -- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
 newtype SymEval lang a = SymEval
-  { symEval ::
-      ReaderT
-        (SymEvalEnv lang)
-        (StateT (SymEvalSt lang) WeightedList)
-        a
+  { symEval :: ReaderT (SymEvalEnv lang) (StateT (SymEvalSt lang) WeightedList) a
   }
-  deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
+  deriving newtype (Functor, Applicative, Monad)
+  deriving newtype (MonadState (SymEvalSt lang), MonadReader (SymEvalEnv lang), ListT.MonadWeightedList)
 
 type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
@@ -117,12 +116,58 @@ instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEval lang) where
 instance MonadFail (SymEval lang) where
   fail = error
 
+-- | A 'SymEvalResult' is a partial result of (parallel) symbolic evaluation,
+-- that can be then combined with the @SymEvalSt@.
 data SymEvalResult lang = SymEvalResult
-  { serEvaluated :: Any       -- ^ At least one evaluation step was taken
+  { serEvaluated :: Any,       -- ^ At least one evaluation step was taken
+    serGeneratedConstraints :: Constraint lang,   -- ^ The generated constraints, if any
+    serConsumedFuel :: Sum Int,
+    serConstructors :: Sum Int
   }
   deriving (Generic)
   deriving Semigroup via GenericSemigroup (SymEvalResult lang)
   deriving Monoid via GenericMonoid (SymEvalResult lang)
+
+combineResult :: (SymEvalConstr lang) => SymEvalSt lang -> SymEvalResult lang -> SymEvalSt lang
+combineResult st SymEvalResult{..} =
+  st { sestConstraint = sestConstraint st <> serGeneratedConstraints
+     , sestValidated = sestValidated st && serGeneratedConstraints == mempty
+     }
+
+-- | RWT is Reader + Writer transformer — so basically RWST with no (meaningful) state
+newtype RWT r w m a = RWT { unRWT :: RWST r w () m a }
+  deriving newtype (Functor, Applicative, Monad, MonadTrans)
+  deriving newtype (MonadWriter w, MonadReader r)
+  deriving newtype (ListT.MonadWeightedList)
+
+
+-- | Parallel/independent symbolic evaluation
+newtype SymEvalPar lang a = SymEvalPar
+  { symEvalPar :: RWT (SymEvalEnv lang, SymEvalSt lang) (SymEvalResult lang) WeightedList a
+  }
+  deriving newtype (Functor, Applicative, Monad)
+  deriving newtype (MonadWriter (SymEvalResult lang), MonadReader (SymEvalEnv lang, SymEvalSt lang))
+  deriving newtype (ListT.MonadWeightedList)
+
+instance MonadFail (SymEvalPar lang) where
+  fail = error
+
+instance (SymEvalConstr lang) => PirouetteReadDefs lang (SymEvalPar lang) where
+  prtAllDefs = SymEvalPar (asks $ prtDecls . seeDefs . fst)
+  prtMain = SymEvalPar (asks $ prtMainTerm . seeDefs . fst)
+
+instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEvalPar lang) where
+  prtDependencyOrder = SymEvalPar (asks $ prtDepOrder . seeDefs . fst)
+
+rwt2st :: (SymEvalConstr lang, Monad m, MonadState (SymEvalSt lang) m, MonadReader (SymEvalEnv lang) m)
+       => RWT (SymEvalEnv lang, SymEvalSt lang) (SymEvalResult lang) Identity a
+       -> m a
+rwt2st act = do
+  st0 <- get
+  env <- ask
+  let (a, _, res) = runIdentity $ runRWST (unRWT act) (env, st0) ()
+  put $ combineResult st0 res
+  pure a
 
 symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
