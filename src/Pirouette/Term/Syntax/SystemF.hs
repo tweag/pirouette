@@ -74,7 +74,7 @@ data Kind = KStar | KTo Kind Kind
 -- > kindDrop 3 (* -> (* -> *) -> * -> *) == *
 kindDrop :: Int -> Kind -> Kind
 kindDrop 0 k = k
-kindDrop n (KTo _ k) = kindDrop (n -1) k
+kindDrop n (KTo _ k) = kindDrop (n - 1) k
 kindDrop _ _ = error "kindDrop: KStar has no arguments to drop"
 
 -- ** Types
@@ -242,7 +242,7 @@ getHeadAbs t = ([], t)
 
 getNHeadAbs :: Int -> AnnTerm ty ann v -> ([(ann, Kind)], AnnTerm ty ann v)
 getNHeadAbs 0 t = ([], t)
-getNHeadAbs n (Abs (Ann v) k t) = first ((v, k) :) $ getNHeadAbs (n -1) t
+getNHeadAbs n (Abs (Ann v) k t) = first ((v, k) :) $ getNHeadAbs (n - 1) t
 getNHeadAbs _ _ = error "getNHeadAbs: Not enough type-abstractions"
 
 getHeadLams :: AnnTerm ty ann v -> ([(ann, ty)], AnnTerm ty ann v)
@@ -251,7 +251,7 @@ getHeadLams t = ([], t)
 
 getNHeadLams :: Int -> AnnTerm ty ann v -> ([(ann, ty)], AnnTerm ty ann v)
 getNHeadLams 0 t = ([], t)
-getNHeadLams n (Lam (Ann v) ty t) = first ((v, ty) :) $ getNHeadLams (n -1) t
+getNHeadLams n (Lam (Ann v) ty t) = first ((v, ty) :) $ getNHeadLams (n - 1) t
 getNHeadLams _ _ = error "getNHeadLams: Not enough lambdas"
 
 withLams :: [(ann, ty)] -> AnnTerm ty ann v -> AnnTerm ty ann v

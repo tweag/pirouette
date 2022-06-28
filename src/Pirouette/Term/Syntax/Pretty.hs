@@ -93,5 +93,5 @@ instance Pretty Namespace where
 instance (LanguagePretty lang) => Pretty (Decls lang) where
   pretty = align . vsep . map prettyDef . Map.toList
     where
-      prettyDef ((namespace, name), def) = 
+      prettyDef ((namespace, name), def) =
         vsep [pretty namespace <+> pretty name <+> "|->", indent 2 (pretty def)]

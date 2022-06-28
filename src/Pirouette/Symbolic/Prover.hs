@@ -10,15 +10,15 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Text as T
 import Debug.Trace
-import Pirouette.Monad (termIsWHNFOrMeta, PirouetteDepOrder)
+import Pirouette.Monad (PirouetteDepOrder, termIsWHNFOrMeta)
 import Pirouette.SMT.Base (LanguageSMT (isStuckBuiltin))
 import Pirouette.SMT.Constraints
-import PureSMT (SExpr (..))
 import Pirouette.SMT.FromTerm
 import Pirouette.Symbolic.Eval
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
-import Prettyprinter hiding (pretty, Pretty)
+import Prettyprinter hiding (Pretty, pretty)
+import PureSMT (SExpr (..))
 
 -- | A problem represents a triple that should be checked.
 -- It should be the case that assuming 'problemAssume',
@@ -58,7 +58,7 @@ type SymTerm lang = TermMeta lang SymVar
 rESULTNAME :: Name
 rESULTNAME = "__result"
 
--- |Executes the problem returning /all/ paths (up to some stopping condition).
+-- | Executes the problem returning /all/ paths (up to some stopping condition).
 prove ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   StoppingCondition ->
@@ -66,17 +66,17 @@ prove ::
   m [Path lang (EvaluationWitness lang)]
 prove shouldStop problem = symeval shouldStop $ proveRaw problem
 
--- |Prove without any stopping condition.
+-- | Prove without any stopping condition.
 proveUnbounded ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
 proveUnbounded = prove (const False)
 
--- |Executes the problem while the stopping condition is valid until
--- the supplied predicate returns @True@. A return value of @Nothing@
--- means that on all paths that we looked at they were either verified or
--- they reached the stopping condition.
+-- | Executes the problem while the stopping condition is valid until
+--  the supplied predicate returns @True@. A return value of @Nothing@
+--  means that on all paths that we looked at they were either verified or
+--  they reached the stopping condition.
 proveAny ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   StoppingCondition ->
@@ -177,8 +177,9 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     _ -> do
       -- one step of evaluation on each,
       -- but going into matches first
-      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <- prune $
-        symEvalParallel [bodyTerm, assumeTerm, proveTerm]
+      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <-
+        prune $
+          symEvalParallel [bodyTerm, assumeTerm, proveTerm]
       -- debugPutStr "ONE STEP"
       -- debugPrint (pretty bodyTerm')
       -- debugPrint (pretty assumeTerm')

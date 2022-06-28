@@ -373,8 +373,7 @@ instance Pretty ErrorPathElement where
   pretty (TermPathAppTermArg n) = "arg" <+> pretty n
   pretty TermPathAppResult = "app result"
 
-instance Pretty NameUnknownReason
-  where
+instance Pretty NameUnknownReason where
   pretty (TypeUnknown nm) = "type" <+> pretty nm
   pretty (ConstructorIndexUnknown ix) = "constructor" <+> pretty ix
   pretty NameLookupFailed = "lookup"

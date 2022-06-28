@@ -1,7 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -20,6 +20,7 @@ module Pirouette.Symbolic.Eval.SMT where
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
+import Data.Bifunctor (bimap)
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -29,9 +30,8 @@ import Pirouette.SMT.FromTerm
 import qualified Pirouette.SMT.Monadic as SMT
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
+import Prettyprinter (align, enclose, vsep, (<+>))
 import qualified PureSMT
-import Data.Bifunctor (bimap)
-import Prettyprinter (enclose, align, (<+>), vsep)
 
 -- | Contains the shared context of a session with the solver. Datatypes will
 -- be declared first, then the uninterpreted functions. Definitions will
@@ -69,16 +69,16 @@ data CheckPropertyProblem lang = CheckPropertyProblem
     cpropDefs :: PrtOrderedDefs lang
   }
 
--- |The result of a 'CheckPropertyProblem' is one of the following options:
+-- | The result of a 'CheckPropertyProblem' is one of the following options:
 data PruneResult
-  -- |The assumptions are inconsistent (TODO: what does it mean? example!)
-  = PruneInconsistentAssumptions
-  -- |The SMT was able to prove that the implication holds in this branch
-  | PruneImplicationHolds
-  -- |The SMT found a counter-example to the implication
-  | PruneCounterFound Model
-  -- |The SMT is uncertain whether the implication holds or not
-  | PruneUnknown
+  = -- | The assumptions are inconsistent (TODO: what does it mean? example!)
+    PruneInconsistentAssumptions
+  | -- | The SMT was able to prove that the implication holds in this branch
+    PruneImplicationHolds
+  | -- | The SMT found a counter-example to the implication
+    PruneCounterFound Model
+  | -- | The SMT is uncertain whether the implication holds or not
+    PruneUnknown
   deriving (Eq, Show)
 
 data CheckPathProblem lang = CheckPathProblem
@@ -86,7 +86,7 @@ data CheckPathProblem lang = CheckPathProblem
     cpathDefs :: PrtOrderedDefs lang
   }
 
--- |Models returned by the SMT solver
+-- | Models returned by the SMT solver
 newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
   deriving (Eq, Show)
 
@@ -110,7 +110,7 @@ hackSolver s = flip runReaderT s . SMT.unSolverT
 hackSolverPrt :: PureSMT.Solver -> PrtOrderedDefs lang -> HackSolver lang a -> IO a
 hackSolverPrt s defs = flip runReaderT defs . flip runReaderT s . SMT.unSolverT
 
--- |Instance necessary to call the 'PureSMT.solve' function.
+-- | Instance necessary to call the 'PureSMT.solve' function.
 instance (SMT.LanguageSMT lang) => PureSMT.Solve lang where
   type Ctx lang = SolverSharedCtx lang
   type Problem lang = SolverProblem lang

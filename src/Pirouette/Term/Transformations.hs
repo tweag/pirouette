@@ -11,13 +11,13 @@ import Control.Monad.Except
 import Data.Data
 import Data.Functor
 import Data.Generics.Uniplate.Data
+import Data.List (elemIndex)
 import Data.String (fromString)
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Data.List (elemIndex)
 
 -- | Put excessive arguments of a a destructor in the branches.
 --  Because we have n-ary applications, whenever we translate something like:
@@ -85,8 +85,8 @@ removeExcessiveDestArgs = rewriteM (runMaybeT . go)
 
     tyDrop :: Int -> TypeMeta lang meta -> TypeMeta lang meta
     tyDrop 0 t = t
-    tyDrop n (SystF.TyFun _ b) = tyDrop (n -1) b
-    tyDrop n (SystF.TyAll _ _ t) = tyDrop (n -1) t
+    tyDrop n (SystF.TyFun _ b) = tyDrop (n - 1) b
+    tyDrop n (SystF.TyAll _ _ t) = tyDrop (n - 1) t
     tyDrop _ _ = error "Ill-typed program: not enough type parameters to drop"
 
 -- | Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
@@ -251,7 +251,7 @@ chooseHeadCase t ty args fstArg =
     geneXs n =
       map
         (\i -> SystF.TermArg $ SystF.termPure (SystF.Bound (fromString $ "x" ++ show i) (toInteger $ n - 1 - i)))
-        [0 .. n -1]
+        [0 .. n - 1]
 
     -- Replace the argument "INPUT" by a dummy version of it, which is bound at index 0.
     transitionArgs :: String -> Int -> SystF.Arg ty (Term lang)

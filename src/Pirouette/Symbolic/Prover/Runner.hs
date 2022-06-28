@@ -8,6 +8,7 @@ import Control.Monad.Reader
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
+import Pirouette.Term.Syntax (pretty)
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF (tyFunArgs)
 import Pirouette.Term.TypeChecker
@@ -16,7 +17,6 @@ import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
-import Pirouette.Term.Syntax (pretty)
 
 data AssumeProve lang = Term lang :==>: Term lang
   deriving (Eq, Show)
