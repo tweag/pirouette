@@ -1,10 +1,10 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Transformations.MonomorphizationSpec (tests) where
 
@@ -22,8 +22,8 @@ import Test.Tasty
 import Test.Tasty.ExpectedFailure
 import Test.Tasty.HUnit
 
-sampleProgram :: Program Ex
-sampleProgram =
+sampleUDefs :: PrtUnorderedDefs Ex
+sampleUDefs =
   [prog|
 data Maybe (a : Type)
   = Nothing : Maybe a
@@ -60,9 +60,6 @@ fun myList : List Integer
 fun main : Integer = fold @Integer intMonoid myList
 |]
 
-sampleUDefs :: PrtUnorderedDefs Ex
-sampleUDefs = uncurry PrtUnorderedDefs sampleProgram
-
 withSampleUDefs ::
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
@@ -77,17 +74,17 @@ tests =
     -- we rely on 'hofsClosure'.
     testCase "hofsClosure picks the expected defs" $
       let ds = prtUODecls sampleUDefs
-       in sort (map snd (M.keys (hofsClosure ds (findPolyHOFDefs ds)))) 
-             @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],
+       in sort (map snd (M.keys (hofsClosure ds (findPolyHOFDefs ds))))
+            @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
       [ testCase "specFunApp (id @Bool True) == (id@Bool True, [SpecRequest ...])" $
-           runWriter (specFunApp (M.singleton (TermNamespace, "id") idDef) [term| id @Bool True |])
-                @?= ([term| id!TyBool True |], [SpecRequest idDef [[ty| Bool |]]]),
+          runWriter (specFunApp (M.singleton (TermNamespace, "id") idDef) [term| id @Bool True |])
+            @?= ([term| id!TyBool True |], [SpecRequest idDef [[ty| Bool |]]]),
         testCase "specFunApp (const @Integer @Bool 42 False) == (const!Integer!Bool 42 False, [SpecRequest ...])" $
-           runWriter (specFunApp (M.singleton (TermNamespace, "const") constDef) [term| const @Integer @Bool 42 True |])
-                @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest constDef [[ty| Integer |], [ty| Bool |]]])
+          runWriter (specFunApp (M.singleton (TermNamespace, "const") constDef) [term| const @Integer @Bool 42 True |])
+            @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest constDef [[ty| Integer |], [ty| Bool |]]])
       ],
     testGroup
       "executeSpecRequest"
