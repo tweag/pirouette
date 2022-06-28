@@ -31,6 +31,9 @@ import Data.Functor.Identity (Identity)
 import GHC.Natural
 
 -- | Weighted nondeterminstic computations over the weight @w@.
+--
+-- When combining WeightedListT computations, computations with smaller
+-- weights are scheduled to run earlier. See the implementation of `mplus`.
 data WeightedListT m a
   = Fail
   | -- | returns one value, and then more of them

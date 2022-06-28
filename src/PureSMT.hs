@@ -82,7 +82,7 @@ launchAll ctx = replicateM numCapabilities $ do
 type MStack a =
     -- Invariants:
     -- * The qsem has no more resources than the length of the list in the MVar
-    -- * For every element added the list in the MVar, one resource
+    -- * For every element added to the list in the MVar, one resource
     -- is then added in the qsem (although not atomically).
     (QSem, MVar [a])
 
