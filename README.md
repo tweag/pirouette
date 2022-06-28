@@ -2,15 +2,61 @@
 
 _Pirouette is a research prototype under active development_
 
-* [Building, Installing and Hacking](#building-installing-and-hacking)
 * [Use case: Example](#example-language)
 * [Use case: Plutus Smart Contracts](#plutus-smart-contracts)
 * [Limitations](#limitations)
+* [Building, Installing and Hacking](#building-installing-and-hacking)
 * [Contributing](#contributing)
 * [License](#license)
 
-Pirouette is a toolbox for building language-agnostic analisys tools. Its core language
-is System F with datatypes
+Pirouette is being built as framework for constructing different static
+analisys tools for [System F][systemf] based languages. It posseses a multitude of
+transformations (monomorphization, defunctionalization, prenex, etc...)
+and relies on the `-XQuasiQuotes` extension to be able to easily write
+properties in the target language.
+
+There is one analisys currently built into pirouette, which symbolic evaluates terms up to
+a certain bound while looking for counterexamples based on [incorrectness][incorrectness]
+or [Hoare][hoare] triples.
+
+[systemf]: https://en.wikipedia.org/wiki/System_F
+[incorrectness]: TODO
+[hoare]: TODO
+
+# Use Case: Example
+
+The `Language.Pirouette.Example` defines the `Ex` language: pirouette's example language.
+We refer the interested reader to check the respective module for guidelines on using pirouette over
+your own language.
+
+Now, say we have the simple program:
+
+```haskell
+addone :: Integer -> Integer
+addone x = x + 1
+```
+
+And we wish to check the incorrectness triple `[x > 0] addone x [result > 0]`, that
+is: if `addone x > 0`, then `x > 0`. We obviously expect a counterexample with `x = 0`.
+We can use pirouette to find that assignment:
+
+```haskell
+parms :: IncorrectnessParams Ex
+parms = IncorrectnessParams
+          [term| \x:Integer . x + 1 |] -- Term to symbolically evaluate
+          [ty| Integer |] -- type of the term above
+          -- Conditions to check
+          ([term| \(res:Integer) (x:Integer) . 0 < res |]
+            :==>: [term| \(res:Integer) (x:Integer) . 0 < x |])
+```
+
+Now we can run `replIncorrectnessLogic1 10 params` in a repl and we should see:
+```
+💸 COUNTEREXAMPLE FOUND
+{ __result ↦ 1
+  x ↦ 0 }
+```
+
 
 ----
 
@@ -56,7 +102,7 @@ instead of running `nix-shell` directly.
 ### Profling Pirouette
 
 To build with profiling enabled, open a nix shell with `nix-shell --arg enableHaskellProfiling true` (
-_WARNING:_ This will take a long time to complete). Once inside the nix shell, you can 
+_WARNING:_ This will take a long time to complete). Once inside the nix shell, you can
 `cabal build --enable-profiling` and pass `+RTS` options to the executable normally.
 
 ## Usage
