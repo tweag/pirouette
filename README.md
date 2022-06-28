@@ -2,12 +2,17 @@
 
 _Pirouette is a research prototype under active development_
 
-* [Plutus Smart Contracts](#plutus-smart-contracts-and-transition-systems)
 * [Building, Installing and Hacking](#building-installing-and-hacking)
-* [Usage](#usage)
+* [Use case: Example](#example-language)
+* [Use case: Plutus Smart Contracts](#plutus-smart-contracts)
 * [Limitations](#limitations)
 * [Contributing](#contributing)
 * [License](#license)
+
+Pirouette is a toolbox for building language-agnostic analisys tools. Its core language
+is System F with datatypes
+
+----
 
 Pirouette is a semi-automatic code extraction tool. It extracts a
 [TLA+](https://lamport.azurewebsites.net/tla/tla.html) specification
