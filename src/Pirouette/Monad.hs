@@ -80,7 +80,7 @@ prtDefOfAnyNamespace n = do
   let tm = Map.lookup (TermNamespace, n) defs
       ty = Map.lookup (TypeNamespace, n) defs
   case (tm, ty) of
-    (Just _, Just _)  -> prtError $ PEUndefined n
+    (Just _, Just _) -> prtError $ PEUndefined n
     (Just t, Nothing) -> pure t
     (Nothing, Just t) -> pure t
     _ -> prtError $ PEUndefined n

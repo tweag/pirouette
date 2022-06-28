@@ -6,10 +6,10 @@ import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
-import Numeric (showFFloat, showHex, readHex)
+import Numeric (readHex, showFFloat, showHex)
+import Text.Read (readMaybe)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
 import qualified Prelude as P
-import Text.Read (readMaybe)
 
 -- | Results of checking for satisfiability.
 data Result
@@ -170,7 +170,7 @@ ppSExpr = go 0
         e : more
           | n <= 0 -> Nothing
           | otherwise -> case e of
-            Atom x -> (showString x :) <$> small (n -1) more
+            Atom x -> (showString x :) <$> small (n - 1) more
             _ -> Nothing
 
     go :: Int -> SExpr -> ShowS

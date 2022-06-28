@@ -12,8 +12,8 @@
 -- the only export of this module is that instance.
 module Language.Pirouette.PlutusIR.Typing () where
 
-import Language.Pirouette.PlutusIR.Syntax
 import Data.String (fromString)
+import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import qualified PlutusCore as P

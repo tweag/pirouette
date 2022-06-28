@@ -28,8 +28,8 @@ trProgram ::
   TrM (M.Map (Namespace, Name) (Definition lang), Definition lang)
 trProgram env main@FunDecl {} =
   let decls = forM (M.toList env) $ \case
-                (s, Left td) -> trDataDecl s td
-                (s, Right f) -> (\r -> [((TermNamespace, fromString s), r)]) <$> trFunDecl f
+        (s, Left td) -> trDataDecl s td
+        (s, Right f) -> (\r -> [((TermNamespace, fromString s), r)]) <$> trFunDecl f
    in (,) <$> (decls >>= toDecls . concat) <*> trFunDecl main
   where
     toDecls :: [((Namespace, Name), Definition lang)] -> TrM (Decls lang)

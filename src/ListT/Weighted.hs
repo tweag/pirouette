@@ -8,7 +8,7 @@
 -- | A re-implementation of @https://hackage.haskell.org/package/weighted-search@
 -- as a monad transformer.
 module ListT.Weighted
-  ( WeightedListT(..),
+  ( WeightedListT (..),
     WeightedList,
     MonadWeightedList (..),
     (<|>),

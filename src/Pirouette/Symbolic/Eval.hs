@@ -225,8 +225,9 @@ weightedParFilter f (ListT.Weight n w) =
 weightedParFilter f (ListT.Action (Identity w)) = weightedParFilter f w
 weightedParFilter f (ListT.Yield a w) =
   let (keep, rest) =
-        withStrategy (parTuple2 rpar rpar)
-        (f a , weightedParFilter f w)
+        withStrategy
+          (parTuple2 rpar rpar)
+          (f a, weightedParFilter f w)
    in if keep then ListT.Yield a rest else rest
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
@@ -370,7 +371,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
 -- in here. If we do really need the monad, we can only paralellize the prune and pruneAndValidate
 -- functions, if not, we could paralellize everything.
 symEvalParallel ::
-  forall lang .
+  forall lang.
   (SymEvalConstr lang) =>
   [TermMeta lang SymVar] ->
   SymEval lang ([TermMeta lang SymVar], Any)

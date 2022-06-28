@@ -34,12 +34,12 @@ import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Monad (termIsConstant, termIsMeta)
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
-import qualified PureSMT
-import Pirouette.Term.Syntax
 import Pirouette.Symbolic.Eval.Helpers
 import Pirouette.Symbolic.Eval.Types
+import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter (dquotes)
+import qualified PureSMT
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -185,7 +185,6 @@ pattern TBool = SystF.TyPure (SystF.Free (TyBuiltin TyBool))
 pattern TString :: TypeMeta Ex meta
 pattern TString = SystF.TyPure (SystF.Free (TyBuiltin TyString))
 
-
 -- | If we want to be able to symbolically evaluate terms of our language, we need to instruct
 -- pirouette on how to translate the builtins, constants and types into SMT
 instance LanguageSMT Ex where
@@ -210,7 +209,7 @@ instance LanguageSMT Ex where
 
   -- they are stuck if they are constants, or a not-ite builtin
   isStuckBuiltin e
-    | termIsConstant  e = True
+    | termIsConstant e = True
   isStuckBuiltin (SystF.App (SystF.Free (Builtin op)) args)
     | exTermIsArithOp op || exTermIsStringOp op =
       let args' = map (\(SystF.TermArg a) -> a) args

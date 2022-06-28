@@ -1,14 +1,14 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Provides the quasiquoters to be able to write @lang@ programs
 --  directly into Haskell source files. Using the functions
@@ -28,7 +28,7 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls, typeCheckFunDef)
 import Text.Megaparsec
 
-prog :: forall lang . (LanguageParser lang, LanguageBuiltinTypes lang, Language lang) => QuasiQuoter
+prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, Language lang) => QuasiQuoter
 prog = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   (decls, DFunDef main@(FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
@@ -36,19 +36,19 @@ prog = quoter $ \str -> do
   _ <- maybeQ (typeCheckFunDef decls "main" main)
   [e|(decls, mainTm)|]
 
-progNoTC :: forall lang . (LanguageParser lang, Language lang) => QuasiQuoter
+progNoTC :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 progNoTC = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   (decls, DFunDef (FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
   [e|(decls, mainTm)|]
 
-term :: forall lang . (LanguageParser lang, Language lang) => QuasiQuoter
+term :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 term = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseTerm @lang) <* eof) str
   p1 <- trQ (trTerm [] [] p0)
   [e|p1|]
 
-ty :: forall lang . (LanguageParser lang, Language lang) => QuasiQuoter
+ty :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 ty = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseType @lang) <* eof) str
   p1 <- trQ (trType [] p0)

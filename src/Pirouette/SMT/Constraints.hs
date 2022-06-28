@@ -10,13 +10,13 @@ module Pirouette.SMT.Constraints where
 import Data.Either
 import Data.List (intersperse)
 import Data.Map (Map)
+import qualified Data.Set as S
 import Pirouette.Monad
 import Pirouette.SMT.Base
-import qualified PureSMT
 import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
-import qualified Data.Set as S
+import qualified PureSMT
 
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;

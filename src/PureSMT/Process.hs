@@ -1,13 +1,13 @@
 module PureSMT.Process where
 
 import Control.Monad
-import System.Process.Typed
-import qualified System.Process as P
+import Data.Maybe (fromMaybe)
+import Data.String (fromString)
+import PureSMT.SExpr
 import System.IO
 import System.Mem.Weak
-import Data.String (fromString)
-import Data.Maybe (fromMaybe)
-import PureSMT.SExpr
+import qualified System.Process as P
+import System.Process.Typed
 import Prelude hiding (const)
 
 type SolverProcess = Process Handle Handle Handle
@@ -132,7 +132,6 @@ push = flip simpleCommand ["push", "1"]
 pop :: Solver -> IO ()
 pop = flip simpleCommand ["pop", "1"]
 
-
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
 declare :: Solver -> String -> SExpr -> IO SExpr
@@ -173,7 +172,7 @@ declareDatatypes solver dts =
   ackCommand solver $
     fun
       "declare-datatypes"
-      [ List [ List [ Atom nm, Atom (show $ length args) ] | (nm, args, _) <- dts ],
+      [ List [List [Atom nm, Atom (show $ length args)] | (nm, args, _) <- dts],
         List [datatypeDefn args cstrs | (_, args, cstrs) <- dts]
       ]
 
@@ -182,10 +181,11 @@ datatypeDefn :: [String] -> [(String, [(String, SExpr)])] -> SExpr
 datatypeDefn [] cs =
   List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
 datatypeDefn ps cs =
-  fun "par"
-      [ List (map Atom ps),
-        List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
-      ]
+  fun
+    "par"
+    [ List (map Atom ps),
+      List [List (Atom c : [List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs]
+    ]
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns the defined name as a constant expression.
@@ -277,7 +277,6 @@ check solver =
               "  Expected: unsat, unknown, or sat",
               "  Result: " ++ showsSExpr res ""
             ]
-
 
 -- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.
