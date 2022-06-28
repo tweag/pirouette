@@ -42,8 +42,9 @@ run_ormolu() {
   ## which requires to set our locale for Ormolu to be happy.
   export LC_ALL=C.UTF-8
   if $ci; then
-    ormolu --mode check $(find ./src -name '*.hs')
+    ormolu --mode check $(find ./src -name '*.hs') | tee "./${proj}-ormolu.out"
     ormolu_res=$?
+    echo "run_ormolu:$ormolu_res" >> "./${proj}-ormolu.res"
   else
     ormolu --mode inplace $(find ./src -name '*.hs')
     ormolu_res=$?
@@ -84,13 +85,11 @@ if [[ "$cabal_build_ok" -ne "0" ]]; then
   exit 1
 fi
 
-## Disable ormolu for the time being; re-enable back before merging into main.
-##
-## run_ormolu "$p"
-## if [[ "$?" -ne "0" ]]; then
-##   echo "[FAILURE] 'ormolu --check' failed for $p; check the respective artifact."
-##   ormolu_ok=false
-## fi
+run_ormolu "pirouette"
+if [[ "$?" -ne "0" ]]; then
+  echo "[FAILURE] 'ormolu --check' failed; check the respective artifact."
+  ormolu_ok=false
+fi
 
 run_cabal_test "pirouette"
 if [[ "$?" -ne "0" ]]; then
