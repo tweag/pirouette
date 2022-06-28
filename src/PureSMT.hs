@@ -1,38 +1,51 @@
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeFamilies #-}
 
-module PureSMT (module X, Solve(..), solve) where
+-- | This module implements a pool of external processes, each running an
+-- SMT solver.
+module PureSMT (module X, Solve (..), solve) where
 
-import PureSMT.Process as X
-import PureSMT.SExpr as X
 import Control.Concurrent.MVar
 import Control.Concurrent.QSem
-import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad
 import GHC.Conc (numCapabilities)
+import PureSMT.Process as X
+import PureSMT.SExpr as X
+import System.IO.Unsafe (unsafePerformIO)
 
--- |In order to use the pure 'solve' function, you must provide an instance of 'Solve'
+-- | This class provides an interface to communicate with an individual
+-- SMT solver, while the `solve` function provides access to the pool.
+--
+-- In order to use the pure 'solve' function, you must provide an instance of 'Solve'
 -- for your particular domain. The methods of the 'Solve' class are not meant to
 -- be called by the user. To provide an instance of 'Solve', you can use the functions
 -- in "PureSMT.Process" and "PureSMT.SExpr" to interact with a 'Solver' in a monadic fashion.
 class Solve domain where
-  -- |Specifies what is the common domain that is supposed to be shared amongst all calls to
-  -- the SMT solver
+  -- | Specifies what is the common domain that is supposed to be shared amongst all calls to
+  --  the SMT solver
   type Ctx domain :: *
-  -- |Specifies a GADT for the problems that we can solve for this domain.
+
+  -- | Specifies a GADT for the problems that we can solve for this domain.
   type Problem domain :: * -> *
 
-  -- |How to initialize a solver with the given context;
+  -- | How to initialize a solver with the given context;
   initSolver :: Ctx domain -> Solver -> IO ()
 
-  -- |Solves a problem, producing an associated result with it
+  -- | Solves a problem, producing an associated result with it
   solveProblem :: Problem domain result -> Solver -> IO result
 
+-- | Evaluates a 'Problem' with an SMT solver chosen from a global pool of
+-- SMT solvers.
+--
+-- At least one pool is started for each value of @Ctx domain@. Note that
+-- multiple pools of SMT solvers might be created for the same value of
+-- @Ctx domain@ if @solve@ is called from different modules, or if GHC
+-- optimizations fail to apply CSE over calls to solve in the same module.
 {-# NOINLINE solve #-}
-solve :: forall domain res . Solve domain => Ctx domain -> Problem domain res -> res
+solve :: forall domain res. Solve domain => Ctx domain -> Problem domain res -> res
 solve ctx = unsafePerformIO $ do
   -- Launch all our worker processes similar to how we did it in TypedProcess2.hs; but now
   -- we end up with a list of MVars, which we will protect in another MVar.
@@ -52,7 +65,7 @@ solve ctx = unsafePerformIO $ do
     pushMStack ms allProcs
     return r
 
-launchAll :: forall domain . Solve domain => Ctx domain -> IO [MVar X.Solver]
+launchAll :: forall domain. Solve domain => Ctx domain -> IO [MVar X.Solver]
 launchAll ctx = replicateM numCapabilities $ do
   s <- X.launchSolverWithFinalizer "cvc4 --lang=smt2 --incremental --fmf-fun" debug0
   initSolver @domain ctx s
@@ -63,10 +76,15 @@ launchAll ctx = replicateM numCapabilities $ do
 
 -- * Async Stacks
 
--- |An 'MStack a' is an 'MVar' having a list of 'a's,
--- which can be popped off the list and pushed back onto it.
--- Popping off an 'MStack' that has no available 'a's just blocks until one becomes available.
-type MStack a = (QSem, MVar [a])
+-- | An 'MStack a' is an 'MVar' having a list of 'a's,
+--  which can be popped off the list and pushed back onto it.
+--  Popping off an 'MStack' that has no available 'a's just blocks until one becomes available.
+type MStack a =
+  -- Invariants:
+  -- The qsem has no more resources than the length of the list in the MVar
+  -- For every element added to the list in the MVar, one resource
+  -- is then added in the qsem (although not atomically).
+  (QSem, MVar [a])
 
 newMStack :: [a] -> IO (MStack a)
 newMStack xs = (,) <$> newQSem (length xs) <*> newMVar xs
@@ -79,5 +97,6 @@ pushMStack a (sem, q) = do
 popMStack :: MStack a -> IO a
 popMStack (sem, q) = do
   waitQSem sem
-  modifyMVar q $ \case []     -> error "invariant disrespected; MStack should not be empty if QSem gives passage"
-                       (x:xs) -> pure (xs, x)
+  modifyMVar q $ \case
+    [] -> error "invariant disrespected; MStack should not be empty if QSem gives passage"
+    (x : xs) -> pure (xs, x)

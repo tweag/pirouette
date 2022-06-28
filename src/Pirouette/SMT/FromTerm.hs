@@ -20,9 +20,9 @@ import qualified Data.Set as S
 -- import Debug.Trace (trace)
 import Pirouette.Monad
 import Pirouette.SMT.Base
-import qualified PureSMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as Raw
+import qualified PureSMT
 
 -- useful during debugging
 traceMe :: String -> a -> a

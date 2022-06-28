@@ -19,6 +19,7 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+import Data.Function (on)
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
@@ -32,7 +33,6 @@ import PlutusCore (DefaultUni (..))
 import qualified PlutusCore as P
 import qualified PlutusCore.Pretty as P
 import qualified PlutusIR.Core.Type as PIR
-import Data.Function (on)
 
 -- * Translating 'PIR.Type's and 'PIR.Term's
 
@@ -94,8 +94,8 @@ data Dep name
   | TypeDep Int name SystF.Kind
   deriving (Eq, Show, Ord)
 
--- |Given a list of dependencies; separates them into type and term dependencies.
--- Returns the type dependencies in the order they should be declared at.
+-- | Given a list of dependencies; separates them into type and term dependencies.
+--  Returns the type dependencies in the order they should be declared at.
 unzipDeps :: [Dep name] -> ([(name, SystF.Kind)], [(name, Type PlutusIR)])
 unzipDeps ds0 =
   let (rawTyDeps, termDeps) = go ds0
@@ -103,13 +103,13 @@ unzipDeps ds0 =
   where
     go :: [Dep name] -> ([(Int, (name, SystF.Kind))], [(name, Type PlutusIR)])
     go [] = ([], [])
-    go (TermDep n ty : ds) = second ((n, ty):) $ go ds
-    go (TypeDep i n ki : ds) = first ((i , (n, ki)):) $ go ds
+    go (TermDep n ty : ds) = second ((n, ty) :) $ go ds
+    go (TypeDep i n ki : ds) = first ((i, (n, ki)) :) $ go ds
 
 -- | In the state we will keep track of the dependencies of each term we explore and
 -- a set of type synonyms, that we will expand as soon as we find them.
-data St name = St {
-    stDepsOf :: DepsOf name,
+data St name = St
+  { stDepsOf :: DepsOf name,
     stTypeSynonyms :: M.Map name (Type PlutusIR)
   }
 
@@ -189,7 +189,7 @@ bindingCtxDeps ::
 bindingCtxDeps termBinds = do
   deps <- gets stDepsOf
   deps' <- go termBinds deps M.empty
-  modify (\st -> st { stDepsOf = deps' })
+  modify (\st -> st {stDepsOf = deps'})
   where
     -- The go function below runs a fixpoint computation on a delta over the original dependencies;
     -- We keep computing a new delta until we find nothing different to add;
@@ -260,9 +260,9 @@ tyCtxDeps _ _ (PIR.TyBuiltin _ _) = S.empty
 tyCtxDeps ts deps (PIR.TyVar _ n)
   | toName n == "Bool" = S.empty
   | otherwise =
-   case L.elemIndex (toName n) (map fst ts) of
-    Just i -> S.singleton $ uncurry (TypeDep i) $ unsafeIdx "tyCtxDeps" ts i
-    Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
+    case L.elemIndex (toName n) (map fst ts) of
+      Just i -> S.singleton $ uncurry (TypeDep i) $ unsafeIdx "tyCtxDeps" ts i
+      Nothing -> fromMaybe S.empty $ M.lookup (toName n) deps
 tyCtxDeps ts deps (PIR.TyFun _ tyA tyB) = tyCtxDeps ts deps tyA `S.union` tyCtxDeps ts deps tyB
 tyCtxDeps ts deps (PIR.TyApp _ tyA tyB) = tyCtxDeps ts deps tyA `S.union` tyCtxDeps ts deps tyB
 tyCtxDeps ts deps (PIR.TyForall _ _ _ ty) = tyCtxDeps ts deps ty
@@ -287,24 +287,24 @@ trDataOrTypeBinding (PIR.TypeBind _ tyvard tybody) =
   let tyName = toName $ PIR._tyVarDeclName tyvard
    in do
         ty <- trType tybody
-        modify (\st -> st { stTypeSynonyms = M.insert tyName ty (stTypeSynonyms st) })
+        modify (\st -> st {stTypeSynonyms = M.insert tyName ty (stTypeSynonyms st)})
         return M.empty
 trDataOrTypeBinding (PIR.DatatypeBind _ (PIR.Datatype _ tyvard args dest cons))
   -- See [HACK: Translation of 'Bool']
-  | toName (PIR._tyVarDeclName tyvard) == "Bool" 
-  = pure mempty
+  | toName (PIR._tyVarDeclName tyvard) == "Bool" =
+    pure mempty
   | otherwise =
-  let tyName = toName $ PIR._tyVarDeclName tyvard
-      tyKind = trKind $ PIR._tyVarDeclKind tyvard
-      tyVars = map ((toName . PIR._tyVarDeclName) &&& (trKind . PIR._tyVarDeclKind)) args
-      tyCons = zipWith (\c i -> ((TermNamespace, toName $ PIR._varDeclName c), DConstructor i tyName)) cons [0 ..]
-   in do
-        cons' <- mapM (rstr . ((toName . PIR._varDeclName) &&& (trTypeWithArgs tyVars . PIR._varDeclType))) cons
-        let tyRes = Datatype tyKind tyVars (toName dest) cons'
-        return $
-          M.singleton (TypeNamespace, tyName) (DTypeDef tyRes)
-            <> M.singleton (TermNamespace, toName dest) (DDestructor tyName)
-            <> M.fromList tyCons
+    let tyName = toName $ PIR._tyVarDeclName tyvard
+        tyKind = trKind $ PIR._tyVarDeclKind tyvard
+        tyVars = map ((toName . PIR._tyVarDeclName) &&& (trKind . PIR._tyVarDeclKind)) args
+        tyCons = zipWith (\c i -> ((TermNamespace, toName $ PIR._varDeclName c), DConstructor i tyName)) cons [0 ..]
+     in do
+          cons' <- mapM (rstr . ((toName . PIR._varDeclName) &&& (trTypeWithArgs tyVars . PIR._varDeclType))) cons
+          let tyRes = Datatype tyKind tyVars (toName dest) cons'
+          return $
+            M.singleton (TypeNamespace, tyName) (DTypeDef tyRes)
+              <> M.singleton (TermNamespace, toName dest) (DDestructor tyName)
+              <> M.fromList tyCons
 
 trKind :: PIR.Kind loc -> SystF.Kind
 trKind (PIR.Type _) = SystF.KStar
@@ -334,21 +334,21 @@ trType (PIR.TyForall _ v k body) =
   SystF.TyAll (SystF.Ann $ toName v) (trKind k) <$> local (pushType (toName v) (trKind k)) (trType body)
 trType (PIR.TyVar _ tyn)
   -- See [HACK: Translation of 'Bool']
-  | toName tyn == "Bool"
-  = return $ SystF.TyPure (SystF.Free $ TyBuiltin PIRTypeBool)
+  | toName tyn == "Bool" =
+    return $ SystF.TyPure (SystF.Free $ TyBuiltin PIRTypeBool)
   | otherwise = do
-  let tyName = toName tyn
-  -- First we try to see if this type is a bound variable
-  bounds <- asks (map fst . typeStack)
-  case L.elemIndex tyName bounds of
-    Just ix -> return $ SystF.TyPure (SystF.Bound (SystF.Ann tyName) $ fromIntegral ix)
-    -- If it's not a bound variable, we check whether its a type synonym
-    Nothing -> do
-      syns <- gets stTypeSynonyms
-      case M.lookup (toName tyn) syns of
-        Just ty -> return ty
-         -- Finally, it's not bound nor a type synonym, we translate it as a "free" name.
-        Nothing -> return $ SystF.TyPure (SystF.Free $ TySig tyName)
+    let tyName = toName tyn
+    -- First we try to see if this type is a bound variable
+    bounds <- asks (map fst . typeStack)
+    case L.elemIndex tyName bounds of
+      Just ix -> return $ SystF.TyPure (SystF.Bound (SystF.Ann tyName) $ fromIntegral ix)
+      -- If it's not a bound variable, we check whether its a type synonym
+      Nothing -> do
+        syns <- gets stTypeSynonyms
+        case M.lookup (toName tyn) syns of
+          Just ty -> return ty
+          -- Finally, it's not bound nor a type synonym, we translate it as a "free" name.
+          Nothing -> return $ SystF.TyPure (SystF.Free $ TySig tyName)
 trType (PIR.TyFun _ t u) = SystF.TyFun <$> trType t <*> trType u
 trType (PIR.TyApp _ t u) = SystF.tyApp <$> trType t <*> trType u
 trType (PIR.TyBuiltin _ (P.SomeTypeIn uni)) =
@@ -397,7 +397,7 @@ trTerm mn t = do
   t' <- local (pushTypes (reverse tyDeps) . pushNames (reverse termDeps)) (go t)
   let adjustType =
         flip (foldr (\(n, t0) r -> SystF.TyAll (SystF.Ann n) t0 r)) tyDeps
-        . flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) termDeps
+          . flip (foldr (\(_, t0) r -> SystF.TyFun t0 r)) termDeps
   return
     ( flip (foldr (\(n, t0) r -> SystF.Abs (SystF.Ann n) t0 r)) tyDeps $
         foldr (\(n, t0) r -> SystF.Lam (SystF.Ann n) t0 r) t' termDeps,
@@ -429,30 +429,30 @@ trTerm mn t = do
     go ::
       PIR.Term tyname name DefaultUni P.DefaultFun loc ->
       WriterT (Decls PlutusIR) (TrM loc) (Term PlutusIR)
-    go (PIR.Var _ n) 
+    go (PIR.Var _ n)
       -- See [HACK: Translation of 'Bool']
-      | toName n == "True"
-      = return $ SystF.termPure $ SystF.Free $ Constant (PIRConstBool True)
-      | toName n == "False"
-      = return $ SystF.termPure $ SystF.Free $ Constant (PIRConstBool False)
-      | toName n == "Bool_match"
-      = return $ SystF.termPure $ SystF.Free $ Builtin P.IfThenElse
+      | toName n == "True" =
+        return $ SystF.termPure $ SystF.Free $ Constant (PIRConstBool True)
+      | toName n == "False" =
+        return $ SystF.termPure $ SystF.Free $ Constant (PIRConstBool False)
+      | toName n == "Bool_match" =
+        return $ SystF.termPure $ SystF.Free $ Builtin P.IfThenElse
       | otherwise = do
-      vs <- asks termStack
-      case L.elemIndex (toName n) (map fst vs) of
-        Just i -> return $ SystF.termPure (SystF.Bound (SystF.Ann $ toName n) $ fromIntegral i)
-        Nothing -> do
-          args <- lift $ getTransitiveDepsAsArgs (toName n)
-          return $ SystF.App (SystF.Free $ TermSig (toName n)) args
+        vs <- asks termStack
+        case L.elemIndex (toName n) (map fst vs) of
+          Just i -> return $ SystF.termPure (SystF.Bound (SystF.Ann $ toName n) $ fromIntegral i)
+          Nothing -> do
+            args <- lift $ getTransitiveDepsAsArgs (toName n)
+            return $ SystF.App (SystF.Free $ TermSig (toName n)) args
     -- See [HACK: Translation of 'Bool']
     go (PIR.TyInst _ (PIR.Apply _ v@(PIR.Var _ n) x) tyR)
-      | toName n == "Bool_match"
-      = SystF.app <$> (SystF.app <$> go v <*> lift (SystF.TyArg <$> trType tyR))
-                  <*> (SystF.TermArg <$> go x)
+      | toName n == "Bool_match" =
+        SystF.app <$> (SystF.app <$> go v <*> lift (SystF.TyArg <$> trType tyR))
+          <*> (SystF.TermArg <$> go x)
     go (PIR.Constant _ (P.Some (P.ValueOf tx x))) =
       return $ SystF.termPure $ SystF.Free $ Constant $ defUniToConstant tx x
     go (PIR.Builtin _ f) = return $ SystF.termPure $ SystF.Free $ Builtin f
-    go (PIR.Error _ ty) = SystF.App (SystF.Free Bottom) . (:[]) . SystF.TyArg <$> lift (trType ty)
+    go (PIR.Error _ ty) = SystF.App (SystF.Free Bottom) . (: []) . SystF.TyArg <$> lift (trType ty)
     go (PIR.IWrap _ _ _ t0) = go t0 -- VCM: are we sure we don't neet to
     go (PIR.Unwrap _ t0) = go t0 --      preserve the wrap/unwraps?
     go (PIR.TyInst _ t0 ty) = SystF.app <$> go t0 <*> lift (SystF.TyArg <$> trType ty)
@@ -559,10 +559,10 @@ instance ToName P.Name where
     -- do not translate some built-ins
     -- why? because we then define it in the SMT translation
     -- and we need them to appear *exactly* as they were
-    | P.nameString pn `elem` plutusIrBuiltInNames
-    = Name (P.nameString pn) Nothing
-    | otherwise
-    = Name (P.nameString pn) (Just $ P.unUnique $ P.nameUnique pn)
+    | P.nameString pn `elem` plutusIrBuiltInNames =
+      Name (P.nameString pn) Nothing
+    | otherwise =
+      Name (P.nameString pn) (Just $ P.unUnique $ P.nameUnique pn)
 
 instance ToName P.TyName where
   toName = toName . P.unTyName
@@ -571,8 +571,18 @@ instance Pretty P.DefaultFun where
   pretty = P.pretty
 
 plutusIrBuiltInNames :: [Text]
-plutusIrBuiltInNames = [
-    "List", "List_match", "Nil_match", "Nil", "Cons", 
-    "Tuple2", "Tuple2_match", "Unit", "Unit_match",
-    "Bool", "Bool_match", "True", "False"
+plutusIrBuiltInNames =
+  [ "List",
+    "List_match",
+    "Nil_match",
+    "Nil",
+    "Cons",
+    "Tuple2",
+    "Tuple2_match",
+    "Unit",
+    "Unit_match",
+    "Bool",
+    "Bool_match",
+    "True",
+    "False"
   ]

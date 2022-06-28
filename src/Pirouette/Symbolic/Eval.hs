@@ -71,25 +71,28 @@ import qualified Pirouette.SMT.FromTerm as Tr
 import qualified Pirouette.SMT.Monadic as SMT
 import Pirouette.Symbolic.Eval.SMT
 import Pirouette.Symbolic.Eval.Types as X
-    ( StoppingCondition,
-      SymEvalStatistics(..),
-      SymEvalSt(..),
-      AvailableFuel(..),
-      Path(..),
-      PathStatus(..),
-      Constraint,
-      SymVar(..),
-      LanguageSymEval(..),
-      symVarEq,
-      (=:=),
-      path )
+  ( AvailableFuel (..),
+    Constraint,
+    LanguageSymEval (..),
+    Path (..),
+    PathStatus (..),
+    StoppingCondition,
+    SymEvalSt (..),
+    SymEvalStatistics (..),
+    SymVar (..),
+    path,
+    symVarEq,
+    (=:=),
+  )
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified PureSMT
 import TreeT
 
 data SymEvalSolvers lang = SymEvalSolvers
-  { solvePathProblem :: CheckPathProblem lang -> Bool,
+  { -- | Check whether a path is plausible
+    solvePathProblem :: CheckPathProblem lang -> Bool,
+    -- | Check whether a certain property currently holds over a given path
     solvePropProblem :: CheckPropertyProblem lang -> PruneResult
   }
 
@@ -98,8 +101,10 @@ data SymEvalEnv lang = SymEvalEnv
     seeSolvers :: SymEvalSolvers lang
   }
 
-data Tag lang = FromBuiltin (BuiltinTerms lang)
-              | FromConstructor Name
+data Tag lang
+  = FromBuiltin (BuiltinTerms lang)
+  | FromConstructor Name
+
 type SymEvalResult lang a = Tree (Tag lang) (SymEvalSt lang) a
 
 -- | Our symbolic evaluation monad.
@@ -163,11 +168,16 @@ runSymEval ::
   SymEval lang a ->
   r
 runSymEval runner defs st f = do
-  let sharedSolve :: SolverProblem lang res -> res
+  let -- sharedSolve is here to hint to GHC not to create more than one pool
+      -- of SMT solvers, which could happen if sharedSolve were inlined.
+      -- TODO: Write a test to check that only one SMT pool is actually created over
+      --       multiple calls to runSymEvalWorker.
+      {-# NOINLINE sharedSolve #-}
+      sharedSolve :: SolverProblem lang res -> res
       sharedSolve = PureSMT.solve solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  let f' = do r <- f ; path r <$> get
+  let f' = do r <- f; path r <$> get
   runner (runReaderT (symEval f') (SymEvalEnv defs solvers)) st'
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
@@ -191,12 +201,12 @@ runSymEval runner defs st f = do
 -- | Prune the set of paths in the current set.
 prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
 prune (SymEval xs) = SymEval $ do
-  x <- xs   -- do it first, so we go over each element!
+  x <- xs -- do it first, so we go over each element!
   SymEvalEnv defs solvers <- ask
   st <- get -- current status
   if solvePathProblem solvers (CheckPathProblem st defs)
-     then pure x
-     else stop
+    then pure x
+    else stop
 
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
@@ -279,12 +289,13 @@ symEvalOneStep t@(R.App hd args) = case hd of
     mayBranches <- lift $ branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
-      Just branches -> branch $ map (FromBuiltin builtin, ) $
-        flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-          lift $ learn additionalInfo
-          consumeFuel
-          signalEvaluation
-          pure newTerm
+      Just branches -> branch $
+        map (FromBuiltin builtin,) $
+          flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+            lift $ learn additionalInfo
+            consumeFuel
+            signalEvaluation
+            pure newTerm
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
@@ -339,7 +350,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
 -- in here. If we do really need the monad, we can only paralellize the prune and pruneAndValidate
 -- functions, if not, we could paralellize everything.
 symEvalParallel ::
-  forall lang .
+  forall lang.
   (SymEvalConstr lang) =>
   [TermMeta lang SymVar] ->
   SymEval lang ([TermMeta lang SymVar], Any)
@@ -432,26 +443,27 @@ symEvalDestructor t@(R.App hd _args) tyName = do
       -- we have a meta, explore every possibility
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
       let tyParams' = map typeFromMeta tyParams
-      branch $ for2 consList cases $ \(consName, consTy) caseTerm -> (FromConstructor consName,) $ do
-        let instantiatedTy = R.tyInstantiateN consTy tyParams'
-        let (consArgs, _) = R.tyFunArgs instantiatedTy
-        svars <- lift $ freshSymVars consArgs
-        let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
-        let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-        let mconstr = unify term' symbCons
-        -- liftIO $ print mconstr
-        case mconstr of
-          Nothing -> stop
-          Just constr -> do
-            let countAssigns SMT.Bot = 0
-                countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
-                isAssign SMT.Assign {} = True
-                isAssign _ = False
-            -- add weight as many new assignments we get from unification
-            lift $ learn constr
-            moreConstructors (countAssigns constr)
-            signalEvaluation
-            pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+      branch $
+        for2 consList cases $ \(consName, consTy) caseTerm -> (FromConstructor consName,) $ do
+          let instantiatedTy = R.tyInstantiateN consTy tyParams'
+          let (consArgs, _) = R.tyFunArgs instantiatedTy
+          svars <- lift $ freshSymVars consArgs
+          let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
+          let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
+          let mconstr = unify term' symbCons
+          -- liftIO $ print mconstr
+          case mconstr of
+            Nothing -> stop
+            Just constr -> do
+              let countAssigns SMT.Bot = 0
+                  countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
+                  isAssign SMT.Assign {} = True
+                  isAssign _ = False
+              -- add weight as many new assignments we get from unification
+              lift $ learn constr
+              moreConstructors (countAssigns constr)
+              signalEvaluation
+              pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
     (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
       -- we have a particular constructor
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
@@ -519,4 +531,3 @@ pruneAndValidate cOut cIn axioms = SymEval $ do
   SymEvalEnv defs solvers <- ask
   st <- get
   return $ solvePropProblem solvers (CheckPropertyProblem cOut cIn axioms st defs)
-    

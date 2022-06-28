@@ -7,8 +7,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.SMT.Monadic
   ( SolverT (..),
@@ -45,10 +45,10 @@ import qualified Data.Map as M
 import Pirouette.Monad
 import Pirouette.SMT.Base as Base
 import Pirouette.SMT.Constraints
-import qualified PureSMT
 import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
+import qualified PureSMT
 import TreeT (MonadTree)
 
 -- OLD CODE
@@ -120,21 +120,22 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
 -- | Declare a set of datatypes (all at once) in the current solver session.
 declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]
-declareDatatypes [] = 
+declareDatatypes [] =
   -- we need to handle this especially because SMTLIB doesn't like an empty set of types
   pure []
 declareDatatypes dts = do
   solver <- ask
-  (dts', _) <- runWriterT $ forM dts $ \(typeName, Datatype _ typeVariables _ cstrs) -> do
-    cstrs' <- mapM (constructorFromPIR typeVariables) cstrs
-    pure (toSmtName typeName, map (toSmtName . fst) typeVariables, cstrs')
+  (dts', _) <- runWriterT $
+    forM dts $ \(typeName, Datatype _ typeVariables _ cstrs) -> do
+      cstrs' <- mapM (constructorFromPIR typeVariables) cstrs
+      pure (toSmtName typeName, map (toSmtName . fst) typeVariables, cstrs')
   liftIO $ PureSMT.declareDatatypes solver dts'
   return $ concat [typeName : map fst cstrs | (typeName, Datatype _ _ _ cstrs) <- dts]
 
--- |Returns whether or not a function @f@ can be declared as an uninterpreted function and,
--- if it can, return the type of its arguments and result.
--- A function can be declared if its type can be translate to SmtLib, an uninterpreted function
--- has no body after all, so no need to worry about it.
+-- | Returns whether or not a function @f@ can be declared as an uninterpreted function and,
+--  if it can, return the type of its arguments and result.
+--  A function can be declared if its type can be translate to SmtLib, an uninterpreted function
+--  has no body after all, so no need to worry about it.
 supportedUninterpretedFunction ::
   (LanguageSMT lang) => FunDef lang -> Maybe ([PureSMT.SExpr], PureSMT.SExpr)
 supportedUninterpretedFunction FunDef {funTy} = toMaybe $ do
@@ -142,10 +143,10 @@ supportedUninterpretedFunction FunDef {funTy} = toMaybe $ do
   (args', _) <- runWriterT $ mapM translateType args
   (result', _) <- runWriterT $ translateType result
   return (args', result')
- where
-   toMaybe = either (const Nothing) Just . runExcept
+  where
+    toMaybe = either (const Nothing) Just . runExcept
 
--- |Declares a function with a given name, type of arguments and type of result.
+-- | Declares a function with a given name, type of arguments and type of result.
 declareRawFun ::
   (MonadIO m) => Name -> ([PureSMT.SExpr], PureSMT.SExpr) -> SolverT m ()
 declareRawFun n (args, res) = do

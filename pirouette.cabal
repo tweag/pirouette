@@ -80,7 +80,6 @@ library
     , hspec
     , interpolate
     , lens
-    , list-t
     , megaparsec
     , mtl >=2.2.2
     , optics-core
@@ -144,7 +143,6 @@ test-suite spec
     , hspec
     , interpolate
     , lens
-    , list-t
     , megaparsec
     , mtl >=2.2.2
     , optics-core

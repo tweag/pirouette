@@ -346,22 +346,25 @@ class (LanguageConstrs lang) => LanguageBuiltins lang where
   type Constants lang :: *
 
   -- | Definitions required for built-in types
-  builtinTypeDefinitions :: 
-    [(Name, TypeDef lang)]    -- ^ types which are already defined
-    -> [(Name, TypeDef lang)] -- ^ additional definitions supporting those
+  builtinTypeDefinitions ::
+    -- | types which are already defined
+    [(Name, TypeDef lang)] ->
+    -- | additional definitions supporting those
+    [(Name, TypeDef lang)]
   builtinTypeDefinitions _ = []
 
 builtinTypeDecls :: (LanguageBuiltins lang) => Decls lang -> Decls lang
-builtinTypeDecls m = 
+builtinTypeDecls m =
   let defs = flip mapMaybe (Map.toList m) $ \((_, nm), def) -> case def of
-               DTypeDef td -> Just (nm, td)
-               _ -> Nothing
+        DTypeDef td -> Just (nm, td)
+        _ -> Nothing
       newTypeDefs = builtinTypeDefinitions defs
-  in Map.fromList $ do
-    (nm, td@Datatype { destructor, constructors }) <- newTypeDefs
-    [ ((TypeNamespace, nm), DTypeDef td), ((TermNamespace, destructor), DDestructor nm) ]
-      ++ [ ((TermNamespace, constructorName), DConstructor i nm )
-         | (i, (constructorName, _)) <- zip [0 ..] constructors ]
+   in Map.fromList $ do
+        (nm, td@Datatype {destructor, constructors}) <- newTypeDefs
+        [((TypeNamespace, nm), DTypeDef td), ((TermNamespace, destructor), DDestructor nm)]
+          ++ [ ((TermNamespace, constructorName), DConstructor i nm)
+               | (i, (constructorName, _)) <- zip [0 ..] constructors
+             ]
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =

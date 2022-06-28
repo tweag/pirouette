@@ -4,8 +4,8 @@ module Pirouette.SMT.Base where
 
 import Control.Monad.IO.Class
 import Data.Void
-import qualified PureSMT
 import Pirouette.Term.Syntax
+import qualified PureSMT
 
 -- | Captures the languages that can be translated to SMTLIB; namelly,
 -- we need to be able to translate each individual base syntactical category.

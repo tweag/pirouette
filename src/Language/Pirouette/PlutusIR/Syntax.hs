@@ -22,9 +22,10 @@ import qualified Data.ByteString as BS
 import Data.Data
 import Data.Foldable
 import Data.Maybe (isJust)
+import qualified Data.Set as S
 import qualified Data.Text as T
 import Language.Haskell.TH.Syntax (Lift)
-import Language.Pirouette.QuasiQuoter.Syntax hiding (TyAll, TyFun, TyApp)
+import Language.Pirouette.QuasiQuoter.Syntax hiding (TyAll, TyApp, TyFun)
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF as SystF
 import PlutusCore
@@ -39,7 +40,6 @@ import Prettyprinter hiding (Pretty, pretty)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import qualified Data.Set as S
 
 -- * Declaring the builtins of PlutusIR.
 
@@ -63,10 +63,10 @@ instance LanguageBuiltins PlutusIR where
 
   builtinTypeDefinitions definedTypes =
     -- only define List and Unit if they are not yet defined
-    [ ("List", listTypeDef) | not (isDefined "List")]
-    ++ [ ("Unit", unitTypeDef) | not (isDefined "Unit") ]
-    ++ [ ("Tuple2", tuple2TypeDef) | not (isDefined "Tuple2") ]
-    ++ [ ("Data", dataTypeDef) ]
+    [("List", listTypeDef) | not (isDefined "List")]
+      ++ [("Unit", unitTypeDef) | not (isDefined "Unit")]
+      ++ [("Tuple2", tuple2TypeDef) | not (isDefined "Tuple2")]
+      ++ [("Data", dataTypeDef)]
     where
       a = TyApp (Bound (Ann "a") 0) []
       b = TyApp (Bound (Ann "a") 1) []
@@ -77,46 +77,50 @@ instance LanguageBuiltins PlutusIR where
       tuple2Of x y = TyApp (Free $ TySig "Tuple2") [x, y]
       builtin nm = TyApp (Free $ TyBuiltin nm) []
 
-      listTypeDef = Datatype {
-        kind = KTo KStar KStar
-      , typeVariables = [("a", KStar)]
-      , destructor = "Nil_match"
-      , constructors = [
-          ("Nil", TyAll (Ann "a") KStar (listOf a))
-        , ("Cons", TyAll (Ann "a") KStar (TyFun a (TyFun (listOf a) (listOf a))))
-        ]
-      }
+      listTypeDef =
+        Datatype
+          { kind = KTo KStar KStar,
+            typeVariables = [("a", KStar)],
+            destructor = "Nil_match",
+            constructors =
+              [ ("Nil", TyAll (Ann "a") KStar (listOf a)),
+                ("Cons", TyAll (Ann "a") KStar (TyFun a (TyFun (listOf a) (listOf a))))
+              ]
+          }
 
-      unitTypeDef = Datatype {
-        kind = KStar
-      , typeVariables = []
-      , destructor = "Unit_match"
-      , constructors = [("Unit", builtin PIRTypeUnit)]
-      }
- 
+      unitTypeDef =
+        Datatype
+          { kind = KStar,
+            typeVariables = [],
+            destructor = "Unit_match",
+            constructors = [("Unit", builtin PIRTypeUnit)]
+          }
+
       -- !! warning, we define it as "Tuple2 b a" to reuse 'a' for both list and tuple
-      tuple2TypeDef = Datatype {
-        kind = KTo KStar (KTo KStar KStar)
-      , typeVariables = [("b", KStar), ("a", KStar)]
-      , destructor = "Tuple2_match"
-      , constructors = [
-          ("Tuple2", TyAll (Ann "b") KStar $ TyAll (Ann "a") KStar $ TyFun b (TyFun a (tuple2Of b a)))
-        ]
-      }
+      tuple2TypeDef =
+        Datatype
+          { kind = KTo KStar (KTo KStar KStar),
+            typeVariables = [("b", KStar), ("a", KStar)],
+            destructor = "Tuple2_match",
+            constructors =
+              [ ("Tuple2", TyAll (Ann "b") KStar $ TyAll (Ann "a") KStar $ TyFun b (TyFun a (tuple2Of b a)))
+              ]
+          }
 
       -- defined following https://github.com/input-output-hk/plutus/blob/master/plutus-core/plutus-core/src/PlutusCore/Data.hs
-      dataTypeDef = Datatype {
-        kind = KStar
-      , typeVariables = []
-      , destructor = "Data_match"
-      , constructors = [
-          ("Data_Constr", TyFun (builtin PIRTypeInteger) (TyFun tyListData tyData))
-        , ("Data_Map", TyFun (builtin $ PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) tyData)
-        , ("Data_List", TyFun tyListData tyData)
-        , ("Data_I", TyFun (builtin PIRTypeInteger) tyData)
-        , ("Data_B", TyFun (builtin PIRTypeByteString) tyData)
-        ]
-      }
+      dataTypeDef =
+        Datatype
+          { kind = KStar,
+            typeVariables = [],
+            destructor = "Data_match",
+            constructors =
+              [ ("Data_Constr", TyFun (builtin PIRTypeInteger) (TyFun tyListData tyData)),
+                ("Data_Map", TyFun (builtin $ PIRTypeList (Just (PIRTypePair (Just PIRTypeData) (Just PIRTypeData)))) tyData),
+                ("Data_List", TyFun tyListData tyData),
+                ("Data_I", TyFun (builtin PIRTypeInteger) tyData),
+                ("Data_B", TyFun (builtin PIRTypeByteString) tyData)
+              ]
+          }
 
       tyListData = builtin (PIRTypeList (Just PIRTypeData))
       tyData = builtin PIRTypeData
@@ -350,7 +354,7 @@ instance LanguageParser PlutusIR where
       ]
     ]
 
-  reservedNames = S.fromList $ words  "True False unit"
+  reservedNames = S.fromList $ words "True False unit"
   reservedTypeNames = S.fromList $ words "Bool Unit List Data Pair String ByteString"
 
   ifThenElse resTy c t e = SystF.App (SystF.Free $ Builtin P.IfThenElse) $ SystF.TyArg resTy : map SystF.TermArg [c, t, e]

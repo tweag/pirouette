@@ -1,11 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 -- | Simple parser for a simple language aimed at helping us
 -- writing terms for testing pirouette a with a little less work.
@@ -38,13 +38,13 @@ import Data.Foldable
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
+import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Utils (monoNameSep)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Language.Haskell.TH.Syntax (Lift)
 
 -- ** Class for parsing language builtins
 
