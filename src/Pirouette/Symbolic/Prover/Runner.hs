@@ -5,11 +5,13 @@ module Pirouette.Symbolic.Prover.Runner where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
+import qualified Data.Map as M
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax (pretty)
 import Pirouette.Term.Syntax.Base
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations
 import Pirouette.Transformations.Contextualize
 import Pirouette.Transformations.Defunctionalization
@@ -31,6 +33,14 @@ data IncorrectnessParams lang = IncorrectnessParams
 --  path that is a counterexample to the supplied 'IncorrectnessParams'.
 --  If you would like finer grained control, look at 'execIncorrectnessLogic.
 type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
+
+runIncorrectnessLogic1 ::
+  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Int ->
+  IncorrectnessParams lang ->
+  IncorrectnessResult lang
+runIncorrectnessLogic1 maxCstrs =
+  runIncorrectnessLogic maxCstrs (PrtUnorderedDefs M.empty $ SystF.termPure $ SystF.Free Bottom)
 
 runIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
@@ -105,6 +115,14 @@ replIncorrectnessLogic ::
   IO ()
 replIncorrectnessLogic maxCstrs defs params =
   printIRResult maxCstrs $ runIncorrectnessLogic maxCstrs defs params
+
+replIncorrectnessLogic1 ::
+  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Int ->
+  IncorrectnessParams lang ->
+  IO ()
+replIncorrectnessLogic1 maxCstrs params =
+  printIRResult maxCstrs $ runIncorrectnessLogic1 maxCstrs params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
