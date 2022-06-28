@@ -154,7 +154,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   mayProveCond <- translate proveTerm
   -- introduce the assumption about the result, if useful
   case mayBodyTerm of
-    Right _ -> learn $ And [Assign resultVar bodyTerm]
+    Right _ -> rwt2st $ learn $ And [Assign resultVar bodyTerm]
     _ -> pure ()
   -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
@@ -177,7 +177,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     _ -> do
       -- one step of evaluation on each,
       -- but going into matches first
-      ([bodyTerm', assumeTerm', proveTerm'], evalResult) <- prune $
+      ([bodyTerm', assumeTerm', proveTerm'], anyEvaluated) <- prune $
         symEvalParallel [bodyTerm, assumeTerm, proveTerm]
       -- debugPutStr "ONE STEP"
       -- debugPrint (pretty bodyTerm')
@@ -187,7 +187,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- check the fuel
       noMoreFuel <- gets sestStoppingCondition >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
-      if noMoreFuel || serEvaluated evalResult == Any False
+      if noMoreFuel || not anyEvaluated
         then pure $ CounterExample bodyTerm' (Model [])
         else do
           worker resultVar bodyTerm' assumeTerm' proveTerm'

@@ -1,6 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -278,11 +277,9 @@ weightedParFilter f (ListT.Yield a w) =
         (f a , weightedParFilter f w)
    in if keep then ListT.Yield a rest else rest
 
--- | Learn a new constraint and add it as a conjunct to the set of constraints of
---  the current path. Make sure that this branch gets marked as /not/ validated, regardless
---  of whether or not we had already validated it before.
-learn :: (SymEvalConstr lang) => Constraint lang -> SymEval lang ()
-learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
+-- | Learn a new constraint (the 'Writer' monad version).
+learn :: forall lang m. (SymEvalConstr lang, MonadWriter (SymEvalResult lang) m) => Constraint lang -> m ()
+learn c = tell $ (mempty @(SymEvalResult lang)) {serGeneratedConstraints = c}
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
@@ -311,7 +308,7 @@ symEvalOneStep ::
   forall lang.
   (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
-  WriterT (SymEvalResult lang) (SymEval lang) (TermMeta lang SymVar)
+  SymEvalPar lang (TermMeta lang SymVar)
 -- We cannot symbolic-evaluate polymorphic terms
 symEvalOneStep R.Abs {} = error "Can't symbolically evaluate polymorphic things"
 -- If we're forced to symbolic evaluate a lambda, we create a new metavariable
@@ -356,19 +353,19 @@ symEvalOneStep t@(R.App hd args) = case hd of
           case c' of
             Left _ -> pure Nothing
             Right (d, _) -> pure $ Just d
-    mayBranches <- lift $ branchesBuiltinTerm @lang builtin translator args
+    mayBranches <- branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
       Just branches -> asum $
         flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-          lift $ learn additionalInfo
+          learn additionalInfo
           consumeFuel
           signalEvaluation
           pure newTerm
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
-    mDefHead <- Just <$> lift (prtDefOf TermNamespace n)
+    mDefHead <- Just <$> prtDefOf TermNamespace n
     case mDefHead of
       -- If hd is not defined, we symbolically evaluate the arguments and reconstruct the term.
       Nothing -> justEvaluateArgs
@@ -422,8 +419,13 @@ symEvalParallel ::
   forall lang .
   (SymEvalConstr lang) =>
   [TermMeta lang SymVar] ->
-  SymEval lang ([TermMeta lang SymVar], SymEvalResult lang)
-symEvalParallel = runWriterT . mapM symEvalOneStep
+  SymEval lang ([TermMeta lang SymVar], Bool)
+symEvalParallel terms = do
+  {-
+  (terms', result) <- runWriterT $ mapM symEvalOneStep terms
+  pure (terms', getAny $ serEvaluated result)
+  -}
+  pure undefined
 
 -- | Strategy for evaluating a set of expression,
 --   but giving priority to destructors over the rest.
@@ -437,7 +439,7 @@ symEvalMatchesFirst ::
   (a -> Maybe (TermMeta lang SymVar)) ->
   (TermMeta lang SymVar -> a) ->
   [a] ->
-  WriterT (SymEvalResult lang) (SymEval lang) [a]
+  SymEvalPar lang [a]
 symEvalMatchesFirst f g exprs = go [] exprs
   where
     -- we came to the end without a match,
@@ -451,7 +453,7 @@ symEvalMatchesFirst f g exprs = go [] exprs
     go acc (x : xs)
       | Nothing <- f x = go (x : acc) xs
       | Just t <- f x = do
-        mayTyName <- lift $ isDestructor t
+        mayTyName <- isDestructor t
         case mayTyName of
           Just tyName -> (reverse acc ++) . (: xs) . g <$> symEvalDestructor t tyName
           Nothing -> go (x : acc) xs
@@ -489,10 +491,10 @@ symEvalDestructor ::
   (SymEvalConstr lang) =>
   TermMeta lang SymVar ->
   Name ->
-  WriterT (SymEvalResult lang) (SymEval lang) (TermMeta lang SymVar)
+  SymEvalPar lang (TermMeta lang SymVar)
 symEvalDestructor t@(R.App hd _args) tyName = do
-  Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- lift $ runMaybeT (unDest t)
-  _dt@(Datatype _ _ _ consList) <- lift $ prtTypeDefOf tyName
+  Just (UnDestMeta _ _ tyParams term tyRes cases excess) <- runMaybeT (unDest t)
+  _dt@(Datatype _ _ _ consList) <- prtTypeDefOf tyName
   -- We know what is the type of all the possible term results, its whatever
   -- type we're destructing applied to its arguments, making sure it contains
   -- no meta variables.
@@ -501,7 +503,7 @@ symEvalDestructor t@(R.App hd _args) tyName = do
   -- We only do the case distinction if we haven't taken any step
   -- in the previous step. Otherwise it wouldn't be a "one step" evaluator.
   let motiveIsMeta = termIsMeta term'
-  motiveWHNF <- lift $ termIsWHNF term'
+  motiveWHNF <- termIsWHNF term'
   let bailOutArgs = R.TermArg term' : R.TyArg tyRes : map R.TermArg cases
       bailOutTerm = R.App hd (map R.TyArg tyParams ++ bailOutArgs ++ excess)
   case (serEvaluated evalResult, motiveIsMeta, motiveWHNF) of
@@ -530,7 +532,7 @@ symEvalDestructor t@(R.App hd _args) tyName = do
                   isAssign _ = False
               -- add weight as many new assignments we get from unification
               ListT.weight (countAssigns constr) $ do
-                lift $ learn constr
+                learn constr
                 moreConstructors (countAssigns constr)
                 signalEvaluation
                 pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
@@ -545,18 +547,20 @@ symEvalDestructor t@(R.App hd _args) tyName = do
 symEvalDestructor _ _ = error "should never be called with anything else than App"
 
 -- | Indicate that something has been evaluated.
-signalEvaluation :: (Monad m) => WriterT (SymEvalResult lang) m ()
+signalEvaluation :: (MonadWriter (SymEvalResult lang) m) => m ()
 signalEvaluation = tell (mempty { serEvaluated = Any True })
 
 -- | Consume one unit of fuel.
 -- This also tells the symbolic evaluator that a step was taken.
-consumeFuel :: (SymEvalConstr lang) => WriterT (SymEvalResult lang) (SymEval lang) ()
-consumeFuel = do
-  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConsumedFuel = 1}})
+consumeFuel :: (MonadWriter (SymEvalResult lang) m) => m ()
+consumeFuel = tell (mempty { serConsumedFuel = 1 })
+-- TODO reflect the old implementation
+-- modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConsumedFuel = 1}})
 
-moreConstructors :: (SymEvalConstr lang) => Int -> WriterT (SymEvalResult lang) (SymEval lang) ()
-moreConstructors n = do
-  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
+moreConstructors :: (SymEvalConstr lang, MonadWriter (SymEvalResult lang) m) => Int -> m ()
+moreConstructors n = tell (mempty { serConstructors = fromIntegral n })
+-- TODO reflect the old implementation
+-- modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) (R.App (R.Meta r) []) = Just (symVarEq s r)
