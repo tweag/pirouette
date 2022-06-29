@@ -15,7 +15,7 @@ transformations (monomorphization, defunctionalization, prenex, etc...) defined
 and relies on the `-XQuasiQuotes` extension to be able to easily write
 properties in the target language.
 
-There is one analisys currently built into pirouette, which symbolic evaluates terms up to
+There is one analysis currently built into pirouette, which symbolically evaluates terms up to
 a certain bound while looking for counterexamples based on [incorrectness][incorrectness]
 or Hoare triples.
 
