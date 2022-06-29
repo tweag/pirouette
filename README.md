@@ -10,18 +10,18 @@ _Pirouette is a research prototype under active development_
 * [License](#license)
 
 Pirouette is being built as framework for constructing different static
-analisys tools for [System F][systemf] based languages. It posseses a multitude of
-transformations (monomorphization, defunctionalization, prenex, etc...)
+analisys tools for [System F][systemf] based languages. It has a number of
+transformations (monomorphization, defunctionalization, prenex, etc...) defined
 and relies on the `-XQuasiQuotes` extension to be able to easily write
 properties in the target language.
 
 There is one analisys currently built into pirouette, which symbolic evaluates terms up to
 a certain bound while looking for counterexamples based on [incorrectness][incorrectness]
-or [Hoare][hoare] triples.
+or Hoare triples.
 
 [systemf]: https://en.wikipedia.org/wiki/System_F
-[incorrectness]: TODO
-[hoare]: TODO
+[incorrectness]: https://dl.acm.org/doi/pdf/10.1145/3371078
+[tweag-blogpost]: TODO
 
 # Use Case: Example
 
@@ -57,36 +57,18 @@ Now we can run `replIncorrectnessLogic1 10 params` in a repl and we should see:
   x ↦ 0 }
 ```
 
-
-----
-
-Pirouette is a semi-automatic code extraction tool. It extracts a
-[TLA+](https://lamport.azurewebsites.net/tla/tla.html) specification
-from a [Plutus] Mealy Machine. The extracted TLA+ specification can then be used to
-study and model-check properties over the Plutus Mealy
-Machine.
-
-## Plutus Smart Contracts and Transition Systems
+# Use Case: Plutus Smart Contracts
 
 [Plutus] is a subset of Haskell used to
 write smart contracts for Cardano blockchain, which utilizes the _Extended UTxO_
 [[1](https://iohk.io/en/research/library/papers/the-extended-utxo-model/),
 [2](https://iohk.io/en/research/library/papers/native-custom-tokens-in-the-extended-utxo-model/)]
-model to represent its accounts. This means that smart contracts
-written for the Cardano ecosystem are different from the usual
-account-based ledger format we see in most other blockchain ecosystems.
+model to represent its accounts. Pirouette has a prototype interface to interacting with
+plutus through `Language.Pirouette.PlutusIR`, but further work is necessary to
+seamlessly interact with validator scripts.
 
-The core of a EUTxO contract is the _[validator script](https://plutus.readthedocs.io/en/latest/plutus/tutorials/basic-validators.html)_ and in a multitude of scenarios, these validator scripts will be created with the help
-of either the _StateMachine_ library [[1](https://plutus-pioneer-program.readthedocs.io/en/latest/week7.html#code-example-2),[2](https://github.com/input-output-hk/plutus/blob/master/plutus-contract/src/Plutus/Contract/StateMachine.hs)] or a custom implementation of state machines. Therefore, the core of most contracts will be a Mealy Machine of the form:
-
-```haskell
-transition :: State -> Input -> Maybe (State, Output)
-```
-
-Pirouette's main functionality is extracting the `transition` function into TLA+ in such a way that
-the constructors of the `Input` datatype are used to represent the possible state transitions. This means
-that when TLA+ finds a counter-example, we will see the sequence `[i0, ..., iN] :: [Input]` of inputs
-we need to pass to `transition` to witness the failure.
+An example of using pirouette to load and check an incorrectness triple over a `.pir` file
+can be found in [here](tests/unit/Language/Pirouette/PlutusIR/SymEvalSpec.hs).
 
 ## Building, Installing and Hacking
 
@@ -99,56 +81,12 @@ to avoid building GHC when you start the nix shell.
 You might want to consider `direnv` and [`nix-direnv`](https://github.com/nix-community/nix-direnv)
 instead of running `nix-shell` directly.
 
-### Profling Pirouette
-
-To build with profiling enabled, open a nix shell with `nix-shell --arg enableHaskellProfiling true` (
-_WARNING:_ This will take a long time to complete). Once inside the nix shell, you can
-`cabal build --enable-profiling` and pass `+RTS` options to the executable normally.
-
-## Usage
-
-Run `cabal run pirouette -- --help` to see an updated list of options.
-For a more in depth tutorial on using Pirouette, have a look at the [MultiSigStateMachine tutorial](tests/integration/MultiSigStateMachine/TUTORIAL.md).
-
-Because the PlutusIR parser is [still experimental](https://github.com/input-output-hk/plutus/issues/3445),
-we recommend to pass a binary PlutusIR file
-to `pirouette`. You can save the PlutusIR code of your contract as a binary file
-by loading your contract on GHCi, then running the `saveBinaryFile` or `savePirFile` functions, exemplified below.
-
-
-```haskell
-import qualified Data.ByteString as BS
-import           Flat
-
-import           Your.Plutus.Contract (mkValidator)
-
-saveBinaryFile :: Haskell.IO ()
-saveBinaryFile = case getPir $$(PlutusTx.compile [|| mkValidator ||]) of
-                   Just res -> BS.writeFile "contract.flat" (flat res)
-                   Nothing  -> error "plutus compilation failed"
-
--- If you want to save a .pir file, make sure to call prettyClassicDebug to avoid
--- a pretty printer bug where variables can get shadowed
-import qualified PlutusCore.Pretty as P
-savePirFile :: Haskell.IO ()
-savePirFile = case getPir $$(PlutusTx.compile [|| mkValidator ||]) of
-                Just res -> Haskell.writeFile "contract.pir" (show $ P.prettyClassicDebug res)
-                Nothing  -> error "plutus compilation failed"
-```
-
-Note that you _do not_ need to import Pirouette to get a `.pir` or a `.flat` file from your contract,
-The `getPir` function comes from `plutus-core`.
-
-
 ## Limitations
 
-In its current form, `pirouette` itself is still a research prototype and, hence, has its limitations.
-In particular, it has difficulties dealing with arbitrary higher-order PlutusIR code. When pirouette successfully
-outputs a TLA+ spec, some familiarity and experience with TLA+ itself are required to extract useful results
-out of it. The tool does not figure out the specification for you.
-
-The overall approach of using TLA+ also carries the usual limitations
-of a model checker: the process of exhaustively checking the state
+In its current form, `pirouette` itself is still a research prototype
+and, hence, it has plenty of limitations. The overall approach of pirouette's
+symbolic engine is an intersetion of bounded model checking and symbolic executon, hence,
+it also carries the limitations of a model checker: it can be slow
 space can be slow and a model checker is not a substitute for a formal
 proof of correctness.
 
