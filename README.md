@@ -23,7 +23,9 @@ or Hoare triples.
 [incorrectness]: https://dl.acm.org/doi/pdf/10.1145/3371078
 [tweag-blogpost]: TODO
 
-# Use Case: Example
+# Use Cases
+
+## Example Language
 
 The `Language.Pirouette.Example` defines the `Ex` language: pirouette's example language.
 We refer the interested reader to check the respective module for guidelines on using pirouette over
@@ -57,7 +59,7 @@ Now we can run `replIncorrectnessLogic1 10 params` in a repl and we should see:
   x ↦ 0 }
 ```
 
-# Use Case: Plutus Smart Contracts
+## Plutus Smart Contracts
 
 [Plutus] is a subset of Haskell used to
 write smart contracts for Cardano blockchain, which utilizes the _Extended UTxO_
