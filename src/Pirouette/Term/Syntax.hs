@@ -190,7 +190,7 @@ safeIdx l = go l . fromIntegral
     go :: [a] -> Integer -> Maybe a
     go [] _ = Nothing
     go (x : _) 0 = Just x
-    go (_ : xs) n = go xs (n -1)
+    go (_ : xs) n = go xs (n - 1)
 
 unsafeIdx :: (Integral i) => String -> [a] -> i -> a
 unsafeIdx lbl l = fromMaybe (error $ "unsafeIdx: out-of-bounds; " ++ lbl) . safeIdx l
