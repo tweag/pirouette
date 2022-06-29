@@ -43,11 +43,11 @@ is: if `addone x > 0`, then `x > 0`. We obviously expect a counterexample with `
 We can use pirouette to find that assignment:
 
 ```haskell
-parms :: IncorrectnessParams Ex
-parms = IncorrectnessParams
-          [term| \x:Integer . x + 1 |] -- Term to symbolically evaluate
-          [ty| Integer |] -- type of the term above
-          -- Conditions to check
+params :: IncorrectnessParams Ex
+params = IncorrectnessParams
+          [term| \x:Integer . x + 1 |] -- A function term to symbolically evaluate
+          [ty| Integer |] -- type of the result of the function term above
+          -- Conditions to check, they take the result and the inputs of the function term 
           ([term| \(res:Integer) (x:Integer) . 0 < res |]
             :==>: [term| \(res:Integer) (x:Integer) . 0 < x |])
 ```
@@ -70,7 +70,7 @@ plutus through `Language.Pirouette.PlutusIR`, but further work is necessary to
 seamlessly interact with validator scripts.
 
 An example of using pirouette to load and check an incorrectness triple over a `.pir` file
-can be found in [here](tests/unit/Language/Pirouette/PlutusIR/SymEvalSpec.hs).
+can be found [here](tests/unit/Language/Pirouette/PlutusIR/SymEvalSpec.hs).
 
 ## Building, Installing and Hacking
 
@@ -87,9 +87,9 @@ instead of running `nix-shell` directly.
 
 In its current form, `pirouette` itself is still a research prototype
 and, hence, it has plenty of limitations. The overall approach of pirouette's
-symbolic engine is an intersetion of bounded model checking and symbolic executon, hence,
-it also carries the limitations of a model checker: it can be slow
-space can be slow and a model checker is not a substitute for a formal
+symbolic engine is an intersection of bounded model checking and symbolic execution, hence,
+it also carries the limitations of a model checker: exploration of the state space can be slow
+and it is not a substitute for a formal
 proof of correctness.
 
 ## Contributing

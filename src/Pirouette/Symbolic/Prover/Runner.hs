@@ -31,7 +31,7 @@ data IncorrectnessParams lang = IncorrectnessParams
 
 -- | The result type of 'runIncorrectnessLogic', returning the first (if any)
 --  path that is a counterexample to the supplied 'IncorrectnessParams'.
---  If you would like finer grained control, look at 'execIncorrectnessLogic.
+--  If you would like finer grained control, look at 'execIncorrectnessLogic'.
 type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 
 runIncorrectnessLogic1 ::
