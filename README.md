@@ -9,9 +9,9 @@ _Pirouette is a research prototype under active development_
 * [Contributing](#contributing)
 * [License](#license)
 
-Pirouette is being built as framework for constructing different static
-analisys tools for [System F][systemf] based languages. It has a number of
-transformations (monomorphization, defunctionalization, prenex, etc...) defined
+Pirouette is a framework for constructing different static
+analysis tools for [System F][systemf]-based languages. It has a number of
+transformations (monomorphization, defunctionalization, prenex, etc...) implemented
 and relies on the `-XQuasiQuotes` extension to be able to easily write
 properties in the target language.
 
@@ -28,7 +28,7 @@ or Hoare triples.
 ## Example Language
 
 The `Language.Pirouette.Example` defines the `Ex` language: pirouette's example language.
-We refer the interested reader to check the respective module for guidelines on using pirouette over
+We refer the interested reader to this module for guidelines on using pirouette over
 your own language.
 
 Now, say we have the simple program:
@@ -85,8 +85,8 @@ instead of running `nix-shell` directly.
 
 ## Limitations
 
-In its current form, `pirouette` itself is still a research prototype
-and, hence, it has plenty of limitations. The overall approach of pirouette's
+In its current form, `pirouette` itself is still a research prototype,
+hence, it has plenty of limitations. The overall approach of pirouette's
 symbolic engine is an intersection of bounded model checking and symbolic execution, hence,
 it also carries the limitations of a model checker: exploration of the state space can be slow
 and it is not a substitute for a formal
