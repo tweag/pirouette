@@ -160,7 +160,8 @@ instance LanguageParser Ex where
 -- | If we want to be able to typecheck any @Term Ex@, we need to have an instance for 'LanguageBuiltinTypes',
 -- which tell Pirouette how to type the different builtins and constants of a given language.
 instance LanguageBuiltinTypes Ex where
-  typeOfBottom = error "no bottom type in Ex"
+  typeOfBottom =
+    SystF.TyAll (SystF.Ann "a") SystF.KStar $ SystF.TyPure $ SystF.Bound (SystF.Ann "a") 0
   typeOfConstant (ConstInt _) = TInt
   typeOfConstant (ConstBool _) = TBool
   typeOfConstant (ConstString _) = TString

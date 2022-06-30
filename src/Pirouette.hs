@@ -1,7 +1,10 @@
 module Pirouette (module X) where
 
 import Pirouette.Symbolic.Prover.Runner as X
-  ( IncorrectnessParams (..),
+  ( AssumeProve (..),
+    IncorrectnessParams (..),
+    IncorrectnessResult,
     assertIncorrectnessLogic,
     replIncorrectnessLogic,
+    replIncorrectnessLogicSingl,
   )

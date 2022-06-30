@@ -16,15 +16,15 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 withUnorderedDecls ::
-  Program Ex ->
+  PrtUnorderedDefs Ex ->
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
-withUnorderedDecls (decls, main) m =
-  case runReaderT m (PrtUnorderedDefs decls main) of
+withUnorderedDecls prog m =
+  case runReaderT m prog of
     Left err -> assertFailure err
     Right t -> t
 
-sampleProgram :: Program Ex
+sampleProgram :: PrtUnorderedDefs Ex
 sampleProgram =
   [prog|
 data Maybe (a : Type)

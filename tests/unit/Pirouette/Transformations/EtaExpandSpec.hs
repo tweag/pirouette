@@ -1,10 +1,10 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Transformations.EtaExpandSpec (tests) where
 
@@ -17,13 +17,13 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 withUnorderedDecls ::
-  Program Ex ->
+  PrtUnorderedDefs Ex ->
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
-withUnorderedDecls (decls, main) m = runReader m (PrtUnorderedDefs decls main)
+withUnorderedDecls = flip runReader
 
-sampleProgram :: Program Ex
-sampleProgram =
+samplePrtUnorderedDefs :: PrtUnorderedDefs Ex
+samplePrtUnorderedDefs =
   [prog|
 data Maybe (a : Type)
   = Nothing : Maybe a
@@ -45,7 +45,7 @@ fun main : Integer = 42
 |]
 
 isEtaEq :: Term Ex -> Term Ex -> Assertion
-isEtaEq t u = withUnorderedDecls sampleProgram $ do
+isEtaEq t u = withUnorderedDecls samplePrtUnorderedDefs $ do
   res <- etaExpandTerm t
   return $ unless (res == u) (assertFailure $ msg res)
   where

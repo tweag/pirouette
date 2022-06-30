@@ -12,29 +12,28 @@ import Data.Maybe (isJust)
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity
 import Pirouette.Monad
-import qualified PureSMT
 import Pirouette.Symbolic.Eval
-import Pirouette.Symbolic.Prover
 import Pirouette.Symbolic.EvalUtils
+import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax
 import Pirouette.Transformations (elimEvenOddMutRec)
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
+import qualified PureSMT
 import Test.Tasty
 import Test.Tasty.HUnit
 
 exec ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) IO a) ->
-  (Program Ex, Type Ex, Term Ex) ->
+  (PrtUnorderedDefs Ex, Type Ex, Term Ex) ->
   (Term Ex, Term Ex) ->
   IO a
-exec toDo (program, tyRes, fn) (assume, toProve) = do
-  let decls = uncurry PrtUnorderedDefs program
+exec toDo (decls, tyRes, fn) (assume, toProve) = do
   let orderedDecls = elimEvenOddMutRec decls
   flip runReaderT orderedDecls $
     toDo (Problem tyRes fn assume toProve)
 
-add1 :: (Program Ex, Type Ex, Term Ex)
+add1 :: (PrtUnorderedDefs Ex, Type Ex, Term Ex)
 add1 =
   ( [prog|
 fun add1 : Integer -> Integer
@@ -64,7 +63,7 @@ input0Output1 =
     [term| \(result : Integer) (x : Integer) . greaterThan0 x |]
   )
 
-maybes :: Program Ex
+maybes :: PrtUnorderedDefs Ex
 maybes =
   [prog|
 data MaybeInt
@@ -193,7 +192,7 @@ fun main : Integer = 42
 --
 -- Now we have that SEM1 is equivalent to SEM3
 
-conditionals1 :: (Program Ex, Type Ex, Term Ex)
+conditionals1 :: (PrtUnorderedDefs Ex, Type Ex, Term Ex)
 conditionals1 =
   ( [prog|
 data Delta = D : Integer -> Integer -> Delta
@@ -254,7 +253,7 @@ ohearnTest =
 
 -- We didn't have much success with builtins integers; let me try the same with peano naturals:
 
-conditionals1Peano :: (Program Ex, Type Ex, Term Ex)
+conditionals1Peano :: (PrtUnorderedDefs Ex, Type Ex, Term Ex)
 conditionals1Peano =
   ( [prog|
 data Nat = Z : Nat | S : Nat -> Nat
@@ -361,8 +360,7 @@ tests =
 
 -- * IsUnity example
 
-
-isUnity :: (Program Ex, Type Ex, Term Ex)
+isUnity :: (PrtUnorderedDefs Ex, Type Ex, Term Ex)
 isUnity =
   ( IsUnity.definitions,
     [ty|Bool|],
@@ -383,11 +381,10 @@ condIsUnity =
 
 execFull ::
   (Problem Ex -> ReaderT (PrtOrderedDefs Ex) IO a) ->
-  (Program Ex, Type Ex, Term Ex) ->
+  (PrtUnorderedDefs Ex, Type Ex, Term Ex) ->
   (Term Ex, Term Ex) ->
   IO a
-execFull toDo (program, tyRes, fn) (assume, toProve) = do
-  let prog0 = uncurry PrtUnorderedDefs program
+execFull toDo (prog0, tyRes, fn) (assume, toProve) = do
   -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
   let prog1 = monomorphize prog0
   -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
