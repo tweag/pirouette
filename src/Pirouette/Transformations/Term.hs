@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Pirouette.Term.Transformations where
+module Pirouette.Transformations.Term where
 
 import Control.Applicative
 import Control.Arrow (second)
@@ -139,26 +139,6 @@ expandDefs = fmap deshadowBoundNames . rewriteM (runMaybeT . go)
           let res = SystF.appN def args
           return res
     go _ = fail "expandDefs: not an SystF.App"
-
-{-
--- |Expand the occurences of @n@ in the body of @m@
-expandDefIn :: (PirouetteReadDefs m) => Name -> Name -> m ()
-expandDefIn n m = pushCtx ("expandDefIn " ++ show n ++ " " ++ show m) $ do
-  isRec <- termIsRecursive n -- let's ensure n is not recursive
-  if isRec
-  then fail "expandDefIn: can't expand recursive term"
-  else do
-    -- fetch the current definition of n,
-    mdefn <- fromTermDef <$> prtDefOf n
-    defn  <- maybe (fail "expandDefIn: n not a termdef") return mdefn
-    -- fetch the current definition of m and, if its a DFunction, perform the rewrite
-    mdefm <- prtDefOf m
-    case mdefm of
-      DFunction r body ty -> do
-        let body' = deshadowBoundNames $ SystF.expandVar (SystF.F $ FreeName n, defn) body
-        modifyDef m (const $ Just $ DFunction r body' ty)
-      _ -> fail "expandDefIn: m not a termdef"
--}
 
 -- | Simplify /destructor after constructor/ applications. For example,
 --

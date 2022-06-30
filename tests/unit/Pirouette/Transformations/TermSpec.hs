@@ -2,16 +2,16 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 
-module Pirouette.Term.TransformationsSpec (tests) where
+module Pirouette.Transformations.TermSpec (tests) where
 
 import Control.Monad.Reader
 import Language.Pirouette.Example
 import Pirouette.Monad
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Transformations
+import Pirouette.Transformations.Term
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -22,10 +22,11 @@ withUnorderedDecls ::
 withUnorderedDecls (decls, main) m =
   case runReaderT m (PrtUnorderedDefs decls main) of
     Left err -> assertFailure err
-    Right t  -> t
+    Right t -> t
 
 sampleProgram :: Program Ex
-sampleProgram = [prog|
+sampleProgram =
+  [prog|
 data Maybe (a : Type)
   = Nothing : Maybe a
   | Just : a -> Maybe a
@@ -45,9 +46,10 @@ fun main : Integer = 42
 |]
 
 tests :: [TestTree]
-tests = [
-  testCase "destrNF" $ withUnorderedDecls sampleProgram $ do
-      destrNF_f1 <- prtTermDefOf "f1" >>= destrNF
-      expected <- prtTermDefOf "destrNF_f1"
-      return $ destrNF_f1 @?= expected
+tests =
+  [ testCase "destrNF" $
+      withUnorderedDecls sampleProgram $ do
+        destrNF_f1 <- prtTermDefOf "f1" >>= destrNF
+        expected <- prtTermDefOf "destrNF_f1"
+        return $ destrNF_f1 @?= expected
   ]

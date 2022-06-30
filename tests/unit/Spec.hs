@@ -5,7 +5,7 @@ import qualified Language.Pirouette.PlutusIR.SymEvalSpec as PIRSymEval
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Symbolic.EvalSpec as SymbolicEval
 import qualified Pirouette.Symbolic.ProveSpec as SymbolicProve
-import qualified Pirouette.Term.TransformationsSpec as Tr
+import qualified Pirouette.Transformations.TermSpec as Tr
 import qualified Pirouette.Transformations.DefunctionalizationSpec as Defunc
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
 import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
@@ -26,11 +26,11 @@ tests =
         [testGroup "Defunctionalization" Defunc.tests,
          testGroup "EtaExpand" Eta.tests,
          testGroup "Monomorphization" Mono.tests,
-         testGroup "Prenex" Prenex.tests],
+         testGroup "Prenex" Prenex.tests,
+         testGroup "Term" Tr.tests],
       testGroup
         "Term"
-        [testGroup "Base" Base.tests,
-         testGroup "Transformations" Tr.tests],
+        [testGroup "Base" Base.tests],
       testGroup
         "Symbolic"
         [testGroup "Symbolic evaluation" SymbolicEval.tests,

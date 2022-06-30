@@ -1,6 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Functions for computing the transitive dependencies of terms.
+-- Make sure to ceck "Pirouette.Transformations.ElimEvenOddMutRec" too, as it will attempt
+-- to linearize the environment as much as possible.
 module Pirouette.Term.TransitiveDeps where
 
 import Control.Arrow (first, second)

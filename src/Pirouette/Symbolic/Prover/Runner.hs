@@ -13,8 +13,6 @@ import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF (tyFunArgs)
 import Pirouette.Term.TypeChecker
 import Pirouette.Transformations
-import Pirouette.Transformations.Defunctionalization
-import Pirouette.Transformations.Monomorphization
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
 
