@@ -63,7 +63,7 @@ runIncorrectnessLogic maxCstrs prog parms =
 -- | Prepares a 'IncorrectnessParams' into a 'Problem', to be passed to
 --  some worker function. Chances are that you are looking for
 --  'runIncorrectnessLogic' instead, unless you want a specific analysis.
---  If that's the case, the arguments to worker that you want will
+--  If that's not the case, the arguments to worker that you want will
 --  likely be 'prove', 'proveUnbounded' or 'proveAny' from "Pirouette.Symbolic.Prove"
 execIncorrectnessLogic ::
   (Language lang, LanguageBuiltinTypes lang, Monad m) =>
