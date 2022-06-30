@@ -118,13 +118,13 @@ replIncorrectnessLogic ::
 replIncorrectnessLogic maxCstrs defs params =
   printIRResult maxCstrs $ runIncorrectnessLogic maxCstrs defs params
 
-replIncorrectnessLogic1 ::
+replIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   IncorrectnessParams lang ->
   IO ()
-replIncorrectnessLogic1 maxCstrs params =
-  printIRResult maxCstrs $ runIncorrectnessLogic1 maxCstrs params
+replIncorrectnessLogicSingl maxCstrs params =
+  printIRResult maxCstrs $ runIncorrectnessLogicSingl maxCstrs params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.

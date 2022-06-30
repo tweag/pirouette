@@ -6,5 +6,5 @@ import Pirouette.Symbolic.Prover.Runner as X
     IncorrectnessResult,
     assertIncorrectnessLogic,
     replIncorrectnessLogic,
-    replIncorrectnessLogic1,
+    replIncorrectnessLogicSingl,
   )
