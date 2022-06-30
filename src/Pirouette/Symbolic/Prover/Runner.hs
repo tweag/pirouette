@@ -34,12 +34,14 @@ data IncorrectnessParams lang = IncorrectnessParams
 --  If you would like finer grained control, look at 'execIncorrectnessLogic'.
 type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 
-runIncorrectnessLogic1 ::
+-- | Runs an incorrectness logic check for a single term, i.e., receives no
+-- environment of definitions.
+runIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogic1 maxCstrs =
+runIncorrectnessLogicSingl maxCstrs =
   runIncorrectnessLogic maxCstrs (PrtUnorderedDefs M.empty $ SystF.termPure $ SystF.Free Bottom)
 
 runIncorrectnessLogic ::
