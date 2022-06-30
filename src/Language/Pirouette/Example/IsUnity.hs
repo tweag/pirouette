@@ -3,35 +3,37 @@
 module Language.Pirouette.Example.IsUnity where
 
 import Language.Pirouette.Example
+import Pirouette.Monad
 import Pirouette.Symbolic.Prover.Runner
-import Pirouette.Term.Syntax.Base
 import qualified Test.Tasty.HUnit as Test
 
 checkWrong :: Test.Assertion
 checkWrong =
   assertIncorrectnessLogic
+    15
+    definitions
     IncorrectnessParams
-      { ipDefinitions = definitions,
-        ipTarget = [term| \(tx : TxInfo) . validator tx |], -- validator
+      { ipTarget = [term| \(tx : TxInfo) . validator tx |], -- validator
+        ipTargetType = [ty| Bool |],
         ipCondition =
           [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
-            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
-        ipMaxCstrs = 15
+            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
       }
 
 checkOk :: Test.Assertion
 checkOk =
   assertIncorrectnessLogic
+    20
+    definitions
     IncorrectnessParams
-      { ipDefinitions = definitions,
-        ipTarget = [term| \(tx : TxInfo) . correct_validator tx |], -- validator
+      { ipTarget = [term| \(tx : TxInfo) . correct_validator tx |], -- validator
+        ipTargetType = [ty| Bool |],
         ipCondition =
           [term| \(result : Bool) (tx : TxInfo) . result |] -- incorrectness triple
-            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |],
-        ipMaxCstrs = 20
+            :==>: [term| \(result : Bool) (tx : TxInfo) . correct_validator tx |]
       }
 
-definitions :: Program Ex
+definitions :: PrtUnorderedDefs Ex
 definitions =
   [prog|
 fun and : Bool -> Bool -> Bool

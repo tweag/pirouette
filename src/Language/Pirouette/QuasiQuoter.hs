@@ -34,13 +34,13 @@ prog = quoter $ \str -> do
   (decls, DFunDef main@(FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
   _ <- maybeQ (typeCheckDecls decls)
   _ <- maybeQ (typeCheckFunDef decls "main" main)
-  [e|(decls, mainTm)|]
+  [e|(PrtUnorderedDefs decls mainTm)|]
 
 progNoTC :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 progNoTC = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   (decls, DFunDef (FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
-  [e|(decls, mainTm)|]
+  [e|(PrtUnorderedDefs decls mainTm)|]
 
 term :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 term = quoter $ \str -> do

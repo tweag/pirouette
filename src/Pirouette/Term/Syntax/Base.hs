@@ -321,9 +321,6 @@ data Namespace = TermNamespace | TypeNamespace
 -- | A program will be translated into a number of term and type declarations.
 type Decls lang = Map (Namespace, Name) (Definition lang)
 
--- | A program consists in a set of declarations and a main term.
-type Program lang = (Decls lang, Term lang)
-
 -- * Language Builtins
 
 type EqOrdShowDataTypeable a = (Eq a, Ord a, Show a, Data a, Typeable a)

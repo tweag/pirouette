@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -5,7 +6,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Pirouette.Transformations.DefunctionalizationSpec (tests) where
 
@@ -27,19 +27,16 @@ tests =
     testGroup "Polymorphic" defuncTestsPoly
   ]
 
-uDefs :: Program Ex -> PrtUnorderedDefs Ex
-uDefs = uncurry PrtUnorderedDefs
-
 -- * Monomorphic Tests
 
 defuncTestsMono :: [TestTree]
 defuncTestsMono =
   [ testCase "add and apply, monomorphic" $
-      defunctionalize (uDefs addAndApply) `equalModuloDestructors` uDefs addAndApplyDefunc,
+      defunctionalize addAndApply `equalModuloDestructors` addAndApplyDefunc,
     testCase "add and const, monomorphic" $
-      defunctionalize (uDefs addConst) `equalModuloDestructors` uDefs addConstDefunc,
+      defunctionalize addConst `equalModuloDestructors` addConstDefunc,
     testCase "data type, monomorphic, free variables" $
-      defunctionalize (uDefs dataType) `equalModuloDestructors` uDefs dataTypeDefunc
+      defunctionalize dataType `equalModuloDestructors` dataTypeDefunc
   ]
   where
     -- We're testing equality of definitions except for destructors
@@ -61,7 +58,7 @@ defuncTestsMono =
         isDestructor DDestructor {} = True
         isDestructor _ = False
 
-addAndApply, addAndApplyDefunc :: Program Ex
+addAndApply, addAndApplyDefunc :: PrtUnorderedDefs Ex
 (addAndApply, addAndApplyDefunc) =
   ( [prog|
 fun add : Integer -> Integer -> Integer
@@ -96,7 +93,7 @@ fun main : Integer = 42
 |]
   )
 
-addConst, addConstDefunc :: Program Ex
+addConst, addConstDefunc :: PrtUnorderedDefs Ex
 (addConst, addConstDefunc) =
   ( [prog|
 fun add : Integer -> Integer -> Integer
@@ -156,7 +153,7 @@ fun main : Integer = 42
 |]
   )
 
-dataType, dataTypeDefunc :: Program Ex
+dataType, dataTypeDefunc :: PrtUnorderedDefs Ex
 (dataType, dataTypeDefunc) =
   ( [prog|
 data IntHomo
@@ -190,15 +187,14 @@ fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (Cl
 defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
   [ testCase "Nested closures are generated" $
-      case monoDefunc (uDefs bug) of
+      case monoDefunc bug of
         PrtOrderedDefs !x !y !z -> return ()
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtOrderedDefs Ex
     monoDefunc = elimEvenOddMutRec . defunctionalize . monomorphize
 
-
-bug :: Program Ex
+bug :: PrtUnorderedDefs Ex
 bug =
   [prog|
 fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
