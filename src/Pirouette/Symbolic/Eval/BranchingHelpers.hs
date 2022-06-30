@@ -1,7 +1,7 @@
--- |Whenever you are defining a language @L@ and you want to symbolically
--- evaluate it, you will need to define an instance for
--- 'Pirouette.Symbolic.Eval.Types.LanguageSymEval'. This module contains
--- definitions to help defining branching for different possible builtins
+-- | Whenever you are defining a language @L@ and you want to symbolically
+--  evaluate it, you will need to define an instance for
+--  'Pirouette.Symbolic.Eval.Types.LanguageSymEval'. This module contains
+--  definitions to help defining branching for different possible builtins
 module Pirouette.Symbolic.Eval.BranchingHelpers where
 
 import Pirouette.Monad
