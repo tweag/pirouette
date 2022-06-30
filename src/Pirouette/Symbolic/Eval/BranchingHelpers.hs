@@ -1,11 +1,15 @@
-module Pirouette.Symbolic.Eval.Helpers where
+-- | Whenever you are defining a language @L@ and you want to symbolically
+--  evaluate it, you will need to define an instance for
+--  'Pirouette.Symbolic.Eval.Types.LanguageSymEval'. This module contains
+--  definitions to help defining branching for different possible builtins
+module Pirouette.Symbolic.Eval.BranchingHelpers where
 
 import Pirouette.Monad
-import Pirouette.SMT.Base
-import Pirouette.SMT.Constraints
+import Pirouette.SMT
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
+-- | A standard way of instruction the symbolic engine how to branch on if-statements
 ifThenElseBranching ::
   (Applicative f, LanguageSMT lang, Show meta) =>
   (TermMeta lang meta -> Bool) ->

@@ -11,7 +11,7 @@ import Language.Pirouette.PlutusIR.Common
 import Language.Pirouette.PlutusIR.ToTerm
 import Pirouette.Monad
 import Pirouette.Term.Syntax
-import Pirouette.Term.Transformations
+import Pirouette.Transformations.Term
 import Test.Tasty
 import Test.Tasty.HUnit
 

@@ -5,13 +5,13 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Pirouette.Term.TransformationsSpec (tests) where
+module Pirouette.Transformations.TermSpec (tests) where
 
 import Control.Monad.Reader
 import Language.Pirouette.Example
 import Pirouette.Monad
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Transformations
+import Pirouette.Transformations.Term
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -24,8 +24,8 @@ withUnorderedDecls prog m =
     Left err -> assertFailure err
     Right t -> t
 
-samplePrtUnorderedDefs :: PrtUnorderedDefs Ex
-samplePrtUnorderedDefs =
+sampleProgram :: PrtUnorderedDefs Ex
+sampleProgram =
   [prog|
 data Maybe (a : Type)
   = Nothing : Maybe a
@@ -48,7 +48,7 @@ fun main : Integer = 42
 tests :: [TestTree]
 tests =
   [ testCase "destrNF" $
-      withUnorderedDecls samplePrtUnorderedDefs $ do
+      withUnorderedDecls sampleProgram $ do
         destrNF_f1 <- prtTermDefOf "f1" >>= destrNF
         expected <- prtTermDefOf "destrNF_f1"
         return $ destrNF_f1 @?= expected

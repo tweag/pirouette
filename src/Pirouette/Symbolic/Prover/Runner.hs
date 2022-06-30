@@ -13,9 +13,6 @@ import Pirouette.Term.Syntax (pretty)
 import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations
-import Pirouette.Transformations.Contextualize
-import Pirouette.Transformations.Defunctionalization
-import Pirouette.Transformations.Monomorphization
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
 

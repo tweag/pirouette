@@ -15,8 +15,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.String (IsString)
 import Pirouette.Monad
-import qualified Pirouette.SMT.Base as SMT
-import qualified Pirouette.SMT.Constraints as SMT
+import qualified Pirouette.SMT as SMT
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT

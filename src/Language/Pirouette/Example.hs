@@ -32,9 +32,8 @@ import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter as QQ
 import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Monad (termIsConstant, termIsMeta)
-import Pirouette.SMT.Base
-import Pirouette.SMT.Constraints
-import Pirouette.Symbolic.Eval.Helpers
+import Pirouette.SMT
+import Pirouette.Symbolic.Eval.BranchingHelpers
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF

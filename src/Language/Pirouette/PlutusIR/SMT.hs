@@ -11,7 +11,7 @@ import Language.Pirouette.PlutusIR.Syntax
 import Pirouette.Monad
 import Pirouette.SMT.Base
 import Pirouette.SMT.Constraints
-import Pirouette.Symbolic.Eval.Helpers
+import Pirouette.Symbolic.Eval.BranchingHelpers
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF as SystemF
