@@ -1,0 +1,74 @@
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository code.
+      uses: actions/checkout@v2.4.0
+
+    - name: Install nix
+      uses: cachix/install-nix-action@v15
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Accessing the cabal cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cabal/store
+          dist-newstyle
+        ## We can use the counter to invalidate the cache whenever necessary
+        key: cabal-cache-1-${{ github.sha }}
+        restore-keys: |
+          cabal-cache-1-
+
+    - name: Accessing the result cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ./*.out
+          ./*.res
+        key: result-cache-${{ github.sha }}
+
+    - name: Chmod test script
+      run: |
+        chmod u+x tests/run-tests.sh
+
+    - name: Build and test pirouette
+      uses: ./.github/actions/nix-run
+      with:
+        command: ./tests/run-tests.sh --ci
+
+  check-result:
+    needs: build-and-test
+    name: check-result
+    runs-on: ubuntu-latest
+    steps:
+    - name: Accessing the result cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ./*.out
+          ./*.res
+        key: result-cache-${{ github.sha }}
+
+    - name: Check result
+      run: |
+        echo "!! CABAL TEST OUTPUT:"
+        cat pirouette-cabal-test.out
+        cabal_res=$(cat pirouette-cabal-test.res | cut -d':' -f2)
+        echo "!! ORMOLU OUTPUT:"
+        cat pirouette-ormolu.out
+        ormolu_res=$(cat pirouette-ormolu.res | cut -d':' -f2)
+        if [[ "$cabal_res" != "0" ]] || [[ "$ormolu_res" != "0" ]]; then
+          exit 1
+        fi
+

@@ -9,36 +9,49 @@ extra-source-files:
 
 dependencies:
   - base >= 4.9 && < 5
+  - aeson
   - mtl >= 2.2.2
   - bytestring
   - containers
-  - freer-extras
   - lens
-  - plutus-core
   - text
   - prettyprinter
   - gitrev
   - optparse-applicative
-  - parsec
   - megaparsec
-  - flat >= 0.4.5
+  - parser-combinators
   - uniplate
   - hspec
-  - tlaplus
-  - tlaplus-qq
   - QuickCheck
-  - bound
   - interpolate
   - deriving-compat
+  - simple-smt
+  - process
+  - typed-process
+  - tlaplus
+  - tlaplus-qq
+  - flat >= 0.4.5
+  - plutus-core
+  - list-t
+  - template-haskell
+  - tasty
+  - tasty-hunit
+  - tasty-hspec
+  - tasty-quickcheck
+  - tasty-expected-failure
+  - haskell-stack-trace-plugin
+  - optics-core
+  - optics-th
+  - ansi-terminal
+  - parallel
 
 library:
   source-dirs: src
-
-executable:
-  main: Main.hs
-  source-dirs: executable
-  dependencies:
-    - pirouette
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -fplugin=StackTrace.Plugin
+    -threaded
 
 tests:
   spec:
@@ -47,3 +60,5 @@ tests:
       - tests/unit
     dependencies:
       - pirouette
+    ghc-options:
+      -threaded

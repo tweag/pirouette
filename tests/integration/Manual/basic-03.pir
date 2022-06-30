@@ -121,9 +121,13 @@
       )
       (abs a (type)
         (lam v [AdditiveMonoid a]
-          [ { [ { AdditiveMonoid_match a } v ] (fun a (fun a a)) }
-            (lam v_160 (fun a (fun a a)) (lam v_162 a v_160))
-          ]
+          (lam arg1 a
+            (lam arg2 a
+              [ { [ { AdditiveMonoid_match a } v ] a }
+                (lam v_160 (fun a (fun a a)) (lam v_162 a [ v_160 arg1 arg2 ]))
+              ]
+            )
+          )
         )
       )
     )
@@ -192,13 +196,13 @@
           [{[State_match st] [Maybe State]}
             (lam bs [List Bool]
               [[[{[Input_match i] [Maybe State]}
-                  (lam x Bool [Just [St [[{Cons Bool} x] bs]]] )]
-                  (lam x Bool [Just [St [ 
+                  (lam x Bool [{Just State} [St [[{Cons Bool} x] bs]]] )]
+                  (lam x Bool [{Just State} [St [
                     [[{ iterate [List Bool] } [{Cons Bool} x]] {Nil Bool}] [{length Bool} bs] ]]] )] 
                   [[{[{ Nil_match Bool } bs] [Maybe State]} 
-                      Nothing]
+                      {Nothing State}]
                       (lam b0 Bool (lam bs0 [List Bool] 
-                        [Just [St [{Cons Bool} [or bs] { Nil Bool } ]]]
+                        [{Just State} [St [{Cons Bool} [or bs] { Nil Bool } ]]]
                       ))]
                 ]
                   
