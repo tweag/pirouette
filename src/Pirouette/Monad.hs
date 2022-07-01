@@ -62,9 +62,6 @@ class (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang m | m -> lang w
   -- | Returns all declarations in scope
   prtAllDefs :: m (Map.Map (Namespace, Name) (Definition lang))
 
-  -- | Returns the main program
-  prtMain :: m (Term lang)
-
 -- | Returns the definition associated with a given name. Raises a 'PEUndefined'
 --  if the name doesn't exist.
 prtDefOf :: (PirouetteReadDefs lang m) => Namespace -> Name -> m (Definition lang)
@@ -99,23 +96,18 @@ prtIsConst n = MaybeT $ fromConstDef <$> prtDefOf TermNamespace n
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Lazy.StateT s m) where
   prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (Strict.StateT s m) where
   prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (ReaderT s m) where
   prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (ListT m) where
   prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
 
 instance {-# OVERLAPPABLE #-} (PirouetteReadDefs lang m) => PirouetteReadDefs lang (WeightedListT m) where
   prtAllDefs = lift prtAllDefs
-  prtMain = lift prtMain
 
 -- | Returns the type of an identifier
 typeOfIdent :: (PirouetteReadDefs lang m) => Name -> m (Type lang)
@@ -215,12 +207,8 @@ termIsWHNFOrMeta tm = do
 
 -- *** Implementations for 'PirouetteReadDefs'
 
--- | Unordered definitions consist in a map of 'Name' to 'PrtDef' and
---  a /main/ term.
-data PrtUnorderedDefs lang = PrtUnorderedDefs
-  { prtUODecls :: Decls lang,
-    prtUOMainTerm :: Term lang
-  }
+-- | Unordered definitions consist in a map of 'Name' to 'PrtDef'.
+newtype PrtUnorderedDefs lang = PrtUnorderedDefs {prtUODecls :: Decls lang}
   deriving (Eq, Data, Show)
 
 addDecls :: Decls builtins -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
@@ -228,7 +216,6 @@ addDecls decls defs = defs {prtUODecls = prtUODecls defs <> decls}
 
 instance (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
   prtAllDefs = asks prtUODecls
-  prtMain = asks prtUOMainTerm
 
 instance
   {-# OVERLAPPING #-}
@@ -236,7 +223,6 @@ instance
   PirouetteReadDefs lang (Strict.StateT (PrtUnorderedDefs lang) m)
   where
   prtAllDefs = Strict.gets prtUODecls
-  prtMain = Strict.gets prtUOMainTerm
 
 -- | In contrast to ordered definitions, where we have a dependency order
 --  for all term and type declarations in 'prtDecls'. That is, given two
@@ -244,16 +230,14 @@ instance
 --  that is, @f@ appears before @g@ in @prtDepOrder@.
 data PrtOrderedDefs lang = PrtOrderedDefs
   { prtDecls :: Decls lang,
-    prtDepOrder :: [SystF.Arg Name Name],
-    prtMainTerm :: Term lang
+    prtDepOrder :: [SystF.Arg Name Name]
   }
 
 prtOrderedDefs :: PrtUnorderedDefs lang -> [SystF.Arg Name Name] -> PrtOrderedDefs lang
-prtOrderedDefs uod ord = PrtOrderedDefs (prtUODecls uod) ord (prtUOMainTerm uod)
+prtOrderedDefs uod = PrtOrderedDefs (prtUODecls uod)
 
 instance (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang (ReaderT (PrtOrderedDefs lang) m) where
   prtAllDefs = asks prtDecls
-  prtMain = asks prtMainTerm
 
 class (PirouetteReadDefs lang m) => PirouetteDepOrder lang m where
   -- | Returns the dependency ordering of the currently declared terms.
@@ -263,7 +247,7 @@ instance (LanguageBuiltins lang, Monad m) => PirouetteDepOrder lang (ReaderT (Pr
   prtDependencyOrder = asks prtDepOrder
 
 getPrtOrderedDefs :: (PirouetteDepOrder lang m) => m (PrtOrderedDefs lang)
-getPrtOrderedDefs = PrtOrderedDefs <$> prtAllDefs <*> prtDependencyOrder <*> prtMain
+getPrtOrderedDefs = PrtOrderedDefs <$> prtAllDefs <*> prtDependencyOrder
 
 -- * Some useful syntactical utilities
 

@@ -40,12 +40,11 @@ tests = (: []) $
           let shortN = head $ filter ((== "short") . nameString . snd) $ M.keys decls
           let (DFunction _ long _) = fromJust $ M.lookup longN decls
           let (DFunction _ short _) = fromJust $ M.lookup shortN decls
-          runReader (expandDefs long) (mocked decls) @?= short
+          runReader (expandDefs long) (PrtUnorderedDefs decls) @?= short
       ]
   where
-    mocked = flip PrtUnorderedDefs undefined
     acquire = do
-      PrtUnorderedDefs decls _ <- openAndParsePIR "tests/unit/resources/fromPlutusIRSpec-01.pir"
+      (_, PrtUnorderedDefs decls) <- openAndParsePIR "tests/unit/resources/fromPlutusIRSpec-01.pir"
       return decls
 
 -- TODO: Check that Datatype decls have the typeVariables redeclared on

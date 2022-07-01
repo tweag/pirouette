@@ -107,7 +107,6 @@ type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
 instance (SymEvalConstr lang) => PirouetteReadDefs lang (SymEval lang) where
   prtAllDefs = SymEval (asks $ prtDecls . seeDefs)
-  prtMain = SymEval (asks $ prtMainTerm . seeDefs)
 
 instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEval lang) where
   prtDependencyOrder = SymEval (asks $ prtDepOrder . seeDefs)

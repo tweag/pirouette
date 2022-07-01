@@ -11,8 +11,7 @@
 -- writing terms for testing pirouette a with a little less work.
 -- A lot of the syntactical choices have been made to make parsing
 -- as easy as possible. A program in this language is a set of
--- definitions containing one definition named @main@.
--- One example program would be:
+-- definitions. One example program would be:
 --
 -- > -- Declares a datatype with a destructor named match_Maybe
 -- > data Maybe (a : Type)
@@ -25,7 +24,7 @@
 -- > fun cons : all (a : Type) (b : Type) . a -> b -> a
 -- >   = /\ (a : Type) (b : Type) . \(x : a) (y : b) . x
 -- >
--- > fun main : Integer
+-- > fun val : Integer
 -- >   -- type applications are made just like Haskell, so are comments.
 -- >   -- The language has Integers and booleans
 -- >   = id @Integer (if True then 42 else 0)
@@ -121,16 +120,11 @@ deriving instance
 
 -- * Parsers
 
--- | Parses a program, consisting in a map of declarations and one distinguished
---  function called main.
+-- | A program consists in a number of declarations
 parseProgram ::
   (LanguageParser lang) =>
-  Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)), FunDecl lang)
-parseProgram = do
-  decls <- M.fromList <$> many parseDecl
-  case M.lookup "main" decls of
-    Just (Right fun) -> return (M.delete "main" decls, fun)
-    _ -> error "Main is not present or is not a function definition"
+  Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)))
+parseProgram = M.fromList <$> many parseDecl
 
 parseDecl :: (LanguageParser lang) => Parser (String, Either (DataDecl lang) (FunDecl lang))
 parseDecl =

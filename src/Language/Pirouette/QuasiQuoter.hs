@@ -25,22 +25,21 @@ import Language.Pirouette.QuasiQuoter.ToTerm
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Term.TypeChecker (typeCheckDecls, typeCheckFunDef)
+import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 
 prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, Language lang) => QuasiQuoter
 prog = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
-  (decls, DFunDef main@(FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
+  decls <- trQ (trProgram p0)
   _ <- maybeQ (typeCheckDecls decls)
-  _ <- maybeQ (typeCheckFunDef decls "main" main)
-  [e|(PrtUnorderedDefs decls mainTm)|]
+  [e|(PrtUnorderedDefs decls)|]
 
 progNoTC :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 progNoTC = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
-  (decls, DFunDef (FunDef _ mainTm _)) <- trQ (uncurry trProgram p0)
-  [e|(PrtUnorderedDefs decls mainTm)|]
+  decls <- trQ (trProgram p0)
+  [e|(PrtUnorderedDefs decls)|]
 
 term :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 term = quoter $ \str -> do

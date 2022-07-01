@@ -53,7 +53,6 @@ defuncTestsMono =
                 renderSingleLineStr (pretty decls2)
               ]
       assertBool msg (decls1 == decls2)
-      prtUOMainTerm p1 @=? prtUOMainTerm p2
       where
         isDestructor DDestructor {} = True
         isDestructor _ = False
@@ -69,8 +68,6 @@ fun apply : (Integer -> Integer) -> Integer -> Integer
 
 fun two : Integer
     = apply (add 1) 1
-
-fun main : Integer = 42
 |],
     [prog|
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
@@ -88,8 +85,6 @@ fun apply : Closure!!TyInteger_TyInteger -> Integer -> Integer
 
 fun two : Integer
     = apply Closure!!TyInteger_TyInteger_ctor_0 1
-
-fun main : Integer = 42
 |]
   )
 
@@ -113,8 +108,6 @@ fun three : Integer
 
 fun four : Integer
    = apply (apply (add 2)) 2
-
-fun main : Integer = 42
 |],
     [prog|
 data Closure!!TyInteger_TyInteger
@@ -148,8 +141,6 @@ fun three : Integer
 
 fun two : Integer
     = apply Closure!!TyInteger_TyInteger_ctor_3 1
-
-fun main : Integer = 42
 |]
   )
 
@@ -188,7 +179,7 @@ defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
   [ testCase "Nested closures are generated" $
       case monoDefunc bug of
-        PrtOrderedDefs !x !y !z -> return ()
+        PrtOrderedDefs !x !y -> return ()
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtOrderedDefs Ex

@@ -29,8 +29,8 @@ import Test.Tasty.HUnit
 execFromPIRFile ::
   FilePath -> IncorrectnessParams PlutusIR -> IO [Path PlutusIR (EvaluationWitness PlutusIR)]
 execFromPIRFile path problem = do
-  pir <- openAndParsePIR path
-  execIncorrectnessLogic proveUnbounded pir problem
+  (_pirMain, pirDecls) <- openAndParsePIR path
+  execIncorrectnessLogic proveUnbounded pirDecls problem
 
 tests :: [TestTree]
 tests =

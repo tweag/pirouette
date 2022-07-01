@@ -11,7 +11,6 @@ import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax (pretty)
 import Pirouette.Term.Syntax.Base
-import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
@@ -39,7 +38,7 @@ runIncorrectnessLogicSingl ::
   IncorrectnessParams lang ->
   IncorrectnessResult lang
 runIncorrectnessLogicSingl maxCstrs =
-  runIncorrectnessLogic maxCstrs (PrtUnorderedDefs M.empty $ SystF.termPure $ SystF.Free Bottom)
+  runIncorrectnessLogic maxCstrs (PrtUnorderedDefs M.empty)
 
 runIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>

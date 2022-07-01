@@ -220,11 +220,10 @@ defunCalls ::
   PrtUnorderedDefs lang ->
   DefunCallsCtx lang (PrtUnorderedDefs lang)
 defunCalls toDefun PrtUnorderedDefs {..} = do
-  mainTerm' <- defunCallsInTerm prtUOMainTerm
   decls' <- for prtUODecls $ \case
     DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm body
     def -> pure def
-  pure $ PrtUnorderedDefs decls' mainTerm'
+  pure $ PrtUnorderedDefs decls'
   where
     defunCallsInTerm :: Term lang -> DefunCallsCtx lang (Term lang)
     defunCallsInTerm = go []

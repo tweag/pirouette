@@ -30,15 +30,12 @@ import qualified Pirouette.Term.Syntax.SystemF as SystemF
 prenex ::
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
-prenex PrtUnorderedDefs {prtUODecls, prtUOMainTerm} = do
+prenex (PrtUnorderedDefs prtUODecls) =
   -- this is done in two steps
   -- step 1. prenexify the types and lambdas
   let prenexDecls = Map.map prenexDefinitionLambdas prtUODecls
-  -- step 2. prenixify the bodies
-  PrtUnorderedDefs
-    { prtUODecls = Map.map (prenexDefinitionBody prenexDecls) prenexDecls,
-      prtUOMainTerm = prenexExpr prenexDecls prtUOMainTerm
-    }
+   in -- step 2. prenixify the bodies
+      PrtUnorderedDefs $ Map.map (prenexDefinitionBody prenexDecls) prenexDecls
 
 -- | Update the type and initial lambdas
 -- from a definition. This *must* be followed

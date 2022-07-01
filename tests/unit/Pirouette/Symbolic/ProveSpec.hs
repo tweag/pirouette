@@ -44,8 +44,6 @@ fun greaterThan0 : Integer -> Bool
 
 fun greaterThan1 : Integer -> Bool
   = \(x : Integer) . 1 < x
-
-fun main : Integer = 42
   |],
     [ty|Integer|],
     [term| \(x : Integer) . add1 x |]
@@ -78,8 +76,6 @@ fun isJust : MaybeInt -> Bool
 
 fun not : Bool -> Bool
   = \(b : Bool) . if @Bool b then False else True
-
-fun main : Integer = 42
 |]
 
 -- This is a small example taken from O'Hearn's paper; besides being interesting for
@@ -217,8 +213,6 @@ fun ohearn : Delta -> Delta
   . if @Delta even (fst xy)
     then D (fst xy) 42
     else xy
-
-fun main : Integer = 42
   |],
     [ty|Delta|],
     [term| \(x : Delta) . ohearn x |]
@@ -286,8 +280,6 @@ fun ohearn : Delta -> Delta
   . if @Delta even (fst xy)
     then D (fst xy) (S (S Z))
     else xy
-
-fun main : Integer = 42
   |],
     [ty|Delta|],
     [term| \(x : Delta) . ohearn x |]

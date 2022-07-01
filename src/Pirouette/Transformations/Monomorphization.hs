@@ -31,7 +31,6 @@ import Data.List (isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
-import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -117,7 +116,6 @@ import Pirouette.Transformations.Utils
 --    the whole step (3) is repeated until the fixpoint
 --    (which presumably might not exist for arbitrary System Fω, but shall exist for the subset of programs we care about).
 -- 5. Having done that, all the higher-order definitions from (2) are subject to @prune@.
---    If step (3) works correctly, then they are not used transitively from the modified main term.
 monomorphize ::
   forall lang.
   (Language lang) =>
@@ -181,14 +179,14 @@ executeSpecRequest SpecRequest {origDef = HofDef {..}, ..} = M.fromList $
                 (drop specArgsLen typeVariables)
                 (fixName destructor)
                 ctors -- TODO does this only apply to `kind ~ *`?
-       in trace (show specArgs) $
-            [ ((TypeNamespace, tyName), newDef),
-              ((TermNamespace, dtorName), DDestructor tyName)
-            ]
-              <> [ ((TermNamespace, ctorName), DConstructor i tyName)
-                   | (ctorName, _) <- ctors
-                   | i <- [0 ..]
-                 ]
+       in -- trace (show specArgs) $
+          [ ((TypeNamespace, tyName), newDef),
+            ((TermNamespace, dtorName), DDestructor tyName)
+          ]
+            <> [ ((TermNamespace, ctorName), DConstructor i tyName)
+                 | (ctorName, _) <- ctors
+                 | i <- [0 ..]
+               ]
   where
     fixName = genSpecName specArgs
     specArgsLen = length specArgs

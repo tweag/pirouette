@@ -42,6 +42,5 @@ tests =
       canParseProgram
         [prog|
           data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
-          fun main : Integer = 42
         |]
   ]

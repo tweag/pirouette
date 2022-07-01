@@ -24,13 +24,12 @@ type Env = [String]
 trProgram ::
   (LanguageParser lang) =>
   M.Map String (Either (DataDecl lang) (FunDecl lang)) ->
-  FunDecl lang ->
-  TrM (M.Map (Namespace, Name) (Definition lang), Definition lang)
-trProgram env main@FunDecl {} =
+  TrM (M.Map (Namespace, Name) (Definition lang))
+trProgram env =
   let decls = forM (M.toList env) $ \case
         (s, Left td) -> trDataDecl s td
         (s, Right f) -> (\r -> [((TermNamespace, fromString s), r)]) <$> trFunDecl f
-   in (,) <$> (decls >>= toDecls . concat) <*> trFunDecl main
+   in decls >>= toDecls . concat
   where
     toDecls :: [((Namespace, Name), Definition lang)] -> TrM (Decls lang)
     toDecls ds =

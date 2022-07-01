@@ -42,7 +42,7 @@ tests =
 
 assertTrProgramOk :: FilePath -> Assertion
 assertTrProgramOk flatFilePath = do
-  PrtUnorderedDefs decls _ <- openAndDecodeFlat flatFilePath
+  (_, PrtUnorderedDefs decls) <- openAndDecodeFlat flatFilePath
   -- writeFile "decls.pirouette" (show $ pretty decls)
   let allDecls = builtinTypeDecls decls <> decls
   -- print $ pretty allDecls
