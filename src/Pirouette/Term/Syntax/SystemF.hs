@@ -408,7 +408,6 @@ instance IsString x => IsString (Ann x) where
   fromString = Ann . fromString
 
 -- These must go at the end because of Template Haskell restrictions
-
 makePrisms ''VarMeta
 makePrisms ''AnnType
 makePrisms ''AnnTerm

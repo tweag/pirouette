@@ -5,7 +5,7 @@ cabal-version: 2.4
 -- see: https://github.com/sol/hpack
 
 name:           pirouette
-version:        0.0.0
+version:        2.0.0
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
@@ -17,11 +17,6 @@ library
   exposed-modules:
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
-      Language.Pirouette.PlutusIR
-      Language.Pirouette.PlutusIR.SMT
-      Language.Pirouette.PlutusIR.Syntax
-      Language.Pirouette.PlutusIR.ToTerm
-      Language.Pirouette.PlutusIR.Typing
       Language.Pirouette.QuasiQuoter
       Language.Pirouette.QuasiQuoter.Syntax
       Language.Pirouette.QuasiQuoter.ToTerm
@@ -71,39 +66,27 @@ library
   ghc-options: -Wall -Wno-orphans -fplugin=StackTrace.Plugin -threaded
   build-depends:
       QuickCheck
-    , aeson
     , ansi-terminal
     , base >=4.9 && <5
     , bytestring
     , containers
     , deriving-compat
-    , flat >=0.4.5
-    , gitrev
     , haskell-stack-trace-plugin
-    , hspec
     , interpolate
-    , lens
-    , list-t
     , megaparsec
     , mtl >=2.2.2
     , optics-core
     , optics-th
-    , optparse-applicative
     , parallel
     , parser-combinators
-    , plutus-core
     , prettyprinter
     , process
-    , simple-smt
     , tasty
     , tasty-expected-failure
-    , tasty-hspec
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
     , text
-    , tlaplus
-    , tlaplus-qq
     , typed-process
     , uniplate
   default-language: Haskell2010
@@ -113,10 +96,6 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.Pirouette.ExampleSpec
-      Language.Pirouette.PlutusIR.Common
-      Language.Pirouette.PlutusIR.SymEvalSpec
-      Language.Pirouette.PlutusIR.SyntaxSpec
-      Language.Pirouette.PlutusIR.ToTermSpec
       Pirouette.Symbolic.EvalSpec
       Pirouette.Symbolic.EvalUtils
       Pirouette.Symbolic.ProveSpec
@@ -135,40 +114,28 @@ test-suite spec
   ghc-options: -threaded
   build-depends:
       QuickCheck
-    , aeson
     , ansi-terminal
     , base >=4.9 && <5
     , bytestring
     , containers
     , deriving-compat
-    , flat >=0.4.5
-    , gitrev
     , haskell-stack-trace-plugin
-    , hspec
     , interpolate
-    , lens
-    , list-t
     , megaparsec
     , mtl >=2.2.2
     , optics-core
     , optics-th
-    , optparse-applicative
     , parallel
     , parser-combinators
     , pirouette
-    , plutus-core
     , prettyprinter
     , process
-    , simple-smt
     , tasty
     , tasty-expected-failure
-    , tasty-hspec
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
     , text
-    , tlaplus
-    , tlaplus-qq
     , typed-process
     , uniplate
   default-language: Haskell2010
