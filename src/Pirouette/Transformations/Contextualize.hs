@@ -1,5 +1,8 @@
+{-# LANGUAGE TupleSections #-}
+
 module Pirouette.Transformations.Contextualize where
 
+import qualified Data.Map as M
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import Pirouette.Monad
@@ -26,6 +29,16 @@ contextualizeTerm tm = fixContextTerm <$> prtAllDefs <*> pure tm
 contextualizeType :: (PirouetteReadDefs lang m) => Type lang -> m (Type lang)
 contextualizeType tm = fixContextType <$> prtAllDefs <*> pure tm
 
+contextualizeDef :: (PirouetteReadDefs lang m) => Definition lang -> m (Definition lang)
+contextualizeDef (DFunDef (FunDef r term ty)) = DFunDef <$> (FunDef r <$> contextualizeTerm term <*> contextualizeType ty)
+contextualizeDef (DConstructor i n) = return (DConstructor i n)
+contextualizeDef (DDestructor n) = return (DDestructor n)
+contextualizeDef (DTypeDef (Datatype k vars dest cons)) =
+  DTypeDef <$> (Datatype k vars dest <$> mapM (secondM contextualizeType) cons)
+
+contextualizeDecls :: (PirouetteReadDefs lang m) => Decls lang -> m (Decls lang)
+contextualizeDecls = fmap M.fromList . mapM (secondM contextualizeDef) . M.toList
+
 -- | Make a 'Name's in the type with empty uniques
 -- refer to those in the context.
 contextualizeTermName :: (PirouetteReadDefs lang m) => T.Text -> m Name
@@ -35,6 +48,9 @@ contextualizeTermName nm = fixContextName <$> prtAllDefs <*> pure TermNamespace 
 -- refer to those in the context.
 resolve :: (PirouetteReadDefs lang m) => T.Text -> m Name
 resolve = contextualizeTermName
+
+fixContextNameM :: (PirouetteReadDefs lang m) => Namespace -> Name -> m Name
+fixContextNameM space nm = (\d -> fixContextName d space nm) <$> prtAllDefs
 
 fixContextName :: Map.Map (Namespace, Name) (Definition lang) -> Namespace -> Name -> Name
 fixContextName inScope space nm
@@ -93,3 +109,6 @@ removeFromScope ::
   Map.Map (Namespace, Name) (Definition lang)
 removeFromScope inScope space nm =
   Map.delete (space, nm) inScope
+
+secondM :: (Monad m) => (b -> m b') -> (a, b) -> m (a, b')
+secondM f (a, b) = (a,) <$> f b
