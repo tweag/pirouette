@@ -124,9 +124,9 @@ typeOfIdent n = do
 --
 --  We'll get @Set.fromList [SystF.Arg "g", SystF.Arg "h"]@. If you'd expect to see
 --  @SystF.Arg "f"@ in the result aswell, use "Pirouette.Term.TransitiveDeps.transitiveDepsOf" instead.
-directDepsOf :: (PirouetteReadDefs lang m) => Name -> m (Set.Set (SystF.Arg Name Name))
-directDepsOf n = do
-  ndef <- prtDefOfAnyNamespace n
+directDepsOf :: (PirouetteReadDefs lang m) => Namespace -> Name -> m (Set.Set (SystF.Arg Name Name))
+directDepsOf space n = do
+  ndef <- prtDefOf space n
   return $ case ndef of
     DFunction _ t ty -> typeNames ty <> termNames t
     DTypeDef d ->
@@ -139,8 +139,8 @@ directDepsOf n = do
 
 -- | Just like 'directDepsOf', but forgets the information of whether certain dependency
 --  was on a type or a term.
-directDepsOf' :: (PirouetteReadDefs lang m) => Name -> m (Set.Set Name)
-directDepsOf' = fmap (Set.map (SystF.argElim id id)) . directDepsOf
+directDepsOf' :: (PirouetteReadDefs lang m) => Namespace -> Name -> m (Set.Set Name)
+directDepsOf' space = fmap (Set.map (SystF.argElim id id)) . directDepsOf space
 
 -- | Returns whether a constructor is recursive. For the
 --  type of lists, for example, @Cons@ would be recursive
@@ -158,7 +158,7 @@ consIsRecursive ty con = do
 --  calling @termIsRecursive "f"@ would return @False@. See 'transitiveDepsOf' if
 --  you want to know whether a term is depends on itself transitively.
 termIsRecursive :: (PirouetteReadDefs lang m) => Name -> m Bool
-termIsRecursive n = Set.member (SystF.TermArg n) <$> directDepsOf n
+termIsRecursive n = Set.member (SystF.TermArg n) <$> directDepsOf TermNamespace n
 
 data WHNFResult lang meta
   = WHNFConstant (Constants lang)
