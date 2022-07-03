@@ -70,17 +70,6 @@ prtDefOf space n = do
     Nothing -> prtError $ PEUndefined n
     Just x -> return x
 
-prtDefOfAnyNamespace :: (PirouetteReadDefs lang m) => Name -> m (Definition lang)
-prtDefOfAnyNamespace n = do
-  defs <- prtAllDefs
-  let tm = Map.lookup (TermNamespace, n) defs
-      ty = Map.lookup (TypeNamespace, n) defs
-  case (tm, ty) of
-    (Just _, Just _) -> prtError $ PEUndefined n
-    (Just t, Nothing) -> pure t
-    (Nothing, Just t) -> pure t
-    _ -> prtError $ PEUndefined n
-
 prtTypeDefOf :: (PirouetteReadDefs lang m) => Name -> m (TypeDef lang)
 prtTypeDefOf n = prtDefOf TypeNamespace n >>= maybe (prtError $ PENotAType n) return . fromTypeDef
 
