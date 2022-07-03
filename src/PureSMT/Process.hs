@@ -57,7 +57,7 @@ recv :: Solver -> IO SExpr
 recv solver = do
   resp <- hGetLine (getStdout $ process solver)
   case readSExpr resp of
-    Nothing -> fail "no response from solver"
+    Nothing -> fail $ "solver replied with: " ++ resp
     Just (sexpr, _) -> do
       pid <- unsafeSolverPid solver
       when (debug solver && sexpr /= Atom "success") $ do
