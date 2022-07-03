@@ -47,17 +47,23 @@ findFuns declsPairs funPred =
       funPred funDef
   ]
 
+-- | Find the types that satisfy a given predicate, additionally return all terms associated
+--  with said types too: constructors and destructor.
 findTypes ::
   LanguageBuiltins lang =>
-  [((space, Name), Definition lang)] ->
+  [((Namespace, Name), Definition lang)] ->
   (Name -> TypeDef lang -> Bool) ->
-  [((space, Name), HofDef lang)]
+  [((Namespace, Name), HofDef lang)]
 findTypes declsPairs tyPred =
-  [ ((sp, name), HofDef tyName $ HDBType typeDef)
-    | ((sp, tyName), DTypeDef typeDef) <- declsPairs,
-      tyPred tyName typeDef,
-      name <- tyName : destructor typeDef : (fst <$> constructors typeDef)
-  ]
+  -- First we get the type definitions that satisfy the required predicate
+  flip concatMap typeDefsSuchThat $ \(tyName, typeDef) ->
+    -- Only now we add the rest of the relevant names; this is necessary because only @tyName@ belongs
+    -- to 'TypeNamespace', the rest of the terms belong to 'TermNamespace'
+    let spaceNames =
+          (TypeNamespace, tyName) : [(TermNamespace, name) | name <- destructor typeDef : map fst (constructors typeDef)]
+     in [((sp, name), HofDef tyName $ HDBType typeDef) | (sp, name) <- spaceNames]
+  where
+    typeDefsSuchThat = [(tyName, typeDef) | ((_, tyName), DTypeDef typeDef) <- declsPairs, tyPred tyName typeDef]
 
 findHOFDefs ::
   forall lang.
