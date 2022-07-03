@@ -68,14 +68,20 @@ withSampleUDefs m = runReader m sampleUDefs
 tests :: [TestTree]
 tests =
   [ -- We expect that 'Monoid' is a higher-order definition and is picked by findPolyHOFDefs
-    testCase "findPolyHOFDefs picks 'Monoid'" $
-      assertBool "not there" $ (TypeNamespace, "Monoid") `M.member` findPolyHOFDefs (prtUODecls sampleUDefs),
+    testCase "findPolyHOFDefs picks 'Monoid' and friends" $ do
+      let res = findPolyHOFDefs (prtUODecls sampleUDefs)
+      assertBool "Monoid not there" $ (TypeNamespace, "Monoid") `M.member` res,
     -- In order to get the transitive closure of all the definitions that use ho-defs,
     -- we rely on 'hofsClosure'.
     testCase "hofsClosure picks the expected defs" $
       let ds = prtUODecls sampleUDefs
-       in sort (map snd (M.keys (hofsClosure ds (findPolyHOFDefs ds))))
-            @?= sort ["Mon", "Monoid", "fold", "match_Monoid"],
+       in sort (M.keys (hofsClosure ds (findPolyHOFDefs ds)))
+            @?= sort
+              [ (TypeNamespace, "Monoid"),
+                (TermNamespace, "Mon"),
+                (TermNamespace, "fold"),
+                (TermNamespace, "match_Monoid")
+              ],
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
