@@ -120,7 +120,7 @@ deriving instance
 
 -- * Parsers
 
--- | A program consists in a number of declarations
+-- | A program is some set of declarations
 parseProgram ::
   (LanguageParser lang) =>
   Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)))
