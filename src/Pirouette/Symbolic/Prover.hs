@@ -61,17 +61,19 @@ rESULTNAME = "__result"
 -- | Executes the problem returning /all/ paths (up to some stopping condition).
 prove ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
   StoppingCondition ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-prove shouldStop problem = symeval shouldStop $ proveRaw problem
+prove opts shouldStop problem = symeval opts shouldStop $ proveRaw problem
 
 -- | Prove without any stopping condition.
 proveUnbounded ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-proveUnbounded = prove (const False)
+proveUnbounded opts = prove opts (const False)
 
 -- | Executes the problem while the stopping condition is valid until
 --  the supplied predicate returns @True@. A return value of @Nothing@
@@ -79,11 +81,12 @@ proveUnbounded = prove (const False)
 --  they reached the stopping condition.
 proveAny ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
   StoppingCondition ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
   m (Maybe (Path lang (EvaluationWitness lang)))
-proveAny shouldStop p problem = symevalAnyPath shouldStop p $ proveRaw problem
+proveAny opts shouldStop p problem = symevalAnyPath opts shouldStop p $ proveRaw problem
 
 proveRaw ::
   forall lang.

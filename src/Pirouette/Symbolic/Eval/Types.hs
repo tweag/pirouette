@@ -11,6 +11,7 @@
 module Pirouette.Symbolic.Eval.Types where
 
 import Data.Data hiding (eqT)
+import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.String (IsString)
@@ -19,6 +20,13 @@ import qualified Pirouette.SMT as SMT
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
+
+-- | Options to run the symbolic engine with. Currently only affect the
+-- options to the solver
+newtype Options = Options {optsPureSMT :: PureSMT.Options}
+
+instance Default Options where
+  def = Options def
 
 -- | The 'LanguageSymEval' class is used to instruct the symbolic evaluator on how to branch on certain builtins.
 -- It is inherently different from 'SMT.LanguageSMT' in the sense that, for instance, the 'SMT.LanguageSMT'

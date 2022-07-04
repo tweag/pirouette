@@ -87,7 +87,8 @@ data SymEvalSolvers lang = SymEvalSolvers
 
 data SymEvalEnv lang = SymEvalEnv
   { seeDefs :: PrtOrderedDefs lang,
-    seeSolvers :: SymEvalSolvers lang
+    seeSolvers :: SymEvalSolvers lang,
+    _seeOptions :: Options
   }
 
 -- | A 'SymEval' is equivalent to a function with type:
@@ -116,24 +117,26 @@ instance MonadFail (SymEval lang) where
 
 symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
   StoppingCondition ->
   SymEval lang a ->
   m [Path lang a]
-symeval shouldStop prob = do
+symeval opts shouldStop prob = do
   defs <- getPrtOrderedDefs
-  return $ runSymEval defs st0 prob
+  return $ runSymEval opts defs st0 prob
   where
     st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
 
 symevalAnyPath ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
   StoppingCondition ->
   (Path lang a -> Bool) ->
   SymEval lang a ->
   m (Maybe (Path lang a))
-symevalAnyPath shouldStop p prob = do
+symevalAnyPath opts shouldStop p prob = do
   defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThat p $ runSymEvalWorker defs st0 prob
+  return $ runIdentity $ ListT.firstThat p $ runSymEvalWorker opts defs st0 prob
   where
     st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
 
@@ -141,11 +144,12 @@ symevalAnyPath shouldStop p prob = do
 --  to make all the necessary queries.
 runSymEval ::
   (SymEvalConstr lang) =>
+  Options ->
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
   [Path lang a]
-runSymEval defs st = runIdentity . ListT.toList . runSymEvalWorker defs st
+runSymEval opts defs st = runIdentity . ListT.toList . runSymEvalWorker opts defs st
 
 runSymEvalRaw ::
   (SymEvalConstr lang) =>
@@ -161,21 +165,22 @@ runSymEvalRaw env st act =
 runSymEvalWorker ::
   forall lang a.
   (SymEvalConstr lang) =>
+  Options ->
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
   WeightedList (Path lang a)
-runSymEvalWorker defs st f = do
+runSymEvalWorker opts defs st f = do
   let -- sharedSolve is here to hint to GHC not to create more than one pool
       -- of SMT solvers, which could happen if sharedSolve were inlined.
       -- TODO: Write a test to check that only one SMT pool is actually created over
       --       multiple calls to runSymEvalWorker.
       {-# NOINLINE sharedSolve #-}
       sharedSolve :: SolverProblem lang res -> res
-      sharedSolve = PureSMT.solve solverCtx
+      sharedSolve = PureSMT.solveOpts (optsPureSMT opts) solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers) st' f
+  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
   let paths = uncurry path solvPair
   return paths
   where

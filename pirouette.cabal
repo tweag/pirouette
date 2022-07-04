@@ -70,6 +70,7 @@ library
     , base >=4.9 && <5
     , bytestring
     , containers
+    , data-default
     , deriving-compat
     , haskell-stack-trace-plugin
     , interpolate
@@ -118,6 +119,7 @@ test-suite spec
     , base >=4.9 && <5
     , bytestring
     , containers
+    , data-default
     , deriving-compat
     , haskell-stack-trace-plugin
     , interpolate

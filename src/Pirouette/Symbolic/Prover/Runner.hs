@@ -34,20 +34,22 @@ type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 -- environment of definitions.
 runIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   Int ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogicSingl maxCstrs =
-  runIncorrectnessLogic maxCstrs (PrtUnorderedDefs M.empty)
+runIncorrectnessLogicSingl opts maxCstrs =
+  runIncorrectnessLogic opts maxCstrs (PrtUnorderedDefs M.empty)
 
 runIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogic maxCstrs prog parms =
-  runIdentity $ execIncorrectnessLogic (proveAny shouldStop isCounter) prog parms
+runIncorrectnessLogic opts maxCstrs prog parms =
+  runIdentity $ execIncorrectnessLogic (proveAny opts shouldStop isCounter) prog parms
   where
     -- The stopping condition is defined as a limit on the number of unfolded constructors per branch;
     shouldStop st = sestConstructors st > maxCstrs
@@ -107,28 +109,31 @@ assertIRResult _ = return ()
 -- pretty-print the result
 replIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   IO ()
-replIncorrectnessLogic maxCstrs defs params =
-  printIRResult maxCstrs $ runIncorrectnessLogic maxCstrs defs params
+replIncorrectnessLogic opts maxCstrs defs params =
+  printIRResult maxCstrs $ runIncorrectnessLogic opts maxCstrs defs params
 
 replIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   Int ->
   IncorrectnessParams lang ->
   IO ()
-replIncorrectnessLogicSingl maxCstrs params =
-  printIRResult maxCstrs $ runIncorrectnessLogicSingl maxCstrs params
+replIncorrectnessLogicSingl opts maxCstrs params =
+  printIRResult maxCstrs $ runIncorrectnessLogicSingl opts maxCstrs params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
 assertIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   Test.Assertion
-assertIncorrectnessLogic maxCstr defs params =
-  assertIRResult (runIncorrectnessLogic maxCstr defs params)
+assertIncorrectnessLogic opts maxCstr defs params =
+  assertIRResult (runIncorrectnessLogic opts maxCstr defs params)
