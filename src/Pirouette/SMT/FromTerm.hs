@@ -161,10 +161,13 @@ constructorFromPIR ::
   [typeVariable] ->
   (Name, TypeMeta builtins meta) ->
   TranslatorT m (String, [(String, PureSMT.SExpr)])
-constructorFromPIR tyVars (name, constructorType) = do
+constructorFromPIR tyVars (name, constructorType) = handleError $ do
   -- Fields of product types must be named: we append ids to the constructor name
   let fieldNames = map (((toSmtName name ++ "_") ++) . show) [1 :: Int ..]
       (_, unwrapped) = Raw.tyUnwrapBinders (length tyVars) constructorType
       (args, _) = Raw.tyFunArgs unwrapped
   cstrs <- zip fieldNames <$> mapM translateType args
   return (toSmtName name, cstrs)
+  where
+    handleError :: TranslatorT m a -> TranslatorT m a
+    handleError m = m `catchError` (throwError . (("At " ++ show name ++ ":") ++))
