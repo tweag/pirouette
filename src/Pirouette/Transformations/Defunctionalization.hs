@@ -249,6 +249,7 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
     replaceArg _ (_, _, arg) = pure arg
 
 mkClosureArg ::
+  forall lang.
   (LanguagePretty lang, LanguageBuiltins lang) =>
   [(FlatArgType lang, SystF.Ann Name)] ->
   DefunHofArgInfo lang ->
@@ -268,7 +269,12 @@ mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
           | freeIdx <- frees
           | closurePos <- reverse [0 .. fromIntegral $ length frees - 1]
         ]
-    ctorArgs = (\(FlatTermArg ty) -> ty) . fst . (ctx !!) . fromIntegral <$> frees
+    ctorArgs = fromFlatTermArg . fst . (ctx !!) . fromIntegral <$> frees
+
+    fromFlatTermArg :: FlatArgType lang -> Type lang
+    fromFlatTermArg (FlatTermArg ty) = ty
+    fromFlatTermArg (FlatTyArg k) =
+      error $ unlines $ ["mkClosureArg for: " ++ show (closureTypeName hofType), "Found type argument of kind: " ++ show k]
 
 collectFreeDeBruijns ::
   Term lang ->
