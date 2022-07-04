@@ -5,6 +5,7 @@ module Pirouette.Symbolic.Prover.Runner where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
+import Data.Default
 import qualified Data.Map as M
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval
@@ -109,31 +110,28 @@ assertIRResult _ = return ()
 -- pretty-print the result
 replIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
-  Options ->
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   IO ()
-replIncorrectnessLogic opts maxCstrs defs params =
-  printIRResult maxCstrs $ runIncorrectnessLogic opts maxCstrs defs params
+replIncorrectnessLogic maxCstrs defs params =
+  printIRResult maxCstrs $ runIncorrectnessLogic def maxCstrs defs params
 
 replIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
-  Options ->
   Int ->
   IncorrectnessParams lang ->
   IO ()
-replIncorrectnessLogicSingl opts maxCstrs params =
-  printIRResult maxCstrs $ runIncorrectnessLogicSingl opts maxCstrs params
+replIncorrectnessLogicSingl maxCstrs params =
+  printIRResult maxCstrs $ runIncorrectnessLogicSingl def maxCstrs params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
 assertIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
-  Options ->
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   Test.Assertion
-assertIncorrectnessLogic opts maxCstr defs params =
-  assertIRResult (runIncorrectnessLogic opts maxCstr defs params)
+assertIncorrectnessLogic maxCstr defs params =
+  assertIRResult (runIncorrectnessLogic def maxCstr defs params)
