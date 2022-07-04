@@ -23,7 +23,6 @@ import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
-import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
@@ -230,39 +229,34 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
     defunCallsInTerm :: Term lang -> DefunCallsCtx lang (Term lang)
     defunCallsInTerm = go []
       where
-        go :: [(FlatArgType lang, SystF.Ann Name)] -> Term lang -> DefunCallsCtx lang (Term lang)
+        go :: [(Type lang, SystF.Ann Name)] -> Term lang -> DefunCallsCtx lang (Term lang)
         go ctx (term `SystF.App` args) = do
           args' <- mapM (SystF.argElim (pure . SystF.TyArg) (fmap SystF.TermArg . go ctx)) args
           goApp ctx term args'
-        go ctx (SystF.Lam ann ty term) = SystF.Lam ann ty <$> go ((FlatTermArg ty, ann) : ctx) term
+        go ctx (SystF.Lam ann ty term) = SystF.Lam ann ty <$> go ((ty, ann) : ctx) term
         go ctx (SystF.Abs ann k term) = SystF.Abs ann k <$> go ctx term
 
-        goApp ctx a@(SystF.Free (TermSig name)) args
+        goApp ctx (SystF.Free (TermSig name)) args
           | Just hofsList <- M.lookup name toDefun = do
-            let str = "defunCalls.goApp: " ++ show (pretty (SystF.App a args))
-            !args' <- forM (zip3 [0 ..] hofsList args) (replaceArg str ctx)
+            args' <- forM (zip3 [0 ..] hofsList args) (replaceArg ctx)
             pure $ SystF.Free (TermSig name) `SystF.App` args'
         goApp _ term args = pure $ term `SystF.App` args
 
     replaceArg ::
-      String ->
-      [(FlatArgType lang, SystF.Ann Name)] ->
+      [(Type lang, SystF.Ann Name)] ->
       (Integer, Maybe (DefunHofArgInfo lang), Arg lang) ->
       DefunCallsCtx lang (Arg lang)
-    replaceArg str ctx (ix, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg str ix ctx hofArgInfo lam
-    replaceArg _ _ (_, _, arg) = pure arg
+    replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg ctx hofArgInfo lam
+    replaceArg _ (_, _, arg) = pure arg
 
 mkClosureArg ::
   forall lang.
   (LanguagePretty lang, LanguageBuiltins lang) =>
-  String ->
-  Integer ->
-  [(FlatArgType lang, SystF.Ann Name)] ->
+  [(Type lang, SystF.Ann Name)] ->
   DefunHofArgInfo lang ->
   Term lang ->
   DefunCallsCtx lang (Arg lang)
-mkClosureArg str ix ctx hofArgInfo@DefunHofArgInfo {..} lam = do
-  trace ("mkClosureArg " ++ show (closureTypeName hofType) ++ "; frees = " ++ show frees) (return ())
+mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
 
@@ -276,21 +270,7 @@ mkClosureArg str ix ctx hofArgInfo@DefunHofArgInfo {..} lam = do
           | freeIdx <- frees
           | closurePos <- reverse [0 .. fromIntegral $ length frees - 1]
         ]
-    ctorArgs = fromFlatTermArg . (ctx !!) . fromIntegral <$> frees
-
-    fromFlatTermArg :: (FlatArgType lang, SystF.Ann Name) -> Type lang
-    fromFlatTermArg (FlatTermArg ty, _) = ty
-    fromFlatTermArg (FlatTyArg k, n) =
-      error $
-        unlines $
-          [ "mkClosureArg[" ++ show ix ++ "] for: " ++ show (closureTypeName hofType),
-            "ctx: " ++ show ctx,
-            str,
-            "More specifically: " ++ show (pretty lam),
-            "Found type argument, " ++ show n ++ " of kind: " ++ show k,
-            "frees = " ++ show frees,
-            "free2closurePos = " ++ show free2closurePos
-          ]
+    ctorArgs = fst . (ctx !!) . fromIntegral <$> frees
 
 collectFreeDeBruijns ::
   Term lang ->
