@@ -36,25 +36,20 @@ type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 runIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Options ->
-  Int ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogicSingl opts maxCstrs =
-  runIncorrectnessLogic opts maxCstrs (PrtUnorderedDefs M.empty)
+runIncorrectnessLogicSingl opts =
+  runIncorrectnessLogic opts (PrtUnorderedDefs M.empty)
 
 runIncorrectnessLogic ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Options ->
-  Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogic opts maxCstrs prog parms =
-  runIdentity $ execIncorrectnessLogic (proveAny opts shouldStop isCounter) prog parms
+runIncorrectnessLogic opts prog parms =
+  runIdentity $ execIncorrectnessLogic (proveAny opts isCounter) prog parms
   where
-    -- The stopping condition is defined as a limit on the number of unfolded constructors per branch;
-    shouldStop st = sestConstructors st > maxCstrs
-
     isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
       | s /= OutOfFuel = True
     isCounter _ = False
@@ -115,7 +110,8 @@ replIncorrectnessLogic ::
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogic maxCstrs defs params =
-  printIRResult maxCstrs $ runIncorrectnessLogic def maxCstrs defs params
+  printIRResult maxCstrs $
+    runIncorrectnessLogic (def {stoppingCondition = (> maxCstrs) . sestConstructors}) defs params
 
 replIncorrectnessLogicSingl ::
   (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
@@ -123,7 +119,8 @@ replIncorrectnessLogicSingl ::
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogicSingl maxCstrs params =
-  printIRResult maxCstrs $ runIncorrectnessLogicSingl def maxCstrs params
+  printIRResult maxCstrs $
+    runIncorrectnessLogicSingl (def {stoppingCondition = (> maxCstrs) . sestConstructors}) params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
@@ -133,5 +130,5 @@ assertIncorrectnessLogic ::
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   Test.Assertion
-assertIncorrectnessLogic maxCstr defs params =
-  assertIRResult (runIncorrectnessLogic def maxCstr defs params)
+assertIncorrectnessLogic maxCstrs defs params =
+  assertIRResult (runIncorrectnessLogic (def {stoppingCondition = (> maxCstrs) . sestConstructors}) defs params)

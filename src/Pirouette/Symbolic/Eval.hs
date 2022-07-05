@@ -19,6 +19,9 @@ module Pirouette.Symbolic.Eval
   ( -- * Runners
     symeval,
 
+    -- ** Options
+    Options (..),
+
     -- ** General inputs and outputs
     AvailableFuel (..),
     Path (..),
@@ -48,6 +51,7 @@ module Pirouette.Symbolic.Eval
     pruneAndValidate,
     PruneResult (..),
     SymEvalSt (..),
+    SymEvalEnv (..),
     currentStatistics,
   )
 where
@@ -88,12 +92,12 @@ data SymEvalSolvers lang = SymEvalSolvers
 data SymEvalEnv lang = SymEvalEnv
   { seeDefs :: PrtOrderedDefs lang,
     seeSolvers :: SymEvalSolvers lang,
-    _seeOptions :: Options
+    seeOptions :: Options
   }
 
 -- | A 'SymEval' is equivalent to a function with type:
 --
--- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
+-- > SymEvalEnv lang -> SymEvalSt lang -> [(a, SymEvalSt lang)]
 newtype SymEval lang a = SymEval
   { symEval ::
       ReaderT
@@ -102,7 +106,13 @@ newtype SymEval lang a = SymEval
         a
   }
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
+  deriving newtype
+    ( Applicative,
+      Monad,
+      MonadReader (SymEvalEnv lang),
+      MonadState (SymEvalSt lang),
+      ListT.MonadWeightedList
+    )
 
 type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
@@ -118,27 +128,25 @@ instance MonadFail (SymEval lang) where
 symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Options ->
-  StoppingCondition ->
   SymEval lang a ->
   m [Path lang a]
-symeval opts shouldStop prob = do
+symeval opts prob = do
   defs <- getPrtOrderedDefs
   return $ runSymEval opts defs st0 prob
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
 
 symevalAnyPath ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Options ->
-  StoppingCondition ->
   (Path lang a -> Bool) ->
   SymEval lang a ->
   m (Maybe (Path lang a))
-symevalAnyPath opts shouldStop p prob = do
+symevalAnyPath opts p prob = do
   defs <- getPrtOrderedDefs
   return $ runIdentity $ ListT.firstThat p $ runSymEvalWorker opts defs st0 prob
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -181,7 +189,7 @@ runSymEvalWorker opts defs st f = do
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
-  let paths = uncurry path solvPair
+  let paths = uncurry (path $ stoppingCondition opts) solvPair
   return paths
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of

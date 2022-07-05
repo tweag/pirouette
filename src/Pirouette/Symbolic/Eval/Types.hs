@@ -21,12 +21,22 @@ import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
--- | Options to run the symbolic engine with. Currently only affect the
--- options to the solver
-newtype Options = Options {optsPureSMT :: PureSMT.Options}
+-- | Options to run the symbolic engine with. This includes options for tunning the behavior
+-- of the SMT solver and internals of the symbolic execution engine.
+data Options = Options
+  { -- | Specifies the command, number of workers and whether to run PureSMT in debug mode, where
+    --  all interactions with the solvers are printed
+    optsPureSMT :: PureSMT.Options,
+    -- | Specifies the stopping condition for the symbolic engine. By default, it is:
+    --
+    --  > \stat -> sestConstructors stat > 50
+    --
+    --  That is, we stop exploring any branch where we unfolded more than 50 constructors.
+    stoppingCondition :: StoppingCondition
+  }
 
 instance Default Options where
-  def = Options def
+  def = Options def (\stat -> sestConstructors stat > 50)
 
 -- | The 'LanguageSymEval' class is used to instruct the symbolic evaluator on how to branch on certain builtins.
 -- It is inherently different from 'SMT.LanguageSMT' in the sense that, for instance, the 'SMT.LanguageSMT'
@@ -142,8 +152,8 @@ data SymEvalSt lang = SymEvalSt
     sestStatistics :: SymEvalStatistics,
     -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
     sestValidated :: Bool,
-    sestKnownNames :: S.Set Name, -- The set of names the SMT solver is aware of
-    sestStoppingCondition :: StoppingCondition
+    -- | The set of names the SMT solver is aware of
+    sestKnownNames :: S.Set Name
   }
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
@@ -174,11 +184,11 @@ instance Monoid SymEvalStatistics where
   mempty = SymEvalStatistics 0 0
 
 -- | Given a result and a resulting state, returns a 'Path' representing it.
-path :: a -> SymEvalSt lang -> Path lang a
-path x st =
+path :: StoppingCondition -> a -> SymEvalSt lang -> Path lang a
+path stop x st =
   Path
     { pathConstraint = sestConstraint st,
       pathGamma = sestGamma st,
-      pathStatus = if sestStoppingCondition st (sestStatistics st) then OutOfFuel else Completed,
+      pathStatus = if stop (sestStatistics st) then OutOfFuel else Completed,
       pathResult = x
     }

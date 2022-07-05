@@ -6,6 +6,7 @@
 
 module Pirouette.Symbolic.Prover where
 
+import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Text as T
@@ -62,10 +63,9 @@ rESULTNAME = "__result"
 prove ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Options ->
-  StoppingCondition ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-prove opts shouldStop problem = symeval opts shouldStop $ proveRaw problem
+prove opts problem = symeval opts $ proveRaw problem
 
 -- | Prove without any stopping condition.
 proveUnbounded ::
@@ -73,7 +73,7 @@ proveUnbounded ::
   Options ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-proveUnbounded opts = prove opts (const False)
+proveUnbounded opts = prove (opts {stoppingCondition = const False})
 
 -- | Executes the problem while the stopping condition is valid until
 --  the supplied predicate returns @True@. A return value of @Nothing@
@@ -82,11 +82,10 @@ proveUnbounded opts = prove opts (const False)
 proveAny ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
   Options ->
-  StoppingCondition ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
   m (Maybe (Path lang (EvaluationWitness lang)))
-proveAny opts shouldStop p problem = symevalAnyPath opts shouldStop p $ proveRaw problem
+proveAny opts p problem = symevalAnyPath opts p $ proveRaw problem
 
 proveRaw ::
   forall lang.
@@ -189,7 +188,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- debugPrint (pretty proveTerm')
       -- debugPrint somethingWasEval
       -- check the fuel
-      noMoreFuel <- gets sestStoppingCondition >>= \s -> s <$> currentStatistics
+      noMoreFuel <- asks (stoppingCondition . seeOptions) >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' (Model [])

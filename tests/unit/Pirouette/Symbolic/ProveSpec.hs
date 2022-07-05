@@ -241,7 +241,7 @@ ohearnTest =
                 Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", PureSMT.Atom fstX, _])) ->
                   odd (read fstX)
                 _ -> False
-         in exec (proveAny def (\st -> sestConsumedFuel st > 50) test) conditionals1 condWrongTriple `satisfies` isJust
+         in exec (proveAny def test) conditionals1 condWrongTriple `satisfies` isJust
         -- testCase "[y == 11] ohearn [snd result == 42 && even (fst result)] verified" $
         --   execWithFuel 50 conditionals1 condCorrectTriple `pathSatisfies` all (isNoCounter .||. ranOutOfFuel)
     ]
@@ -310,7 +310,7 @@ ohearnTestPeano =
                 Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", fstX, _])) ->
                   fstX == PureSMT.List [PureSMT.Atom "pir_S", PureSMT.Atom "pir_Z"]
                 _ -> False
-         in exec (proveAny def (\st -> sestConsumedFuel st > 50) test) conditionals1Peano condWrongTriplePeano `satisfies` isJust
+         in exec (proveAny def test) conditionals1Peano condWrongTriplePeano `satisfies` isJust
         -- testCase "[y == 1] ohearn-peano [snd result == 2 && even (fst result)] verified" $
         --   exec conditionals1Peano condCorrectTriplePeano `pathSatisfies` all isVerified
     ]
@@ -392,5 +392,5 @@ isUnityTest =
   testGroup
     "isUnity Bug"
     [ testCase "[correct_isUnity v] validate [\\r _ -> r] counter" $
-        execFull (proveAny def (\st -> sestConstructors st > 50) isCounter) isUnity condIsUnity `satisfies` isJust
+        execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
     ]
