@@ -113,6 +113,7 @@ data Expr lang
   | ExprLit (Constants lang)
   | ExprBase (BuiltinTerms lang)
   | ExprIf (Ty lang) (Expr lang) (Expr lang) (Expr lang)
+  | ExprBottom (Ty lang)
 
 deriving instance
   (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
@@ -237,6 +238,12 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
       symbol "else"
       ExprIf ty c t <$> parseTerm
 
+    parseBottom :: Parser (Expr lang)
+    parseBottom = do
+      try (symbol "bottom")
+      ty <- symbol "@" >> parseTypeAtom
+      return (ExprBottom ty)
+
     pAtom :: Parser (Expr lang)
     pAtom =
       asum
@@ -244,6 +251,7 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           pLam,
           parens parseTerm,
           parseIf,
+          parseBottom,
           ExprBase <$> try (parseBuiltinTerm @lang),
           ExprTy <$> (try (symbol "@") >> parseTypeAtom),
           ExprLit <$> try (parseConstant @lang),
@@ -284,7 +292,7 @@ ident = label "identifier" $ do
   where
     reserved :: S.Set String
     reserved =
-      S.fromList ["abs", "all", "data", "if", "then", "else", "fun"]
+      S.fromList ["abs", "all", "data", "if", "then", "else", "fun", "bottom"]
         `S.union` reservedNames @lang
 
 typeName :: forall lang. (LanguageParser lang) => Parser String

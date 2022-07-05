@@ -93,3 +93,6 @@ trTerm _ termEnv (ExprVar s) =
     Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig (fromString s)
 trTerm _ _ (ExprLit ec) = return $ SystF.termPure (SystF.Free $ Constant ec)
 trTerm _ _ (ExprBase et) = return $ SystF.termPure (SystF.Free $ Builtin et)
+trTerm tyEnv _ (ExprBottom ty) = do
+  ty' <- trType tyEnv ty
+  return $ SystF.App (SystF.Free Bottom) [SystF.TyArg ty']
