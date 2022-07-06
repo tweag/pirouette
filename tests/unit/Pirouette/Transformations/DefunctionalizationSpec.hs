@@ -180,9 +180,10 @@ defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
   [ testCase "Nested closures are generated and typecheck" $
       case monoDefunc nested of
-        PrtUnorderedDefs decls ->
+        PrtUnorderedDefs decls -> do
+          print (pretty decls)
           case typeCheckDecls decls of
-            Left err -> assertFailure $ show err
+            Left err -> assertFailure $ show $ pretty err
             Right _ -> return ()
   ]
   where
@@ -192,17 +193,51 @@ defuncTestsPoly =
 nested :: PrtUnorderedDefs Ex
 nested =
   [prog|
-fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
-  = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
+data Monoid (a : Type)
+  = Mon : (a -> a -> a) -> a -> Monoid a
 
-fun appSym : all (k : Type) . (k -> k -> Bool) -> k -> Bool
-  = /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (predi m) m
+data AdditiveMonoid (a : Type)
+  = AdditiveMon : (a -> a -> a) -> a -> AdditiveMonoid a
 
-fun eqInt : Integer -> Integer -> Bool
-  = \(x : Integer) (y : Integer) . x == y
+fun additiveToMonoid : all (a : Type) . AdditiveMonoid a -> Monoid a
+  = /\(a : Type) . \(x : AdditiveMonoid a)
+    . Mon @a (match_AdditiveMonoid @a x @(a -> a -> a) (\(f : a -> a -> a) (z : a) . f))
+             (match_AdditiveMonoid @a x @a (\(f : a -> a -> a) (z : a) . z))
 
-fun main : Bool
-  = appSym
-      @Integer
-      (\(x : Integer) . if @(Integer -> Bool) x < 2 then appOne @Integer (\(y : Integer) . y < 3) else eqInt x) 2
+data List (a : Type)
+  = Nil : List a
+  | Cons : a -> List a -> List a
+
+fun listMon : all (a : Type) . AdditiveMonoid (List a)
+  = /\(a : Type) . AdditiveMon @(List a) (\(k : List a) (l : List a)
+    . foldr @a @(List a) (Cons @a) l k) (Nil @a)
+
+fun foldr : all (a : Type) (b : Type) . (a -> b -> b) -> b -> List a -> b
+  = /\(a : Type) (b : Type) . \(f : a -> b -> b) (m : b) (xs : List a)
+   . match_List @a xs @b
+       m
+       (\(h : a) (tl : List a) . f h (foldr @a @b f m tl))
+
+fun foldMap : all (a : Type) (b : Type) . (a -> b) -> Monoid b -> List a -> b
+  = /\(a : Type) (b : Type) . \(f : a -> b) (m : Monoid b) (xs : List a)
+  . match_Monoid @b m @b
+      (\ (mplus : b -> b -> b) (mzero : b)
+       . foldr @a @b (\(x : a) (rest : b) . mplus (f x) rest) mzero xs
+      )
+
+fun id : all (a : Type) . a -> a
+  = /\(a : Type) . \(x : a) . x
+
+fun concat : all (a : Type) . List (List a) -> List a
+  = /\(a : Type) . foldMap @(List a) @(List a) (id @(List a)) (additiveToMonoid @(List a) (listMon @a))
+
+fun additiveIntegerMon : Monoid Integer
+  = Mon @Integer (\(x : Integer) (y : Integer) . x + y) 0
+
+fun length : all (a : Type) . List a -> Integer
+  = /\(a : Type) . foldMap @a @Integer (\(x : a) . 1) additiveIntegerMon
+
+fun main : Integer
+  = length @Integer (concat @Integer (Nil @(List Integer)))
+
 |]
