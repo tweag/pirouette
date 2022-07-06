@@ -4,7 +4,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
@@ -15,7 +14,7 @@
 module Pirouette.SMT.FromTerm where
 
 import Control.Monad.Except
-import Control.Monad.Writer (Any (..), WriterT (..), tell)
+import Control.Monad.Writer (Any (..), WriterT (..), mapWriterT, tell)
 import qualified Data.Set as S
 -- import Debug.Trace (trace)
 import Pirouette.Monad
@@ -170,4 +169,4 @@ constructorFromPIR tyVars (name, constructorType) = handleError $ do
   return (toSmtName name, cstrs)
   where
     handleError :: TranslatorT m a -> TranslatorT m a
-    handleError m = m `catchError` (throwError . (("At " ++ show name ++ ":") ++))
+    handleError = mapWriterT (withExceptT (("At " ++ show name ++ ":") ++))
