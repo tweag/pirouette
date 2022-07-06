@@ -23,7 +23,6 @@ import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
-import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
@@ -39,11 +38,15 @@ import Pirouette.Transformations.Utils
 -- 3. ??? still discovering
 
 defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-defunctionalize defs =
-  case defunctionalizeAssumptions defs of
+defunctionalize defs0 =
+  case defunctionalizeAssumptions defs0 of
     () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
-    (defs', closureCtorInfos) = evalRWS (defunTypes >=> defunFuns $ etaExpandAll defs) mempty (DefunState mempty)
+    (defs1, toDefun1) = defunTypes (etaExpandAll defs0)
+    (defs2, toDefun2) = defunFuns defs1
+    toDefun = toDefun1 `M.union` toDefun2
+
+    (defs', closureCtorInfos) = evalRWS (defunCalls toDefun defs2) mempty (DefunState mempty)
 
     closureCtorInfos' = sortOn (\c -> (ctorName c, ctorIdx c)) closureCtorInfos
 
@@ -88,10 +91,9 @@ defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -
 defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
-  DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunTypes defs = trace ("defunTypes:\n " ++ ctorNames) $ defunCalls toDefun $ defunDtors defs'
+  (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
+defunTypes defs = (defunDtors defs', toDefun)
   where
-    ctorNames = unlines $ map (show . fst) (M.toList toDefun)
     (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
 
     defunTypeDef _ (DTypeDef Datatype {..}) = do
@@ -139,12 +141,9 @@ defunDtors defs = transformBi f defs
 defunFuns ::
   (LanguagePretty lang, Pretty (FunDef lang), LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
-  DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunFuns defs = trace ("dfunFuns:\n" ++ funNames) $ defunCalls toDefun defs'
+  (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
+defunFuns defs = runWriter $ traverseDefs defunFunDef defs
   where
-    funNames = unlines $ map (show . fst) (M.toList toDefun)
-    (defs', toDefun) = runWriter $ traverseDefs defunFunDef defs
-
     defunFunDef name (DFunDef FunDef {..}) = do
       when changed $ tell $ M.singleton name hofs
       pure $ DFunDef $ FunDef funIsRec funBody' funTy'
@@ -225,12 +224,12 @@ defunCalls ::
   DefunCallsCtx lang (PrtUnorderedDefs lang)
 defunCalls toDefun PrtUnorderedDefs {..} = do
   decls' <- for prtUODecls $ \case
-    DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm body
+    DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm [] body
     def -> pure def
   pure $ PrtUnorderedDefs decls'
   where
-    defunCallsInTerm :: Term lang -> DefunCallsCtx lang (Term lang)
-    defunCallsInTerm = go []
+    defunCallsInTerm :: [(Type lang, SystF.Ann Name)] -> Term lang -> DefunCallsCtx lang (Term lang)
+    defunCallsInTerm = go
       where
         go :: [(Type lang, SystF.Ann Name)] -> Term lang -> DefunCallsCtx lang (Term lang)
         go ctx (term `SystF.App` args) = do
@@ -250,7 +249,7 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
       (Integer, Maybe (DefunHofArgInfo lang), Arg lang) ->
       DefunCallsCtx lang (Arg lang)
     replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) =
-      defunCallsInTerm lam >>= mkClosureArg ctx hofArgInfo
+      defunCallsInTerm ctx lam >>= mkClosureArg ctx hofArgInfo
     replaceArg _ (_, _, arg) = pure arg
 
 mkClosureArg ::
@@ -272,16 +271,6 @@ mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
             ctorArgs = ctorArgs,
             hofTerm = remapFreeDeBruijns free2closurePos lam
           }
-  trace
-    ( unlines
-        [ "----------------",
-          "mkClosureArg for: ",
-          show (pretty lam),
-          "hofTerm: ",
-          show (pretty $ hofTerm closureCtor)
-        ]
-    )
-    (return ())
   tell [closureCtor]
   pure $ SystF.TermArg $ SystF.Free (TermSig ctorName) `SystF.App` [SystF.TermArg $ SystF.Bound (snd $ ctx !! fromIntegral idx) idx `SystF.App` [] | idx <- frees]
   where
