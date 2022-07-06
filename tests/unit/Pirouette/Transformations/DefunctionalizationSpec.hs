@@ -15,6 +15,7 @@ import Data.Map as Map
 import Language.Pirouette.Example
 import Pirouette.Monad
 import Pirouette.Term.Syntax
+import Pirouette.Term.TypeChecker
 import Pirouette.Transformations
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
@@ -177,16 +178,19 @@ fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (Cl
 
 defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
-  [ testCase "Nested closures are generated" $
-      case monoDefunc bug of
-        PrtOrderedDefs !x !y -> return ()
+  [ testCase "Nested closures are generated and typecheck" $
+      case monoDefunc nested of
+        PrtUnorderedDefs decls ->
+          case typeCheckDecls decls of
+            Left err -> assertFailure $ show err
+            Right _ -> return ()
   ]
   where
-    monoDefunc :: PrtUnorderedDefs Ex -> PrtOrderedDefs Ex
-    monoDefunc = elimEvenOddMutRec . defunctionalize . monomorphize
+    monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
+    monoDefunc = defunctionalize . monomorphize
 
-bug :: PrtUnorderedDefs Ex
-bug =
+nested :: PrtUnorderedDefs Ex
+nested =
   [prog|
 fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
   = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
@@ -197,5 +201,8 @@ fun appSym : all (k : Type) . (k -> k -> Bool) -> k -> Bool
 fun eqInt : Integer -> Integer -> Bool
   = \(x : Integer) (y : Integer) . x == y
 
-fun main : Bool = appSym @Integer eqInt 2
+fun main : Bool
+  = appSym
+      @Integer
+      (\(x : Integer) . if @(Integer -> Bool) x < 2 then appOne @Integer (\(y : Integer) . y < 3) else eqInt x) 2
 |]
