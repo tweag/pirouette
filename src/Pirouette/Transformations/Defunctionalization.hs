@@ -129,12 +129,19 @@ defunDtors defs = transformBi f defs
 
     f :: Term lang -> Term lang
     f (SystF.Free (TermSig name) `SystF.App` args)
-      | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix <> branches')
+      | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix' <> branches')
       where
         (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
         tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
+        prefix' = fixPrefixType <$> prefix
         branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
     f x = x
+
+    fixPrefixType arg@SystF.TermArg {} = arg
+    fixPrefixType (SystF.TyArg theArg) =
+      SystF.TyArg $ case theArg of
+        SystF.TyFun {} -> closureType theArg
+        _ -> theArg
 
 -- * Defunctionalization of functions
 
