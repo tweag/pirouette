@@ -23,6 +23,7 @@ import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
@@ -42,7 +43,7 @@ defunctionalize defs =
   case defunctionalizeAssumptions defs of
     () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
-    (defs', closureCtorInfos) = evalRWS (defunFuns >=> defunTypes $ etaExpandAll defs) mempty (DefunState mempty)
+    (defs', closureCtorInfos) = evalRWS (defunTypes >=> defunFuns $ etaExpandAll defs) mempty (DefunState mempty)
 
     closureCtorInfos' = sortOn (\c -> (ctorName c, ctorIdx c)) closureCtorInfos
 
@@ -88,8 +89,9 @@ defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
   DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunTypes defs = defunCalls toDefun $ defunDtors defs'
+defunTypes defs = trace ("defunTypes:\n " ++ ctorNames) $ defunCalls toDefun $ defunDtors defs'
   where
+    ctorNames = unlines $ map (show . fst) (M.toList toDefun)
     (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
 
     defunTypeDef _ (DTypeDef Datatype {..}) = do
@@ -138,8 +140,9 @@ defunFuns ::
   (LanguagePretty lang, Pretty (FunDef lang), LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
   DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunFuns defs = defunCalls toDefun defs'
+defunFuns defs = trace ("dfunFuns:\n" ++ funNames) $ defunCalls toDefun defs'
   where
+    funNames = unlines $ map (show . fst) (M.toList toDefun)
     (defs', toDefun) = runWriter $ traverseDefs defunFunDef defs
 
     defunFunDef name (DFunDef FunDef {..}) = do
@@ -246,7 +249,8 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
       [(Type lang, SystF.Ann Name)] ->
       (Integer, Maybe (DefunHofArgInfo lang), Arg lang) ->
       DefunCallsCtx lang (Arg lang)
-    replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) = mkClosureArg ctx hofArgInfo lam
+    replaceArg ctx (_, Just hofArgInfo, SystF.TermArg lam@SystF.Lam {}) =
+      defunCallsInTerm lam >>= mkClosureArg ctx hofArgInfo
     replaceArg _ (_, _, arg) = pure arg
 
 mkClosureArg ::
@@ -260,7 +264,25 @@ mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
 
-  tell [ClosureCtorInfo {hofTerm = remapFreeDeBruijns free2closurePos lam, ..}]
+  let closureCtor =
+        ClosureCtorInfo
+          { hofArgInfo = hofArgInfo,
+            ctorIdx = ctorIdx,
+            ctorName = ctorName,
+            ctorArgs = ctorArgs,
+            hofTerm = remapFreeDeBruijns free2closurePos lam
+          }
+  trace
+    ( unlines
+        [ "----------------",
+          "mkClosureArg for: ",
+          show (pretty lam),
+          "hofTerm: ",
+          show (pretty $ hofTerm closureCtor)
+        ]
+    )
+    (return ())
+  tell [closureCtor]
   pure $ SystF.TermArg $ SystF.Free (TermSig ctorName) `SystF.App` [SystF.TermArg $ SystF.Bound (snd $ ctx !! fromIntegral idx) idx `SystF.App` [] | idx <- frees]
   where
     frees = collectFreeDeBruijns lam
