@@ -184,6 +184,13 @@ defuncTestsPoly =
           print (pretty decls)
           case typeCheckDecls decls of
             Left err -> assertFailure $ show $ pretty err
+            Right _ -> return (),
+    testCase "Destructors types are updated and typecheck" $
+      case monoDefunc destructors of
+        PrtUnorderedDefs decls -> do
+          print (pretty decls)
+          case typeCheckDecls decls of
+            Left err -> assertFailure $ show $ pretty err
             Right _ -> return ()
   ]
   where
@@ -240,4 +247,18 @@ fun length : all (a : Type) . List a -> Integer
 fun main : Integer
   = length @Integer (concat @Integer (Nil @(List Integer)))
 
+|]
+
+destructors :: PrtUnorderedDefs Ex
+destructors =
+  [prog|
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun val : Maybe (Integer -> Integer)
+  = Just @(Integer -> Integer) (\(x : Integer) . x + 1)
+
+fun main : Integer
+  = match_Maybe @(Integer -> Integer) val @Integer (\(f : Integer -> Integer) . f 42) 0
 |]
