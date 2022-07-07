@@ -133,12 +133,12 @@ defunDtors defs = transformBi f defs
       where
         (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
         tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
-        prefix' = fixPrefixType <$> prefix
+        prefix' = closurifyTyArg <$> prefix
         branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
     f x = x
 
-    fixPrefixType arg@SystF.TermArg {} = arg
-    fixPrefixType (SystF.TyArg theArg) =
+    closurifyTyArg arg@SystF.TermArg {} = arg
+    closurifyTyArg (SystF.TyArg theArg) =
       SystF.TyArg $ case theArg of
         SystF.TyFun {} -> closureType theArg
         _ -> theArg
