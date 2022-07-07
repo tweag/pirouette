@@ -43,10 +43,11 @@ defunctionalize defs0 =
     () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
     (defs1, toDefun1) = defunTypes (etaExpandAll defs0)
-    (defs2, toDefun2) = defunFuns defs1
+    defs2 = defunDtors defs1
+    (defs3, toDefun2) = defunFuns defs2
     toDefun = toDefun1 `M.union` toDefun2
 
-    (defs', closureCtorInfos) = evalRWS (defunCalls toDefun defs2) mempty (DefunState mempty)
+    (defs', closureCtorInfos) = evalRWS (defunCalls toDefun defs3) mempty (DefunState mempty)
 
     closureCtorInfos' = sortOn (\c -> (ctorName c, ctorIdx c)) closureCtorInfos
 
@@ -92,10 +93,8 @@ defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunTypes defs = (defunDtors defs', toDefun)
+defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
   where
-    (defs', toDefun) = runWriter $ traverseDefs defunTypeDef defs
-
     defunTypeDef _ (DTypeDef Datatype {..}) = do
       forM_ allMaybeHofs $ \case
         (ctorName, Just hof) -> tell $ M.singleton ctorName hof
