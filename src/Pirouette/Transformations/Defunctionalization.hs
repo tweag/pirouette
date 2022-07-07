@@ -12,7 +12,7 @@
 
 module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
-import Control.Arrow ((***))
+import Control.Arrow ((***), first)
 import Control.Monad.RWS.Strict
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
@@ -133,9 +133,20 @@ defunDtors defs = transformBi f defs
       where
         (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
         tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
-        prefix' = closurifyTyArg <$> prefix
+        prefix' = closurifyTyArgs prefix
         branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
     f x = x
+
+    -- Replaces the functional type arguments to the type itself with the corresponding closure types.
+    --
+    -- As an example, consider maybe_Match @(Integer -> Integer) val @(Integer -> Bool) ...
+    -- The @(Integer -> Integer) is replaced by Closure[Integer -> Integer],
+    -- while the @(Integer -> Bool) stays the same.
+    --
+    -- This works under the assumption that
+    -- the datatype type arguments and the match's return type
+    -- are separated by the value argument (the value being inspected).
+    closurifyTyArgs = uncurry (<>) . first (fmap closurifyTyArg) . span SystF.isTyArg
 
     closurifyTyArg arg@SystF.TermArg {} = arg
     closurifyTyArg (SystF.TyArg theArg) =
