@@ -145,8 +145,13 @@ defunDtors defs = transformBi f defs
         (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
         tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
         prefix' = closurifyTyArgs prefix
-        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
+        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody . rewriteNestedLamArgs) <$> branches
     f x = x
+
+    rewriteNestedLamArgs :: Term lang -> Term lang
+    rewriteNestedLamArgs (SystF.Lam ann ty t) =
+      SystF.Lam ann (rewriteFunType ty) (rewriteNestedLamArgs t)
+    rewriteNestedLamArgs t = t
 
     -- Replaces the functional type arguments to the type itself with the corresponding closure types.
     --
@@ -388,14 +393,19 @@ rewriteHofType = go 0
         (dom', posApply) =
           case dom of
             SystF.TyFun {} -> (closureType dom, Just $ DefunHofArgInfo dom)
-            ty | hasFuns ty -> (transform rewriteFunType ty, Just DefunHofArgNested)
+            ty | hasFuns ty -> (rewriteFunType ty, Just DefunHofArgNested)
             _ -> (dom, Nothing)
     go _ ty@SystF.TyApp {} = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
-    rewriteFunType :: B.Type lang -> B.Type lang
-    rewriteFunType ty@SystF.TyFun {} = closureType ty
-    rewriteFunType x = x
+
+-- | This is a little more eager than 'rewriteHofType', in this case, we rewrite ALL
+-- function types.
+rewriteFunType :: (Language lang) => B.Type lang -> B.Type lang
+rewriteFunType = transform go
+  where
+    go ty@SystF.TyFun {} = closureType ty
+    go x = x
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
 -- Dis-assuming this is merely about recursing on `App` ctor as well.
