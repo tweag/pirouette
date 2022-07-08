@@ -23,6 +23,7 @@ import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
@@ -102,7 +103,9 @@ defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
+defunTypes defs =
+  let (a, b) = runWriter $ traverseDefs defunTypeDef defs
+   in trace (show b) (a, b)
   where
     defunTypeDef _ (DTypeDef Datatype {..}) = do
       forM_ allMaybeHofs $ \case
@@ -285,6 +288,8 @@ mkClosureArg ::
   DefunHofArgInfo lang ->
   Term lang ->
   DefunCallsCtx lang (Arg lang)
+-- We hope that lam is already defunctionalized properly, no need to do anything
+mkClosureArg _ DefunHofArgNested lam = pure (SystF.TermArg lam)
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
@@ -359,13 +364,19 @@ traverseDefs f defs = do
   where
     defsList = M.toList $ prtUODecls defs
 
-newtype DefunHofArgInfo lang = DefunHofArgInfo {hofType :: B.Type lang} deriving (Show, Eq, Ord)
+data DefunHofArgInfo lang
+  = DefunHofArgInfo {hofType :: B.Type lang}
+  | -- | This is not necessarily an argument we have to defunctionalize, because the closure appears
+    --  nested as a potential argument to another type, but we do have to rewrite the
+    --  type definition!
+    DefunHofArgNested
+  deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
 -- where the @Closure[Ty2->Ty3]@ is the ADT with the labels and environments for the funargs of type @Ty2 -> Ty3@.
 rewriteHofType ::
   forall lang.
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (Language lang) =>
   B.Type lang ->
   (B.Type lang, HofsList lang)
 rewriteHofType = go 0
@@ -377,10 +388,14 @@ rewriteHofType = go 0
         (dom', posApply) =
           case dom of
             SystF.TyFun {} -> (closureType dom, Just $ DefunHofArgInfo dom)
+            ty | hasFuns ty -> (transform rewriteFunType ty, Just DefunHofArgNested)
             _ -> (dom, Nothing)
-    go _ ty@SystF.TyApp {} = (ty, []) -- this doesn't defun things like `List (foo -> bar)`, which is fine for now
+    go _ ty@SystF.TyApp {} = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
+    rewriteFunType :: B.Type lang -> B.Type lang
+    rewriteFunType ty@SystF.TyFun {} = closureType ty
+    rewriteFunType x = x
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
 -- Dis-assuming this is merely about recursing on `App` ctor as well.
