@@ -79,12 +79,31 @@ findHOFDefs funPred tyPred declsPairs =
     funPred' fun = funPred fun && hasHOFuns (funTy fun)
     tyPred' name typeDef = tyPred name typeDef && (hasHOFuns . snd) `any` constructors typeDef
 
+-- | Returns whether a type has higher-order functions anywhere, directly
+-- or indirectly. For instance, the type:
+--
+-- > Integer -> Maybe (Bool -> Bool) -> X
+--
+-- Has higher-order functions present nested in 'Maybe'. This current function
+-- could be much better given it will also return some false-positives. For instance,
+--
+-- > Integer -> Const Bool (Bool -> Bool) -> X
+--
+-- Doesn't really have higher order functions because @Const a b = a@, but we
+-- are not worrying about that now.
 hasHOFuns :: (Data ann, Data ty) => AnnType ann ty -> Bool
-hasHOFuns ty = isHOFTy `any` [f | f@TyFun {} <- universe ty]
+-- (_ -> _) -> _ ...
+hasHOFuns (TyFun TyFun {} _) = True
+hasHOFuns (TyFun a b) = hasHOFuns a || hasHOFuns b
+hasHOFuns (TyApp _ args) = hasFuns `any` args
+hasHOFuns (TyLam _ _ at) = hasHOFuns at
+hasHOFuns (TyAll _ _ at) = hasHOFuns at
 
-isHOFTy :: AnnType ann ty -> Bool
-isHOFTy (TyFun TyFun {} _) = True
-isHOFTy _ = False
+hasFuns :: (Data ann, Data ty) => AnnType ann ty -> Bool
+hasFuns (TyFun _ _) = True
+hasFuns (TyApp _ args) = hasFuns `any` args
+hasFuns (TyLam _ _ at) = hasFuns at
+hasFuns (TyAll _ _ at) = hasFuns at
 
 -- @Arg Kind (Type lang)@ could've been used here instead,
 -- but having a distinct type seems to be a bit nicer, at least for now for hole-driven development reasons.

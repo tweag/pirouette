@@ -88,6 +88,8 @@ tests =
             @?= sort
               [ (TypeNamespace, "Monoid"),
                 (TypeNamespace, "Indirect"),
+                (TermNamespace, "Ind"),
+                (TermNamespace, "match_Indirect"),
                 (TermNamespace, "Mon"),
                 (TermNamespace, "fold"),
                 (TermNamespace, "match_Monoid")
