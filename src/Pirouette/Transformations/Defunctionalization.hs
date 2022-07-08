@@ -99,6 +99,10 @@ defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -
 -- The call to 'defunTypes' will pick @Mon@ as a target for defunctionalization,
 -- and will 'tell' an appropriate new declaration for @Monoid@. It will
 -- not pick @Just@, however.
+--
+-- TODO: This has to be more involved; we need to generate the proper calls
+-- for nested things at once, in this step, for the rest of the engine
+-- to understand... my previous hacks met their deadend
 defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
