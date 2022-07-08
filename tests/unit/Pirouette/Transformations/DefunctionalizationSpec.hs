@@ -200,7 +200,7 @@ defuncTestsPoly =
       case monoDefunc decls0 of
         PrtUnorderedDefs decls -> do
           case typeCheckDecls decls of
-            Left err -> assertFailure (show $ pretty err)
+            Left err -> print (pretty decls) >> assertFailure (show $ pretty err)
             Right _ -> return ()
 
 nested :: PrtUnorderedDefs Ex

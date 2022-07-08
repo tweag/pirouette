@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Monad where
@@ -255,6 +256,17 @@ data UnDestMeta lang meta = UnDestMeta
     undestCases :: [TermMeta lang meta],
     undestCasesExtra :: [ArgMeta lang meta]
   }
+
+-- | Inverse to 'unDest': reconstructs a destructor application from a 'UnDestMeta'
+dest :: UnDestMeta lang meta -> TermMeta lang meta
+dest UnDestMeta {..} =
+  SystF.App (SystF.Free $ TermSig undestName) $
+    map SystF.TyArg undestTypeArgs
+      ++ [ SystF.TermArg undestDestructed,
+           SystF.TyArg undestReturnType
+         ]
+      ++ map SystF.TermArg undestCases
+      ++ undestCasesExtra
 
 unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnDestMeta lang meta)
 unDest (SystF.App (SystF.Free (TermSig n)) args) = do
