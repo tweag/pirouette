@@ -74,7 +74,7 @@ withSampleUDefs m = runReader m sampleUDefs
 tests :: [TestTree]
 tests =
   [ -- We expect that 'Monoid' is a higher-order definition and is picked by findPolyHOFDefs
-    -- Additionally, we expect that 'Indirecti is also a higher-order definition, even though
+    -- Additionally, we expect that 'Indirect' is also a higher-order definition, even though
     -- indirectly. Nevertheless, it has to be there too.
     testCase "findPolyHOFDefs picks 'Monoid' and friends" $ do
       let res = findPolyHOFDefs (prtUODecls sampleUDefs)

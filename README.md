@@ -26,7 +26,7 @@ details on these reasoning techniques.
 
 [systemf]: https://en.wikipedia.org/wiki/System_F
 [incorrectness]: https://dl.acm.org/doi/pdf/10.1145/3371078
-[tweag-blogpost]: TODO
+[tweag-blogpost]: https://www.tweag.io/blog/2022-07-01-pirouette-2/
 
 ## Use Cases
 
