@@ -14,6 +14,7 @@ module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
 import Control.Arrow (first, (***))
 import Control.Monad.RWS.Strict
+import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
 import Data.List (nub, sortOn)
@@ -23,7 +24,6 @@ import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
-import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
@@ -107,9 +107,7 @@ defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
-defunTypes defs =
-  let (a, b) = runWriter $ traverseDefs defunTypeDef defs
-   in trace (show b) (a, b)
+defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
   where
     defunTypeDef _ (DTypeDef Datatype {..}) = do
       forM_ allMaybeHofs $ \case
@@ -265,7 +263,7 @@ defunCalls ::
   M.Map Name (HofsList lang) ->
   PrtUnorderedDefs lang ->
   DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunCalls toDefun PrtUnorderedDefs {..} = do
+defunCalls toDefun decls@PrtUnorderedDefs {..} = do
   decls' <- for prtUODecls $ \case
     DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm [] body
     def -> pure def
@@ -281,11 +279,49 @@ defunCalls toDefun PrtUnorderedDefs {..} = do
         go ctx (SystF.Lam ann ty term) = SystF.Lam ann ty <$> go ((ty, ann) : ctx) term
         go ctx (SystF.Abs ann k term) = SystF.Abs ann k <$> go ctx term
 
+        -- If @name@ was previously detected as something that needs
+        -- to be defunctionalized, lets do it!
         goApp ctx (SystF.Free (TermSig name)) args
           | Just hofsList <- M.lookup name toDefun = do
             args' <- forM (zip3 [0 ..] hofsList args) (replaceArg ctx)
             pure $ SystF.Free (TermSig name) `SystF.App` args'
+          -- If not, the app in question might still be something like:
+          -- > Just @(Integer -> Integer) (\(x : Integer) . x + 1)
+          -- And that needs to be defun'ed too!
+          -- WARNING: can't use prtDefOf here because we might be looking
+          -- at partially defun'ed terms, so they'll have occurences of
+          -- a still undefined _Apply!!... symbol
+          | Just (DConstructor _ _) <- M.lookup (TermNamespace, name) prtUODecls = do
+            let nameTy = runReader (typeOfIdent name) decls
+            SystF.App (SystF.Free (TermSig name))
+              <$> goNestedArgs ctx nameTy args
         goApp _ term args = pure $ term `SystF.App` args
+
+        goNestedArgs ::
+          [(Type lang, SystF.Ann Name)] ->
+          Type lang ->
+          [Arg lang] ->
+          DefunCallsCtx lang [Arg lang]
+        goNestedArgs _ _ [] = return []
+        goNestedArgs ctx ty@SystF.TyAll {} (SystF.TyArg arg : args) = do
+          -- We will recurse instantiating with the non-defun'ed type, so we know which
+          -- arguments need to be defunctionalizaed because they will be of type TyFun!
+          args' <- goNestedArgs ctx (SystF.tyInstantiate ty arg) args
+          return $ SystF.TyArg (rewriteFunType arg) : args'
+        goNestedArgs ctx (SystF.TyFun tyA tyB) (SystF.TermArg arg : args) = do
+          arg' <- case tyA of
+            SystF.TyFun {} -> defunCallsInTerm ctx arg >>= mkClosureArg ctx (DefunHofArgInfo tyA)
+            _ -> return (SystF.TermArg arg)
+          args' <- goNestedArgs ctx tyB args
+          return (arg' : args')
+        goNestedArgs ctx ty args =
+          error $
+            unlines
+              [ "goNestedArgs: term application is either not well-typed or not eta-expanded",
+                "ctx: " ++ show ctx,
+                "ty: " ++ show (pretty ty),
+                "args: " ++ show (pretty args)
+              ]
 
     replaceArg ::
       [(Type lang, SystF.Ann Name)] ->
@@ -404,7 +440,9 @@ rewriteHofType = go 0
             SystF.TyFun {} -> (closureType dom, Just $ DefunHofArgInfo dom)
             ty | hasFuns ty -> (rewriteFunType ty, Just DefunHofArgNested)
             _ -> (dom, Nothing)
-    go _ ty@SystF.TyApp {} = (ty, [])
+    go _ ty@SystF.TyApp {}
+      | hasFuns ty = (rewriteFunType ty, [])
+      | otherwise = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
 
