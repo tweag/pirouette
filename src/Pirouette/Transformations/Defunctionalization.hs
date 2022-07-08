@@ -148,9 +148,14 @@ defunDtors defs = transformBi f defs
         branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody . rewriteNestedLamArgs) <$> branches
     f x = x
 
+    -- Rewrite the branches of a destructor that have a nested higher order function
+    -- but deliberatly do not rewrite those that are already functions, that will
+    -- be handled by vanilla defunctionalization
     rewriteNestedLamArgs :: Term lang -> Term lang
-    rewriteNestedLamArgs (SystF.Lam ann ty t) =
+    rewriteNestedLamArgs (SystF.Lam ann ty@SystF.TyApp {} t) =
       SystF.Lam ann (rewriteFunType ty) (rewriteNestedLamArgs t)
+    rewriteNestedLamArgs (SystF.Lam ann ty t) =
+      SystF.Lam ann ty (rewriteNestedLamArgs t)
     rewriteNestedLamArgs t = t
 
     -- Replaces the functional type arguments to the type itself with the corresponding closure types.
