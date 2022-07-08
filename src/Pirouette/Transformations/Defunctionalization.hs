@@ -12,7 +12,7 @@
 
 module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
-import Control.Arrow ((***), first)
+import Control.Arrow (first, (***))
 import Control.Monad.RWS.Strict
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
@@ -89,6 +89,15 @@ defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -
 
 -- * Defunctionalization of types
 
+-- | Identify types that contain contructors that receive functions as
+-- an argument. As an example, take:
+--
+-- > data Monoid (a : Type) = Mon : (a -> a -> a) -> a -> Monoid a
+-- > data Maybe (a : Type) = Just : a -> Maybe a | Nothing : Maybe a
+--
+-- The call to 'defunTypes' will pick @Mon@ as a target for defunctionalization,
+-- and will 'tell' an appropriate new declaration for @Monoid@. It will
+-- not pick @Just@, however.
 defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->

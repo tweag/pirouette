@@ -36,6 +36,12 @@ data List (a : Type)
   = Cons : a -> List a -> List a
   | Nil : List a
 
+-- Here's a tricky one! It's an indirect need for monomorphizing:
+-- If we don't monomorphize @Ind@, defunctionalization will not
+-- be able to properly generate closures for the arguments.
+data Indirect (a : Type)
+  = Ind : Maybe (a -> a) -> Indirect a
+
 fun fold : all a : Type . Monoid a -> List a -> a
       = /\ a : Type . \(m : Monoid a) (xs : List a)
       . match_Monoid @a m @a
@@ -68,9 +74,12 @@ withSampleUDefs m = runReader m sampleUDefs
 tests :: [TestTree]
 tests =
   [ -- We expect that 'Monoid' is a higher-order definition and is picked by findPolyHOFDefs
+    -- Additionally, we expect that 'Indirecti is also a higher-order definition, even though
+    -- indirectly. Nevertheless, it has to be there too.
     testCase "findPolyHOFDefs picks 'Monoid' and friends" $ do
       let res = findPolyHOFDefs (prtUODecls sampleUDefs)
-      assertBool "Monoid not there" $ (TypeNamespace, "Monoid") `M.member` res,
+      assertBool "Monoid not there" $ (TypeNamespace, "Monoid") `M.member` res
+      assertBool "Indirect not there" $ (TypeNamespace, "Indirect") `M.member` res,
     -- In order to get the transitive closure of all the definitions that use ho-defs,
     -- we rely on 'hofsClosure'.
     testCase "hofsClosure picks the expected defs" $
@@ -78,6 +87,7 @@ tests =
        in sort (M.keys (hofsClosure ds (findPolyHOFDefs ds)))
             @?= sort
               [ (TypeNamespace, "Monoid"),
+                (TypeNamespace, "Indirect"),
                 (TermNamespace, "Mon"),
                 (TermNamespace, "fold"),
                 (TermNamespace, "match_Monoid")
