@@ -20,6 +20,7 @@ import Pirouette.Transformations
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import Test.Tasty
+import Test.Tasty.ExpectedFailure
 import Test.Tasty.HUnit
 
 tests :: [TestTree]
@@ -179,23 +180,28 @@ fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (Cl
 defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
   [ testCase "Nested closures are generated and typecheck" $
-      case monoDefunc nested of
-        PrtUnorderedDefs decls -> do
-          print (pretty decls)
-          case typeCheckDecls decls of
-            Left err -> assertFailure $ show $ pretty err
-            Right _ -> return (),
+      runTest nested,
     testCase "Destructors types are updated and typecheck" $
-      case monoDefunc destructors of
-        PrtUnorderedDefs decls -> do
-          print (pretty decls)
-          case typeCheckDecls decls of
-            Left err -> assertFailure $ show $ pretty err
-            Right _ -> return ()
+      runTest destructors,
+    testCase "Indirect types are updated and typecheck" $
+      runTest indirect,
+    -- TODO: I'm marking this as expectFail because I'm aware our defunctionalization
+    -- engine can't handle this, but we really have to address it at some point!
+    expectFail $
+      testCase "Mixed types are updated and typecheck" $
+        runTest mixed
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
     monoDefunc = defunctionalize . monomorphize
+
+    runTest :: PrtUnorderedDefs Ex -> Assertion
+    runTest decls0 =
+      case monoDefunc decls0 of
+        PrtUnorderedDefs decls -> do
+          case typeCheckDecls decls of
+            Left err -> assertFailure (show $ pretty err)
+            Right _ -> return ()
 
 nested :: PrtUnorderedDefs Ex
 nested =
@@ -261,4 +267,63 @@ fun val : Maybe (Integer -> Integer)
 
 fun main : Integer
   = match_Maybe @(Integer -> Integer) val @Integer (\(f : Integer -> Integer) . f 42) 0
+|]
+
+-- Here's a tricky situation! We need the defunctionalizer to pick up that
+-- the definition of 'Predicate' has to be updated, even though it doesn't
+-- contain a function type directly
+indirect :: PrtUnorderedDefs Ex
+indirect =
+  [prog|
+data Predicate (a : Type)
+  = Prob : Maybe (Integer -> a) -> Predicate a
+
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun run : all (a : Type) . Predicate a -> Integer -> Maybe a
+  = /\(a : Type) . \(p : Predicate a) (x : Integer)
+    . match_Predicate @a p @(Maybe a)
+        (\(mf : Maybe (Integer -> a))
+         . match_Maybe @(Integer -> a) mf @(Maybe a)
+             (\f : Integer -> a . Just @a (f x))
+             (Nothing @a))
+
+fun val : Predicate Bool
+  = Prob @Bool (Just @(Integer -> Bool) (\(x : Integer) . x < 1))
+
+fun main : Bool
+  = match_Maybe @Bool (run @Bool val 42) @Bool (\x : Bool . x) False
+|]
+
+-- While we're at it, let's throw in a mixed definition that has both direct
+-- and indirect needs for defunctionalization in the same type!
+mixed :: PrtUnorderedDefs Ex
+mixed =
+  [prog|
+data Mixed (a : Type)
+  = Mix : a -> (a -> a) -> Mixed a
+
+fun run : all (a : Type) . Mixed a -> a
+  = /\(a : Type) . \(m : Mixed a) . match_Mixed @a m @a
+      (\(x : a) (f : a -> a) . f x)
+
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun or : Bool -> Bool -> Bool
+  = \(x : Bool) (y : Bool) . if @Bool x then True else y
+
+-- The worst nightmare of the defunctionalizer! :)
+fun nasty : Mixed (Maybe (Bool -> Bool))
+  = Mix @(Maybe (Bool -> Bool))
+        (Just @(Bool -> Bool) (or True))
+        (\(x : Maybe (Bool -> Bool)) . Nothing @(Bool -> Bool))
+
+fun main : Bool
+  = match_Maybe @(Bool -> Bool) (run @(Maybe (Bool -> Bool)) nasty) @Bool
+      (\(f : Bool -> Bool) . f True)
+      False
 |]
