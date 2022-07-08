@@ -146,6 +146,7 @@ argsToStr = T.intercalate msep . map f
 
     f (SystF.Free n `TyApp` args) =
       tyBaseString n <> if null args then mempty else "<" <> argsToStr args <> ">"
+    f (SystF.TyFun a b) = f a <> "_" <> f b
     f arg = error $ "unexpected specializing arg" <> show arg
 
 tyBaseString :: LanguageBuiltins lang => TypeBase lang -> T.Text
