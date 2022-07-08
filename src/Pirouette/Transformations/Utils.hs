@@ -10,7 +10,6 @@ module Pirouette.Transformations.Utils where
 
 import Control.Arrow (first, second)
 import Data.Data
-import Data.Generics.Uniplate.Data
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Debug.Trace

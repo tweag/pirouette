@@ -187,13 +187,12 @@ defuncTestsPoly =
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
-    monoDefunc = {- defunctionalize . -} monomorphize
+    monoDefunc = defunctionalize . monomorphize
 
     runTest :: PrtUnorderedDefs Ex -> Assertion
     runTest decls0 =
       case monoDefunc decls0 of
         PrtUnorderedDefs decls -> do
-          print (pretty decls)
           case typeCheckDecls decls of
             Left err -> print (pretty decls) >> assertFailure (show $ pretty err)
             Right _ -> return ()
