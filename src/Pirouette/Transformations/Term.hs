@@ -61,7 +61,7 @@ removeExcessiveDestArgs = rewriteM (runMaybeT . go)
   where
     go :: (Show meta, PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (TermMeta lang meta)
     go t = do
-      UnDestMeta n tyN tyArgs x tyReturn cases excess <- unDest t
+      UnDestMeta nTyN tyArgs x tyReturn cases excess <- unDest t
       if null excess
         then fail "No excessive destr arguments"
         else do

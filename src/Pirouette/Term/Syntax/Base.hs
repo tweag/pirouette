@@ -321,6 +321,49 @@ data Namespace = TermNamespace | TypeNamespace
 -- | A program will be translated into a number of term and type declarations.
 type Decls lang = Map (Namespace, Name) (Definition lang)
 
+-- * Some useful syntactical utilities
+
+-- | A destructor application has the following form:
+--
+--  > [d/Type tyArg0 ... tyArgN X ReturnType case0 ... caseK extra0 ... extraL]
+--
+--  The 'unDest' function splits it up into:
+--
+--  > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK], [extra0 .. extraL])
+--
+--  Moreover, we already remove the 'SystF.Arg' wrapper for all the predefined argument positions.
+--  Only the extra arguments are kept with their 'SystF.Arg' because they could be types or terms.
+data UnDestMeta lang meta = UnDestMeta
+  { undestNameType :: Either (Name, TyName) (BuiltinTerms lang, BuiltinTypes lang),
+    undestTypeArgs :: [TypeMeta lang meta],
+    undestDestructed :: TermMeta lang meta,
+    undestReturnType :: TypeMeta lang meta,
+    undestCases :: [TermMeta lang meta],
+    undestCasesExtra :: [ArgMeta lang meta]
+  }
+
+-- | Reconstructs a destructor application from a 'UnDestMeta'
+fromUnDestMeta :: (LanguageBuiltins lang) => UnDestMeta lang meta -> TermMeta lang meta
+fromUnDestMeta x@UnDestMeta {..} =
+  case undestNameType of
+    Right _ -> fromUnDestBuiltin x
+    Left (name, _) ->
+      SystF.App (SystF.Free $ TermSig name) $
+        map SystF.TyArg undestTypeArgs
+          ++ [ SystF.TermArg undestDestructed,
+               SystF.TyArg undestReturnType
+             ]
+          ++ map SystF.TermArg undestCases
+          ++ undestCasesExtra
+
+-- | Analogous to 'UnDestMeta'
+data UnConsMeta lang meta = UnConsMeta
+  { unconsTypeName :: TyName,
+    unconsTypeArgs :: [TypeMeta lang meta],
+    unconsIndex :: Int,
+    unconsTermArgs :: [TermMeta lang meta]
+  }
+
 -- * Language Builtins
 
 type EqOrdShowDataTypeable a = (Eq a, Ord a, Show a, Data a, Typeable a)
@@ -349,6 +392,25 @@ class (LanguageConstrs lang) => LanguageBuiltins lang where
     -- | additional definitions supporting those
     [(Name, TypeDef lang)]
   builtinTypeDefinitions _ = []
+
+  -- | Unwraps the arguments from a potential builtin destructor, satisfying
+  --  the invariant that 'undestNameType' is a @Left@. A classic example is
+  --  when the target language has an if-then-else, which happens to receive its
+  --  result type as the first argument:
+  --
+  --  > if @Integer somePredicate then 42 else 0
+  --
+  --  That if-statement is in fact a destructor: it pattern-matches on @somePredicate@,
+  --  yet, for us to be able to apply any transformations that might need to behave
+  --  exceptionally on destructors.
+  unDestBuiltin :: TermMeta lang meta -> Maybe (UnDestMeta lang meta)
+  unDestBuiltin _ = Nothing
+
+  -- | Works as a partial inverse of 'unDestBuiltin', which enables us to reconstruct
+  --  the builtin destructors properly. Must satisfy:
+  --  if @unDestBuiltin t == Just m@, then @fromUnDestBuiltin m == t@
+  fromUnDestBuiltin :: UnDestMeta lang meta -> TermMeta lang meta
+  fromUnDestBuiltin _ = error "By default, no builtin is a destructor"
 
 builtinTypeDecls :: (LanguageBuiltins lang) => Decls lang -> Decls lang
 builtinTypeDecls m =

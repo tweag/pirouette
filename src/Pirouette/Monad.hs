@@ -235,40 +235,15 @@ instance (LanguageBuiltins lang, Monad m) => PirouetteDepOrder lang (ReaderT (Pr
 getPrtOrderedDefs :: (PirouetteDepOrder lang m) => m (PrtOrderedDefs lang)
 getPrtOrderedDefs = PrtOrderedDefs <$> prtAllDefs <*> prtDependencyOrder
 
--- * Some useful syntactical utilities
-
--- | A destructor application has the following form:
+-- | Given a term, if it is a destructor (builtin or not) expands it into the
+-- destructor component parts. Satisfies the property that:
 --
---  > [d/Type tyArg0 ... tyArgN X ReturnType case0 ... caseK extra0 ... extraL]
+-- > runMaybeT (unDest t) >>= fmap fromUnDestMeta <=> if isDest t then Just t else Nothing
 --
---  The 'unDest' function splits it up into:
---
---  > Just (d/Type, [tyArg0 .. tyArgN], X, ReturnType, [case0 .. caseK], [extra0 .. extraL])
---
---  Moreover, we already remove the 'SystF.Arg' wrapper for all the predefined argument positions.
---  Only the extra arguments are kept with their 'SystF.Arg' because they could be types or terms.
-data UnDestMeta lang meta = UnDestMeta
-  { undestName :: Name,
-    undestTypeName :: TyName,
-    undestTypeArgs :: [TypeMeta lang meta],
-    undestDestructed :: TermMeta lang meta,
-    undestReturnType :: TypeMeta lang meta,
-    undestCases :: [TermMeta lang meta],
-    undestCasesExtra :: [ArgMeta lang meta]
-  }
-
--- | Inverse to 'unDest': reconstructs a destructor application from a 'UnDestMeta'
-dest :: UnDestMeta lang meta -> TermMeta lang meta
-dest UnDestMeta {..} =
-  SystF.App (SystF.Free $ TermSig undestName) $
-    map SystF.TyArg undestTypeArgs
-      ++ [ SystF.TermArg undestDestructed,
-           SystF.TyArg undestReturnType
-         ]
-      ++ map SystF.TermArg undestCases
-      ++ undestCasesExtra
-
+-- In other words, 'fromUnDestMeta' is somewhat an inverse to 'unDest'
 unDest :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnDestMeta lang meta)
+unDest t@(SystF.App (SystF.Free (Builtin _)) _) =
+  MaybeT $ return $ unDestBuiltin t
 unDest (SystF.App (SystF.Free (TermSig n)) args) = do
   tyN <- prtIsDest n
   Datatype _ _ _ cons <- lift (prtTypeDefOf tyN)
@@ -279,19 +254,12 @@ unDest (SystF.App (SystF.Free (TermSig n)) args) = do
     (SystF.TermArg x : SystF.TyArg retTy : casesrest) -> do
       let (cases, rest) = splitAt nCons casesrest
       cases' <- mapM (wrapMaybe . SystF.fromArg) cases
-      return $ UnDestMeta n tyN tyArgs' x retTy cases' rest
+      return $ UnDestMeta (Left (n, tyN)) tyArgs' x retTy cases' rest
     -- The fail string is being ignored by the 'MaybeT'; that's alright, they serve
     -- as programmer documentation or they can be plumbed through a 'trace' by
     -- overloading the MonadFail instance, which was helpful for debugging in the past.
     _ -> fail "unDest: Destructor arguments has non-cannonical structure"
 unDest _ = fail "unDest: not an SystF.App"
-
-data UnConsMeta lang meta = UnConsMeta
-  { unconsTypeName :: TyName,
-    unconsTypeArgs :: [TypeMeta lang meta],
-    unconsIndex :: Int,
-    unconsTermArgs :: [TermMeta lang meta]
-  }
 
 -- | Analogous to 'unDest', but works for constructors.
 unCons :: (PirouetteReadDefs lang m) => TermMeta lang meta -> MaybeT m (UnConsMeta lang meta)
