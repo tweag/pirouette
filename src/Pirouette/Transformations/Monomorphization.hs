@@ -12,11 +12,9 @@
 
 module Pirouette.Transformations.Monomorphization where
 
-import Control.Arrow (first)
+import Control.Arrow ((***))
 import Control.Monad.Reader
-import Control.Monad.State.Strict
 import Control.Monad.Writer.Strict
-import Data.Default
 import Data.Generics.Uniplate.Data
 import Data.List (isPrefixOf)
 import qualified Data.Map as M
@@ -27,7 +25,6 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Term.TransitiveDeps
 import Pirouette.Utils
 
 -- * Monomorphization
@@ -71,8 +68,8 @@ monomorphize defs0 = prune $ go mempty defs0
       where
         (defs', specOrders) =
           runWriter $
-            transformBiM (specFunApp defsToMono :: SpecFunApp lang) defs
-              >>= transformBiM (specTyApp defsToMono :: SpecTyApp lang)
+            transformBiM (specFunApp defsToMono) defs
+              >>= transformBiM (specTyApp defsToMono)
         newOrders = filter (`S.notMember` prevOrders) specOrders
         newDefs = foldMap executeSpecRequest newOrders
 
@@ -81,23 +78,22 @@ monomorphize defs0 = prune $ go mempty defs0
 
 -- | Return a set of definitions that either satisfy 'shouldMono' or have one
 --  of its transitive dependencies satisfy 'shouldMono'. In other words, picks
---  all definitions that should be monomorphized.
-selectMonoDefs :: forall lang. (Language lang) => PrtUnorderedDefs lang -> M.Map Name (FunOrTypeDef lang)
-selectMonoDefs decls0@PrtUnorderedDefs {..} =
+--  all definitions that should be monomorphized. It also picks up associated definitions
+--  that should be monomorphized (constructors and destructors), but associates them
+--  with no particular definition.
+selectMonoDefs :: forall lang. (Language lang) => PrtUnorderedDefs lang -> M.Map Name (Maybe (FunOrTypeDef lang))
+selectMonoDefs PrtUnorderedDefs {..} =
   let defsList = mapMaybe (secondM isFunOrTypeDef) $ M.toList prtUODecls
       -- Makes a first selection of definitions: all of those satisfying 'shouldMono'
       selectedDefs0 = filter (shouldMono . snd) defsList
-      selectedNames0 = map (namespaceToArg . fst) selectedDefs0
-      -- Now get all names that depend on anything from selectedNames0
-      selectedDefs = flip runReader decls0 $
-        flip evalStateT def $
-          flip mapMaybeM defsList $ \((space, nm), d) -> do
-            depsOfNM <- transitiveDepsOfCached space nm
-            return $
-              if (`S.member` depsOfNM) `any` selectedNames0
-                then Just (nm, d)
-                else Nothing
-   in M.fromList $ map (first snd) selectedDefs0 -- ++ selectedDefs
+      -- Now get all constructor/destructor names that are associated with
+      -- the typedefs from selectedNames0, but we associate them with
+      associatedNames =
+        [ (name, Nothing)
+          | (_, SystF.TyArg tydef) <- selectedDefs0,
+            name <- destructor tydef : map fst (constructors tydef)
+        ]
+   in M.fromList $ map (snd *** Just) selectedDefs0 ++ associatedNames
 
 type FunOrTypeDef lang = SystF.Arg (TypeDef lang) (FunDef lang)
 
@@ -117,17 +113,15 @@ isFunOrTypeDef _ = Nothing
 
 -- * Specializer
 
--- | Describes a definition (a function or a type) that needs to be specialized with the given type arguments list.
+-- | Describes a definition (a function or a type) that needs to be specialized
+-- with the given type arguments list. The specialized definitions are generated
+-- through 'executeSpecRequest'
 data SpecRequest lang = SpecRequest
   { srName :: Name,
     srOrigDef :: FunOrTypeDef lang,
     srArgs :: [Type lang]
   }
   deriving (Show, Eq, Ord)
-
-type SpecFunApp lang = forall m. MonadWriter [SpecRequest lang] m => Term lang -> m (Term lang)
-
-type SpecTyApp lang = forall m. MonadWriter [SpecRequest lang] m => Type lang -> m (Type lang)
 
 -- | Specializes a function application of the form:
 --
@@ -145,13 +139,13 @@ type SpecTyApp lang = forall m. MonadWriter [SpecRequest lang] m => Type lang ->
 -- This function only does the substitution _at call site_ and emits a 'SpecRequest' denoting that the corresponding
 -- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp ::
-  forall lang.
-  (LanguageBuiltins lang) =>
-  M.Map Name (FunOrTypeDef lang) ->
-  SpecFunApp lang
+  (MonadWriter [SpecRequest lang] m, LanguageBuiltins lang) =>
+  M.Map Name (Maybe (FunOrTypeDef lang)) ->
+  Term lang ->
+  m (Term lang)
 specFunApp toMono (SystF.App (SystF.Free (TermSig name)) args)
   -- We compare the entire name, not just the nameString part: x0 /= x1.
-  | Just someDef <- name `M.lookup` toMono,
+  | Just mSomeDef <- name `M.lookup` toMono,
     -- Now we ensure that there is something to specialize and that the type arguments we've
     -- gathered are specializable arguments (ie, no bound type-variables)
     let tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args,
@@ -159,7 +153,7 @@ specFunApp toMono (SystF.App (SystF.Free (TermSig name)) args)
     all isSpecArg tyArgs = do
     let (specArgs, remainingArgs) = SystF.splitArgs (length tyArgs) args
         speccedName = genSpecName specArgs name
-    tell $ pure $ SpecRequest name someDef specArgs
+    tell $ maybe [] (\someDef -> pure $ SpecRequest name someDef specArgs) mSomeDef
     pure $ SystF.Free (TermSig speccedName) `SystF.App` remainingArgs
 specFunApp _ x = pure x
 
@@ -176,11 +170,12 @@ specFunApp _ x = pure x
 --
 --  See the docs for 'specFunApp' for more details.
 specTyApp ::
-  (LanguageBuiltins lang) =>
-  M.Map Name (FunOrTypeDef lang) ->
-  SpecTyApp lang
+  (MonadWriter [SpecRequest lang] m, LanguageBuiltins lang) =>
+  M.Map Name (Maybe (FunOrTypeDef lang)) ->
+  Type lang ->
+  m (Type lang)
 specTyApp toMono (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
-  | Just someDef <- name `M.lookup` toMono,
+  | Just (Just someDef) <- name `M.lookup` toMono,
     not (null tyArgs),
     all isSpecArg tyArgs = do
     let (specArgs, remainingArgs) = splitAt (length tyArgs) tyArgs

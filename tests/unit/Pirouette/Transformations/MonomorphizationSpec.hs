@@ -16,6 +16,7 @@ import Language.Pirouette.Example
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Term.TypeChecker
 import Pirouette.Transformations.Monomorphization
 import Pirouette.Transformations.Utils
 import Test.Tasty
@@ -25,10 +26,6 @@ import Test.Tasty.HUnit
 sampleUDefs :: PrtUnorderedDefs Ex
 sampleUDefs =
   [prog|
-data Maybe (a : Type)
-  = Nothing : Maybe a
-  | Just : a -> Maybe a
-
 data Monoid (a : Type)
   = Mon : a -> (a -> a -> a) -> Monoid a
 
@@ -51,12 +48,6 @@ fun fold : all a : Type . Monoid a -> List a -> a
                 zero
           )
 
-fun maybeSum : all (x : Type) . Maybe x -> Maybe x -> Maybe x
-  = /\ (x : Type) . \(mx : Maybe x)(my : Maybe x)
-  . match_Maybe @x mx @(Maybe x)
-      my
-      (\(jx : x) . Just @x jx)
-
 fun intMonoid : Monoid Integer
      = Mon @Integer 0 (\(x : Integer) (y : Integer) . x + y)
 
@@ -66,48 +57,44 @@ fun myList : List Integer
 fun main : Integer = fold @Integer intMonoid myList
 |]
 
-withSampleUDefs ::
-  (forall m. PirouetteReadDefs Ex m => m Assertion) ->
-  Assertion
-withSampleUDefs m = runReader m sampleUDefs
-
 tests :: [TestTree]
 tests =
-  [ -- We expect that 'Monoid' is a higher-order definition and is picked by findPolyHOFDefs
-    -- Additionally, we expect that 'Indirect' is also a higher-order definition, even though
-    -- indirectly. Nevertheless, it has to be there too.
-    testCase "findPolyHOFDefs picks 'Monoid' and friends" $ do
-      let res = M.filter (maybe False shouldMono . isFunOrTypeDef) (prtUODecls sampleUDefs)
-      assertBool "Monoid not there" $ (TypeNamespace, "Monoid") `M.member` res
-      assertBool "Indirect not there" $ (TypeNamespace, "Indirect") `M.member` res,
-    -- In order to get the transitive closure of all the definitions that use ho-defs,
-    -- we rely on 'hofsClosure'.
-    testCase "hofsClosure picks the expected defs" $
+  [ testCase "selectMonoDefs picks the expected defs" $
       let ds = selectMonoDefs sampleUDefs
        in sort (M.keys ds)
             @?= sort
-              [ "Monoid",
-                "Indirect",
+              [ "Indirect",
                 "Ind",
                 "match_Indirect",
+                "Monoid",
                 "Mon",
+                "match_Monoid",
                 "fold",
-                "match_Monoid"
+                "List",
+                "match_List",
+                "Cons",
+                "Nil"
               ],
+    -- Monomorphized declarations typecheck
+    testCase "monomorphize sampleUDefs typechecks" $ do
+      let res = monomorphize sampleUDefs
+      case typeCheckDecls (prtUODecls $ monomorphize sampleUDefs) of
+        Left err -> assertFailure (show $ pretty err)
+        Right _ -> return (),
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
       [ testCase "specFunApp (id @Bool True) == (id@Bool True, [SpecRequest ...])" $
-          runWriter (specFunApp (M.singleton "id" idDef) [term| id @Bool True |])
+          runWriter (specFunApp (M.singleton "id" $ Just idDef) [term| id @Bool True |])
             @?= ([term| id!TyBool True |], [SpecRequest "id" idDef [[ty| Bool |]]]),
         testCase "specFunApp (const @Integer @Bool 42 False) == (const!Integer!Bool 42 False, [SpecRequest ...])" $
-          runWriter (specFunApp (M.singleton "const" constDef) [term| const @Integer @Bool 42 True |])
+          runWriter (specFunApp (M.singleton "const" $ Just constDef) [term| const @Integer @Bool 42 True |])
             @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest "const" constDef [[ty| Integer |], [ty| Bool |]]])
       ],
     testGroup
       "executeSpecRequest"
       [ testCase "specTyApp (Either3 Bool Integer) fixes type-variables and produces correct constructors" $
-          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton "Either3" either3Def) [ty| Either3 Bool Integer |])
+          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton "Either3" $ Just either3Def) [ty| Either3 Bool Integer |])
             @?= either3Def_Bool_Integer_decls
       ]
   ]
