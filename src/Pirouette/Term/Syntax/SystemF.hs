@@ -10,7 +10,7 @@
 
 module Pirouette.Term.Syntax.SystemF where
 
-import Control.Arrow (first)
+import Control.Arrow (first, second)
 import Control.Monad.Identity
 import Data.Data
 import Data.Foldable
@@ -125,6 +125,37 @@ tyPolyArity _ = 0
 --  the given type has to receive
 tyMonoArity :: AnnType ann tyVar -> Int
 tyMonoArity = length . fst . tyFunArgs
+
+-- | Returns whether a type has higher-order functions. We say a type has
+-- HO functions iff it has a function to the left of an arrow, anywhere. This
+-- can occur directly or indirectly, for instance, the type:
+--
+-- > Integer -> Maybe (Bool -> Bool) -> X
+--
+-- Has higher-order functions present nested in 'Maybe'. This current function
+-- could be much better given it will also return some false-positives. For instance,
+--
+-- > Integer -> Const Bool (Bool -> Bool) -> X
+--
+-- Doesn't really have higher order functions because @Const a b = a@, but we
+-- are not worrying about that now, that would require lifting this function to
+-- a context that is aware of type definitions.
+tyHasHOFuns :: AnnType ann ty -> Bool
+-- First case, the obvious HO type: (_ -> _) -> _ ...
+tyHasHOFuns (TyFun TyFun {} _) = True
+-- Now, if we have somthing other than another arrow to the left of
+-- a tyFun, it can still be something like: Maybe (a -> a)
+tyHasHOFuns (TyFun a b) = tyHasHOFuns a || tyHasHOFuns b
+tyHasHOFuns (TyApp _ args) = tyHasFuns `any` args
+tyHasHOFuns (TyLam _ _ at) = tyHasHOFuns at
+tyHasHOFuns (TyAll _ _ at) = tyHasHOFuns at
+
+-- | Returns whether this type has arrows anywhere.
+tyHasFuns :: AnnType ann ty -> Bool
+tyHasFuns (TyFun _ _) = True
+tyHasFuns (TyApp _ args) = tyHasFuns `any` args
+tyHasFuns (TyLam _ _ at) = tyHasFuns at
+tyHasFuns (TyAll _ _ at) = tyHasFuns at
 
 pattern TyPure :: tyVar -> AnnType ann tyVar
 pattern TyPure v = TyApp v []
@@ -298,6 +329,15 @@ firstTermArg (ty@TermArg {} : rest) = Just (ty, rest)
 firstTermArg (other : rest) = do
   (ty, args) <- firstTermArg rest
   pure (ty, other : args)
+
+-- | Splits the first @n@ type arguments into a separate list, for example:
+-- > splitArgs 2 [Arg a, TyArg A, TyArg B, Arg b, TyArg C]
+-- >  == ([A, B], [Arg a, Arg b, TyArg C])
+splitArgs :: Int -> [Arg ty v] -> ([ty], [Arg ty v])
+splitArgs 0 args = ([], args)
+splitArgs n (TyArg tyArg : args) = first (tyArg :) $ splitArgs (n - 1) args
+splitArgs n (arg : args) = second (arg :) $ splitArgs n args
+splitArgs _ [] = error "Less args than poly args count"
 
 instance (Show v, Show ty, Show ann, HasSubst ty, IsVar v) => HasSubst (AnnTerm ty ann v) where
   type SubstVar (AnnTerm ty ann v) = v

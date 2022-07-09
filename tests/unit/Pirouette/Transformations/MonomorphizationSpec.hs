@@ -77,67 +77,66 @@ tests =
     -- Additionally, we expect that 'Indirect' is also a higher-order definition, even though
     -- indirectly. Nevertheless, it has to be there too.
     testCase "findPolyHOFDefs picks 'Monoid' and friends" $ do
-      let res = findPolyHOFDefs (prtUODecls sampleUDefs)
+      let res = M.filter (maybe False shouldMono . isFunOrTypeDef) (prtUODecls sampleUDefs)
       assertBool "Monoid not there" $ (TypeNamespace, "Monoid") `M.member` res
       assertBool "Indirect not there" $ (TypeNamespace, "Indirect") `M.member` res,
     -- In order to get the transitive closure of all the definitions that use ho-defs,
     -- we rely on 'hofsClosure'.
     testCase "hofsClosure picks the expected defs" $
-      let ds = prtUODecls sampleUDefs
-       in sort (M.keys (hofsClosure ds (findPolyHOFDefs ds)))
+      let ds = selectMonoDefs sampleUDefs
+       in sort (M.keys ds)
             @?= sort
-              [ (TypeNamespace, "Monoid"),
-                (TypeNamespace, "Indirect"),
-                (TermNamespace, "Ind"),
-                (TermNamespace, "match_Indirect"),
-                (TermNamespace, "Mon"),
-                (TermNamespace, "fold"),
-                (TermNamespace, "match_Monoid")
+              [ "Monoid",
+                "Indirect",
+                "Ind",
+                "match_Indirect",
+                "Mon",
+                "fold",
+                "match_Monoid"
               ],
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
       [ testCase "specFunApp (id @Bool True) == (id@Bool True, [SpecRequest ...])" $
-          runWriter (specFunApp (M.singleton (TermNamespace, "id") idDef) [term| id @Bool True |])
-            @?= ([term| id!TyBool True |], [SpecRequest idDef [[ty| Bool |]]]),
+          runWriter (specFunApp (M.singleton "id" idDef) [term| id @Bool True |])
+            @?= ([term| id!TyBool True |], [SpecRequest "id" idDef [[ty| Bool |]]]),
         testCase "specFunApp (const @Integer @Bool 42 False) == (const!Integer!Bool 42 False, [SpecRequest ...])" $
-          runWriter (specFunApp (M.singleton (TermNamespace, "const") constDef) [term| const @Integer @Bool 42 True |])
-            @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest constDef [[ty| Integer |], [ty| Bool |]]])
+          runWriter (specFunApp (M.singleton "const" constDef) [term| const @Integer @Bool 42 True |])
+            @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest "const" constDef [[ty| Integer |], [ty| Bool |]]])
       ],
     testGroup
       "executeSpecRequest"
       [ testCase "specTyApp (Either3 Bool Integer) fixes type-variables and produces correct constructors" $
-          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton (TypeNamespace, "Either3") either3Def) [ty| Either3 Bool Integer |])
+          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton "Either3" either3Def) [ty| Either3 Bool Integer |])
             @?= either3Def_Bool_Integer_decls
       ]
   ]
 
-constDef :: HofDef Ex
-constDef = HofDef "const" $ HDBFun $ FunDef Rec funterm funtype
+constDef :: FunOrTypeDef Ex
+constDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
     funtype = [ty| all (a : Type) (b : Type) . a -> b -> a |]
     funterm = [term| /\ (a : Type) (b : Type) . \ (x : a) (y : b) . x |]
 
-idDef :: HofDef Ex
-idDef = HofDef "id" $ HDBFun $ FunDef Rec funterm funtype
+idDef :: FunOrTypeDef Ex
+idDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
     funtype = [ty| all a : Type . a -> a |]
     funterm = [term| /\ a : Type . \ x : a . x |]
 
-either3Def :: HofDef Ex
+either3Def :: FunOrTypeDef Ex
 either3Def =
-  HofDef "Either3" $
-    HDBType $
-      Datatype
-        { kind = SystF.KTo SystF.KStar (SystF.KTo SystF.KStar (SystF.KTo SystF.KStar SystF.KStar)),
-          typeVariables = [("a", SystF.KStar), ("b", SystF.KStar), ("c", SystF.KStar)],
-          destructor = "match_Either3",
-          constructors =
-            [ ("Left", [ty| all (a : Type) (b : Type) (c : Type) . a -> Either3 a b c |]),
-              ("Mid", [ty| all (a : Type) (b : Type) (c : Type) . b -> Either3 a b c |]),
-              ("Right", [ty| all (a : Type) (b : Type) (c : Type) . c -> Either3 a b c |])
-            ]
-        }
+  SystF.TyArg $
+    Datatype
+      { kind = SystF.KTo SystF.KStar (SystF.KTo SystF.KStar (SystF.KTo SystF.KStar SystF.KStar)),
+        typeVariables = [("a", SystF.KStar), ("b", SystF.KStar), ("c", SystF.KStar)],
+        destructor = "match_Either3",
+        constructors =
+          [ ("Left", [ty| all (a : Type) (b : Type) (c : Type) . a -> Either3 a b c |]),
+            ("Mid", [ty| all (a : Type) (b : Type) (c : Type) . b -> Either3 a b c |]),
+            ("Right", [ty| all (a : Type) (b : Type) (c : Type) . c -> Either3 a b c |])
+          ]
+      }
 
 either3Def_Bool_Integer_decls :: Decls Ex
 either3Def_Bool_Integer_decls =
