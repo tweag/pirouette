@@ -57,9 +57,19 @@ fun myList : List Integer
 fun main : Integer = fold @Integer intMonoid myList
 |]
 
+castTy :: Type Ex -> Type Ex
+castTy = id
+
+mkTyApp :: Name -> Type Ex
+mkTyApp n = SystF.Free (TySig n) `SystF.TyApp` []
+
 tests :: [TestTree]
 tests =
-  [ testCase "selectMonoDefs picks the expected defs" $
+  [ testCase "genSpecName is homomorphic" $
+      let tyA = castTy [ty| Maybe (Bool -> Bool) |]
+          tyB = mkTyApp $ genSpecName [castTy [ty| Bool -> Bool |]] "Maybe"
+       in genSpecName [tyA] "f" @?= genSpecName [tyB] "f",
+    testCase "selectMonoDefs picks the expected defs" $
       let ds = selectMonoDefs sampleUDefs
        in sort (M.keys ds)
             @?= sort

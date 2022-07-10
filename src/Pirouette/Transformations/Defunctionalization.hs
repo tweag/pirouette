@@ -12,15 +12,13 @@
 
 module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
-import Control.Arrow (first, (***))
+import Control.Arrow ((***))
 import Control.Monad.RWS.Strict
 import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
 import Data.List (nub, sortOn)
 import qualified Data.Map as M
-import Data.Maybe
-import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
@@ -30,22 +28,20 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
-import Pirouette.Transformations.Utils
+import Pirouette.Transformations.Monomorphization (argsToStr)
 
-defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-defunctionalize defs0 = undefined
+-- TODO: maybe eta expand should be a separate step altogether!
 
--- Defunctionalization assumes lots of things! Namelly:
+-- | Defunctionalizes a monomorphic program. It is paramount that the program contains no type-variables
+-- at this stage. This helps keeping the defunctionalizer as simple as possible. Otherwise, we need to
+-- work much harder to understand whether to defunctionalize, say, a polymorphic constructor which may
+-- be applied to something like @Integer -> Integer@.
 --
--- 1. No polymorphic higher-order function occurence
--- 2. everything has been fully eta-expanded
--- 3. ??? still discovering
-
-{-
+-- Requirements for the defunctionalizer:
+--
+--  1. No type-variables anywhere.
 defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-defunctionalize defs0 =
-  case defunctionalizeAssumptions defs0 of
-    () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
+defunctionalize defs0 = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
     (defs1, toDefun1) = defunTypes (etaExpandAll defs0)
     defs2 = defunDtors defs1
@@ -59,54 +55,15 @@ defunctionalize defs0 =
     typeDecls = mkClosureTypes closureCtorInfos'
     applyFunDecls = mkApplyFuns closureCtorInfos'
 
-defunctionalizeAssumptions :: (Language lang) => PrtUnorderedDefs lang -> ()
-defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -> defOk n d >> return d) $ defs
-  where
-    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
-    getDtorName (DTypeDef Datatype {..}) = Just destructor
-    getDtorName _ = Nothing
-
-    hofs = hofsClosure (prtUODecls defs) (findPolyHOFDefs $ prtUODecls defs)
-
-    defOk :: forall lang. (Language lang) => Name -> Definition lang -> Either String ()
-    defOk n (DFunDef FunDef {..}) =
-      let termAbs = [t | t@SystF.Abs {} <- universe funBody]
-
-          tyArgs :: [Arg lang]
-          tyArgs =
-            [ thisTyArgs | (SystF.App (SystF.Free (TermSig t)) args) <- universe funBody, t `S.notMember` dtorsNames, thisTyArgs <- filter SystF.isTyArg args, not $ null thisTyArgs
-            ]
-
-          tyVars :: [Var lang]
-          tyVars = [t | t@(SystF.Bound _ _) <- universeBi funTy]
-       in if (TermNamespace, n) `M.member` hofs
-            then
-              if null termAbs && null tyArgs && null tyVars
-                then Right ()
-                else
-                  Left $
-                    "Defunctionalization will fail for: " ++ show n ++ "\n"
-                      ++ show termAbs
-                      ++ show tyArgs
-                      ++ show tyVars
-            else Right ()
-    defOk _ _ = return ()
-
 -- * Defunctionalization of types
 
 -- | Identify types that contain contructors that receive functions as
 -- an argument. As an example, take:
 --
--- > data Monoid (a : Type) = Mon : (a -> a -> a) -> a -> Monoid a
--- > data Maybe (a : Type) = Just : a -> Maybe a | Nothing : Maybe a
+-- > data Monoid!Int = Mon : (Int -> Int -> Int) -> Int -> Monoid a
 --
 -- The call to 'defunTypes' will pick @Mon@ as a target for defunctionalization,
--- and will 'tell' an appropriate new declaration for @Monoid@. It will
--- not pick @Just@, however.
---
--- TODO: This has to be more involved; we need to generate the proper calls
--- for nested things at once, in this step, for the rest of the engine
--- to understand... my previous hacks met their deadend
+-- and will 'tell' an appropriate new declaration for @Monoid!Int@.
 defunTypes ::
   (LanguagePretty lang, LanguageBuiltins lang) =>
   PrtUnorderedDefs lang ->
@@ -494,4 +451,3 @@ funTyStr ty =
   error $
     "unexpected arg type during defunctionalization:\n"
       <> renderSingleLineStr (pretty ty)
--}

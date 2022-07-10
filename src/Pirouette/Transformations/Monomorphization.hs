@@ -21,6 +21,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -154,6 +155,7 @@ specFunApp toMono (SystF.App (SystF.Free (TermSig name)) args)
     let (specArgs, remainingArgs) = SystF.splitArgs (length tyArgs) args
         speccedName = genSpecName specArgs name
     tell $ maybe [] (\someDef -> pure $ SpecRequest name someDef specArgs) mSomeDef
+    trace ("Spec fun app: " ++ show speccedName) (return ())
     pure $ SystF.Free (TermSig speccedName) `SystF.App` remainingArgs
 specFunApp _ x = pure x
 
@@ -184,11 +186,16 @@ specTyApp toMono (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
     pure $ SystF.Free (TySig speccedName) `SystF.TyApp` remainingArgs
 specTyApp _ x = pure x
 
+executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequest req =
+  let res = executeSpecRequest' req
+   in trace (unlines ["Executing: " ++ show req, "Res: \n"] ++ show (pretty res)) res
+
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
 -- and produces the specialized definitions.
-executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
-executeSpecRequest SpecRequest {..} = M.fromList $
+executeSpecRequest' :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequest' SpecRequest {..} = M.fromList $
   case srOrigDef of
     SystF.TermArg FunDef {..} ->
       let newDef =
