@@ -30,8 +30,10 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
-import Pirouette.Transformations.Monomorphization (findPolyHOFDefs, hofsClosure)
 import Pirouette.Transformations.Utils
+
+defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+defunctionalize defs0 = undefined
 
 -- Defunctionalization assumes lots of things! Namelly:
 --
@@ -39,6 +41,7 @@ import Pirouette.Transformations.Utils
 -- 2. everything has been fully eta-expanded
 -- 3. ??? still discovering
 
+{-
 defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 defunctionalize defs0 =
   case defunctionalizeAssumptions defs0 of
@@ -142,7 +145,7 @@ defunDtors defs = transformBi f defs
       | Just UnDestMeta {..} <- runReader (runMaybeT (unDest term)) defs,
         Datatype {..} <- runReader (prtTypeDefOf undestTypeName) defs =
         let tyArgs' = map rewriteFunType undestTypeArgs
-            returnTy = rewriteFunType undestReturnType
+            _returnTy = rewriteFunType undestReturnType
             instantiatedCtors = map ((`SystF.tyInstantiateN` tyArgs') . snd) constructors
             branches = zipWith (handleBranches undestCasesExtra) instantiatedCtors undestCases
          in dest $
@@ -429,10 +432,10 @@ rewriteHofType = go 0
         (dom', posApply) =
           case dom of
             SystF.TyFun {} -> (closureType dom, Just $ DefunHofArgInfo dom)
-            ty | hasFuns ty -> (rewriteFunType ty, Just DefunHofArgNested)
+            ty | SystF.tyHasFuns ty -> (rewriteFunType ty, Just DefunHofArgNested)
             _ -> (dom, Nothing)
     go _ ty@SystF.TyApp {}
-      | hasFuns ty = (rewriteFunType ty, [])
+      | SystF.tyHasFuns ty = (rewriteFunType ty, [])
       | otherwise = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
@@ -491,3 +494,4 @@ funTyStr ty =
   error $
     "unexpected arg type during defunctionalization:\n"
       <> renderSingleLineStr (pretty ty)
+-}

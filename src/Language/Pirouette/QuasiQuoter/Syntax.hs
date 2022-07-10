@@ -40,7 +40,7 @@ import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Transformations.Utils (monoNameSep)
+import Pirouette.Transformations.Monomorphization (monoNameSep)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L

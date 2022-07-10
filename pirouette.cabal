@@ -54,6 +54,7 @@ library
       Pirouette.Transformations.Prenex
       Pirouette.Transformations.Term
       Pirouette.Transformations.Utils
+      Pirouette.Utils
       PureSMT
       PureSMT.Process
       PureSMT.SExpr

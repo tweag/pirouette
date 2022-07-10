@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 module Pirouette.Transformations.Contextualize where
 
 import qualified Data.Map as M
@@ -8,6 +6,7 @@ import qualified Data.Text as T
 import Pirouette.Monad
 import Pirouette.Term.Syntax as S
 import Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Utils
 
 -- | Make all the 'Name's in the term with empty uniques
 -- refer to those in the context.
@@ -33,8 +32,8 @@ contextualizeDef :: (PirouetteReadDefs lang m) => Definition lang -> m (Definiti
 contextualizeDef (DFunDef (FunDef r term ty)) = DFunDef <$> (FunDef r <$> contextualizeTerm term <*> contextualizeType ty)
 contextualizeDef (DConstructor i n) = return (DConstructor i n)
 contextualizeDef (DDestructor n) = return (DDestructor n)
-contextualizeDef (DTypeDef (Datatype k vars dest cons)) =
-  DTypeDef <$> (Datatype k vars dest <$> mapM (secondM contextualizeType) cons)
+contextualizeDef (DTypeDef (Datatype k vars dest0 cons)) =
+  DTypeDef <$> (Datatype k vars dest0 <$> mapM (secondM contextualizeType) cons)
 
 contextualizeDecls :: (PirouetteReadDefs lang m) => Decls lang -> m (Decls lang)
 contextualizeDecls = fmap M.fromList . mapM (secondM contextualizeDef) . M.toList
@@ -109,6 +108,3 @@ removeFromScope ::
   Map.Map (Namespace, Name) (Definition lang)
 removeFromScope inScope space nm =
   Map.delete (space, nm) inScope
-
-secondM :: (Monad m) => (b -> m b') -> (a, b) -> m (a, b')
-secondM f (a, b) = (a,) <$> f b

@@ -9,6 +9,7 @@ module Pirouette.Term.TransitiveDeps where
 
 import Control.Arrow (first, second)
 import Control.Monad.State
+import Data.Default
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
@@ -26,7 +27,7 @@ sortAllDeps :: (PirouetteReadDefs lang m) => m [NonEmpty (R.Arg Name Name)]
 sortAllDeps = do
   allDefs <- prtAllDefs
   let funOrTyDefs = mapMaybe (uncurry funOrType) . M.toList $ allDefs
-  evalStateT (sortDepsCached funOrTyDefs) (TranDepsCache M.empty)
+  evalStateT (sortDepsCached funOrTyDefs) def
   where
     funOrType (_, n) DFunction {} = Just $ R.TermArg n
     funOrType (_, n) DTypeDef {} = Just $ R.TyArg n
@@ -42,6 +43,9 @@ transitiveDepsOf space n = evalStateT (transitiveDepsOfCached space n) (TranDeps
 
 newtype TranDepsCache = TranDepsCache {trDepsOf :: M.Map Name (S.Set (R.Arg Name Name))}
 
+instance Default TranDepsCache where
+  def = TranDepsCache M.empty
+
 -- | Given a list of names, sort them according to their dependencies.
 sortDepsCached ::
   (PirouetteReadDefs lang m, MonadState TranDepsCache m) =>
@@ -52,6 +56,10 @@ sortDepsCached =
 
 argToNamespace :: R.Arg Name Name -> (Namespace, Name)
 argToNamespace = R.argElim (TypeNamespace,) (TermNamespace,)
+
+namespaceToArg :: (Namespace, Name) -> R.Arg Name Name
+namespaceToArg (TypeNamespace, n) = R.TyArg n
+namespaceToArg (TermNamespace, n) = R.TermArg n
 
 transitiveDepsOfCached ::
   forall lang m.
