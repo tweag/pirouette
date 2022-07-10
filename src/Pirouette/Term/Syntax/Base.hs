@@ -23,6 +23,7 @@ import Data.Data
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
+import Data.Monoid (Sum (..))
 import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as Text
@@ -52,6 +53,12 @@ instance IsString Name where
 
 instance Pretty Name where
   pretty (Name str i) = pretty str <> maybe mempty pretty i
+
+instance Semigroup Name where
+  (Name n1 u1) <> (Name n2 u2) = Name (n1 <> n2) (fmap getSum $ fmap Sum u1 <> fmap Sum u2)
+
+instance Monoid Name where
+  mempty = Name mempty Nothing
 
 class ToName v where
   toName :: v -> Name

@@ -392,5 +392,5 @@ isUnityTest =
   testGroup
     "isUnity Bug"
     [ testCase "[correct_isUnity v] validate [\\r _ -> r] counter" $
-        execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
+        execFull (proveAny (optsSolverDebug def) isCounter) isUnity condIsUnity `satisfies` isJust
     ]

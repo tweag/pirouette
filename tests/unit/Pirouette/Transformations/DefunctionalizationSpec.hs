@@ -185,23 +185,17 @@ defuncTestsPoly =
       runTest destructors,
     testCase "Indirect types are updated and typecheck" $
       runTest indirect,
-    -- TODO: I'm marking this as expectFail because I'm aware our defunctionalization
-    -- engine can't handle this, but we really have to address it at some point!
-    expectFail $
-      testCase "Mixed types are updated and typecheck" $
-        runTest mixed
+    testCase "Mixed types are updated and typecheck" $
+      runTest mixed
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
-    monoDefunc =
-      -- defunctionalize .
-      monomorphize
+    monoDefunc = defunctionalize . monomorphize
 
     runTest :: PrtUnorderedDefs Ex -> Assertion
     runTest decls0 =
       case monoDefunc decls0 of
         PrtUnorderedDefs decls -> do
-          print (pretty decls)
           case typeCheckDecls decls of
             Left err -> print (pretty decls) >> assertFailure (show $ pretty err)
             Right _ -> return ()

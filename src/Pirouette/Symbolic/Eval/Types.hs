@@ -35,6 +35,10 @@ data Options = Options
     stoppingCondition :: StoppingCondition
   }
 
+optsSolverDebug :: Options -> Options
+optsSolverDebug opts =
+  opts {optsPureSMT = (optsPureSMT opts) {PureSMT.debug = True}}
+
 instance Default Options where
   def = Options def (\stat -> sestConstructors stat > 50)
 
