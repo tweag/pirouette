@@ -306,4 +306,4 @@ typeName = label "type-identifier" $ do
 --   reservedTypeNames =
 
 restOfName :: Parser String
-restOfName = many (alphaNumChar <|> char '_' <|> char monoNameSep)
+restOfName = many (alphaNumChar <|> oneOf ('_' : monoNameSep))

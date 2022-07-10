@@ -96,10 +96,10 @@ tests =
       "specFunApp"
       [ testCase "specFunApp (id @Bool True) == (id@Bool True, [SpecRequest ...])" $
           runWriter (specFunApp (M.singleton "id" $ Just idDef) [term| id @Bool True |])
-            @?= ([term| id!TyBool True |], [SpecRequest "id" idDef [[ty| Bool |]]]),
-        testCase "specFunApp (const @Integer @Bool 42 False) == (const!Integer!Bool 42 False, [SpecRequest ...])" $
+            @?= ([term| id<TyBool> True |], [SpecRequest "id" idDef [[ty| Bool |]]]),
+        testCase "specFunApp (const @Integer @Bool 42 False) == (const<Integer$Bool> 42 False, [SpecRequest ...])" $
           runWriter (specFunApp (M.singleton "const" $ Just constDef) [term| const @Integer @Bool 42 True |])
-            @?= ([term| const!TyInteger!TyBool 42 True |], [SpecRequest "const" constDef [[ty| Integer |], [ty| Bool |]]])
+            @?= ([term| const<TyInteger$TyBool> 42 True |], [SpecRequest "const" constDef [[ty| Integer |], [ty| Bool |]]])
       ],
     testGroup
       "executeSpecRequest"
@@ -138,21 +138,21 @@ either3Def =
 either3Def_Bool_Integer_decls :: Decls Ex
 either3Def_Bool_Integer_decls =
   M.fromList
-    [ ( (TypeNamespace, "Either3!TyBool!TyInteger"),
+    [ ( (TypeNamespace, "Either3<TyBool$TyInteger>"),
         DTypeDef
           Datatype
             { kind = SystF.KTo SystF.KStar SystF.KStar,
               typeVariables = [("c", SystF.KStar)],
-              destructor = "match_Either3!TyBool!TyInteger",
+              destructor = "match_Either3<TyBool$TyInteger>",
               constructors =
-                [ ("Left!TyBool!TyInteger", [ty| all (c : Type) . Bool -> Either3!TyBool!TyInteger c |]),
-                  ("Mid!TyBool!TyInteger", [ty| all (c : Type) . Integer -> Either3!TyBool!TyInteger c |]),
-                  ("Right!TyBool!TyInteger", [ty| all (c : Type) . c -> Either3!TyBool!TyInteger c |])
+                [ ("Left<TyBool$TyInteger>", [ty| all (c : Type) . Bool -> Either3<TyBool$TyInteger> c |]),
+                  ("Mid<TyBool$TyInteger>", [ty| all (c : Type) . Integer -> Either3<TyBool$TyInteger> c |]),
+                  ("Right<TyBool$TyInteger>", [ty| all (c : Type) . c -> Either3<TyBool$TyInteger> c |])
                 ]
             }
       ),
-      ((TermNamespace, "match_Either3!TyBool!TyInteger"), DDestructor "Either3!TyBool!TyInteger"),
-      ((TermNamespace, "Left!TyBool!TyInteger"), DConstructor 0 "Either3!TyBool!TyInteger"),
-      ((TermNamespace, "Mid!TyBool!TyInteger"), DConstructor 1 "Either3!TyBool!TyInteger"),
-      ((TermNamespace, "Right!TyBool!TyInteger"), DConstructor 2 "Either3!TyBool!TyInteger")
+      ((TermNamespace, "match_Either3<TyBool$TyInteger>"), DDestructor "Either3<TyBool$TyInteger>"),
+      ((TermNamespace, "Left<TyBool$TyInteger>"), DConstructor 0 "Either3<TyBool$TyInteger>"),
+      ((TermNamespace, "Mid<TyBool$TyInteger>"), DConstructor 1 "Either3<TyBool$TyInteger>"),
+      ((TermNamespace, "Right<TyBool$TyInteger>"), DConstructor 2 "Either3<TyBool$TyInteger>")
     ]

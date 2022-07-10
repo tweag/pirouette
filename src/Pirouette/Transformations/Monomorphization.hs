@@ -247,11 +247,11 @@ isSpecArg arg = null bounds
     bounds :: [TyVar lang]
     bounds = filter (isJust . isBound) $ universeBi arg
 
--- | This is the character used to separate the type arguments and the term or type name
+-- | This is the set of characters used when generating specialized names
 --  when monomorphizing. Because we need to be able to test monomorphization, this
 --  is also recognized by the "Language.Pirouette.Example" as a valid part of an identifier
-monoNameSep :: Char
-monoNameSep = '!'
+monoNameSep :: [Char]
+monoNameSep = ['<', '>', '$', '_', '!'] -- TODO: get rid of '!'
 
 -- | Generates a specialized name for a certain amount of type arguments. This
 -- function is trickier than what meets the eye since it must satisfy a homomorphism
@@ -282,7 +282,7 @@ genSpecName tys n0 = combine n0 (map specTypeNames tys)
 argsToStr :: (LanguageBuiltins lang) => [Type lang] -> T.Text
 argsToStr = T.intercalate msep . map f
   where
-    msep = T.pack [monoNameSep]
+    msep = T.pack "$"
 
     f (SystF.Free n `SystF.TyApp` args) =
       nameString (tyBaseName n) <> if null args then mempty else "<" <> argsToStr args <> ">"
