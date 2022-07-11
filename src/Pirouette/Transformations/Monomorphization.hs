@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Transformations.Monomorphization where
@@ -22,6 +23,8 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
+import Data.Void
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -47,9 +50,10 @@ data MonomorphizeOpts = MonomorphizeOpts
 -- you can rely on "Pirouette.Transformations.Prenex" to get there), will yield a new set
 -- of definitions that contains no 'SystF.TyAll' nor datatypes of kind other than *.
 monomorphize :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-monomorphize defs0 = prune $ go mempty defs0
+monomorphize defs0 = prune $ go mempty $ trace str defs0
   where
     defsToMono = selectMonoDefs defs0
+    str = unlines . ("defsToMono: " :) $ map show $ M.keys defsToMono
 
     -- This fixpoint is necessary since we might encounter things such as:
     --
@@ -185,11 +189,28 @@ specTyApp toMono (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
     pure $ SystF.Free (TySig speccedName) `SystF.TyApp` remainingArgs
 specTyApp _ x = pure x
 
+specRequestPartialApp :: SpecRequest lang -> Term lang
+specRequestPartialApp SpecRequest {..} =
+  SystF.App (SystF.Free $ TermSig srName) $ map SystF.TyArg srArgs
+
+executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequest sr =
+  let res = executeSpecRequest' sr
+      str =
+        unlines
+          [ "---------------------------------",
+            "executeSpecRequest: ",
+            "  " ++ show (pretty $ specRequestPartialApp sr),
+            "result:",
+            show (pretty res)
+          ]
+   in trace str res
+
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
 -- and produces the specialized definitions.
-executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
-executeSpecRequest SpecRequest {..} = M.fromList $
+executeSpecRequest' :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequest' SpecRequest {..} = M.fromList $
   case srOrigDef of
     SystF.TermArg FunDef {..} ->
       let newDef =
@@ -240,12 +261,12 @@ executeSpecRequest SpecRequest {..} = M.fromList $
         return $ SystF.Free (TySig $ fixName n) `SystF.TyApp` drop specArgsLen xs
       _ -> Nothing
 
--- A type argument is fully specialized if it has no bound variables
+-- | A type argument is fully specialized if it has no bound variables
+-- nor type application with any arguments.
 isSpecArg :: forall lang. LanguageBuiltins lang => Type lang -> Bool
-isSpecArg arg = null bounds
-  where
-    bounds :: [TyVar lang]
-    bounds = filter (isJust . isBound) $ universeBi arg
+isSpecArg (SystF.TyApp v []) = isNothing $ isBound v
+isSpecArg (SystF.TyFun a b) = isSpecArg a && isSpecArg b
+isSpecArg _ = False
 
 -- | This is the set of characters used when generating specialized names
 --  when monomorphizing. Because we need to be able to test monomorphization, this

@@ -10,6 +10,7 @@ module Pirouette.Transformations.MonomorphizationSpec (tests) where
 
 import Control.Monad.Reader
 import Control.Monad.Writer
+import Data.Generics.Uniplate.Data
 import Data.List (sort)
 import qualified Data.Map as M
 import Language.Pirouette.Example
@@ -39,22 +40,35 @@ data List (a : Type)
 data Indirect (a : Type)
   = Ind : Maybe (a -> a) -> Indirect a
 
-fun fold : all a : Type . Monoid a -> List a -> a
-      = /\ a : Type . \(m : Monoid a) (xs : List a)
-      . match_Monoid @a m @a
-          (\(zero : a) (mplus : a -> a -> a)
-            . match_List @a xs @a
-                (\(x : a) (xs2 : List a) . mplus x (fold @a m xs2))
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun foldMon : all a : Type . Monoid a -> List (Maybe a) -> Maybe a
+      = /\ a : Type . \(m : Monoid a) (xs : List (Maybe a))
+      . match_Monoid @(Maybe a) (maybeMonoid @a m) @(Maybe a)
+          (\(zero : Maybe a) (mplus : Maybe a -> Maybe a -> Maybe a)
+            . match_List @(Maybe a) xs @(Maybe a)
+                (\(x : Maybe a) (xs2 : List (Maybe a)) . mplus x (foldMon @a m xs2))
                 zero
           )
+
+fun maybeMonoid : all (a : Type) . Monoid a -> Monoid (Maybe a)
+     = /\(a : Type) . \(m : Monoid a)
+     . match_Monoid @a m @(Monoid (Maybe a))
+       (\(z : a) (f : a -> a -> a)
+       . Mon @(Maybe a) (Nothing @a)
+          (\(ma : Maybe a) (mb : Maybe a)
+          . match_Maybe @a ma @(Maybe a)
+              (\(x : a) . match_Maybe @a mb @(Maybe a)
+                (\(y : a) . Just @a (f x y))
+                (Just @a x))
+              mb))
 
 fun intMonoid : Monoid Integer
      = Mon @Integer 0 (\(x : Integer) (y : Integer) . x + y)
 
-fun myList : List Integer
-      = Cons @Integer 3 (Cons @Integer 12 (Nil @Integer))
-
-fun main : Integer = fold @Integer intMonoid myList
+fun main : Maybe Integer = foldMon @Integer intMonoid (Nil @(Maybe Integer))
 |]
 
 castTy :: Type Ex -> Type Ex
@@ -85,12 +99,30 @@ tests =
                 "Cons",
                 "Nil"
               ],
+    testCase "isSpecArg forbids type applications" $
+      let cases :: [(Type Ex, Bool)]
+          cases =
+            [ ([ty| Maybe Bool |], False),
+              ([ty| Integer -> Integer |], True),
+              ([ty| Integer -> Integer -> Integer |], True),
+              ([ty| Integer -> Maybe Integer -> Integer |], False)
+            ]
+       in forM_ cases $ \(ty, exp) ->
+            unless (isSpecArg ty == exp) $
+              assertFailure $ show $ pretty ty,
     -- Monomorphized declarations typecheck
-    testCase "monomorphize sampleUDefs typechecks" $ do
+    testCase "monomorphize sampleUDefs has no type applications" $
       let res = monomorphize sampleUDefs
-      case typeCheckDecls (prtUODecls $ monomorphize sampleUDefs) of
-        Left err -> assertFailure (show $ pretty err)
-        Right _ -> return (),
+       in case typeCheckDecls (prtUODecls $ monomorphize sampleUDefs) of
+            Left err -> assertFailure (show $ pretty err)
+            Right _ -> forM_ (M.toList $ prtUODecls res) $ \((sp, name), def) -> do
+              case fromTermDef def of
+                Just fd -> do
+                  let nonSpecTypes :: [Type Ex]
+                      nonSpecTypes = [ty | ty <- universeBi fd, not (isSpecArg ty)]
+                  unless (null nonSpecTypes) $
+                    assertFailure $ "Def of: " ++ show name ++ " has non specialized types: " ++ show (pretty nonSpecTypes)
+                _ -> return (),
     -- Now we make sure that the function specialization requests are working as we expect:
     testGroup
       "specFunApp"
