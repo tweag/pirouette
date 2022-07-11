@@ -12,13 +12,15 @@
 
 module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
-import Control.Arrow ((***))
+import Control.Arrow (first, (***))
 import Control.Monad.RWS.Strict
 import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
 import Data.List (nub, sortOn)
 import qualified Data.Map as M
+import Data.Maybe
+import qualified Data.Set as S
 import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
@@ -97,36 +99,46 @@ defunDtors ::
   PrtUnorderedDefs lang
 defunDtors defs = transformBi f defs
   where
+    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
+    getDtorName (DTypeDef Datatype {..}) = Just destructor
+    getDtorName _ = Nothing
+
     f :: Term lang -> Term lang
-    f term
-      | Just UnDestMeta {..} <- runReader (runMaybeT (unDest term)) defs,
-        Datatype {..} <- runReader (prtTypeDefOf undestTypeName) defs =
-        let tyArgs' = map rewriteFunType undestTypeArgs
-            _returnTy = rewriteFunType undestReturnType
-            instantiatedCtors = map ((`SystF.tyInstantiateN` tyArgs') . snd) constructors
-            branches = zipWith (handleBranches undestCasesExtra) instantiatedCtors undestCases
-         in dest $
-              UnDestMeta
-                { undestTypeArgs = tyArgs',
-                  -- , undestReturnType = returnTy
-                  undestCases = branches,
-                  undestCasesExtra = [],
-                  ..
-                }
-    --
-    -- f (SystF.Free (TermSig name) `SystF.App` args)
-    --   | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix' <> branches')
-    --   where
-    --     (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
-    --     tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
-    --     prefix' = closurifyTyArgs prefix
-    --     branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody . rewriteNestedLamArgs) <$> branches
+    f (SystF.Free (TermSig name) `SystF.App` args)
+      | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix' <> branches')
+      where
+        (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
+        tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
+        prefix' = closurifyTyArgs prefix
+        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody . rewriteNestedLamArgs) <$> branches
     f x = x
 
-    handleBranches :: [Arg lang] -> Type lang -> Term lang -> Term lang
-    handleBranches exc (SystF.TyFun _ tyB) (SystF.Lam ann ty t) =
-      SystF.Lam ann (rewriteFunType ty) $ replaceApply (applyFunName ty) $ handleBranches exc tyB t
-    handleBranches exc _ t = t `SystF.appN` exc
+    -- Rewrite the branches of a destructor that have a nested higher order function
+    -- but deliberatly do not rewrite those that are already functions, that will
+    -- be handled by vanilla defunctionalization
+    rewriteNestedLamArgs :: Term lang -> Term lang
+    rewriteNestedLamArgs (SystF.Lam ann ty@SystF.TyApp {} t) =
+      SystF.Lam ann (rewriteFunType ty) (rewriteNestedLamArgs t)
+    rewriteNestedLamArgs (SystF.Lam ann ty t) =
+      SystF.Lam ann ty (rewriteNestedLamArgs t)
+    rewriteNestedLamArgs t = t
+
+    -- Replaces the functional type arguments to the type itself with the corresponding closure types.
+    --
+    -- As an example, consider maybe_Match @(Integer -> Integer) val @(Integer -> Bool) ...
+    -- The @(Integer -> Integer) is replaced by Closure[Integer -> Integer],
+    -- while the @(Integer -> Bool) stays the same.
+    --
+    -- This works under the assumption that
+    -- the datatype type arguments and the match's return type
+    -- are separated by the value argument (the value being inspected).
+    closurifyTyArgs = uncurry (<>) . first (fmap closurifyTyArg) . span SystF.isTyArg
+
+    closurifyTyArg arg@SystF.TermArg {} = arg
+    closurifyTyArg (SystF.TyArg theArg) =
+      SystF.TyArg $ case theArg of
+        SystF.TyFun {} -> closureType theArg
+        _ -> theArg
 
 -- * Defunctionalization of functions
 
