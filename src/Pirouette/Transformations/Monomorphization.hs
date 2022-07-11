@@ -97,7 +97,7 @@ selectMonoDefs PrtUnorderedDefs {..} =
           | (_, SystF.TyArg tydef) <- selectedDefs0,
             name <- destructor tydef : map fst (constructors tydef)
         ]
-   in M.fromList $ map (snd *** Just) selectedDefs0 ++ associatedNames
+   in M.fromList $ associatedNames <> map (snd *** Just) selectedDefs0
 
 type FunOrTypeDef lang = SystF.Arg (TypeDef lang) (FunDef lang)
 
