@@ -93,11 +93,16 @@ tests =
                 "Monoid",
                 "Mon",
                 "match_Monoid",
-                "fold",
+                "foldMon",
                 "List",
                 "match_List",
                 "Cons",
-                "Nil"
+                "Nil",
+                "Maybe",
+                "match_Maybe",
+                "maybeMonoid",
+                "Nothing",
+                "Just"
               ],
     testCase "isSpecArg forbids type applications" $
       let cases :: [(Type Ex, Bool)]

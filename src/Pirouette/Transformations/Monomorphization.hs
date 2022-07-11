@@ -23,7 +23,6 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
-import Data.Void
 import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
@@ -204,7 +203,7 @@ executeSpecRequest sr =
             "result:",
             show (pretty res)
           ]
-   in trace str res
+   in res -- trace str res
 
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
