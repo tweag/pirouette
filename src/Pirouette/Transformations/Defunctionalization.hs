@@ -110,18 +110,8 @@ defunDtors defs = transformBi f defs
         (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
         tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
         prefix' = closurifyTyArgs prefix
-        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody . rewriteNestedLamArgs) <$> branches
+        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
     f x = x
-
-    -- Rewrite the branches of a destructor that have a nested higher order function
-    -- but deliberatly do not rewrite those that are already functions, that will
-    -- be handled by vanilla defunctionalization
-    rewriteNestedLamArgs :: Term lang -> Term lang
-    rewriteNestedLamArgs (SystF.Lam ann ty@SystF.TyApp {} t) =
-      SystF.Lam ann (rewriteFunType ty) (rewriteNestedLamArgs t)
-    rewriteNestedLamArgs (SystF.Lam ann ty t) =
-      SystF.Lam ann ty (rewriteNestedLamArgs t)
-    rewriteNestedLamArgs t = t
 
     -- Replaces the functional type arguments to the type itself with the corresponding closure types.
     --
@@ -248,43 +238,7 @@ defunCalls toDefun decls@PrtUnorderedDefs {..} = do
           | Just hofsList <- M.lookup name toDefun = do
             args' <- forM (zip3 [0 ..] hofsList args) (replaceArg ctx)
             pure $ SystF.Free (TermSig name) `SystF.App` args'
-          -- If not, the app in question might still be something like:
-          -- > Just @(Integer -> Integer) (\(x : Integer) . x + 1)
-          -- And that needs to be defun'ed too!
-          -- WARNING: can't use prtDefOf here because we might be looking
-          -- at partially defun'ed terms, so they'll have occurences of
-          -- a still undefined _Apply!!... symbol
-          | Just (DConstructor _ _) <- M.lookup (TermNamespace, name) prtUODecls = do
-            let nameTy = runReader (typeOfIdent name) decls
-            SystF.App (SystF.Free (TermSig name))
-              <$> goNestedArgs ctx nameTy args
         goApp _ term args = pure $ term `SystF.App` args
-
-        goNestedArgs ::
-          [(Type lang, SystF.Ann Name)] ->
-          Type lang ->
-          [Arg lang] ->
-          DefunCallsCtx lang [Arg lang]
-        goNestedArgs _ _ [] = return []
-        goNestedArgs ctx ty@SystF.TyAll {} (SystF.TyArg arg : args) = do
-          -- We will recurse instantiating with the non-defun'ed type, so we know which
-          -- arguments need to be defunctionalizaed because they will be of type TyFun!
-          args' <- goNestedArgs ctx (SystF.tyInstantiate ty arg) args
-          return $ SystF.TyArg (rewriteFunType arg) : args'
-        goNestedArgs ctx (SystF.TyFun tyA tyB) (SystF.TermArg arg : args) = do
-          arg' <- case tyA of
-            SystF.TyFun {} -> defunCallsInTerm ctx arg >>= mkClosureArg ctx (DefunHofArgInfo tyA)
-            _ -> return (SystF.TermArg arg)
-          args' <- goNestedArgs ctx tyB args
-          return (arg' : args')
-        goNestedArgs ctx ty args =
-          error $
-            unlines
-              [ "goNestedArgs: term application is either not well-typed or not eta-expanded",
-                "ctx: " ++ show ctx,
-                "ty: " ++ show (pretty ty),
-                "args: " ++ show (pretty args)
-              ]
 
     replaceArg ::
       [(Type lang, SystF.Ann Name)] ->
@@ -301,8 +255,6 @@ mkClosureArg ::
   DefunHofArgInfo lang ->
   Term lang ->
   DefunCallsCtx lang (Arg lang)
--- We hope that lam is already defunctionalized properly, no need to do anything
-mkClosureArg _ DefunHofArgNested lam = pure (SystF.TermArg lam)
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
@@ -377,12 +329,7 @@ traverseDefs f defs = do
   where
     defsList = M.toList $ prtUODecls defs
 
-data DefunHofArgInfo lang
-  = DefunHofArgInfo {hofType :: B.Type lang}
-  | -- | This is not necessarily an argument we have to defunctionalize, because the closure appears
-    --  nested as a potential argument to another type, but we do have to rewrite the
-    --  type definition!
-    DefunHofArgNested
+newtype DefunHofArgInfo lang = DefunHofArgInfo {hofType :: B.Type lang}
   deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
@@ -401,11 +348,8 @@ rewriteHofType = go 0
         (dom', posApply) =
           case dom of
             SystF.TyFun {} -> (closureType dom, Just $ DefunHofArgInfo dom)
-            ty | SystF.tyHasFuns ty -> (rewriteFunType ty, Just DefunHofArgNested)
             _ -> (dom, Nothing)
-    go _ ty@SystF.TyApp {}
-      | SystF.tyHasFuns ty = (rewriteFunType ty, [])
-      | otherwise = (ty, [])
+    go _ ty@SystF.TyApp {} = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
 
