@@ -82,6 +82,10 @@ monomorphize defs0 = prune $ go mempty defs0
 --  all definitions that should be monomorphized. It also picks up associated definitions
 --  that should be monomorphized (constructors and destructors), but associates them
 --  with no particular definition.
+--
+--  Moreover, it is important to keep the 'Namespace' in the map, otherwise we might
+--  run into scenarios where a type that has a homonym constructor might not be
+--  monomorphized becase one entry overriden the other in the map.
 selectMonoDefs ::
   forall lang.
   (Language lang) =>
