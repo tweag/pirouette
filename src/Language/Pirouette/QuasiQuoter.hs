@@ -14,7 +14,7 @@
 --  directly into Haskell source files. Using the functions
 --  exported by this module requires the @-XQuasiQuotes@ extension.
 --  Check "Language.Pirouette.Example.QuasiQuoter" for an example instantiation.
-module Language.Pirouette.QuasiQuoter (QuasiQuoter, prog, progNoTC, term, ty) where
+module Language.Pirouette.QuasiQuoter (QuasiQuoter, prog, progNoTC, term, ty, funDecl, newFunDecl) where
 
 import Control.Monad.Except (runExcept)
 import qualified Data.Map as M
@@ -52,6 +52,18 @@ ty :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
 ty = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseType @lang) <* eof) str
   p1 <- trQ (trType [] p0)
+  [e|p1|]
+
+funDecl :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
+funDecl = quoter $ \str -> do
+  (_, p0) <- parseQ (spaceConsumer *> lexeme (parseFunDecl @lang) <* eof) str
+  p1 <- trQ (trFunDecl p0)
+  [e|p1|]
+
+newFunDecl :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
+newFunDecl = quoter $ \str -> do
+  (_, p0) <- parseQ (spaceConsumer *> lexeme (parseNewFunDecl @lang) <* eof) str
+  p1 <- trQ (trFunDecl p0)
   [e|p1|]
 
 -- * Internals

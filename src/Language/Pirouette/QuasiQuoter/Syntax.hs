@@ -45,6 +45,7 @@ import Pirouette.Transformations.Utils (monoNameSep)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import Debug.Trace
 
 -- ** Class for parsing language builtins
 
@@ -165,6 +166,48 @@ parseFunDecl = label "Function declaration" $ do
   symbol "="
   x <- parseTerm
   return (i, FunDecl r t x)
+
+-- | Parses functon declarations following the new syntax:
+--
+--  > fun suc : Integer -> Integer = \x : Integer -> x + 1
+parseNewFunDecl :: forall lang. (LanguageParser lang) => Parser (String, FunDecl lang)
+parseNewFunDecl = label "Function declaration (new syntax)" $ do
+  try (symbol "nfun")
+  r <- NonRec <$ symbol "nonrec" <|> pure Rec
+  funIdent <- ident @lang
+  parseTyOf
+  funType <- parseType
+  symbol "!" -- HACK because whitespaces including new lines are removed
+  _ <- symbol funIdent
+  -- paramIdents <- parseParamIdents funType
+  tyParamIdents <- many (char '@' >> ident @lang)
+  paramIdents <- many (ident @lang)
+  symbol "="
+  body <- parseTerm
+  traceM $ "Function type: " <> show funType
+  traceM $ "Function type parameters: " <> show tyParamIdents
+  traceM $ "Function parameters: " <> show paramIdents
+  traceM $ "Function body: " <> show body
+  traceM $ "Processed term: " <> show (funTerm funType paramIdents body)
+  return (funIdent, FunDecl r funType (funTerm funType paramIdents body))
+
+-- | Parses a list of identifiers for the parameters of a function of the given
+-- type. Imposes that all the parameters are explicit.
+-- parseParamIdents :: forall lang. (LanguageParser lang) => Ty lang -> Parser [String]
+-- parseParamIdents (TyFun _ ty@(TyFun _ _)) =
+--   label "Function parameters" $
+--     (:) <$> (ident @lang) <*> parseParamIdents ty
+-- parseParamIdents (TyFun _ _) =
+--   label "Last function parameter" $
+--     (: []) <$> ident @lang
+-- parseParamIdents _ = pure []
+
+-- | Term corresponding to the desugared body declaration using given parameter
+-- types and names.
+funTerm :: forall lang. Ty lang -> [String] -> Expr lang -> Expr lang
+funTerm (TyFun tp t2) (p : ps) body = ExprLam p tp (funTerm t2 ps body)
+funTerm _ [] body = body
+funTerm _ _ _ = error "Unexpected parameter in function declaration"
 
 parseKind :: Parser SystF.Kind
 parseKind =
@@ -290,7 +333,7 @@ ident = label "identifier" $ do
   where
     reserved :: S.Set String
     reserved =
-      S.fromList ["abs", "all", "data", "if", "then", "else", "fun"]
+      S.fromList ["abs", "all", "data", "if", "then", "else", "fun", "nfun"]
         `S.union` reservedNames @lang
 
 typeName :: forall lang. (LanguageParser lang) => Parser String

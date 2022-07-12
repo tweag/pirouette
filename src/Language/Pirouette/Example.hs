@@ -20,6 +20,8 @@ module Language.Pirouette.Example
     progNoTC,
     term,
     ty,
+    funDecl,
+    newFunDecl,
   )
 where
 
@@ -276,3 +278,9 @@ term = QQ.term @Ex
 
 ty :: QQ.QuasiQuoter
 ty = QQ.ty @Ex
+
+funDecl :: QQ.QuasiQuoter
+funDecl = QQ.funDecl @Ex
+
+newFunDecl :: QQ.QuasiQuoter
+newFunDecl = QQ.newFunDecl @Ex

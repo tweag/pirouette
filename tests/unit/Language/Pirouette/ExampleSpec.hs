@@ -17,6 +17,9 @@ canParseType _ = return ()
 canParseProgram :: PrtUnorderedDefs Ex -> Assertion
 canParseProgram _ = return ()
 
+canParseDefinition :: Definition Ex -> Assertion
+canParseDefinition _ = return ()
+
 tests :: [TestTree]
 tests =
   [ testCase "Can parse types" $ do
@@ -43,5 +46,40 @@ tests =
         [prog|
           data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
           fun main : Integer = 42
+        |],
+    testCase "Can parse function declaration" $
+      canParseDefinition
+        [funDecl|
+          fun foo : Bool -> Integer -> Integer = \(b : Bool) (i : Integer) . if @Integer b then (i + 1) else (i - 1)
+        |],
+    testGroup
+      "Can parse function declarations using the new syntax"
+      [ testCase "Declaration of all parameters" $
+          canParseDefinition
+            [newFunDecl|
+          nfun foo : Bool -> Integer -> Integer !
+          foo b i = if @Integer b then (i + 1) else (i - 1)
+        |],
+        testCase "Partially point-free" $
+          canParseDefinition
+            [newFunDecl|
+          nfun foo : Bool -> Integer -> Integer !
+          foo b = \ (i : Integer) . if @Integer b then (i + 1) else (i - 1)
         |]
+      ]
   ]
+
+-- testCase "Can parse program" $
+--   canParseProgram
+--     [prog|
+--       data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
+--       main : Integer
+--       main = 42
+--     |],
+-- testCase "Can parse new function decls" $
+--   canParseProgram
+--     [prog|
+--       data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
+--       foo : Bool -> Integer -> Either Integer Integer
+--       foo b i = if b then Left (i + 1) else Right (i - 1)
+--     |]
