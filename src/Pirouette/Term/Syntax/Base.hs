@@ -141,7 +141,13 @@ data TypeDef lang = -- | Define a new datatype. For example:
     destructor :: Name,
     constructors :: [(Name, Type lang)]
   }
-  deriving (Eq, Ord, Show, Data)
+  deriving (Ord, Show, Data)
+
+instance (LanguageBuiltins lang) => Eq (TypeDef lang) where
+  -- Equality for datatype definitions should be alpha-equivalence, hence
+  -- we ignore the variables
+  (Datatype k1 _ dest1 cs1) == (Datatype k2 _ dest2 cs2) =
+    k1 == k2 && dest1 == dest2 && cs1 == cs2
 
 -- | Computes the type of the destructor from a 'TypeDef'. For example, let:
 --
