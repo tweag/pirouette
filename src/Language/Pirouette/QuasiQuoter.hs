@@ -28,26 +28,26 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 
-prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, Language lang) => QuasiQuoter
+prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, LanguagePretty lang) => QuasiQuoter
 prog = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   decls <- trQ (trProgram p0)
   _ <- maybeQ (typeCheckDecls decls)
   [e|(PrtUnorderedDefs decls)|]
 
-progNoTC :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
+progNoTC :: forall lang. (LanguageParser lang, LanguagePretty lang) => QuasiQuoter
 progNoTC = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
   decls <- trQ (trProgram p0)
   [e|(PrtUnorderedDefs decls)|]
 
-term :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
+term :: forall lang. (LanguageParser lang, LanguagePretty lang) => QuasiQuoter
 term = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseTerm @lang) <* eof) str
   p1 <- trQ (trTerm [] [] p0)
   [e|p1|]
 
-ty :: forall lang. (LanguageParser lang, Language lang) => QuasiQuoter
+ty :: forall lang. (LanguageParser lang, LanguagePretty lang) => QuasiQuoter
 ty = quoter $ \str -> do
   p0 <- parseQ (spaceConsumer *> lexeme (parseType @lang) <* eof) str
   p1 <- trQ (trType [] p0)

@@ -67,7 +67,7 @@ defunctionalize defs0 = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> app
 -- The call to 'defunTypes' will pick @Mon@ as a target for defunctionalization,
 -- and will 'tell' an appropriate new declaration for @Monoid!Int@.
 defunTypes ::
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
 defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
@@ -94,7 +94,7 @@ defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
 -- so we can have a few shortcuts
 defunDtors ::
   forall lang.
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
 defunDtors defs = transformBi f defs
@@ -133,7 +133,7 @@ defunDtors defs = transformBi f defs
 -- * Defunctionalization of functions
 
 defunFuns ::
-  (LanguagePretty lang, Pretty (FunDef lang), LanguageBuiltins lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
 defunFuns defs = runWriter $ traverseDefs defunFunDef defs

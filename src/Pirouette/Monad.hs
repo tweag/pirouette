@@ -14,6 +14,7 @@ import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as Lazy
 import qualified Control.Monad.State.Strict as Strict
 import Data.Data (Data)
+import qualified Data.Map as M
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 import qualified Data.Set as Set
@@ -199,6 +200,39 @@ newtype PrtUnorderedDefs lang = PrtUnorderedDefs {prtUODecls :: Decls lang}
 
 addDecls :: Decls builtins -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
 addDecls decls defs = defs {prtUODecls = prtUODecls defs <> decls}
+
+-- | The definitions in this prelude are meant to support any builtins from your surface
+-- language. For instance, say you have a builtin /ifListIsEmpty/ on your surface language
+-- but you don't necessarily want to have that as a compiled builtin. Instead, you
+-- can define the function @ifListIsEmpty@ as one of the declarations in 'builtinPrelude'
+-- and use that instead. In summary, this is meant for all the definitions that are
+-- supposed to support the surface-level language, be it in syntax or semantics.
+--
+-- This class is defined separately from 'LanguageBuiltins' to enable
+-- language implementers to rely on the quasi-quoter to write their prelude.
+class (LanguageConstrs lang) => LanguagePrelude lang where
+  builtinPrelude :: PrtUnorderedDefs lang
+  builtinPrelude = PrtUnorderedDefs M.empty
+
+-- | Return a set of definitions augmented with whichever prelude definitions
+--  are not yet defined.
+complementWithBuiltinPrelude ::
+  (Language lang, LanguagePrelude lang) =>
+  PrtUnorderedDefs lang ->
+  PrtUnorderedDefs lang
+complementWithBuiltinPrelude (PrtUnorderedDefs m) =
+  PrtUnorderedDefs $ M.unionWithKey combine m $ prtUODecls builtinPrelude
+  where
+    combine :: (Language lang) => (Namespace, Name) -> Definition lang -> Definition lang -> Definition lang
+    combine spnm def preludeDef
+      | def == preludeDef = def
+      | otherwise =
+        error $
+          unlines
+            [ "Conflicting definitions for " ++ show spnm,
+              "prelude: " ++ renderSingleLineStr (pretty preludeDef),
+              "user: " ++ renderSingleLineStr (pretty def)
+            ]
 
 instance (LanguageBuiltins lang, Monad m) => PirouetteReadDefs lang (ReaderT (PrtUnorderedDefs lang) m) where
   prtAllDefs = asks prtUODecls

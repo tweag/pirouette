@@ -83,7 +83,7 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
 
 -- ** Syntactical Categories
 
-data DataDecl lang = DataDecl [(String, SystF.Kind)] [(String, Ty lang)]
+data DataDecl lang = DataDecl [(String, SystF.Kind)] [(String, Ty lang)] (Maybe String)
 
 deriving instance (Show (BuiltinTypes lang)) => Show (DataDecl lang)
 
@@ -145,7 +145,8 @@ parseDataDecl = label "Data declaration" $ do
   cons <-
     (try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `sepBy1` symbol "|")
       <|> return []
-  return (i, DataDecl vars cons)
+  dest <- optional (symbol "destructor" >> try (ident @lang) <|> typeName @lang)
+  return (i, DataDecl vars cons dest)
 
 -- | Parses functon declarations:
 --
@@ -292,7 +293,7 @@ ident = label "identifier" $ do
   where
     reserved :: S.Set String
     reserved =
-      S.fromList ["abs", "all", "data", "if", "then", "else", "fun", "bottom"]
+      S.fromList ["abs", "all", "data", "destructor", "if", "then", "else", "fun", "bottom"]
         `S.union` reservedNames @lang
 
 typeName :: forall lang. (LanguageParser lang) => Parser String
