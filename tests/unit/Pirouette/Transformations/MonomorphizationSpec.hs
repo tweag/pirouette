@@ -27,8 +27,11 @@ import Test.Tasty.HUnit
 sampleUDefs :: PrtUnorderedDefs Ex
 sampleUDefs =
   [prog|
+-- Here we're overloading the constructor name on purpose, to make
+-- sure monomorphization understands that it must monomorphize
+-- both the type and the constructor
 data Monoid (a : Type)
-  = Mon : a -> (a -> a -> a) -> Monoid a
+  = Monoid : a -> (a -> a -> a) -> Monoid a
 
 data List (a : Type)
   = Cons : a -> List a -> List a
@@ -57,7 +60,7 @@ fun maybeMonoid : all (a : Type) . Monoid a -> Monoid (Maybe a)
      = /\(a : Type) . \(m : Monoid a)
      . match_Monoid @a m @(Monoid (Maybe a))
        (\(z : a) (f : a -> a -> a)
-       . Mon @(Maybe a) (Nothing @a)
+       . Monoid @(Maybe a) (Nothing @a)
           (\(ma : Maybe a) (mb : Maybe a)
           . match_Maybe @a ma @(Maybe a)
               (\(x : a) . match_Maybe @a mb @(Maybe a)
@@ -66,7 +69,7 @@ fun maybeMonoid : all (a : Type) . Monoid a -> Monoid (Maybe a)
               mb))
 
 fun intMonoid : Monoid Integer
-     = Mon @Integer 0 (\(x : Integer) (y : Integer) . x + y)
+     = Monoid @Integer 0 (\(x : Integer) (y : Integer) . x + y)
 
 fun main : Maybe Integer = foldMon @Integer intMonoid (Nil @(Maybe Integer))
 |]
@@ -87,22 +90,22 @@ tests =
       let ds = selectMonoDefs sampleUDefs
        in sort (M.keys ds)
             @?= sort
-              [ "Indirect",
-                "Ind",
-                "match_Indirect",
-                "Monoid",
-                "Mon",
-                "match_Monoid",
-                "foldMon",
-                "List",
-                "match_List",
-                "Cons",
-                "Nil",
-                "Maybe",
-                "match_Maybe",
-                "maybeMonoid",
-                "Nothing",
-                "Just"
+              [ (TypeNamespace, "Indirect"),
+                (TypeNamespace, "Monoid"),
+                (TypeNamespace, "List"),
+                (TypeNamespace, "Maybe"),
+                (TermNamespace, "match_Indirect"),
+                (TermNamespace, "Ind"),
+                (TermNamespace, "Monoid"),
+                (TermNamespace, "match_Monoid"),
+                (TermNamespace, "foldMon"),
+                (TermNamespace, "match_List"),
+                (TermNamespace, "Cons"),
+                (TermNamespace, "Nil"),
+                (TermNamespace, "match_Maybe"),
+                (TermNamespace, "maybeMonoid"),
+                (TermNamespace, "Nothing"),
+                (TermNamespace, "Just")
               ],
     testCase "isSpecArg forbids type applications" $
       let cases :: [(Type Ex, Bool)]
@@ -132,16 +135,31 @@ tests =
     testGroup
       "specFunApp"
       [ testCase "specFunApp (id @Bool True) == (id@Bool True, [SpecRequest ...])" $
-          runWriter (specFunApp (M.singleton "id" $ Just idDef) [term| id @Bool True |])
+          runWriter
+            ( specFunApp
+                (M.singleton (TermNamespace, "id") $ Just idDef)
+                [term| id @Bool True |]
+            )
             @?= ([term| id<TyBool> True |], [SpecRequest "id" idDef [[ty| Bool |]]]),
         testCase "specFunApp (const @Integer @Bool 42 False) == (const<Integer$Bool> 42 False, [SpecRequest ...])" $
-          runWriter (specFunApp (M.singleton "const" $ Just constDef) [term| const @Integer @Bool 42 True |])
+          runWriter
+            ( specFunApp
+                (M.singleton (TermNamespace, "const") $ Just constDef)
+                [term| const @Integer @Bool 42 True |]
+            )
             @?= ([term| const<TyInteger$TyBool> 42 True |], [SpecRequest "const" constDef [[ty| Integer |], [ty| Bool |]]])
       ],
     testGroup
       "executeSpecRequest"
       [ testCase "specTyApp (Either3 Bool Integer) fixes type-variables and produces correct constructors" $
-          executeSpecRequest (head $ snd $ runWriter $ specTyApp (M.singleton "Either3" $ Just either3Def) [ty| Either3 Bool Integer |])
+          executeSpecRequest
+            ( head $
+                snd $
+                  runWriter $
+                    specTyApp
+                      (M.singleton (TypeNamespace, "Either3") $ Just either3Def)
+                      [ty| Either3 Bool Integer |]
+            )
             @?= either3Def_Bool_Integer_decls
       ]
   ]

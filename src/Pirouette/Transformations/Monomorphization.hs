@@ -8,12 +8,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Transformations.Monomorphization where
 
-import Control.Arrow ((***))
+import Control.Arrow (second)
 import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
@@ -23,7 +22,6 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
-import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -49,10 +47,9 @@ data MonomorphizeOpts = MonomorphizeOpts
 -- you can rely on "Pirouette.Transformations.Prenex" to get there), will yield a new set
 -- of definitions that contains no 'SystF.TyAll' nor datatypes of kind other than *.
 monomorphize :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-monomorphize defs0 = prune $ go mempty $ trace str defs0
+monomorphize defs0 = prune $ go mempty defs0
   where
     defsToMono = selectMonoDefs defs0
-    str = unlines . ("defsToMono: " :) $ map show $ M.keys defsToMono
 
     -- This fixpoint is necessary since we might encounter things such as:
     --
@@ -78,14 +75,18 @@ monomorphize defs0 = prune $ go mempty $ trace str defs0
         newDefs = foldMap executeSpecRequest newOrders
 
     prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-    prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> snd n `M.notMember` defsToMono) $ prtUODecls defs}
+    prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` defsToMono) $ prtUODecls defs}
 
 -- | Return a set of definitions that either satisfy 'shouldMono' or have one
 --  of its transitive dependencies satisfy 'shouldMono'. In other words, picks
 --  all definitions that should be monomorphized. It also picks up associated definitions
 --  that should be monomorphized (constructors and destructors), but associates them
 --  with no particular definition.
-selectMonoDefs :: forall lang. (Language lang) => PrtUnorderedDefs lang -> M.Map Name (Maybe (FunOrTypeDef lang))
+selectMonoDefs ::
+  forall lang.
+  (Language lang) =>
+  PrtUnorderedDefs lang ->
+  M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang))
 selectMonoDefs PrtUnorderedDefs {..} =
   let defsList = mapMaybe (secondM isFunOrTypeDef) $ M.toList prtUODecls
       -- Makes a first selection of definitions: all of those satisfying 'shouldMono'
@@ -93,11 +94,11 @@ selectMonoDefs PrtUnorderedDefs {..} =
       -- Now get all constructor/destructor names that are associated with
       -- the typedefs from selectedNames0, but we associate them with
       associatedNames =
-        [ (name, Nothing)
+        [ ((TermNamespace, name), Nothing)
           | (_, SystF.TyArg tydef) <- selectedDefs0,
             name <- destructor tydef : map fst (constructors tydef)
         ]
-   in M.fromList $ associatedNames <> map (snd *** Just) selectedDefs0
+   in M.fromList $ associatedNames <> map (second Just) selectedDefs0
 
 type FunOrTypeDef lang = SystF.Arg (TypeDef lang) (FunDef lang)
 
@@ -144,12 +145,12 @@ data SpecRequest lang = SpecRequest
 -- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp ::
   (MonadWriter [SpecRequest lang] m, Language lang) =>
-  M.Map Name (Maybe (FunOrTypeDef lang)) ->
+  M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang)) ->
   Term lang ->
   m (Term lang)
 specFunApp toMono (SystF.App (SystF.Free (TermSig name)) args)
   -- We compare the entire name, not just the nameString part: x0 /= x1.
-  | Just mSomeDef <- name `M.lookup` toMono,
+  | Just mSomeDef <- (TermNamespace, name) `M.lookup` toMono,
     -- Now we ensure that there is something to specialize and that the type arguments we've
     -- gathered are specializable arguments (ie, no bound type-variables)
     let tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args,
@@ -175,11 +176,11 @@ specFunApp _ x = pure x
 --  See the docs for 'specFunApp' for more details.
 specTyApp ::
   (MonadWriter [SpecRequest lang] m, Language lang) =>
-  M.Map Name (Maybe (FunOrTypeDef lang)) ->
+  M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang)) ->
   Type lang ->
   m (Type lang)
 specTyApp toMono (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
-  | Just mSomeDef <- name `M.lookup` toMono,
+  | Just mSomeDef <- (TypeNamespace, name) `M.lookup` toMono,
     not (null tyArgs),
     all isSpecArg tyArgs = do
     let (specArgs, remainingArgs) = splitAt (length tyArgs) tyArgs
@@ -192,24 +193,26 @@ specRequestPartialApp :: SpecRequest lang -> Term lang
 specRequestPartialApp SpecRequest {..} =
   SystF.App (SystF.Free $ TermSig srName) $ map SystF.TyArg srArgs
 
-executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
-executeSpecRequest sr =
-  let res = executeSpecRequest' sr
-      str =
-        unlines
-          [ "---------------------------------",
-            "executeSpecRequest: ",
-            "  " ++ show (pretty $ specRequestPartialApp sr),
-            "result:",
-            show (pretty res)
-          ]
-   in res -- trace str res
+-- Below is an useful definition for debugging specialization requests, just rename
+-- the original one to executeSpecRequest'
+-- executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
+-- executeSpecRequest sr =
+--   let res = executeSpecRequest' sr
+--       str =
+--         unlines
+--           [ "---------------------------------",
+--             "executeSpecRequest: ",
+--             "  " ++ show (pretty $ specRequestPartialApp sr),
+--             "result:",
+--             show (pretty res)
+--           ]
+--    in trace str res
 
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
 -- and produces the specialized definitions.
-executeSpecRequest' :: (Language lang) => SpecRequest lang -> Decls lang
-executeSpecRequest' SpecRequest {..} = M.fromList $
+executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequest SpecRequest {..} = M.fromList $
   case srOrigDef of
     SystF.TermArg FunDef {..} ->
       let newDef =
