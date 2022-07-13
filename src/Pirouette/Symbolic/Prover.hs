@@ -86,7 +86,30 @@ proveAny ::
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
   m (Maybe (Path lang (EvaluationWitness lang)))
-proveAny opts p problem = symevalAnyPath opts p $ proveRaw problem
+proveAny opts p problem = fst <$> proveAnyAccum opts p problem
+
+proveAnyAccum ::
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
+  (Path lang (EvaluationWitness lang) -> Bool) ->
+  Problem lang ->
+  m (Maybe (Path lang (EvaluationWitness lang)), PathStatistics)
+proveAnyAccum opts p problem = symevalAnyPathAccum countPath ps0 opts p $ proveRaw problem
+
+data PathStatistics = PathStatistics
+  { numDischarged :: Integer,
+    numVerified :: Integer
+  }
+  deriving (Eq, Show)
+
+countPath :: Path lang (EvaluationWitness lang) -> PathStatistics -> PathStatistics
+countPath p s0 = case pathResult p of
+  Verified -> s0 {numVerified = numVerified s0 + 1}
+  Discharged -> s0 {numDischarged = numDischarged s0 + 1}
+  _ -> s0
+
+ps0 :: PathStatistics
+ps0 = PathStatistics 0 0
 
 proveRaw ::
   forall lang.
