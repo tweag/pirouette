@@ -188,8 +188,8 @@ parseNewFunDecl = label "Function declaration (new syntax)" $ do
   traceM $ "Function type parameters: " <> show tyParamIdents
   traceM $ "Function parameters: " <> show paramIdents
   traceM $ "Function body: " <> show body
-  traceM $ "Processed term: " <> show (funTerm funType paramIdents body)
-  return (funIdent, FunDecl r funType (funTerm funType paramIdents body))
+  traceM $ "Processed term: " <> show (funTerm funType tyParamIdents paramIdents body)
+  return (funIdent, FunDecl r funType (funTerm funType tyParamIdents paramIdents body))
 
 -- | Parses a list of identifiers for the parameters of a function of the given
 -- type. Imposes that all the parameters are explicit.
@@ -204,10 +204,11 @@ parseNewFunDecl = label "Function declaration (new syntax)" $ do
 
 -- | Term corresponding to the desugared body declaration using given parameter
 -- types and names.
-funTerm :: forall lang. Ty lang -> [String] -> Expr lang -> Expr lang
-funTerm (TyFun tp t2) (p : ps) body = ExprLam p tp (funTerm t2 ps body)
-funTerm _ [] body = body
-funTerm _ _ _ = error "Unexpected parameter in function declaration"
+funTerm :: forall lang. Ty lang -> [String] -> [String] -> Expr lang -> Expr lang
+funTerm (TyAll _ k t2) (tp : tps) ps body = ExprAbs tp k (funTerm t2 tps ps body)
+funTerm (TyFun t1 t2) tps (p : ps) body = ExprLam p t1 (funTerm t2 tps ps body)
+funTerm _ [] [] body = body
+funTerm _ _ _ _ = error "Unexpected parameters in function declaration"
 
 parseKind :: Parser SystF.Kind
 parseKind =
@@ -233,6 +234,12 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
       try (symbol "all")
       parseBinder TyAll (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseType)
 
+    -- New syntax for foralls using the "forall" keyword and implied * kind if omitted
+    pNewAll :: Parser (Ty lang)
+    pNewAll = label "pNewAll" $ do
+      try (symbol "forall")
+      parseBinder TyAll (parseBinderNames (ident @lang) ((parseTyOf >> parseKind) <|> return SystF.KStar)) (symbol "." >> parseType)
+
     pLam :: Parser (Ty lang)
     pLam = label "pLam" $ do
       try (symbol "\\")
@@ -243,6 +250,7 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
         asum
           [ pLam,
             pAll,
+            pNewAll,
             parseTypeAtom
           ]
 

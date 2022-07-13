@@ -65,6 +65,24 @@ tests =
             [newFunDecl|
           nfun foo : Bool -> Integer -> Integer !
           foo b = \ (i : Integer) . if @Integer b then (i + 1) else (i - 1)
+        |],
+        testCase "With a type parameter with explicit kind" $
+          canParseDefinition
+            [newFunDecl|
+          nfun foo : forall (a : Type) . List a -> Maybe a !
+          foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
+        |],
+        testCase "With a type parameter with omitted kind" $
+          canParseDefinition
+            [newFunDecl|
+          nfun foo : forall a . List a -> Maybe a !
+          foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
+        |],
+        testCase "With type parameters and renaming the type variable in the body" $
+          canParseDefinition
+            [newFunDecl|
+          nfun foo : forall a . List a -> Maybe a !
+          foo @b l = if @(Maybe (List b)) empty l then Nothing @b else Just @b l
         |]
       ]
   ]
