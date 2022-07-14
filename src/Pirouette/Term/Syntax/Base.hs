@@ -300,7 +300,8 @@ data Definition lang
   deriving (Eq, Ord, Show, Data)
 
 instance (LanguageBuiltins lang) => AlphaEq (Definition lang) where
-  DFunDef f1 ~==~ DFunDef f2 = f1 == f2 -- TODO shall we do this modulo α-equivalence too?
+  -- the 'FunDef's default equality is already alpha-eq
+  DFunDef f1 ~==~ DFunDef f2 = f1 == f2
   DConstructor i1 n1 ~==~ DConstructor i2 n2 = (i1, n1) == (i2, n2)
   DDestructor n1 ~==~ DDestructor n2 = n1 == n2
   DTypeDef t1 ~==~ DTypeDef t2 = t1 ~==~ t2
