@@ -31,6 +31,7 @@ import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Monomorphization (argsToStr)
+import Pirouette.Transformations.Utils
 
 -- TODO: maybe eta expand should be a separate step altogether!
 
@@ -107,7 +108,7 @@ defunDtors defs = transformBi f defs
     f (SystF.Free (TermSig name) `SystF.App` args)
       | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix' <> branches')
       where
-        (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
+        (prefix, branches) = splitArgsTermsTail args
         tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
         prefix' = closurifyTyArgs prefix
         branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
