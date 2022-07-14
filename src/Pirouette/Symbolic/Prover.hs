@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Symbolic.Prover where
@@ -85,7 +86,30 @@ proveAny ::
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
   m (Maybe (Path lang (EvaluationWitness lang)))
-proveAny opts p problem = symevalAnyPath opts p $ proveRaw problem
+proveAny opts p problem = fst <$> proveAnyAccum opts p problem
+
+proveAnyAccum ::
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
+  (Path lang (EvaluationWitness lang) -> Bool) ->
+  Problem lang ->
+  m (Maybe (Path lang (EvaluationWitness lang)), PathStatistics)
+proveAnyAccum opts p problem = symevalAnyPathAccum countPath ps0 opts p $ proveRaw problem
+
+data PathStatistics = PathStatistics
+  { numDischarged :: Integer,
+    numVerified :: Integer
+  }
+  deriving (Eq, Show)
+
+countPath :: Path lang (EvaluationWitness lang) -> PathStatistics -> PathStatistics
+countPath p s0 = case pathResult p of
+  Verified -> s0 {numVerified = numVerified s0 + 1}
+  Discharged -> s0 {numDischarged = numDischarged s0 + 1}
+  _ -> s0
+
+ps0 :: PathStatistics
+ps0 = PathStatistics 0 0
 
 proveRaw ::
   forall lang.
@@ -124,9 +148,13 @@ debugPrint = traceShowM
 worker ::
   forall lang.
   SymEvalConstr lang =>
+  -- | The symbolic variable holding the current result
   SymVar ->
+  -- | The body that is being symbolically evaluated
   SymTerm lang ->
+  -- | The antecedent, which is a term of type Bool in @lang@, whatever that may be
   SymTerm lang ->
+  -- | The consequent, also of type Bool in @lang@
   SymTerm lang ->
   SymEval lang (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
@@ -150,10 +178,16 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
               pure $ Right c
             | otherwise ->
               pure $ Left "not stuck term"
+  -- ISSUE!! In PlutusIR, if we don't want to have builtin booleans because of the plutus
+  -- compiler being annoying with them, we can't just 'translate proveTerm', for instance,
+  -- since it might be @App (Free (TermSig "False")) []@, which will translate
+  -- to @(as pir_False pir_Bool)@ which is NOT a boolean. I think that maybe giving language
+  -- implementors the chance to translate that term to native SMT true and falses
+  -- through translateTerm might be nice!
   -- step 1. try to prune the thing
   mayBodyTerm <- translate bodyTerm
-  mayAssumeCond <- translate assumeTerm
-  mayProveCond <- translate proveTerm
+  mayAssumeCond <- fmap (isTrue @lang) <$> translate assumeTerm
+  mayProveCond <- fmap (isTrue @lang) <$> translate proveTerm
   -- introduce the assumption about the result, if useful
   case mayBodyTerm of
     Right _ -> learn $ And [Assign resultVar bodyTerm]

@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -34,6 +35,10 @@ data Options = Options
     --  That is, we stop exploring any branch where we unfolded more than 50 constructors.
     stoppingCondition :: StoppingCondition
   }
+
+optsSolverDebug :: Options -> Options
+optsSolverDebug opts =
+  opts {optsPureSMT = (optsPureSMT opts) {PureSMT.debug = True}}
 
 instance Default Options where
   def = Options def (\stat -> sestConstructors stat > 50)
@@ -83,7 +88,10 @@ instance Default Options where
 class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   -- | Injection of different cases in the symbolic evaluator.
   -- For example, one can introduce a 'if_then_else' built-in
-  -- and implement this method to look at both possibilities.
+  -- and implement this method to look at both possibilities; or
+  -- can be used to instruct the solver to branch on functions such
+  -- as @equalsInteger :: Integer -> Integer -> Bool@, where @Bool@
+  -- might not be a builtin type.
   branchesBuiltinTerm ::
     (SMT.ToSMT meta, PirouetteReadDefs lang m) =>
     -- | Head of the application to translate
@@ -97,6 +105,15 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
     -- If 'Just', it provides information of what to assume in each branch and the term to
     -- symbolically evaluate further.
     m (Maybe [SMT.Branch lang meta])
+
+  -- | Casts a boolean in @lang@ to a boolean in SMT by checking whether it is true.
+  --  Its argument is the translation of a term of type "Bool" in @lang@.
+  --  If your language has booleans as a builtin and you defined their interpretation into SMTLIB as
+  --  builtin SMT booleans, this function will be just @id@, otherwise, you might
+  --  want to implement it as something such as @\x -> PureSMT.eq x (myTrue `PureSMT.as` myBool)@
+  --
+  --  This function is meant to be used with @-XTypeApplications@
+  isTrue :: PureSMT.SExpr -> PureSMT.SExpr
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Show, Data, Typeable, IsString)

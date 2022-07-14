@@ -31,7 +31,7 @@ module Pirouette.Symbolic.Eval
     SymEvalStatistics (..),
 
     -- ** Incorrectness logic
-    symevalAnyPath,
+    symevalAnyPathAccum,
     symEvalMatchesFirst,
     symEvalParallel,
     UniversalAxiom (..),
@@ -136,15 +136,17 @@ symeval opts prob = do
   where
     st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
 
-symevalAnyPath ::
+symevalAnyPathAccum ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (Path lang a -> st -> st) ->
+  st ->
   Options ->
   (Path lang a -> Bool) ->
   SymEval lang a ->
-  m (Maybe (Path lang a))
-symevalAnyPath opts p prob = do
+  m (Maybe (Path lang a), st)
+symevalAnyPathAccum f s0 opts p prob = do
   defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThat p $ runSymEvalWorker opts defs st0 prob
+  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs st0 prob
   where
     st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
 
@@ -205,10 +207,9 @@ runSymEvalWorker opts defs st f = do
       let decls = prtDecls defs
           dependencyOrder = prtDepOrder defs
           definedTypes = mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
-          types = builtinTypeDefinitions definedTypes <> definedTypes
           allFns = mapMaybe (R.argElim (const Nothing) (lkupFunDefOf decls)) dependencyOrder
           fns = mapMaybe (\(n, fd) -> (n,) <$> SMT.supportedUninterpretedFunction fd) allFns
-       in SolverSharedCtx types fns
+       in SolverSharedCtx definedTypes fns
 
 instance (SymEvalConstr lang) => Alternative (SymEval lang) where
   empty = SymEval $ ReaderT $ \_ -> StateT $ const empty

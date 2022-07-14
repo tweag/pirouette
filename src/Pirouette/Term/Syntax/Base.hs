@@ -1,14 +1,17 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Provides the base syntactical elements for the languages supported by Pirouette.
 --  This module /does not/ expose the underlying System F implementation. In case
@@ -20,9 +23,8 @@ module Pirouette.Term.Syntax.Base where
 import Control.Arrow ((&&&))
 import Control.Monad.Identity
 import Data.Data
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import qualified Data.Map as M
+import Data.Monoid (Sum (..))
 import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as Text
@@ -52,6 +54,12 @@ instance IsString Name where
 
 instance Pretty Name where
   pretty (Name str i) = pretty str <> maybe mempty pretty i
+
+instance Semigroup Name where
+  (Name n1 u1) <> (Name n2 u2) = Name (n1 <> n2) (fmap getSum $ fmap Sum u1 <> fmap Sum u2)
+
+instance Monoid Name where
+  mempty = Name mempty Nothing
 
 class ToName v where
   toName :: v -> Name
@@ -133,7 +141,13 @@ data TypeDef lang = -- | Define a new datatype. For example:
     destructor :: Name,
     constructors :: [(Name, Type lang)]
   }
-  deriving (Eq, Ord, Show, Data)
+  deriving (Ord, Show, Data)
+
+instance (LanguageBuiltins lang) => Eq (TypeDef lang) where
+  -- Equality for datatype definitions should be alpha-equivalence, hence
+  -- we ignore the variables
+  (Datatype k1 _ dest1 cs1) == (Datatype k2 _ dest2 cs2) =
+    k1 == k2 && dest1 == dest2 && cs1 == cs2
 
 -- | Computes the type of the destructor from a 'TypeDef'. For example, let:
 --
@@ -319,7 +333,7 @@ data Namespace = TermNamespace | TypeNamespace
   deriving (Eq, Ord, Show, Data, Typeable)
 
 -- | A program will be translated into a number of term and type declarations.
-type Decls lang = Map (Namespace, Name) (Definition lang)
+type Decls lang = M.Map (Namespace, Name) (Definition lang)
 
 -- * Language Builtins
 
@@ -337,31 +351,14 @@ type LanguageConstrs lang =
 --  objects of the 'BuiltinTypes' and the other builtin terms (essentially functions manipulating those obects).
 --  Constants can be thought of as the /literals/ of the language. Check "Language.Pirouette.Example" for
 --  a simple example.
+--
+-- Don't forget to also define a 'LanguagePrelude' instance for your @lang@, if you have
+-- no idea what that is, defining an empty instance will use the default
+-- implementatino of @builtinPrelude = M.empty@, which is a fine definition.
 class (LanguageConstrs lang) => LanguageBuiltins lang where
   type BuiltinTypes lang :: *
   type BuiltinTerms lang :: *
   type Constants lang :: *
-
-  -- | Definitions required for built-in types
-  builtinTypeDefinitions ::
-    -- | types which are already defined
-    [(Name, TypeDef lang)] ->
-    -- | additional definitions supporting those
-    [(Name, TypeDef lang)]
-  builtinTypeDefinitions _ = []
-
-builtinTypeDecls :: (LanguageBuiltins lang) => Decls lang -> Decls lang
-builtinTypeDecls m =
-  let defs = flip mapMaybe (Map.toList m) $ \((_, nm), def) -> case def of
-        DTypeDef td -> Just (nm, td)
-        _ -> Nothing
-      newTypeDefs = builtinTypeDefinitions defs
-   in Map.fromList $ do
-        (nm, td@Datatype {destructor, constructors}) <- newTypeDefs
-        [((TypeNamespace, nm), DTypeDef td), ((TermNamespace, destructor), DDestructor nm)]
-          ++ [ ((TermNamespace, constructorName), DConstructor i nm)
-               | (i, (constructorName, _)) <- zip [0 ..] constructors
-             ]
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =

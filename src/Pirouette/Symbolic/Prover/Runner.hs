@@ -34,7 +34,7 @@ type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 -- | Runs an incorrectness logic check for a single term, i.e., receives no
 -- environment of definitions.
 runIncorrectnessLogicSingl ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Options ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
@@ -42,7 +42,7 @@ runIncorrectnessLogicSingl opts =
   runIncorrectnessLogic opts (PrtUnorderedDefs M.empty)
 
 runIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Options ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
@@ -104,7 +104,7 @@ assertIRResult _ = return ()
 -- | Check for counterexamples for an incorrectness logic triple and
 -- pretty-print the result
 replIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
@@ -114,7 +114,7 @@ replIncorrectnessLogic maxCstrs defs params =
     runIncorrectnessLogic (def {stoppingCondition = (> maxCstrs) . sestConstructors}) defs params
 
 replIncorrectnessLogicSingl ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   IncorrectnessParams lang ->
   IO ()
@@ -125,7 +125,7 @@ replIncorrectnessLogicSingl maxCstrs params =
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
 assertIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->

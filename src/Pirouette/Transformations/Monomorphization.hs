@@ -12,11 +12,12 @@
 
 module Pirouette.Transformations.Monomorphization where
 
-import Control.Arrow ((***))
+import Control.Arrow (second)
 import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
 import Data.List (isPrefixOf)
+import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
@@ -74,14 +75,22 @@ monomorphize defs0 = prune $ go mempty defs0
         newDefs = foldMap executeSpecRequest newOrders
 
     prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-    prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> snd n `M.notMember` defsToMono) $ prtUODecls defs}
+    prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` defsToMono) $ prtUODecls defs}
 
 -- | Return a set of definitions that either satisfy 'shouldMono' or have one
 --  of its transitive dependencies satisfy 'shouldMono'. In other words, picks
 --  all definitions that should be monomorphized. It also picks up associated definitions
 --  that should be monomorphized (constructors and destructors), but associates them
 --  with no particular definition.
-selectMonoDefs :: forall lang. (Language lang) => PrtUnorderedDefs lang -> M.Map Name (Maybe (FunOrTypeDef lang))
+--
+--  Moreover, it is important to keep the 'Namespace' in the map, otherwise we might
+--  run into scenarios where a type that has a homonym constructor might not be
+--  monomorphized becase one entry overriden the other in the map.
+selectMonoDefs ::
+  forall lang.
+  (Language lang) =>
+  PrtUnorderedDefs lang ->
+  M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang))
 selectMonoDefs PrtUnorderedDefs {..} =
   let defsList = mapMaybe (secondM isFunOrTypeDef) $ M.toList prtUODecls
       -- Makes a first selection of definitions: all of those satisfying 'shouldMono'
@@ -89,11 +98,11 @@ selectMonoDefs PrtUnorderedDefs {..} =
       -- Now get all constructor/destructor names that are associated with
       -- the typedefs from selectedNames0, but we associate them with
       associatedNames =
-        [ (name, Nothing)
+        [ ((TermNamespace, name), Nothing)
           | (_, SystF.TyArg tydef) <- selectedDefs0,
             name <- destructor tydef : map fst (constructors tydef)
         ]
-   in M.fromList $ map (snd *** Just) selectedDefs0 ++ associatedNames
+   in M.fromList $ associatedNames <> map (second Just) selectedDefs0
 
 type FunOrTypeDef lang = SystF.Arg (TypeDef lang) (FunDef lang)
 
@@ -139,13 +148,13 @@ data SpecRequest lang = SpecRequest
 -- This function only does the substitution _at call site_ and emits a 'SpecRequest' denoting that the corresponding
 -- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp ::
-  (MonadWriter [SpecRequest lang] m, LanguageBuiltins lang) =>
-  M.Map Name (Maybe (FunOrTypeDef lang)) ->
+  (MonadWriter [SpecRequest lang] m, Language lang) =>
+  M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang)) ->
   Term lang ->
   m (Term lang)
 specFunApp toMono (SystF.App (SystF.Free (TermSig name)) args)
   -- We compare the entire name, not just the nameString part: x0 /= x1.
-  | Just mSomeDef <- name `M.lookup` toMono,
+  | Just mSomeDef <- (TermNamespace, name) `M.lookup` toMono,
     -- Now we ensure that there is something to specialize and that the type arguments we've
     -- gathered are specializable arguments (ie, no bound type-variables)
     let tyArgs = map (fromJust . SystF.fromTyArg) $ takeWhile SystF.isTyArg args,
@@ -170,19 +179,38 @@ specFunApp _ x = pure x
 --
 --  See the docs for 'specFunApp' for more details.
 specTyApp ::
-  (MonadWriter [SpecRequest lang] m, LanguageBuiltins lang) =>
-  M.Map Name (Maybe (FunOrTypeDef lang)) ->
+  (MonadWriter [SpecRequest lang] m, Language lang) =>
+  M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang)) ->
   Type lang ->
   m (Type lang)
 specTyApp toMono (SystF.TyApp (SystF.Free (TySig name)) tyArgs)
-  | Just (Just someDef) <- name `M.lookup` toMono,
+  | Just mSomeDef <- (TypeNamespace, name) `M.lookup` toMono,
     not (null tyArgs),
     all isSpecArg tyArgs = do
     let (specArgs, remainingArgs) = splitAt (length tyArgs) tyArgs
         speccedName = genSpecName specArgs name
-    tell $ pure $ SpecRequest name someDef specArgs
+    tell $ maybe [] (\someDef -> pure $ SpecRequest name someDef specArgs) mSomeDef
     pure $ SystF.Free (TySig speccedName) `SystF.TyApp` remainingArgs
 specTyApp _ x = pure x
+
+specRequestPartialApp :: SpecRequest lang -> Term lang
+specRequestPartialApp SpecRequest {..} =
+  SystF.App (SystF.Free $ TermSig srName) $ map SystF.TyArg srArgs
+
+-- Below is an useful definition for debugging specialization requests, just rename
+-- the original one to executeSpecRequest'
+-- executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
+-- executeSpecRequest sr =
+--   let res = executeSpecRequest' sr
+--       str =
+--         unlines
+--           [ "---------------------------------",
+--             "executeSpecRequest: ",
+--             "  " ++ show (pretty $ specRequestPartialApp sr),
+--             "result:",
+--             show (pretty res)
+--           ]
+--    in trace str res
 
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
@@ -239,37 +267,58 @@ executeSpecRequest SpecRequest {..} = M.fromList $
         return $ SystF.Free (TySig $ fixName n) `SystF.TyApp` drop specArgsLen xs
       _ -> Nothing
 
--- A type argument is fully specialized if it has no bound variables
+-- | A type argument is fully specialized if it has no bound variables
+-- nor type application with any arguments.
 isSpecArg :: forall lang. LanguageBuiltins lang => Type lang -> Bool
-isSpecArg arg = null bounds
-  where
-    bounds :: [TyVar lang]
-    bounds = filter (isJust . isBound) $ universeBi arg
+isSpecArg (SystF.TyApp v []) = isNothing $ isBound v
+isSpecArg (SystF.TyFun a b) = isSpecArg a && isSpecArg b
+isSpecArg _ = False
 
--- | This is the character used to separate the type arguments and the term or type name
+-- | This is the set of characters used when generating specialized names
 --  when monomorphizing. Because we need to be able to test monomorphization, this
 --  is also recognized by the "Language.Pirouette.Example" as a valid part of an identifier
-monoNameSep :: Char
-monoNameSep = '!'
+monoNameSep :: [Char]
+monoNameSep = ['<', '>', '$', '_', '!'] -- TODO: get rid of '!'
 
-genSpecName :: (LanguageBuiltins lang) => [Type lang] -> Name -> Name
-genSpecName args name = Name (nameString name <> msep <> argsToStr args) Nothing
+-- | Generates a specialized name for a certain amount of type arguments. This
+-- function is trickier than what meets the eye since it must satisfy a homomorphism
+-- property. Say we're specializing a type @F a@, applied to @Maybe Bool@.
+-- We'll generate a new type, named: @genSpecName [ [ty| Maybe Bool |] ] "F"@,
+-- What if, we actually happened to specialize @Maybe Bool@ first? Now,
+-- we're specializing @F@ applied to @genSpecName [ [ty| Bool |] ] "Maybe"@.
+--
+-- We can either choose to control the order in which specialization happens,
+-- alwasy specializing "smaller" types first or we make sure that that order
+-- doesn't matter by generating the same name regardless. Currently, we choose
+-- the later.
+genSpecName :: forall lang. (Language lang) => [Type lang] -> Name -> Name
+genSpecName tys n0 = combine n0 (map specTypeNames tys)
   where
-    msep = T.pack [monoNameSep]
+    -- Note to future maintainer: make sure all characters used here can be
+    -- part of a SMTLIB identfiier!
+
+    combine :: Name -> [Name] -> Name
+    combine hd [] = hd
+    combine hd ns = hd <> "<" <> mconcat (L.intersperse "$" ns) <> ">"
+
+    specTypeNames :: Type lang -> Name
+    specTypeNames (SystF.Free n `SystF.TyApp` args) = genSpecName args (tyBaseName n)
+    specTypeNames (SystF.TyFun a b) = specTypeNames a <> "_" <> specTypeNames b
+    specTypeNames arg = error $ "unexpected specializing " <> show (pretty arg)
 
 argsToStr :: (LanguageBuiltins lang) => [Type lang] -> T.Text
 argsToStr = T.intercalate msep . map f
   where
-    msep = T.pack [monoNameSep]
+    msep = T.pack "$"
 
     f (SystF.Free n `SystF.TyApp` args) =
-      tyBaseString n <> if null args then mempty else "<" <> argsToStr args <> ">"
+      nameString (tyBaseName n) <> if null args then mempty else "<" <> argsToStr args <> ">"
     f (SystF.TyFun a b) = f a <> "_" <> f b
     f arg = error $ "unexpected specializing arg" <> show arg
 
-tyBaseString :: LanguageBuiltins lang => TypeBase lang -> T.Text
-tyBaseString (TyBuiltin bt) = T.pack $ show bt
-tyBaseString (TySig na) = nameString na
+tyBaseName :: LanguageBuiltins lang => TypeBase lang -> Name
+tyBaseName (TyBuiltin bt) = Name (T.pack $ show bt) Nothing
+tyBaseName (TySig na) = na
 
 {-
 -- Returns the definitions containing (polymorphic) higher-order functions,

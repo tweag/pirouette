@@ -30,22 +30,20 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.EtaExpand
-import Pirouette.Transformations.Utils
+import Pirouette.Transformations.Monomorphization (argsToStr)
 
-defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-defunctionalize defs0 = undefined
+-- TODO: maybe eta expand should be a separate step altogether!
 
--- Defunctionalization assumes lots of things! Namelly:
+-- | Defunctionalizes a monomorphic program. It is paramount that the program contains no type-variables
+-- at this stage. This helps keeping the defunctionalizer as simple as possible. Otherwise, we need to
+-- work much harder to understand whether to defunctionalize, say, a polymorphic constructor which may
+-- be applied to something like @Integer -> Integer@.
 --
--- 1. No polymorphic higher-order function occurence
--- 2. everything has been fully eta-expanded
--- 3. ??? still discovering
-
-{-
+-- Requirements for the defunctionalizer:
+--
+--  1. No type-variables anywhere.
 defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-defunctionalize defs0 =
-  case defunctionalizeAssumptions defs0 of
-    () -> defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
+defunctionalize defs0 = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
     (defs1, toDefun1) = defunTypes (etaExpandAll defs0)
     defs2 = defunDtors defs1
@@ -59,56 +57,17 @@ defunctionalize defs0 =
     typeDecls = mkClosureTypes closureCtorInfos'
     applyFunDecls = mkApplyFuns closureCtorInfos'
 
-defunctionalizeAssumptions :: (Language lang) => PrtUnorderedDefs lang -> ()
-defunctionalizeAssumptions defs = either error (const ()) . traverseDefs (\n d -> defOk n d >> return d) $ defs
-  where
-    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
-    getDtorName (DTypeDef Datatype {..}) = Just destructor
-    getDtorName _ = Nothing
-
-    hofs = hofsClosure (prtUODecls defs) (findPolyHOFDefs $ prtUODecls defs)
-
-    defOk :: forall lang. (Language lang) => Name -> Definition lang -> Either String ()
-    defOk n (DFunDef FunDef {..}) =
-      let termAbs = [t | t@SystF.Abs {} <- universe funBody]
-
-          tyArgs :: [Arg lang]
-          tyArgs =
-            [ thisTyArgs | (SystF.App (SystF.Free (TermSig t)) args) <- universe funBody, t `S.notMember` dtorsNames, thisTyArgs <- filter SystF.isTyArg args, not $ null thisTyArgs
-            ]
-
-          tyVars :: [Var lang]
-          tyVars = [t | t@(SystF.Bound _ _) <- universeBi funTy]
-       in if (TermNamespace, n) `M.member` hofs
-            then
-              if null termAbs && null tyArgs && null tyVars
-                then Right ()
-                else
-                  Left $
-                    "Defunctionalization will fail for: " ++ show n ++ "\n"
-                      ++ show termAbs
-                      ++ show tyArgs
-                      ++ show tyVars
-            else Right ()
-    defOk _ _ = return ()
-
 -- * Defunctionalization of types
 
 -- | Identify types that contain contructors that receive functions as
 -- an argument. As an example, take:
 --
--- > data Monoid (a : Type) = Mon : (a -> a -> a) -> a -> Monoid a
--- > data Maybe (a : Type) = Just : a -> Maybe a | Nothing : Maybe a
+-- > data Monoid!Int = Mon : (Int -> Int -> Int) -> Int -> Monoid a
 --
 -- The call to 'defunTypes' will pick @Mon@ as a target for defunctionalization,
--- and will 'tell' an appropriate new declaration for @Monoid@. It will
--- not pick @Just@, however.
---
--- TODO: This has to be more involved; we need to generate the proper calls
--- for nested things at once, in this step, for the rest of the engine
--- to understand... my previous hacks met their deadend
+-- and will 'tell' an appropriate new declaration for @Monoid!Int@.
 defunTypes ::
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
 defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
@@ -135,46 +94,46 @@ defunTypes defs = runWriter $ traverseDefs defunTypeDef defs
 -- so we can have a few shortcuts
 defunDtors ::
   forall lang.
-  (LanguagePretty lang, LanguageBuiltins lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
 defunDtors defs = transformBi f defs
   where
+    dtorsNames = S.fromList $ mapMaybe getDtorName (M.elems $ prtUODecls defs)
+    getDtorName (DTypeDef Datatype {..}) = Just destructor
+    getDtorName _ = Nothing
+
     f :: Term lang -> Term lang
-    f term
-      | Just UnDestMeta {..} <- runReader (runMaybeT (unDest term)) defs,
-        Datatype {..} <- runReader (prtTypeDefOf undestTypeName) defs =
-        let tyArgs' = map rewriteFunType undestTypeArgs
-            _returnTy = rewriteFunType undestReturnType
-            instantiatedCtors = map ((`SystF.tyInstantiateN` tyArgs') . snd) constructors
-            branches = zipWith (handleBranches undestCasesExtra) instantiatedCtors undestCases
-         in dest $
-              UnDestMeta
-                { undestTypeArgs = tyArgs',
-                  -- , undestReturnType = returnTy
-                  undestCases = branches,
-                  undestCasesExtra = [],
-                  ..
-                }
-    --
-    -- f (SystF.Free (TermSig name) `SystF.App` args)
-    --   | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix' <> branches')
-    --   where
-    --     (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
-    --     tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
-    --     prefix' = closurifyTyArgs prefix
-    --     branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody . rewriteNestedLamArgs) <$> branches
+    f (SystF.Free (TermSig name) `SystF.App` args)
+      | name `S.member` dtorsNames = SystF.Free (TermSig name) `SystF.App` (prefix' <> branches')
+      where
+        (branches, prefix) = reverse *** reverse $ span SystF.isArg $ reverse args
+        tyArgErr tyArg = error $ show name <> ": unexpected TyArg " <> renderSingleLineStr (pretty tyArg)
+        prefix' = closurifyTyArgs prefix
+        branches' = SystF.argElim tyArgErr (SystF.TermArg . rewriteHofBody) <$> branches
     f x = x
 
-    handleBranches :: [Arg lang] -> Type lang -> Term lang -> Term lang
-    handleBranches exc (SystF.TyFun _ tyB) (SystF.Lam ann ty t) =
-      SystF.Lam ann (rewriteFunType ty) $ replaceApply (applyFunName ty) $ handleBranches exc tyB t
-    handleBranches exc _ t = t `SystF.appN` exc
+    -- Replaces the functional type arguments to the type itself with the corresponding closure types.
+    --
+    -- As an example, consider maybe_Match @(Integer -> Integer) val @(Integer -> Bool) ...
+    -- The @(Integer -> Integer) is replaced by Closure[Integer -> Integer],
+    -- while the @(Integer -> Bool) stays the same.
+    --
+    -- This works under the assumption that
+    -- the datatype type arguments and the match's return type
+    -- are separated by the value argument (the value being inspected).
+    closurifyTyArgs = uncurry (<>) . first (fmap closurifyTyArg) . span SystF.isTyArg
+
+    closurifyTyArg arg@SystF.TermArg {} = arg
+    closurifyTyArg (SystF.TyArg theArg) =
+      SystF.TyArg $ case theArg of
+        SystF.TyFun {} -> closureType theArg
+        _ -> theArg
 
 -- * Defunctionalization of functions
 
 defunFuns ::
-  (LanguagePretty lang, Pretty (FunDef lang), LanguageBuiltins lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   (PrtUnorderedDefs lang, M.Map Name (HofsList lang))
 defunFuns defs = runWriter $ traverseDefs defunFunDef defs
@@ -279,43 +238,7 @@ defunCalls toDefun decls@PrtUnorderedDefs {..} = do
           | Just hofsList <- M.lookup name toDefun = do
             args' <- forM (zip3 [0 ..] hofsList args) (replaceArg ctx)
             pure $ SystF.Free (TermSig name) `SystF.App` args'
-          -- If not, the app in question might still be something like:
-          -- > Just @(Integer -> Integer) (\(x : Integer) . x + 1)
-          -- And that needs to be defun'ed too!
-          -- WARNING: can't use prtDefOf here because we might be looking
-          -- at partially defun'ed terms, so they'll have occurences of
-          -- a still undefined _Apply!!... symbol
-          | Just (DConstructor _ _) <- M.lookup (TermNamespace, name) prtUODecls = do
-            let nameTy = runReader (typeOfIdent name) decls
-            SystF.App (SystF.Free (TermSig name))
-              <$> goNestedArgs ctx nameTy args
         goApp _ term args = pure $ term `SystF.App` args
-
-        goNestedArgs ::
-          [(Type lang, SystF.Ann Name)] ->
-          Type lang ->
-          [Arg lang] ->
-          DefunCallsCtx lang [Arg lang]
-        goNestedArgs _ _ [] = return []
-        goNestedArgs ctx ty@SystF.TyAll {} (SystF.TyArg arg : args) = do
-          -- We will recurse instantiating with the non-defun'ed type, so we know which
-          -- arguments need to be defunctionalizaed because they will be of type TyFun!
-          args' <- goNestedArgs ctx (SystF.tyInstantiate ty arg) args
-          return $ SystF.TyArg (rewriteFunType arg) : args'
-        goNestedArgs ctx (SystF.TyFun tyA tyB) (SystF.TermArg arg : args) = do
-          arg' <- case tyA of
-            SystF.TyFun {} -> defunCallsInTerm ctx arg >>= mkClosureArg ctx (DefunHofArgInfo tyA)
-            _ -> return (SystF.TermArg arg)
-          args' <- goNestedArgs ctx tyB args
-          return (arg' : args')
-        goNestedArgs ctx ty args =
-          error $
-            unlines
-              [ "goNestedArgs: term application is either not well-typed or not eta-expanded",
-                "ctx: " ++ show ctx,
-                "ty: " ++ show (pretty ty),
-                "args: " ++ show (pretty args)
-              ]
 
     replaceArg ::
       [(Type lang, SystF.Ann Name)] ->
@@ -332,8 +255,6 @@ mkClosureArg ::
   DefunHofArgInfo lang ->
   Term lang ->
   DefunCallsCtx lang (Arg lang)
--- We hope that lam is already defunctionalized properly, no need to do anything
-mkClosureArg _ DefunHofArgNested lam = pure (SystF.TermArg lam)
 mkClosureArg ctx hofArgInfo@DefunHofArgInfo {..} lam = do
   ctorIdx <- newCtorIdx $ closureType hofType
   let ctorName = [i|#{closureTypeName hofType}_ctor_#{ctorIdx}|]
@@ -408,12 +329,7 @@ traverseDefs f defs = do
   where
     defsList = M.toList $ prtUODecls defs
 
-data DefunHofArgInfo lang
-  = DefunHofArgInfo {hofType :: B.Type lang}
-  | -- | This is not necessarily an argument we have to defunctionalize, because the closure appears
-    --  nested as a potential argument to another type, but we do have to rewrite the
-    --  type definition!
-    DefunHofArgNested
+newtype DefunHofArgInfo lang = DefunHofArgInfo {hofType :: B.Type lang}
   deriving (Show, Eq, Ord)
 
 -- Changes the type of the form @Ty1 -> (Ty2 -> Ty3) -> Ty4@ to @Ty1 -> Closure[Ty2->Ty3] -> Ty4@
@@ -432,11 +348,8 @@ rewriteHofType = go 0
         (dom', posApply) =
           case dom of
             SystF.TyFun {} -> (closureType dom, Just $ DefunHofArgInfo dom)
-            ty | SystF.tyHasFuns ty -> (rewriteFunType ty, Just DefunHofArgNested)
             _ -> (dom, Nothing)
-    go _ ty@SystF.TyApp {}
-      | SystF.tyHasFuns ty = (rewriteFunType ty, [])
-      | otherwise = (ty, [])
+    go _ ty@SystF.TyApp {} = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
 
@@ -494,4 +407,3 @@ funTyStr ty =
   error $
     "unexpected arg type during defunctionalization:\n"
       <> renderSingleLineStr (pretty ty)
--}

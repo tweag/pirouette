@@ -12,6 +12,7 @@ import Control.Arrow (first)
 import Control.Monad.Except
 import Data.List (elemIndex, nub, (\\))
 import qualified Data.Map as M
+import Data.Maybe
 import Data.String
 import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Term.Syntax.Base
@@ -44,10 +45,10 @@ trFunDecl (FunDecl rec ty expr) =
   DFunDef <$> (FunDef rec <$> trTerm [] [] expr <*> trType [] ty)
 
 trDataDecl :: String -> DataDecl lang -> TrM [((Namespace, Name), Definition lang)]
-trDataDecl sName (DataDecl vars cons) = do
+trDataDecl sName (DataDecl vars cons mDest) = do
   let ki = foldr (SystF.KTo . snd) SystF.KStar vars
   let name = fromString sName
-  let destName = fromString $ "match_" ++ sName
+  let destName = fromString $ fromMaybe ("match_" ++ sName) mDest
   constrs <- mapM (\(n, ty) -> (fromString n,) <$> trTypeWithEnv (reverse vars) ty) cons
   return $
     ((TypeNamespace, name), DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs) :
