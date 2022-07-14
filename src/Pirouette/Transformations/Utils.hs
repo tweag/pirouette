@@ -8,6 +8,7 @@
 
 module Pirouette.Transformations.Utils where
 
+import Control.Arrow (first, (***))
 import Data.Tuple
 import Debug.Trace
 import Pirouette.Monad
