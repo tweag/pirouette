@@ -67,6 +67,17 @@ class ToName v where
 instance ToName Name where
   toName = id
 
+
+-- Types that can be compared for α-equivalence.
+class AlphaEq a where
+  (~==~) :: a -> a -> Bool
+  a ~==~ b = not (a ~/=~ b)
+
+  (~/=~) :: a -> a -> Bool
+  a ~/=~ b = not (a ~==~ b)
+  {-# MINIMAL (~==~) | (~/=~) #-}
+
+
 -- * Types and Type Definitions
 
 -- | The type system we are interested in is standard polymorphic type-level lambda calculus
@@ -141,12 +152,10 @@ data TypeDef lang = -- | Define a new datatype. For example:
     destructor :: Name,
     constructors :: [(Name, Type lang)]
   }
-  deriving (Ord, Show, Data)
+  deriving (Eq, Ord, Show, Data)
 
-instance (LanguageBuiltins lang) => Eq (TypeDef lang) where
-  -- Equality for datatype definitions should be alpha-equivalence, hence
-  -- we ignore the variables
-  (Datatype k1 _ dest1 cs1) == (Datatype k2 _ dest2 cs2) =
+instance (LanguageBuiltins lang) => AlphaEq (TypeDef lang) where
+  (Datatype k1 _ dest1 cs1) ~==~ (Datatype k2 _ dest2 cs2) =
     k1 == k2 && dest1 == dest2 && cs1 == cs2
 
 -- | Computes the type of the destructor from a 'TypeDef'. For example, let:
@@ -289,6 +298,14 @@ data Definition lang
   | DDestructor Name
   | DTypeDef (TypeDef lang)
   deriving (Eq, Ord, Show, Data)
+
+instance (LanguageBuiltins lang) => AlphaEq (Definition lang) where
+  -- the 'FunDef's default equality is already alpha-eq
+  DFunDef f1 ~==~ DFunDef f2 = f1 == f2
+  DConstructor i1 n1 ~==~ DConstructor i2 n2 = (i1, n1) == (i2, n2)
+  DDestructor n1 ~==~ DDestructor n2 = n1 == n2
+  DTypeDef t1 ~==~ DTypeDef t2 = t1 ~==~ t2
+  _ ~==~ _ = False
 
 pattern DFunction :: Rec -> Term lang -> Type lang -> Definition lang
 pattern DFunction r t ty = DFunDef (FunDef r t ty)

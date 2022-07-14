@@ -225,7 +225,7 @@ complementWithBuiltinPrelude (PrtUnorderedDefs m) =
   where
     combine :: (Language lang) => (Namespace, Name) -> Definition lang -> Definition lang -> Definition lang
     combine spnm def preludeDef
-      | def == preludeDef = def
+      | def ~==~ preludeDef = def
       | otherwise =
         error $
           unlines
