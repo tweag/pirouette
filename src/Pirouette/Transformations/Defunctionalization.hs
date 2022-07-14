@@ -14,7 +14,6 @@ module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
 import Control.Arrow (first, (***))
 import Control.Monad.RWS.Strict
-import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
 import Data.List (nub, sortOn)
@@ -25,7 +24,6 @@ import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
 import Pirouette.Monad
-import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
