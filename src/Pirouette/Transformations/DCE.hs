@@ -6,33 +6,34 @@
 module Pirouette.Transformations.DCE where
 
 import Control.Arrow (second)
-import Control.Monad.Reader
-import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
-import Data.List (isPrefixOf)
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe
 import qualified Data.Set as S
-import qualified Data.Text as T
 import Pirouette.Monad
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Utils
-import Pirouette.Utils
-
-removeDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-removeDeadCtors = undefined
-
-findDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> [CtorRemoveInfo]
-findDeadCtors = undefined
 
 data CtorRemoveInfo = CtorRemoveInfo
   { criDtorName :: Name
   , criCtorIdx :: Int
   , criCtorTypeName :: Name
-  }
+  } deriving (Show, Eq, Ord)
+
+removeDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+removeDeadCtors defs = L.foldl' (flip removeCtor) defs (findDeadCtors defs)
+
+findDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> [CtorRemoveInfo]
+findDeadCtors defs = L.sortOn (negate . criCtorIdx) $ M.elems unusedCtors
+  where
+    allCtors = M.fromList [ (ctorName, CtorRemoveInfo{..})
+                          | ((_, criCtorTypeName), DTypeDef td) <- M.toList $ prtUODecls defs
+                          , let criDtorName = destructor td
+                          , (criCtorIdx, (ctorName, _)) <- zip [0..] $ constructors td
+                          ]
+    usedNames = S.fromList [ name | TermSig name <- universeBi defs :: [TermBase lang] ]
+    unusedCtors = M.filterWithKey (\ctorName _ -> ctorName `S.notMember` usedNames) allCtors
 
 -- | Removes the constructor with the given index of the given type from the program.
 --
