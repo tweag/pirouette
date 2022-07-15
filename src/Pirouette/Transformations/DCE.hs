@@ -24,6 +24,11 @@ data CtorRemoveInfo = CtorRemoveInfo
 removeDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 removeDeadCtors defs = L.foldl' (flip removeCtor) defs (findDeadCtors defs)
 
+-- | Finds the constructors that aren't used in the program.
+--
+-- Returns them in the reverse order of appearance in each individual data type.
+-- This ordering allows removing constructors one after another, since each removed ctor
+-- won't shift/invalidate the indexes of the subsequent ones.
 findDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> [CtorRemoveInfo]
 findDeadCtors defs = L.sortOn (negate . criCtorIdx) $ M.elems unusedCtors
   where
