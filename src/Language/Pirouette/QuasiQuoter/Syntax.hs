@@ -179,54 +179,30 @@ parseNewFunDecl = label "Function declaration (new syntax)" $ do
   funIdent <- ident @lang
   parseTyOf
   funType <- parseType
-  symbol "!" -- HACK because whitespaces including new lines are removed
+  symbol ";" -- HACK because whitespaces including new lines are removed
   _ <- symbol funIdent
   params <- many $ (TyIdent <$> (char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
   symbol "="
   body <- parseTerm
-  traceM $ "Function type: " <> show funType
-  traceM $ "Function parameters: " <> show params
-  traceM $ "Function body: " <> show body
+  traceM $ "---- Function (" <> show r <> ") ----"
+  traceM $ "Type: " <> show funType
+  traceM $ "Parameters: " <> show params
+  traceM $ "Body: " <> show body
   traceM $ "Processed term: " <> show (funTerm funType params body)
   return (funIdent, FunDecl r funType (funTerm funType params body))
-
--- | Parses a list of identifiers for the parameters of a function of the given
--- type. Imposes that all the parameters are explicit.
--- parseParamIdents :: forall lang. (LanguageParser lang) => Ty lang -> Parser [String]
--- parseParamIdents (TyFun _ ty@(TyFun _ _)) =
---   label "Function parameters" $
---     (:) <$> (ident @lang) <*> parseParamIdents ty
--- parseParamIdents (TyFun _ _) =
---   label "Last function parameter" $
---     (: []) <$> ident @lang
--- parseParamIdents _ = pure []
 
 -- | Term corresponding to the desugared body declaration using given parameter
 -- types and names.
 funTerm :: forall lang. Ty lang -> [Param] -> Expr lang -> Expr lang
-funTerm (TyAll i k t2) (TyIdent tp : ps) body = ExprAbs tp k (substTyVarExpr i tp (funTerm t2 ps body))
+funTerm (TyAll i k t2) (TyIdent tp : ps) body = ExprAbs tp k (funTerm (substTyVarType i tp t2) ps body)
 funTerm (TyFun t1 t2) (Ident p : ps) body = ExprLam p t1 (funTerm t2 ps body)
 funTerm _ [] body = body
 funTerm _ _ _ = error "Unexpected parameters in function declaration"
 
-substTyVarExpr :: String -> String -> Expr lang -> Expr lang
-substTyVarExpr i i' (ExprApp ex ex') = ExprApp (substTyVarExpr i i' ex) (substTyVarExpr i i' ex')
-substTyVarExpr i i' (ExprTy ty) = ExprTy (substTyVarType i i' ty)
-substTyVarExpr i i' (ExprLam s ty ex) = ExprLam s (substTyVarType i i' ty) (substTyVarExpr i i' ex)
-substTyVarExpr i i' ex@(ExprAbs s ki ex')
-  | s == i = ex -- Name of the type variable is shadowed, stop substitution
-  | otherwise = ExprAbs s ki (substTyVarExpr i i' ex')
-substTyVarExpr i i' (ExprIf ty exIf exThen exElse) =
-  ExprIf
-    (substTyVarType i i' ty) 
-    (substTyVarExpr i i' exIf)
-    (substTyVarExpr i i' exThen)
-    (substTyVarExpr i i' exElse)
-substTyVarExpr _ _ ex = ex -- ExprVar, ExprLit, ExprBase
-
 substTyVarType :: String -> String -> Ty lang -> Ty lang
-substTyVarType i i' (TyLam s ki ty) = TyLam s ki (substTyVarType i i' ty) -- FIXME Name collisions
-substTyVarType i i' (TyAll s ki ty) = TyAll s ki (substTyVarType i i' ty) -- FIXME Name collisions
+-- FIXME Name collisions for cases TyLam and TyAll
+substTyVarType i i' (TyLam s ki ty) = TyLam s ki (substTyVarType i i' ty)
+substTyVarType i i' (TyAll s ki ty) = TyAll s ki (substTyVarType i i' ty)
 substTyVarType i i' (TyFun ty ty') = TyFun (substTyVarType i i' ty) (substTyVarType i i' ty')
 substTyVarType i i' (TyApp ty ty') = TyApp (substTyVarType i i' ty) (substTyVarType i i' ty')
 substTyVarType i i' (TyVar s)

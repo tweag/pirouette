@@ -1,10 +1,13 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module Language.Pirouette.ExampleSpec (tests) where
 
+import Control.Monad (when)
 import Language.Pirouette.Example
 import Pirouette.Monad (PrtUnorderedDefs (..))
 import Pirouette.Term.Syntax.Base
+import Pirouette.Term.Syntax.SystemF
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -52,67 +55,84 @@ tests =
         [funDecl|
           fun foo : Bool -> Integer -> Integer = \(b : Bool) (i : Integer) . if @Integer b then (i + 1) else (i - 1)
         |],
-    testGroup
-      "Can parse function declarations using the new syntax"
-      [ testCase "Declaration of all parameters" $
-          canParseDefinition
-            [newFunDecl|
-          foo : Bool -> Integer -> Integer !
+    testGroup "New syntax for function declaration" $
+      [ testGroup
+          "Can parse function declarations using the new syntax"
+          [ testCase "Declaration of all parameters" $
+              canParseDefinition
+                [newFunDecl|
+          foo : Bool -> Integer -> Integer ;
           foo b i = if @Integer b then (i + 1) else (i - 1)
         |],
-        testCase "Partially point-free" $
-          canParseDefinition
-            [newFunDecl|
-          foo : Bool -> Integer -> Integer !
+            testCase "Partially point-free" $
+              canParseDefinition
+                [newFunDecl|
+          foo : Bool -> Integer -> Integer ;
           foo b = \ (i : Integer) . if @Integer b then (i + 1) else (i - 1)
         |],
-        testCase "With a type parameter with explicit kind" $
-          canParseDefinition
-            [newFunDecl|
-          foo : forall (a : Type) . List a -> Maybe a !
+            testCase "With a type parameter with explicit kind" $
+              canParseDefinition
+                [newFunDecl|
+          foo : forall (a : Type) . List a -> Maybe a ;
           foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
         |],
-        testCase "With a type parameter with omitted kind" $
-          canParseDefinition
-            [newFunDecl|
-          foo : forall a . List a -> Maybe a !
+            testCase "With a type parameter with omitted kind" $
+              canParseDefinition
+                [newFunDecl|
+          foo : forall a . List a -> Maybe a ;
           foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
         |],
-        testCase "With a type parameters and renaming the type variable in the body" $
-          canParseDefinition
-            [newFunDecl|
-          foo : forall a . List a -> Maybe a !
+            testCase "With a type parameters and naming the type variable differently in the body" $
+              canParseDefinition
+                [newFunDecl|
+          foo : forall a . List a -> Maybe a ;
           foo @b l = if @(Maybe (List b)) empty l then Nothing @b else Just @b l
         |],
-        testCase "With type parameters and no renaming in the body" $
-          canParseDefinition
-            [newFunDecl|
-          foo : forall a . List a -> (forall b . List b -> Either b a) !
+            testCase "With type parameters and naming it the same in the body" $
+              canParseDefinition
+                [newFunDecl|
+          foo : forall a . List a -> (forall b . List b -> Either b a) ;
           foo @a l1 @b l2 =
             if @(Either (List a) (List b)) empty l1
             then Left @b l2
             else Right @a l1
         |],
-        testCase "With type parameters and renaming in the body" $
-          canParseDefinition
-            [newFunDecl|
-          foo : forall a . List a -> (forall b . List b -> Either b a) !
+            testCase "With type parameters and naming them in the body" $
+              canParseDefinition
+                [newFunDecl|
+          foo : forall a . List a -> (forall b . List b -> Either b a) ;
           foo @c l1 @d l2 =
             if @(Either (List c) (List d)) empty l1
             then Left @c l2
             else Right @d l1
         |],
-        testCase "With type parameters with name shadowing" $
-          canParseDefinition
-            [newFunDecl|
-          foo : forall a . List a -> (forall a . List a -> Maybe a) !
+            testCase "With type parameters where there is name shadowing" $
+              canParseDefinition
+                [newFunDecl|
+          foo : forall a . List a -> (forall a . List a -> Maybe a) ;
           foo @c l1 @d l2 =
             if @(Maybe (List d)) empty l1
             then Nothing
             else Just @d l2
         |]
+          ],
+        testGroup "Parsed function declarations match expectations" $
+          [
+            testCase "With type parameters and conflict-prone naming in the body" $
+              assertRightBody
+                (Abs (Ann "b") KStar (Lam (Ann "l") (TyApp (Free (TySig "List")) [TyApp (Bound (Ann "b") 0) []]) (Abs (Ann "a") KStar (Lam (Ann "e") (TyApp (Free (TySig "Either")) [TyApp (Bound (Ann "b") 1) [], TyApp (Bound (Ann "a") 0) []]) (App (Free (TermSig "undefined")) [])))))
+                [newFunDecl|
+          foo : forall a . List a -> (forall b . Either b a -> Int) ;
+          foo @b l @a e = undefined
+        |]
+          ]
       ]
   ]
+
+assertRightBody :: Term Ex -> Definition Ex -> Assertion
+assertRightBody targetBody (DFunDef (FunDef _ body _)) =
+  when (body /= targetBody) $
+    assertFailure ("Body mismatches expectation : " <> show body)
 
 -- testCase "Can parse program" $
 --   canParseProgram
