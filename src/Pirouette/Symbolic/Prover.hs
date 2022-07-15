@@ -74,7 +74,7 @@ proveUnbounded ::
   Options ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-proveUnbounded opts = prove (opts {stoppingCondition = const False})
+proveUnbounded opts = prove (opts {shouldStop = const False})
 
 -- | Executes the problem while the stopping condition is valid until
 --  the supplied predicate returns @True@. A return value of @Nothing@
@@ -222,7 +222,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- debugPrint (pretty proveTerm')
       -- debugPrint somethingWasEval
       -- check the fuel
-      noMoreFuel <- asks (stoppingCondition . seeOptions) >>= \s -> s <$> currentStatistics
+      noMoreFuel <- asks (shouldStop . seeOptions) >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' (Model [])

@@ -191,7 +191,7 @@ runSymEvalWorker opts defs st f = do
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
-  let paths = uncurry (path $ stoppingCondition opts) solvPair
+  let paths = uncurry (path $ shouldStop opts) solvPair
   return paths
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of

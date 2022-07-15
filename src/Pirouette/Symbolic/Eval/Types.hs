@@ -33,7 +33,7 @@ data Options = Options
     --  > \stat -> sestConstructors stat > 50
     --
     --  That is, we stop exploring any branch where we unfolded more than 50 constructors.
-    stoppingCondition :: StoppingCondition
+    shouldStop :: StoppingCondition
   }
 
 optsSolverDebug :: Options -> Options
