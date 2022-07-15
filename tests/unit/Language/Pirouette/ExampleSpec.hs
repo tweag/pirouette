@@ -57,32 +57,59 @@ tests =
       [ testCase "Declaration of all parameters" $
           canParseDefinition
             [newFunDecl|
-          nfun foo : Bool -> Integer -> Integer !
+          foo : Bool -> Integer -> Integer !
           foo b i = if @Integer b then (i + 1) else (i - 1)
         |],
         testCase "Partially point-free" $
           canParseDefinition
             [newFunDecl|
-          nfun foo : Bool -> Integer -> Integer !
+          foo : Bool -> Integer -> Integer !
           foo b = \ (i : Integer) . if @Integer b then (i + 1) else (i - 1)
         |],
         testCase "With a type parameter with explicit kind" $
           canParseDefinition
             [newFunDecl|
-          nfun foo : forall (a : Type) . List a -> Maybe a !
+          foo : forall (a : Type) . List a -> Maybe a !
           foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
         |],
         testCase "With a type parameter with omitted kind" $
           canParseDefinition
             [newFunDecl|
-          nfun foo : forall a . List a -> Maybe a !
+          foo : forall a . List a -> Maybe a !
           foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
         |],
-        testCase "With type parameters and renaming the type variable in the body" $
+        testCase "With a type parameters and renaming the type variable in the body" $
           canParseDefinition
             [newFunDecl|
-          nfun foo : forall a . List a -> Maybe a !
+          foo : forall a . List a -> Maybe a !
           foo @b l = if @(Maybe (List b)) empty l then Nothing @b else Just @b l
+        |],
+        testCase "With type parameters and no renaming in the body" $
+          canParseDefinition
+            [newFunDecl|
+          foo : forall a . List a -> (forall b . List b -> Either b a) !
+          foo @a l1 @b l2 =
+            if @(Either (List a) (List b)) empty l1
+            then Left @b l2
+            else Right @a l1
+        |],
+        testCase "With type parameters and renaming in the body" $
+          canParseDefinition
+            [newFunDecl|
+          foo : forall a . List a -> (forall b . List b -> Either b a) !
+          foo @c l1 @d l2 =
+            if @(Either (List c) (List d)) empty l1
+            then Left @c l2
+            else Right @d l1
+        |],
+        testCase "With type parameters with name shadowing" $
+          canParseDefinition
+            [newFunDecl|
+          foo : forall a . List a -> (forall a . List a -> Maybe a) !
+          foo @c l1 @d l2 =
+            if @(Maybe (List d)) empty l1
+            then Nothing
+            else Just @d l2
         |]
       ]
   ]

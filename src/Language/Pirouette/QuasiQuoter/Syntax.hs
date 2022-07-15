@@ -137,6 +137,7 @@ parseDecl :: (LanguageParser lang) => Parser (String, Either (DataDecl lang) (Fu
 parseDecl =
   (second Left <$> parseDataDecl)
     <|> (second Right <$> parseFunDecl)
+    <|> (second Right <$> parseNewFunDecl)
 
 -- | Parses a simple datatype declaration:
 --
@@ -167,29 +168,27 @@ parseFunDecl = label "Function declaration" $ do
   x <- parseTerm
   return (i, FunDecl r t x)
 
+data Param = Ident String | TyIdent String deriving (Eq, Show)
+
 -- | Parses functon declarations following the new syntax:
 --
 --  > fun suc : Integer -> Integer = \x : Integer -> x + 1
 parseNewFunDecl :: forall lang. (LanguageParser lang) => Parser (String, FunDecl lang)
 parseNewFunDecl = label "Function declaration (new syntax)" $ do
-  try (symbol "nfun")
   r <- NonRec <$ symbol "nonrec" <|> pure Rec
   funIdent <- ident @lang
   parseTyOf
   funType <- parseType
   symbol "!" -- HACK because whitespaces including new lines are removed
   _ <- symbol funIdent
-  -- paramIdents <- parseParamIdents funType
-  tyParamIdents <- many (char '@' >> ident @lang)
-  paramIdents <- many (ident @lang)
+  params <- many $ (TyIdent <$> (char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
   symbol "="
   body <- parseTerm
   traceM $ "Function type: " <> show funType
-  traceM $ "Function type parameters: " <> show tyParamIdents
-  traceM $ "Function parameters: " <> show paramIdents
+  traceM $ "Function parameters: " <> show params
   traceM $ "Function body: " <> show body
-  traceM $ "Processed term: " <> show (funTerm funType tyParamIdents paramIdents body)
-  return (funIdent, FunDecl r funType (funTerm funType tyParamIdents paramIdents body))
+  traceM $ "Processed term: " <> show (funTerm funType params body)
+  return (funIdent, FunDecl r funType (funTerm funType params body))
 
 -- | Parses a list of identifiers for the parameters of a function of the given
 -- type. Imposes that all the parameters are explicit.
@@ -204,11 +203,36 @@ parseNewFunDecl = label "Function declaration (new syntax)" $ do
 
 -- | Term corresponding to the desugared body declaration using given parameter
 -- types and names.
-funTerm :: forall lang. Ty lang -> [String] -> [String] -> Expr lang -> Expr lang
-funTerm (TyAll _ k t2) (tp : tps) ps body = ExprAbs tp k (funTerm t2 tps ps body)
-funTerm (TyFun t1 t2) tps (p : ps) body = ExprLam p t1 (funTerm t2 tps ps body)
-funTerm _ [] [] body = body
-funTerm _ _ _ _ = error "Unexpected parameters in function declaration"
+funTerm :: forall lang. Ty lang -> [Param] -> Expr lang -> Expr lang
+funTerm (TyAll i k t2) (TyIdent tp : ps) body = ExprAbs tp k (substTyVarExpr i tp (funTerm t2 ps body))
+funTerm (TyFun t1 t2) (Ident p : ps) body = ExprLam p t1 (funTerm t2 ps body)
+funTerm _ [] body = body
+funTerm _ _ _ = error "Unexpected parameters in function declaration"
+
+substTyVarExpr :: String -> String -> Expr lang -> Expr lang
+substTyVarExpr i i' (ExprApp ex ex') = ExprApp (substTyVarExpr i i' ex) (substTyVarExpr i i' ex')
+substTyVarExpr i i' (ExprTy ty) = ExprTy (substTyVarType i i' ty)
+substTyVarExpr i i' (ExprLam s ty ex) = ExprLam s (substTyVarType i i' ty) (substTyVarExpr i i' ex)
+substTyVarExpr i i' ex@(ExprAbs s ki ex')
+  | s == i = ex -- Name of the type variable is shadowed, stop substitution
+  | otherwise = ExprAbs s ki (substTyVarExpr i i' ex')
+substTyVarExpr i i' (ExprIf ty exIf exThen exElse) =
+  ExprIf
+    (substTyVarType i i' ty) 
+    (substTyVarExpr i i' exIf)
+    (substTyVarExpr i i' exThen)
+    (substTyVarExpr i i' exElse)
+substTyVarExpr _ _ ex = ex -- ExprVar, ExprLit, ExprBase
+
+substTyVarType :: String -> String -> Ty lang -> Ty lang
+substTyVarType i i' (TyLam s ki ty) = TyLam s ki (substTyVarType i i' ty) -- FIXME Name collisions
+substTyVarType i i' (TyAll s ki ty) = TyAll s ki (substTyVarType i i' ty) -- FIXME Name collisions
+substTyVarType i i' (TyFun ty ty') = TyFun (substTyVarType i i' ty) (substTyVarType i i' ty')
+substTyVarType i i' (TyApp ty ty') = TyApp (substTyVarType i i' ty) (substTyVarType i i' ty')
+substTyVarType i i' (TyVar s)
+  | s == i = TyVar i'
+  | otherwise = TyVar s
+substTyVarType _ _ ty = ty -- TyFree, TyBase
 
 parseKind :: Parser SystF.Kind
 parseKind =
@@ -341,7 +365,7 @@ ident = label "identifier" $ do
   where
     reserved :: S.Set String
     reserved =
-      S.fromList ["abs", "all", "data", "if", "then", "else", "fun", "nfun"]
+      S.fromList ["abs", "all", "data", "forall", "if", "then", "else", "fun"]
         `S.union` reservedNames @lang
 
 typeName :: forall lang. (LanguageParser lang) => Parser String
