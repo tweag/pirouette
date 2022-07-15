@@ -67,7 +67,6 @@ class ToName v where
 instance ToName Name where
   toName = id
 
-
 -- Types that can be compared for α-equivalence.
 class AlphaEq a where
   (~==~) :: a -> a -> Bool
@@ -76,7 +75,6 @@ class AlphaEq a where
   (~/=~) :: a -> a -> Bool
   a ~/=~ b = not (a ~==~ b)
   {-# MINIMAL (~==~) | (~/=~) #-}
-
 
 -- * Types and Type Definitions
 
