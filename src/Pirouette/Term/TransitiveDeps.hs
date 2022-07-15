@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Functions for computing the transitive dependencies of terms.
 -- Make sure to ceck "Pirouette.Transformations.ElimEvenOddMutRec" too, as it will attempt
@@ -8,6 +9,7 @@ module Pirouette.Term.TransitiveDeps where
 
 import Control.Arrow (first, second)
 import Control.Monad.State
+import Data.Default
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
@@ -25,7 +27,7 @@ sortAllDeps :: (PirouetteReadDefs lang m) => m [NonEmpty (R.Arg Name Name)]
 sortAllDeps = do
   allDefs <- prtAllDefs
   let funOrTyDefs = mapMaybe (uncurry funOrType) . M.toList $ allDefs
-  evalStateT (sortDepsCached funOrTyDefs) (TranDepsCache M.empty)
+  evalStateT (sortDepsCached funOrTyDefs) def
   where
     funOrType (_, n) DFunction {} = Just $ R.TermArg n
     funOrType (_, n) DTypeDef {} = Just $ R.TyArg n
@@ -34,44 +36,57 @@ sortAllDeps = do
 -- | Returns the type and term-level transitive dependencies associated with a name.
 --  This is an expensive computation that you might want to memoize; therefore, check
 --  'transitiveDepsOfCached' also.
-transitiveDepsOf :: (PirouetteReadDefs lang m) => Name -> m (S.Set (R.Arg Name Name))
-transitiveDepsOf n = evalStateT (transitiveDepsOfCached n) (TranDepsCache M.empty)
+transitiveDepsOf :: (PirouetteReadDefs lang m) => Namespace -> Name -> m (S.Set (R.Arg Name Name))
+transitiveDepsOf space n = evalStateT (transitiveDepsOfCached space n) (TranDepsCache M.empty)
 
 -- ** Cached Variants
 
 newtype TranDepsCache = TranDepsCache {trDepsOf :: M.Map Name (S.Set (R.Arg Name Name))}
+
+instance Default TranDepsCache where
+  def = TranDepsCache M.empty
 
 -- | Given a list of names, sort them according to their dependencies.
 sortDepsCached ::
   (PirouetteReadDefs lang m, MonadState TranDepsCache m) =>
   [R.Arg Name Name] ->
   m [NonEmpty (R.Arg Name Name)]
-sortDepsCached = equivClassesM (\x d -> S.member x <$> transitiveDepsOfCached (R.argElim id id d))
+sortDepsCached =
+  equivClassesM (\x d -> S.member x <$> uncurry transitiveDepsOfCached (argToNamespace d))
+
+argToNamespace :: R.Arg Name Name -> (Namespace, Name)
+argToNamespace = R.argElim (TypeNamespace,) (TermNamespace,)
+
+namespaceToArg :: (Namespace, Name) -> R.Arg Name Name
+namespaceToArg (TypeNamespace, n) = R.TyArg n
+namespaceToArg (TermNamespace, n) = R.TermArg n
 
 transitiveDepsOfCached ::
   forall lang m.
   (PirouetteReadDefs lang m, MonadState TranDepsCache m) =>
+  Namespace ->
   Name ->
   m (S.Set (R.Arg Name Name))
 transitiveDepsOfCached = go S.empty
   where
-    go :: S.Set Name -> Name -> m (S.Set (R.Arg Name Name))
-    go stack n0 = do
+    go :: S.Set Name -> Namespace -> Name -> m (S.Set (R.Arg Name Name))
+    go stack space n0 = do
       mr <- gets (M.lookup n0 . trDepsOf)
       case mr of
         Just ds -> return ds
         Nothing -> do
-          r <- computeDeps stack n0
+          r <- computeDeps stack space n0
           modify (TranDepsCache . M.insert n0 r . trDepsOf)
           return r
 
-    computeDeps stack n0
+    computeDeps :: S.Set Name -> Namespace -> Name -> m (S.Set (R.Arg Name Name))
+    computeDeps stack space n0
       | n0 `S.member` stack = return S.empty
       | otherwise = do
-        deps0 <- directDepsOf n0
+        deps0 <- directDepsOf space n0
         let stack' = S.insert n0 stack
-        let deps1 = S.map (R.argElim id id) deps0
-        S.unions . (deps0 :) <$> mapM (go stack') (S.toList deps1)
+        let deps1 = S.map argToNamespace deps0
+        S.unions . (deps0 :) <$> mapM (uncurry $ go stack') (S.toList deps1)
 
 -- *** Utility Functions
 

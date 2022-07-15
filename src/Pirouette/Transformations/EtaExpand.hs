@@ -22,10 +22,7 @@ etaExpandAll ::
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
 etaExpandAll PrtUnorderedDefs {..} =
-  PrtUnorderedDefs
-    { prtUODecls = M.map (runIdentity . defTermMapM (return . go)) prtUODecls,
-      prtUOMainTerm = go prtUOMainTerm
-    }
+  PrtUnorderedDefs $ M.map (runIdentity . defTermMapM (return . go)) prtUODecls
   where
     go = etaExpandAux prtUODecls []
 

@@ -12,6 +12,7 @@ import Control.Arrow (first)
 import Control.Monad.Except
 import Data.List (elemIndex, nub, (\\))
 import qualified Data.Map as M
+import Data.Maybe
 import Data.String
 import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Term.Syntax.Base
@@ -24,13 +25,12 @@ type Env = [String]
 trProgram ::
   (LanguageParser lang) =>
   M.Map String (Either (DataDecl lang) (FunDecl lang)) ->
-  FunDecl lang ->
-  TrM (M.Map (Namespace, Name) (Definition lang), Definition lang)
-trProgram env main@FunDecl {} =
+  TrM (M.Map (Namespace, Name) (Definition lang))
+trProgram env =
   let decls = forM (M.toList env) $ \case
         (s, Left td) -> trDataDecl s td
         (s, Right f) -> (\r -> [((TermNamespace, fromString s), r)]) <$> trFunDecl f
-   in (,) <$> (decls >>= toDecls . concat) <*> trFunDecl main
+   in decls >>= toDecls . concat
   where
     toDecls :: [((Namespace, Name), Definition lang)] -> TrM (Decls lang)
     toDecls ds =
@@ -45,10 +45,10 @@ trFunDecl (FunDecl rec ty expr) =
   DFunDef <$> (FunDef rec <$> trTerm [] [] expr <*> trType [] ty)
 
 trDataDecl :: String -> DataDecl lang -> TrM [((Namespace, Name), Definition lang)]
-trDataDecl sName (DataDecl vars cons) = do
+trDataDecl sName (DataDecl vars cons mDest) = do
   let ki = foldr (SystF.KTo . snd) SystF.KStar vars
   let name = fromString sName
-  let destName = fromString $ "match_" ++ sName
+  let destName = fromString $ fromMaybe ("match_" ++ sName) mDest
   constrs <- mapM (\(n, ty) -> (fromString n,) <$> trTypeWithEnv (reverse vars) ty) cons
   return $
     ((TypeNamespace, name), DTypeDef $ Datatype ki (map (first fromString) vars) destName constrs) :
@@ -94,3 +94,6 @@ trTerm _ termEnv (ExprVar s) =
     Nothing -> return $ SystF.termPure $ SystF.Free $ TermSig (fromString s)
 trTerm _ _ (ExprLit ec) = return $ SystF.termPure (SystF.Free $ Constant ec)
 trTerm _ _ (ExprBase et) = return $ SystF.termPure (SystF.Free $ Builtin et)
+trTerm tyEnv _ (ExprBottom ty) = do
+  ty' <- trType tyEnv ty
+  return $ SystF.App (SystF.Free Bottom) [SystF.TyArg ty']

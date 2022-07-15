@@ -4,7 +4,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
@@ -15,7 +14,7 @@
 module Pirouette.SMT.FromTerm where
 
 import Control.Monad.Except
-import Control.Monad.Writer (Any (..), WriterT (..), tell)
+import Control.Monad.Writer (Any (..), WriterT (..), mapWriterT, tell)
 import qualified Data.Set as S
 -- import Debug.Trace (trace)
 import Pirouette.Monad
@@ -161,10 +160,13 @@ constructorFromPIR ::
   [typeVariable] ->
   (Name, TypeMeta builtins meta) ->
   TranslatorT m (String, [(String, PureSMT.SExpr)])
-constructorFromPIR tyVars (name, constructorType) = do
+constructorFromPIR tyVars (name, constructorType) = handleError $ do
   -- Fields of product types must be named: we append ids to the constructor name
   let fieldNames = map (((toSmtName name ++ "_") ++) . show) [1 :: Int ..]
       (_, unwrapped) = Raw.tyUnwrapBinders (length tyVars) constructorType
       (args, _) = Raw.tyFunArgs unwrapped
   cstrs <- zip fieldNames <$> mapM translateType args
   return (toSmtName name, cstrs)
+  where
+    handleError :: TranslatorT m a -> TranslatorT m a
+    handleError = mapWriterT (withExceptT (("At " ++ show name ++ ":") ++))

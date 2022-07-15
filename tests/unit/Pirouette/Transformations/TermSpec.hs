@@ -41,8 +41,6 @@ fun f1 : Maybe Integer -> Integer
 fun destrNF_f1 : Maybe Integer -> Integer
     = \x : Maybe Integer .
       match_Maybe @Integer x @Integer (add 42 1) (\n : Integer . add n 1)
-
-fun main : Integer = 42
 |]
 
 tests :: [TestTree]

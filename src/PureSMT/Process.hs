@@ -14,7 +14,7 @@ type SolverProcess = Process Handle Handle Handle
 
 data Solver = Solver
   { process :: SolverProcess,
-    debug :: Bool
+    debugMode :: Bool
   }
 
 solverPid :: Solver -> IO (Maybe P.Pid)
@@ -47,7 +47,7 @@ launchSolverWithFinalizer cmd dbg = do
 send :: Solver -> SExpr -> IO ()
 send solver cmd = do
   let cmdTxt = showsSExpr cmd ""
-  when (debug solver) $ do
+  when (debugMode solver) $ do
     pid <- unsafeSolverPid solver
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
   hPutStrLn (getStdin $ process solver) cmdTxt
@@ -57,10 +57,12 @@ recv :: Solver -> IO SExpr
 recv solver = do
   resp <- hGetLine (getStdout $ process solver)
   case readSExpr resp of
-    Nothing -> fail "no response from solver"
+    Nothing -> do
+      rest <- hGetContents (getStdout $ process solver)
+      fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
     Just (sexpr, _) -> do
       pid <- unsafeSolverPid solver
-      when (debug solver && sexpr /= Atom "success") $ do
+      when (debugMode solver && sexpr /= Atom "success") $ do
         putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
       return sexpr
 

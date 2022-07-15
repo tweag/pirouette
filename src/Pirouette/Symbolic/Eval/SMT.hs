@@ -113,8 +113,10 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
   type Ctx lang = SolverSharedCtx lang
   type Problem lang = SolverProblem lang
   initSolver SolverSharedCtx {..} s = hackSolver s $ do
-    _ <- runExceptT $ declareDatatypes solverCtxDatatypes
-    mapM_ (uncurry declareRawFun) solverCtxUninterpretedFuncs
+    res <- runExceptT $ declareDatatypes solverCtxDatatypes
+    case res of
+      Left err -> error ("Couldn't declare datatypes: " ++ show err)
+      Right _ -> mapM_ (uncurry declareRawFun) solverCtxUninterpretedFuncs
 
   solveProblem (CheckPath CheckPathProblem {..}) s =
     hackSolverPrt s cpathDefs $ pathIsPlausible cpathState

@@ -2,48 +2,38 @@ verbatim:
   cabal-version: 2.4
 
 name: pirouette
-version: 0.0.0
+version: 2.0.0
 extra-source-files:
   - LICENSE
   - README.md
 
 dependencies:
+  - ansi-terminal
   - base >= 4.9 && < 5
-  - aeson
+  - data-default
   - mtl >= 2.2.2
+  - interpolate
   - bytestring
   - containers
-  - lens
   - text
   - prettyprinter
-  - gitrev
-  - optparse-applicative
   - megaparsec
   - parser-combinators
   - uniplate
-  - hspec
-  - QuickCheck
-  - interpolate
   - deriving-compat
-  - simple-smt
-  - process
-  - typed-process
-  - tlaplus
-  - tlaplus-qq
-  - flat >= 0.4.5
-  - plutus-core
-  - list-t
   - template-haskell
   - tasty
   - tasty-hunit
-  - tasty-hspec
   - tasty-quickcheck
   - tasty-expected-failure
+  - QuickCheck
   - haskell-stack-trace-plugin
+  - parallel
   - optics-core
   - optics-th
-  - ansi-terminal
-  - parallel
+  # PureSMT deps
+  - process
+  - typed-process
 
 library:
   source-dirs: src
@@ -51,7 +41,6 @@ library:
     -Wall
     -Wno-orphans
     -fplugin=StackTrace.Plugin
-    -threaded
 
 tests:
   spec:
@@ -62,3 +51,17 @@ tests:
       - pirouette
     ghc-options:
       -threaded
+
+## executables:
+##   spec-prof:
+##     main: Spec.hs
+##     source-dirs:
+##       - tests/unit
+##     dependencies:
+##       - pirouette
+##     ghc-options:
+##       -threaded
+##       -fprof-auto
+##       -fexternal-interpreter
+##       "-with-rtsopts=-N -p -s -h"
+

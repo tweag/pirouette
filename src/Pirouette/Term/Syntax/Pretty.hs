@@ -91,7 +91,10 @@ instance Pretty Namespace where
   pretty TermNamespace = "term"
 
 instance (LanguagePretty lang) => Pretty (Decls lang) where
-  pretty = align . vsep . map prettyDef . Map.toList
+  pretty = pretty . Map.toList
+
+instance (LanguagePretty lang) => Pretty [((Namespace, Name), Definition lang)] where
+  pretty = align . vsep . map prettyDef
     where
       prettyDef ((namespace, name), def) =
         vsep [pretty namespace <+> pretty name <+> "|->", indent 2 (pretty def)]

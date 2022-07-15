@@ -1,16 +1,19 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | This module implements a pool of external processes, each running an
--- SMT solver.
-module PureSMT (module X, Solve (..), solve) where
+-- SMT solver. It is often a good idea to import this module qualified as it
+-- will re-export a number of functions from "PureSMT.SExpr" to construct S-expressions
+module PureSMT (module X, Solve (..), solve, solveOpts, Options (..)) where
 
 import Control.Concurrent.MVar
 import Control.Concurrent.QSem
 import Control.Monad
+import Data.Default
 import GHC.Conc (numCapabilities)
 import PureSMT.Process as X
 import PureSMT.SExpr as X
@@ -37,6 +40,29 @@ class Solve domain where
   -- | Solves a problem, producing an associated result with it
   solveProblem :: Problem domain result -> Solver -> IO result
 
+-- | Set of options used for controlling the behavior of the solver.
+data Options = Options
+  { -- | Which command to use to run the solver
+    solverCommand :: String,
+    -- | Whether to echo the interaction with solver to stdout
+    debug :: Bool,
+    -- | Whether to force a specific number of workers. If set to 'Nothing', will
+    --  rely on 'numCapabilities'.
+    numWorkers :: Maybe Int
+  }
+  deriving (Show)
+
+instance Default Options where
+  def =
+    Options
+      { solverCommand = "cvc4 --lang=smt2 --incremental --fmf-fun",
+        debug = False,
+        numWorkers = Nothing
+      }
+
+solve :: forall domain res. Solve domain => Ctx domain -> Problem domain res -> res
+solve = solveOpts @domain @res def
+
 -- | Evaluates a 'Problem' with an SMT solver chosen from a global pool of
 -- SMT solvers.
 --
@@ -44,12 +70,12 @@ class Solve domain where
 -- multiple pools of SMT solvers might be created for the same value of
 -- @Ctx domain@ if @solve@ is called from different modules, or if GHC
 -- optimizations fail to apply CSE over calls to solve in the same module.
-{-# NOINLINE solve #-}
-solve :: forall domain res. Solve domain => Ctx domain -> Problem domain res -> res
-solve ctx = unsafePerformIO $ do
+{-# NOINLINE solveOpts #-}
+solveOpts :: forall domain res. Options -> Solve domain => Ctx domain -> Problem domain res -> res
+solveOpts opts ctx = unsafePerformIO $ do
   -- Launch all our worker processes similar to how we did it in TypedProcess2.hs; but now
   -- we end up with a list of MVars, which we will protect in another MVar.
-  allProcs <- launchAll @domain ctx >>= newMStack
+  allProcs <- launchAll @domain opts ctx >>= newMStack
 
   -- Finally, we return the actual closure, the internals make sure
   -- to use 'withMVar' to not mess up the command/response pairs.
@@ -65,14 +91,17 @@ solve ctx = unsafePerformIO $ do
     pushMStack ms allProcs
     return r
 
-launchAll :: forall domain. Solve domain => Ctx domain -> IO [MVar X.Solver]
-launchAll ctx = replicateM numCapabilities $ do
-  s <- X.launchSolverWithFinalizer "cvc4 --lang=smt2 --incremental --fmf-fun" debug0
+launchAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
+launchAll opts ctx = replicateM nWorkers $ do
+  s <- X.launchSolverWithFinalizer (solverCommand opts) (debug opts)
   initSolver @domain ctx s
   newMVar s
   where
-    debug0 :: Bool
-    debug0 = False
+    nWorkers :: Int
+    nWorkers = maybe numCapabilities ensurePos (numWorkers opts)
+
+    ensurePos :: Int -> Int
+    ensurePos n = if n >= 1 then n else error "PureSMT: need a positive, non-zero, amount of workers"
 
 -- * Async Stacks
 

@@ -71,7 +71,7 @@ removeExcessiveDestArgs = rewriteM (runMaybeT . go)
             SystF.App (SystF.Free $ TermSig n) $
               map SystF.TyArg tyArgs
                 ++ [SystF.TermArg x, SystF.TyArg $ tyDrop (length excess) tyReturn]
-                ++ zipWith (\(_, cty) t0 -> SystF.TermArg $ appExcessive excess cty t0) cons' cases
+                ++ zipWith (\(_, cty) t0 -> SystF.TermArg $ appExcessive excess (cty `SystF.tyInstantiateN` tyArgs) t0) cons' cases
 
     -- Receives the excessive arguments, the type of the constructor whose case we're on and
     -- the term defining the value at this constructor's case.
@@ -86,7 +86,7 @@ removeExcessiveDestArgs = rewriteM (runMaybeT . go)
     tyDrop :: Int -> TypeMeta lang meta -> TypeMeta lang meta
     tyDrop 0 t = t
     tyDrop n (SystF.TyFun _ b) = tyDrop (n - 1) b
-    tyDrop n (SystF.TyAll _ _ t) = tyDrop (n - 1) t
+    tyDrop n (SystF.TyAll _ _ t) = tyDrop (n - 1) (shift (-1) t)
     tyDrop _ _ = error "Ill-typed program: not enough type parameters to drop"
 
 -- | Because TLA+ really doesn't allow for shadowed bound names, we need to rename them
