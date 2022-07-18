@@ -50,11 +50,6 @@ tests =
           data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
           fun main : Integer = 42
         |],
-    testCase "Can parse function declaration" $
-      canParseDefinition
-        [funDecl|
-          fun foo : Bool -> Integer -> Integer = \(b : Bool) (i : Integer) . if @Integer b then (i + 1) else (i - 1)
-        |],
     testGroup "New syntax for function declaration" $
       [ testGroup
           "Can parse function declarations using the new syntax"

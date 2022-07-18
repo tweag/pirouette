@@ -11,8 +11,7 @@
 -- writing terms for testing pirouette a with a little less work.
 -- A lot of the syntactical choices have been made to make parsing
 -- as easy as possible. A program in this language is a set of
--- definitions containing one definition named @main@.
--- One example program would be:
+-- definitions. One example program would be:
 --
 -- > -- Declares a datatype with a destructor named match_Maybe
 -- > data Maybe (a : Type)
@@ -25,7 +24,7 @@
 -- > fun cons : all (a : Type) (b : Type) . a -> b -> a
 -- >   = /\ (a : Type) (b : Type) . \(x : a) (y : b) . x
 -- >
--- > fun main : Integer
+-- > fun val : Integer
 -- >   -- type applications are made just like Haskell, so are comments.
 -- >   -- The language has Integers and booleans
 -- >   = id @Integer (if True then 42 else 0)
@@ -41,7 +40,7 @@ import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Transformations.Utils (monoNameSep)
+import Pirouette.Transformations.Monomorphization (monoNameSep)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -85,7 +84,7 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
 
 -- ** Syntactical Categories
 
-data DataDecl lang = DataDecl [(String, SystF.Kind)] [(String, Ty lang)]
+data DataDecl lang = DataDecl [(String, SystF.Kind)] [(String, Ty lang)] (Maybe String)
 
 deriving instance (Show (BuiltinTypes lang)) => Show (DataDecl lang)
 
@@ -115,6 +114,7 @@ data Expr lang
   | ExprLit (Constants lang)
   | ExprBase (BuiltinTerms lang)
   | ExprIf (Ty lang) (Expr lang) (Expr lang) (Expr lang)
+  | ExprBottom (Ty lang)
 
 deriving instance
   (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
@@ -122,16 +122,11 @@ deriving instance
 
 -- * Parsers
 
--- | Parses a program, consisting in a map of declarations and one distinguished
---  function called main.
+-- | A program is some set of declarations
 parseProgram ::
   (LanguageParser lang) =>
-  Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)), FunDecl lang)
-parseProgram = do
-  decls <- M.fromList <$> many parseDecl
-  case M.lookup "main" decls of
-    Just (Right fun) -> return (M.delete "main" decls, fun)
-    _ -> error "Main is not present or is not a function definition"
+  Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)))
+parseProgram = M.fromList <$> many parseDecl
 
 parseDecl :: (LanguageParser lang) => Parser (String, Either (DataDecl lang) (FunDecl lang))
 parseDecl =
@@ -152,7 +147,8 @@ parseDataDecl = label "Data declaration" $ do
   cons <-
     (try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `sepBy1` symbol "|")
       <|> return []
-  return (i, DataDecl vars cons)
+  dest <- optional (symbol "destructor" >> try (ident @lang) <|> typeName @lang)
+  return (i, DataDecl vars cons dest)
 
 -- | Parses functon declarations:
 --
@@ -304,6 +300,12 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
       symbol "else"
       ExprIf ty c t <$> parseTerm
 
+    parseBottom :: Parser (Expr lang)
+    parseBottom = do
+      try (symbol "bottom")
+      ty <- symbol "@" >> parseTypeAtom
+      return (ExprBottom ty)
+
     pAtom :: Parser (Expr lang)
     pAtom =
       asum
@@ -311,6 +313,7 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           pLam,
           parens parseTerm,
           parseIf,
+          parseBottom,
           ExprBase <$> try (parseBuiltinTerm @lang),
           ExprTy <$> (try (symbol "@") >> parseTypeAtom),
           ExprLit <$> try (parseConstant @lang),
@@ -351,7 +354,7 @@ ident = label "identifier" $ do
   where
     reserved :: S.Set String
     reserved =
-      S.fromList ["abs", "all", "data", "forall", "if", "then", "else", "fun"]
+      S.fromList ["abs", "all", "data", "forall", "destructor", "if", "then", "else", "fun", "bottom"]
         `S.union` reservedNames @lang
 
 typeName :: forall lang. (LanguageParser lang) => Parser String
@@ -365,4 +368,4 @@ typeName = label "type-identifier" $ do
 --   reservedTypeNames =
 
 restOfName :: Parser String
-restOfName = many (alphaNumChar <|> char '_' <|> char monoNameSep)
+restOfName = many (alphaNumChar <|> oneOf ('_' : monoNameSep))

@@ -19,6 +19,9 @@ module Pirouette.Symbolic.Eval
   ( -- * Runners
     symeval,
 
+    -- ** Options
+    Options (..),
+
     -- ** General inputs and outputs
     AvailableFuel (..),
     Path (..),
@@ -28,7 +31,7 @@ module Pirouette.Symbolic.Eval
     SymEvalStatistics (..),
 
     -- ** Incorrectness logic
-    symevalAnyPath,
+    symevalAnyPathAccum,
     symEvalMatchesFirst,
     symEvalParallel,
     UniversalAxiom (..),
@@ -48,6 +51,7 @@ module Pirouette.Symbolic.Eval
     pruneAndValidate,
     PruneResult (..),
     SymEvalSt (..),
+    SymEvalEnv (..),
     currentStatistics,
   )
 where
@@ -87,12 +91,13 @@ data SymEvalSolvers lang = SymEvalSolvers
 
 data SymEvalEnv lang = SymEvalEnv
   { seeDefs :: PrtOrderedDefs lang,
-    seeSolvers :: SymEvalSolvers lang
+    seeSolvers :: SymEvalSolvers lang,
+    seeOptions :: Options
   }
 
 -- | A 'SymEval' is equivalent to a function with type:
 --
--- > SymEvalSt lang -> SMT.Solver -> m [(a, SymEvalSt lang)]
+-- > SymEvalEnv lang -> SymEvalSt lang -> [(a, SymEvalSt lang)]
 newtype SymEval lang a = SymEval
   { symEval ::
       ReaderT
@@ -101,13 +106,18 @@ newtype SymEval lang a = SymEval
         a
   }
   deriving (Functor)
-  deriving newtype (Applicative, Monad, MonadState (SymEvalSt lang), ListT.MonadWeightedList)
+  deriving newtype
+    ( Applicative,
+      Monad,
+      MonadReader (SymEvalEnv lang),
+      MonadState (SymEvalSt lang),
+      ListT.MonadWeightedList
+    )
 
 type SymEvalConstr lang = (Language lang, LanguageSymEval lang)
 
 instance (SymEvalConstr lang) => PirouetteReadDefs lang (SymEval lang) where
   prtAllDefs = SymEval (asks $ prtDecls . seeDefs)
-  prtMain = SymEval (asks $ prtMainTerm . seeDefs)
 
 instance (SymEvalConstr lang) => PirouetteDepOrder lang (SymEval lang) where
   prtDependencyOrder = SymEval (asks $ prtDepOrder . seeDefs)
@@ -117,36 +127,39 @@ instance MonadFail (SymEval lang) where
 
 symeval ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
-  StoppingCondition ->
+  Options ->
   SymEval lang a ->
   m [Path lang a]
-symeval shouldStop prob = do
+symeval opts prob = do
   defs <- getPrtOrderedDefs
-  return $ runSymEval defs st0 prob
+  return $ runSymEval opts defs st0 prob
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
 
-symevalAnyPath ::
+symevalAnyPathAccum ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
-  StoppingCondition ->
+  (Path lang a -> st -> st) ->
+  st ->
+  Options ->
   (Path lang a -> Bool) ->
   SymEval lang a ->
-  m (Maybe (Path lang a))
-symevalAnyPath shouldStop p prob = do
+  m (Maybe (Path lang a), st)
+symevalAnyPathAccum f s0 opts p prob = do
   defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThat p $ runSymEvalWorker defs st0 prob
+  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs st0 prob
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty shouldStop
+    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
 runSymEval ::
   (SymEvalConstr lang) =>
+  Options ->
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
   [Path lang a]
-runSymEval defs st = runIdentity . ListT.toList . runSymEvalWorker defs st
+runSymEval opts defs st = runIdentity . ListT.toList . runSymEvalWorker opts defs st
 
 runSymEvalRaw ::
   (SymEvalConstr lang) =>
@@ -162,22 +175,23 @@ runSymEvalRaw env st act =
 runSymEvalWorker ::
   forall lang a.
   (SymEvalConstr lang) =>
+  Options ->
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
   WeightedList (Path lang a)
-runSymEvalWorker defs st f = do
+runSymEvalWorker opts defs st f = do
   let -- sharedSolve is here to hint to GHC not to create more than one pool
       -- of SMT solvers, which could happen if sharedSolve were inlined.
       -- TODO: Write a test to check that only one SMT pool is actually created over
       --       multiple calls to runSymEvalWorker.
       {-# NOINLINE sharedSolve #-}
       sharedSolve :: SolverProblem lang res -> res
-      sharedSolve = PureSMT.solve solverCtx
+      sharedSolve = PureSMT.solveOpts (optsPureSMT opts) solverCtx
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers) st' f
-  let paths = uncurry path solvPair
+  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
+  let paths = uncurry (path $ shouldStop opts) solvPair
   return paths
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
@@ -193,10 +207,9 @@ runSymEvalWorker defs st f = do
       let decls = prtDecls defs
           dependencyOrder = prtDepOrder defs
           definedTypes = mapMaybe (R.argElim (lkupTypeDefOf decls) (const Nothing)) dependencyOrder
-          types = builtinTypeDefinitions definedTypes <> definedTypes
           allFns = mapMaybe (R.argElim (const Nothing) (lkupFunDefOf decls)) dependencyOrder
           fns = mapMaybe (\(n, fd) -> (n,) <$> SMT.supportedUninterpretedFunction fd) allFns
-       in SolverSharedCtx types fns
+       in SolverSharedCtx definedTypes fns
 
 instance (SymEvalConstr lang) => Alternative (SymEval lang) where
   empty = SymEval $ ReaderT $ \_ -> StateT $ const empty

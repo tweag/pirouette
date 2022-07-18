@@ -208,6 +208,4 @@ fun correct_validator : TxInfo -> Bool
     . match_TxInfo tx @Bool
       (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId).
         correct_isUnity mint example_ac)
-
-fun main : Integer = 42
 |]

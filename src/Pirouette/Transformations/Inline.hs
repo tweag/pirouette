@@ -21,9 +21,8 @@ expandAllNonRec :: forall lang. (LanguageBuiltins lang) => (Name -> Bool) -> Prt
 expandAllNonRec keep prtDefs =
   let ds = prtDecls prtDefs
       ord = prtDepOrder prtDefs
-      (remainingNames, ds', inlinables) = foldl' go ([], ds, Map.empty) ord
-      mainTerm = rewrite (inlineAll inlinables) $ prtMainTerm prtDefs
-   in PrtOrderedDefs ds' (reverse remainingNames) mainTerm
+      (remainingNames, ds', _inlinables) = foldl' go ([], ds, Map.empty) ord
+   in PrtOrderedDefs ds' (reverse remainingNames)
   where
     -- The 'go' functions goes over the defined terms in dependency order
     -- and inlines terms as much as possible. To do so efficiently,
@@ -33,7 +32,7 @@ expandAllNonRec keep prtDefs =
     -- In general, say that: (rNs, ds', rest) = foldl' go ([], decls, Map.empty) ord
     -- then, with a slight abuse of notation:
     --
-    -- >    Map.union ds' rest == decls -- module beta equivalence
+    -- >    Map.union ds' rest == decls -- modulo beta equivalence
     -- > && Set.fromList rNs == Set.fromList (Map.keys ds')
     -- > && reverse rNs `isSubListOf` ord
     --

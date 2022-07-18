@@ -15,10 +15,12 @@ import Data.Map as Map
 import Language.Pirouette.Example
 import Pirouette.Monad
 import Pirouette.Term.Syntax
+import Pirouette.Term.TypeChecker
 import Pirouette.Transformations
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import Test.Tasty
+import Test.Tasty.ExpectedFailure
 import Test.Tasty.HUnit
 
 tests :: [TestTree]
@@ -53,7 +55,6 @@ defuncTestsMono =
                 renderSingleLineStr (pretty decls2)
               ]
       assertBool msg (decls1 == decls2)
-      prtUOMainTerm p1 @=? prtUOMainTerm p2
       where
         isDestructor DDestructor {} = True
         isDestructor _ = False
@@ -69,8 +70,6 @@ fun apply : (Integer -> Integer) -> Integer -> Integer
 
 fun two : Integer
     = apply (add 1) 1
-
-fun main : Integer = 42
 |],
     [prog|
 fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
@@ -88,8 +87,6 @@ fun apply : Closure!!TyInteger_TyInteger -> Integer -> Integer
 
 fun two : Integer
     = apply Closure!!TyInteger_TyInteger_ctor_0 1
-
-fun main : Integer = 42
 |]
   )
 
@@ -113,8 +110,6 @@ fun three : Integer
 
 fun four : Integer
    = apply (apply (add 2)) 2
-
-fun main : Integer = 42
 |],
     [prog|
 data Closure!!TyInteger_TyInteger
@@ -148,8 +143,6 @@ fun three : Integer
 
 fun two : Integer
     = apply Closure!!TyInteger_TyInteger_ctor_3 1
-
-fun main : Integer = 42
 |]
   )
 
@@ -186,25 +179,148 @@ fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (Cl
 
 defuncTestsPoly :: [TestTree]
 defuncTestsPoly =
-  [ testCase "Nested closures are generated" $
-      case monoDefunc bug of
-        PrtOrderedDefs !x !y !z -> return ()
+  [ testCase "Nested closures are generated and typecheck" $
+      runTest nested,
+    testCase "Destructors types are updated and typecheck" $
+      runTest destructors,
+    testCase "Indirect types are updated and typecheck" $
+      runTest indirect,
+    testCase "Mixed types are updated and typecheck" $
+      runTest mixed
   ]
   where
-    monoDefunc :: PrtUnorderedDefs Ex -> PrtOrderedDefs Ex
-    monoDefunc = elimEvenOddMutRec . defunctionalize . monomorphize
+    monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
+    monoDefunc = defunctionalize . monomorphize
 
-bug :: PrtUnorderedDefs Ex
-bug =
+    runTest :: PrtUnorderedDefs Ex -> Assertion
+    runTest decls0 =
+      case monoDefunc decls0 of
+        PrtUnorderedDefs decls -> do
+          case typeCheckDecls decls of
+            Left err -> print (pretty decls) >> assertFailure (show $ pretty err)
+            Right _ -> return ()
+
+nested :: PrtUnorderedDefs Ex
+nested =
   [prog|
-fun appOne : all (k : Type) . (k -> Bool) -> k -> Bool
-  = /\(k : Type) . \(predi : k -> Bool)(m : k) . predi m
+data Monoid (a : Type)
+  = Mon : (a -> a -> a) -> a -> Monoid a
 
-fun appSym : all (k : Type) . (k -> k -> Bool) -> k -> Bool
-  = /\(k : Type) . \(predi : k -> k -> Bool)(m : k) . appOne @k (predi m) m
+data AdditiveMonoid (a : Type)
+  = AdditiveMon : (a -> a -> a) -> a -> AdditiveMonoid a
 
-fun eqInt : Integer -> Integer -> Bool
-  = \(x : Integer) (y : Integer) . x == y
+fun additiveToMonoid : all (a : Type) . AdditiveMonoid a -> Monoid a
+  = /\(a : Type) . \(x : AdditiveMonoid a)
+    . Mon @a (match_AdditiveMonoid @a x @(a -> a -> a) (\(f : a -> a -> a) (z : a) . f))
+             (match_AdditiveMonoid @a x @a (\(f : a -> a -> a) (z : a) . z))
 
-fun main : Bool = appSym @Integer eqInt 2
+data List (a : Type)
+  = Nil : List a
+  | Cons : a -> List a -> List a
+
+fun listMon : all (a : Type) . AdditiveMonoid (List a)
+  = /\(a : Type) . AdditiveMon @(List a) (\(k : List a) (l : List a)
+    . foldr @a @(List a) (Cons @a) l k) (Nil @a)
+
+fun foldr : all (a : Type) (b : Type) . (a -> b -> b) -> b -> List a -> b
+  = /\(a : Type) (b : Type) . \(f : a -> b -> b) (m : b) (xs : List a)
+   . match_List @a xs @b
+       m
+       (\(h : a) (tl : List a) . f h (foldr @a @b f m tl))
+
+fun foldMap : all (a : Type) (b : Type) . (a -> b) -> Monoid b -> List a -> b
+  = /\(a : Type) (b : Type) . \(f : a -> b) (m : Monoid b) (xs : List a)
+  . match_Monoid @b m @b
+      (\ (mplus : b -> b -> b) (mzero : b)
+       . foldr @a @b (\(x : a) (rest : b) . mplus (f x) rest) mzero xs
+      )
+
+fun id : all (a : Type) . a -> a
+  = /\(a : Type) . \(x : a) . x
+
+fun concat : all (a : Type) . List (List a) -> List a
+  = /\(a : Type) . foldMap @(List a) @(List a) (id @(List a)) (additiveToMonoid @(List a) (listMon @a))
+
+fun additiveIntegerMon : Monoid Integer
+  = Mon @Integer (\(x : Integer) (y : Integer) . x + y) 0
+
+fun length : all (a : Type) . List a -> Integer
+  = /\(a : Type) . foldMap @a @Integer (\(x : a) . 1) additiveIntegerMon
+
+fun main : Integer
+  = length @Integer (concat @Integer (Nil @(List Integer)))
+
+|]
+
+destructors :: PrtUnorderedDefs Ex
+destructors =
+  [prog|
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun val : Maybe (Integer -> Integer)
+  = Just @(Integer -> Integer) (\(x : Integer) . x + 1)
+
+fun main : Integer
+  = match_Maybe @(Integer -> Integer) val @Integer (\(f : Integer -> Integer) . f 42) 0
+|]
+
+-- Here's a tricky situation! We need the defunctionalizer to pick up that
+-- the definition of 'Predicate' has to be updated, even though it doesn't
+-- contain a function type directly
+indirect :: PrtUnorderedDefs Ex
+indirect =
+  [prog|
+data Predicate (a : Type)
+  = Prob : Maybe (Integer -> a) -> Predicate a
+
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun run : all (a : Type) . Predicate a -> Integer -> Maybe a
+  = /\(a : Type) . \(p : Predicate a) (x : Integer)
+    . match_Predicate @a p @(Maybe a)
+        (\(mf : Maybe (Integer -> a))
+         . match_Maybe @(Integer -> a) mf @(Maybe a)
+             (\f : Integer -> a . Just @a (f x))
+             (Nothing @a))
+
+fun val : Predicate Bool
+  = Prob @Bool (Just @(Integer -> Bool) (\(x : Integer) . x < 1))
+
+fun main : Bool
+  = match_Maybe @Bool (run @Bool val 42) @Bool (\x : Bool . x) False
+|]
+
+-- While we're at it, let's throw in a mixed definition that has both direct
+-- and indirect needs for defunctionalization in the same type!
+mixed :: PrtUnorderedDefs Ex
+mixed =
+  [prog|
+data Mixed (a : Type)
+  = Mix : a -> (a -> a) -> Mixed a
+
+fun run : all (a : Type) . Mixed a -> a
+  = /\(a : Type) . \(m : Mixed a) . match_Mixed @a m @a
+      (\(x : a) (f : a -> a) . f x)
+
+data Maybe (a : Type)
+  = Just : a -> Maybe a
+  | Nothing : Maybe a
+
+fun or : Bool -> Bool -> Bool
+  = \(x : Bool) (y : Bool) . if @Bool x then True else y
+
+-- The worst nightmare of the defunctionalizer! :)
+fun nasty : Mixed (Maybe (Bool -> Bool))
+  = Mix @(Maybe (Bool -> Bool))
+        (Just @(Bool -> Bool) (or True))
+        (\(x : Maybe (Bool -> Bool)) . Nothing @(Bool -> Bool))
+
+fun main : Bool
+  = match_Maybe @(Bool -> Bool) (run @(Maybe (Bool -> Bool)) nasty) @Bool
+      (\(f : Bool -> Bool) . f True)
+      False
 |]

@@ -237,6 +237,10 @@ pattern SConstant s = SystF.App (SystF.Free (Constant (ConstString s))) []
 -- In particular, with respect to @if@ statements in our case. Check the respective
 -- class documentation for more details.
 instance LanguageSymEval Ex where
+  -- Our example language has Bool as a builtin type and terms of type Bool are
+  -- translated to SMT's builtin Bool type, no casting needed whatsoever.
+  isTrue = id
+
   -- translate arithmetic operations applied to constants
   branchesBuiltinTerm op _translator [SystF.TermArg (IConstant x), SystF.TermArg (IConstant y)]
     | exTermIsArithOp op =
@@ -258,11 +262,11 @@ instance LanguageSymEval Ex where
       let isEq TermEq = True
           isEq TermStrEq = True
           isEq _ = False
-          isTrue BTrue = True
-          isTrue _ = False
+          isTrue0 BTrue = True
+          isTrue0 _ = False
           isFalse BFalse = True
           isFalse _ = False
-       in ifThenElseBranching isTrue BTrue isFalse BFalse isEq c t e excess
+       in ifThenElseBranching isTrue0 BTrue isFalse BFalse isEq c t e excess
   branchesBuiltinTerm _ _ _ = pure Nothing
 
 -- * QuasiQuoters

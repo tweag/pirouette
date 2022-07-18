@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 -- {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -15,6 +16,7 @@ module ListT.Weighted
     mapWeightedListT,
     toList,
     firstThat,
+    firstThatAccum,
   )
 where
 
@@ -115,6 +117,17 @@ firstThat p (Weight _ ms) =
   firstThat p ms
 firstThat p (Action a) =
   firstThat p =<< a
+
+firstThatAccum :: Monad m => (a -> st -> st) -> st -> (a -> Bool) -> WeightedListT m a -> m (Maybe a, st)
+firstThatAccum _ s0 _ Fail = pure (Nothing, s0)
+firstThatAccum f s0 p (Yield x ms) =
+  if p x
+    then pure (Just x, s0)
+    else let !s1 = f x s0 in firstThatAccum f s1 p ms
+firstThatAccum f s0 p (Weight _ ms) =
+  firstThatAccum f s0 p ms
+firstThatAccum f s0 p (Action a) =
+  firstThatAccum f s0 p =<< a
 
 instance MonadTrans WeightedListT where
   lift x = Action (return <$> x)

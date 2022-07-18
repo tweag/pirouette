@@ -5,13 +5,13 @@ module Pirouette.Symbolic.Prover.Runner where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
+import Data.Default
 import qualified Data.Map as M
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax (pretty)
 import Pirouette.Term.Syntax.Base
-import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
@@ -34,25 +34,22 @@ type IncorrectnessResult lang = Maybe (Path lang (EvaluationWitness lang))
 -- | Runs an incorrectness logic check for a single term, i.e., receives no
 -- environment of definitions.
 runIncorrectnessLogicSingl ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
-  Int ->
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogicSingl maxCstrs =
-  runIncorrectnessLogic maxCstrs (PrtUnorderedDefs M.empty $ SystF.termPure $ SystF.Free Bottom)
+runIncorrectnessLogicSingl opts =
+  runIncorrectnessLogic opts (PrtUnorderedDefs M.empty)
 
 runIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
-  Int ->
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  Options ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   IncorrectnessResult lang
-runIncorrectnessLogic maxCstrs prog parms =
-  runIdentity $ execIncorrectnessLogic (proveAny shouldStop isCounter) prog parms
+runIncorrectnessLogic opts prog parms =
+  runIdentity $ execIncorrectnessLogic (proveAny opts isCounter) prog parms
   where
-    -- The stopping condition is defined as a limit on the number of unfolded constructors per branch;
-    shouldStop st = sestConstructors st > maxCstrs
-
     isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
       | s /= OutOfFuel = True
     isCounter _ = False
@@ -107,29 +104,31 @@ assertIRResult _ = return ()
 -- | Check for counterexamples for an incorrectness logic triple and
 -- pretty-print the result
 replIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogic maxCstrs defs params =
-  printIRResult maxCstrs $ runIncorrectnessLogic maxCstrs defs params
+  printIRResult maxCstrs $
+    runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params
 
 replIncorrectnessLogicSingl ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogicSingl maxCstrs params =
-  printIRResult maxCstrs $ runIncorrectnessLogicSingl maxCstrs params
+  printIRResult maxCstrs $
+    runIncorrectnessLogicSingl (def {shouldStop = (> maxCstrs) . sestConstructors}) params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
 assertIncorrectnessLogic ::
-  (LanguagePretty lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
+  (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Int ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
   Test.Assertion
-assertIncorrectnessLogic maxCstr defs params =
-  assertIRResult (runIncorrectnessLogic maxCstr defs params)
+assertIncorrectnessLogic maxCstrs defs params =
+  assertIRResult (runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params)
