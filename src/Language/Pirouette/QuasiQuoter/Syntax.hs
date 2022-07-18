@@ -181,6 +181,8 @@ parseNewFunDecl = label "Function declaration (new syntax)" $ do
   funType <- parseType
   symbol ";" -- HACK because whitespaces including new lines are removed
   _ <- symbol funIdent
+  -- TODO Fail when there are duplicate names in the term or type worlds
+  -- TODO Add a regression test
   params <- many $ (TyIdent <$> (char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
   symbol "="
   body <- parseTerm
@@ -200,9 +202,17 @@ funTerm _ [] body = body
 funTerm _ _ _ = error "Unexpected parameters in function declaration"
 
 substTyVarType :: String -> String -> Ty lang -> Ty lang
--- FIXME Name collisions for cases TyLam and TyAll
-substTyVarType i i' (TyLam s ki ty) = TyLam s ki (substTyVarType i i' ty)
-substTyVarType i i' (TyAll s ki ty) = TyAll s ki (substTyVarType i i' ty)
+-- For "TyLam" and "TyAll" there is a risk of name clash during name
+-- substitution.
+-- When it happens, conflicting names are rewritten recursively before
+-- performing the actual substitution.
+-- TODO Add test cases involving "TyLam"
+substTyVarType i i' (TyLam s ki ty)
+  | s == i' = TyLam (s <> "_") ki (substTyVarType i i' . substTyVarType s (s <> "_") $ ty)
+  | otherwise = TyLam s ki (substTyVarType i i' ty)
+substTyVarType i i' (TyAll s ki ty)
+  | s == i' = TyAll (s <> "_") ki (substTyVarType i i' . substTyVarType s (s <> "_") $ ty)
+  | otherwise = TyAll s ki (substTyVarType i i' ty)
 substTyVarType i i' (TyFun ty ty') = TyFun (substTyVarType i i' ty) (substTyVarType i i' ty')
 substTyVarType i i' (TyApp ty ty') = TyApp (substTyVarType i i' ty) (substTyVarType i i' ty')
 substTyVarType i i' (TyVar s)

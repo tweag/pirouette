@@ -118,9 +118,9 @@ tests =
           ],
         testGroup "Parsed function declarations match expectations" $
           [
-            testCase "With type parameters and conflict-prone naming in the body" $
+            testCase "With type parameters and conflict-prone type parameter names in the body" $
               assertRightBody
-                (Abs (Ann "b") KStar (Lam (Ann "l") (TyApp (Free (TySig "List")) [TyApp (Bound (Ann "b") 0) []]) (Abs (Ann "a") KStar (Lam (Ann "e") (TyApp (Free (TySig "Either")) [TyApp (Bound (Ann "b") 1) [], TyApp (Bound (Ann "a") 0) []]) (App (Free (TermSig "undefined")) [])))))
+                (Abs (Ann "b") KStar (Lam (Ann "l") (TyApp (Free (TySig "List")) [TyApp (Bound (Ann "b") 0) []]) (Abs (Ann "a") KStar (Lam (Ann "e") (TyApp (Free (TySig "Either")) [TyApp (Bound (Ann "a") 0) [], TyApp (Bound (Ann "b") 1) []]) (App (Free (TermSig "undefined")) [])))))
                 [newFunDecl|
           foo : forall a . List a -> (forall b . Either b a -> Int) ;
           foo @b l @a e = undefined
@@ -132,19 +132,4 @@ tests =
 assertRightBody :: Term Ex -> Definition Ex -> Assertion
 assertRightBody targetBody (DFunDef (FunDef _ body _)) =
   when (body /= targetBody) $
-    assertFailure ("Body mismatches expectation : " <> show body)
-
--- testCase "Can parse program" $
---   canParseProgram
---     [prog|
---       data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
---       main : Integer
---       main = 42
---     |],
--- testCase "Can parse new function decls" $
---   canParseProgram
---     [prog|
---       data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
---       foo : Bool -> Integer -> Either Integer Integer
---       foo b i = if b then Left (i + 1) else Right (i - 1)
---     |]
+    assertFailure ("Body mismatches expectation: " <> show body)
