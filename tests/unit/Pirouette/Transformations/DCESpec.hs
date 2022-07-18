@@ -25,15 +25,15 @@ tests :: [TestTree]
 tests =
   [ testGroup "Finding dead constructors" findDeadCtorsTest
   , testGroup "Executing constructor removal" removeCtorsTest
-  , testGroup "Everything together: liminating dead constructors" removeDeadCtorsTest
+  , testGroup "Everything together: eliminating dead constructors" removeDeadCtorsTest
   ]
 
 findDeadCtorsTest :: [TestTree]
 findDeadCtorsTest =
   [ testCase "Unused type has all its ctors unused" $
-      findDeadCtors s1 @=? [CtorRemoveInfo "match_Ty" 1 "Ty", CtorRemoveInfo "match_Ty" 0 "Ty"]
+      findDeadCtors s1 @=? [CtorRemoveInfo "Ty" "TyC2" 1 "match_Ty" , CtorRemoveInfo "Ty" "TyC1" 0 "match_Ty"]
   , testCase "Used type is handled correctly" $
-      findDeadCtors s2 @=? [CtorRemoveInfo "match_Ty" 0 "Ty"]
+      findDeadCtors s2 @=? [CtorRemoveInfo "Ty" "TyC1" 0 "match_Ty"]
   ]
   where
     s1, s2 :: PrtUnorderedDefs Ex
@@ -68,7 +68,7 @@ prettyEqual result expected = assertBool msg (result == expected)
 removeCtorsTest :: [TestTree]
 removeCtorsTest =
   [ testCase "removes a given constructor" $
-      removeCtor (CtorRemoveInfo "match_Ty1" 1 "Ty1") s1 `prettyEqual` r1
+      removeCtor (CtorRemoveInfo "Ty1" "Ty1C2" 1 "match_Ty1") s1 `prettyEqual` r1
   ]
   where
     s1 = [prog|
@@ -122,8 +122,10 @@ fun foo2 : Ty2 -> Integer
 
 removeDeadCtorsTest :: [TestTree]
 removeDeadCtorsTest =
-  [ testCase "removes dead ctors, and in the right order" $
-      removeDeadCtors s1 `prettyEqual` r1
+  [ testCase "respects the whitelist when removing" $
+      removeDeadCtors (RemoveDeadCtorsOpts $ Map.fromList [("Ty1", ["Ty1C2"])]) s1 `prettyEqual` r1
+  , testCase "removes dead ctors, and in the right order" $
+      removeDeadCtors (RemoveDeadCtorsOpts $ Map.fromList [("Ty1", ["Ty1C1", "Ty1C3", "Ty1C4"])]) s2 `prettyEqual` r2
   ]
   where
     s1 = [prog|
@@ -137,6 +139,29 @@ data Ty2
     = Ty2C1 : Ty2
     | Ty2C2 : Integer -> Ty2
     | Ty2C3 : Integer -> Integer -> Ty2
+|]
+    r1 = [prog|
+data Ty1
+    = Ty1C2 : Integer -> Ty1
+
+data Ty2
+    = Ty2C1 : Ty2
+    | Ty2C2 : Integer -> Ty2
+    | Ty2C3 : Integer -> Integer -> Ty2
+|]
+
+    s2 = [prog|
+data Ty1
+    = Ty1C1 : Ty1
+    | Ty1C2 : Integer -> Ty1
+    | Ty1C3 : Integer -> Integer -> Ty1
+    | Ty1C4 : Integer -> Integer -> Integer -> Ty1
+    | Ty1C5 : Integer -> Integer -> Integer -> Integer -> Ty1
+
+data Ty2
+    = Ty2C1 : Ty2
+    | Ty2C2 : Integer -> Ty2
+    | Ty2C3 : Integer -> Integer -> Ty2
 
 fun matcher1 : Ty1 -> Integer
     = \(t : Ty1) .
@@ -145,6 +170,7 @@ fun matcher1 : Ty1 -> Integer
         (\(a : Integer) . 2)
         (\(a : Integer) (b : Integer) . 3)
         (\(a : Integer) (b : Integer) (c : Integer) . 4)
+        (\(a : Integer) (b : Integer) (c : Integer) (d : Integer) . 5)
 
 fun matcher2 : Ty2 -> Integer
     = \(t : Ty2) .
@@ -175,10 +201,11 @@ fun mk22 : Ty2
 fun mk23 : Ty2
     = id2 (Ty2C3 6 42)
 |]
-    r1 = [prog|
+    r2 = [prog|
 data Ty1
     = Ty1C1 : Ty1
     | Ty1C3 : Integer -> Integer -> Ty1
+    | Ty1C4 : Integer -> Integer -> Integer -> Ty1
 
 data Ty2
     = Ty2C1 : Ty2
@@ -190,6 +217,7 @@ fun matcher1 : Ty1 -> Integer
       match_Ty1 t @Integer
         1
         (\(a : Integer) (b : Integer) . 3)
+        (\(a : Integer) (b : Integer) (c : Integer) . 4)
 
 fun matcher2 : Ty2 -> Integer
     = \(t : Ty2) .

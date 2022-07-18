@@ -10,19 +10,36 @@ import Data.Generics.Uniplate.Data
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Utils
 
 data CtorRemoveInfo = CtorRemoveInfo
-  { criDtorName :: Name
+  { criCtorTypeName :: Name
+  , criCtorName :: Name
   , criCtorIdx :: Int
-  , criCtorTypeName :: Name
+  , criDtorName :: Name
   } deriving (Show, Eq, Ord)
 
-removeDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-removeDeadCtors defs = L.foldl' (flip removeCtor) defs (findDeadCtors defs)
+newtype RemoveDeadCtorsOpts = RemoveDeadCtorsOpts
+  { rdcoToKeep :: M.Map T.Text [T.Text]
+  } deriving (Show)
+
+removeDeadCtors :: forall lang. (Language lang)
+                => RemoveDeadCtorsOpts
+                -> PrtUnorderedDefs lang
+                -> PrtUnorderedDefs lang
+removeDeadCtors RemoveDeadCtorsOpts{..} defs = L.foldl' (flip removeCtor) defs ctorsToRemove
+  where
+    ctorsToRemove = filter (not . shallKeep) $ findDeadCtors defs
+
+    shallKeep CtorRemoveInfo{..}
+      | Just tyWhiteList <- nameString criCtorTypeName `M.lookup` rdcoToKeep = nameString criCtorName `elem` tyWhiteList
+    -- If we don't have any whitelist record for the type, we keep its constructors unconditionally:
+    -- removal of a type's constructors should be a very conscious and explicit decision by the user.
+    shallKeep _ = True
 
 -- | Finds the constructors that aren't used in the program.
 --
@@ -32,10 +49,14 @@ removeDeadCtors defs = L.foldl' (flip removeCtor) defs (findDeadCtors defs)
 findDeadCtors :: forall lang. (Language lang) => PrtUnorderedDefs lang -> [CtorRemoveInfo]
 findDeadCtors defs = L.sortOn (negate . criCtorIdx) $ M.elems unusedCtors
   where
+    ctorNameMap = M.fromList [ ((tyName, idx), ctorName)
+                             | ((_, ctorName), DConstructor idx tyName) <- M.toList $ prtUODecls defs
+                             ]
     allCtors = M.fromList [ (ctorName, CtorRemoveInfo{..})
                           | ((_, criCtorTypeName), DTypeDef td) <- M.toList $ prtUODecls defs
                           , let criDtorName = destructor td
                           , (criCtorIdx, (ctorName, _)) <- zip [0..] $ constructors td
+                          , let criCtorName = ctorNameMap M.! (criCtorTypeName, criCtorIdx)
                           ]
     usedNames = S.fromList [ name | TermSig name <- universeBi defs :: [TermBase lang] ]
     unusedCtors = M.filterWithKey (\ctorName _ -> ctorName `S.notMember` usedNames) allCtors

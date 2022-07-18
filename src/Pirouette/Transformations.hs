@@ -17,6 +17,7 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Contextualize as X
+import Pirouette.Transformations.DCE as X
 import Pirouette.Transformations.Defunctionalization as X
 import Pirouette.Transformations.ElimEvenOddMutRec as X
 import Pirouette.Transformations.EtaExpand as X
