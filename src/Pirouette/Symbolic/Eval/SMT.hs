@@ -21,6 +21,7 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Bifunctor (bimap)
+import qualified Data.Kind as K
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -55,7 +56,7 @@ data UniversalAxiom lang = UniversalAxiom
 --
 --   1. Check whether a path is plausible
 --   2. Check whether a certain property currently holds over a given path
-data SolverProblem lang :: * -> * where
+data SolverProblem lang :: K.Type -> K.Type where
   CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
   CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
