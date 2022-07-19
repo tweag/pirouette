@@ -14,6 +14,7 @@ import Control.Concurrent.MVar
 import Control.Concurrent.QSem
 import Control.Monad
 import Data.Default
+import Data.Kind
 import GHC.Conc (numCapabilities)
 import PureSMT.Process as X
 import PureSMT.SExpr as X
@@ -29,10 +30,10 @@ import System.IO.Unsafe (unsafePerformIO)
 class Solve domain where
   -- | Specifies what is the common domain that is supposed to be shared amongst all calls to
   --  the SMT solver
-  type Ctx domain :: *
+  type Ctx domain :: Type
 
   -- | Specifies a GADT for the problems that we can solve for this domain.
-  type Problem domain :: * -> *
+  type Problem domain :: Type -> Type
 
   -- | How to initialize a solver with the given context;
   initSolver :: Ctx domain -> Solver -> IO ()
@@ -103,7 +104,7 @@ launchAll opts ctx = replicateM nWorkers $ do
     ensurePos :: Int -> Int
     ensurePos n = if n >= 1 then n else error "PureSMT: need a positive, non-zero, amount of workers"
 
--- * Async Stacks
+-- Type Async Stacks
 
 -- | An 'MStack a' is an 'MVar' having a list of 'a's,
 --  which can be popped off the list and pushed back onto it.

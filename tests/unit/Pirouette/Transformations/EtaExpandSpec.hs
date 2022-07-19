@@ -20,7 +20,7 @@ withUnorderedDecls ::
   PrtUnorderedDefs Ex ->
   (forall m. PirouetteReadDefs Ex m => m Assertion) ->
   Assertion
-withUnorderedDecls = flip runReader
+withUnorderedDecls defs f = runReader f defs
 
 samplePrtUnorderedDefs :: PrtUnorderedDefs Ex
 samplePrtUnorderedDefs =
