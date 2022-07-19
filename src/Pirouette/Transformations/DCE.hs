@@ -24,7 +24,7 @@ data CtorRemoveInfo = CtorRemoveInfo
   } deriving (Show, Eq, Ord)
 
 newtype RemoveDeadCtorsOpts = RemoveDeadCtorsOpts
-  { rdcoToKeep :: M.Map T.Text [T.Text]
+  { rdcoCanRemove :: M.Map T.Text [T.Text]
   } deriving (Show)
 
 removeDeadCtors :: forall lang. (Language lang)
@@ -33,13 +33,13 @@ removeDeadCtors :: forall lang. (Language lang)
                 -> PrtUnorderedDefs lang
 removeDeadCtors RemoveDeadCtorsOpts{..} defs = L.foldl' (flip removeCtor) defs ctorsToRemove
   where
-    ctorsToRemove = filter (not . shallKeep) $ findDeadCtors defs
+    ctorsToRemove = filter canRemove $ findDeadCtors defs
 
-    shallKeep CtorRemoveInfo{..}
-      | Just tyWhiteList <- nameString criCtorTypeName `M.lookup` rdcoToKeep = nameString criCtorName `elem` tyWhiteList
-    -- If we don't have any whitelist record for the type, we keep its constructors unconditionally:
+    canRemove CtorRemoveInfo{..}
+      | Just tyRemoveList <- nameString criCtorTypeName `M.lookup` rdcoCanRemove = nameString criCtorName `elem` tyRemoveList
+    -- If we don't have any record for the type, we keep its constructors unconditionally:
     -- removal of a type's constructors should be a very conscious and explicit decision by the user.
-    shallKeep _ = True
+    canRemove _ = False
 
 -- | Finds the constructors that aren't used in the program.
 --
