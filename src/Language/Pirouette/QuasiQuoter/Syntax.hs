@@ -6,6 +6,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Simple parser for a simple language aimed at helping us
 -- writing terms for testing pirouette a with a little less work.
@@ -114,6 +115,7 @@ data Expr lang
   | ExprLit (Constants lang)
   | ExprBase (BuiltinTerms lang)
   | ExprIf (Ty lang) (Expr lang) (Expr lang) (Expr lang)
+  | ExprCase (Ty lang) (Ty lang) (Expr lang) [(Expr lang, Expr lang)]
   | ExprBottom (Ty lang)
 
 deriving instance
@@ -306,6 +308,33 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
       ty <- symbol "@" >> parseTypeAtom
       return (ExprBottom ty)
 
+    parseCase :: Parser (Expr lang)
+    parseCase = do
+      try (symbol "case")
+      ty <- symbol "@" >> parseTypeAtom
+      tyRes <- symbol "@" >> parseTypeAtom
+      term <- parseTerm
+      symbol "of"
+      traceM $ "hello" <> (show term)
+      pattern <- parsePattern
+      symbol "-"
+      -- cases <- some ((,) <$> parsePattern <*> (symbol "->" >> parseTerm))
+      let cases = [(pattern, ExprVar "undefined")]
+      return (ExprCase ty tyRes term cases)
+
+      where
+        isPattern :: Expr lang -> Bool
+        isPattern (ExprApp e1 e2) = isPattern e1 && isPattern e2
+        isPattern (ExprVar _) = True
+        isPattern _ = False
+
+        parsePattern :: Parser (Expr lang)
+        parsePattern = label "pattern" $ do
+          term <- parseTerm
+          if isPattern term
+             then return term
+             else fail "expression is not a pattern"
+
     pAtom :: Parser (Expr lang)
     pAtom =
       asum
@@ -313,6 +342,7 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           pLam,
           parens parseTerm,
           parseIf,
+          parseCase,
           parseBottom,
           ExprBase <$> try (parseBuiltinTerm @lang),
           ExprTy <$> (try (symbol "@") >> parseTypeAtom),
@@ -354,7 +384,7 @@ ident = label "identifier" $ do
   where
     reserved :: S.Set String
     reserved =
-      S.fromList ["abs", "all", "data", "forall", "destructor", "if", "then", "else", "fun", "bottom"]
+      S.fromList ["abs", "all", "case", "data", "forall", "destructor", "of", "if", "then", "else", "fun", "bottom"]
         `S.union` reservedNames @lang
 
 typeName :: forall lang. (LanguageParser lang) => Parser String

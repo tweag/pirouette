@@ -121,7 +121,16 @@ tests =
           foo @b l @a e = undefined
         |]
           ]
-      ]
+      ],
+    testGroup "Case constructs" $
+      [ testCase "Simple case with lists" $
+          canParseDefinition
+                [newFunDecl|
+          head : forall a . List a -> Maybe a ;
+          head @a l =
+            case @(List a) @(Maybe a) l of
+              Cons x xs -       |]
+        ]
   ]
 
 assertRightBody :: Term Ex -> Definition Ex -> Assertion

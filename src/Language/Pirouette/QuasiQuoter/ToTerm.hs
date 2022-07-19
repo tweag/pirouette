@@ -88,6 +88,7 @@ trTerm tyEnv termEnv (ExprIf ty c t e) = do
   t' <- trTerm tyEnv termEnv t
   e' <- trTerm tyEnv termEnv e
   return $ ifThenElse ty' c' t' e'
+trTerm tyEnv termEnv (ExprCase ty tyRes t cases) = error "not implemented" -- TODO
 trTerm _ termEnv (ExprVar s) =
   case s `elemIndex` termEnv of
     Just i -> return $ SystF.termPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)
