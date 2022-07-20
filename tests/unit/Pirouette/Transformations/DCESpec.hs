@@ -123,7 +123,7 @@ fun foo2 : Ty2 -> Integer
 removeDeadCtorsTest :: [TestTree]
 removeDeadCtorsTest =
   [ testCase "respects the whitelist when removing" $
-      removeDeadCtors (RemoveDeadCtorsOpts $ Map.fromList [("Ty1", ["Ty1C2"])]) s1 `prettyEqual` r1
+      removeDeadCtors (RemoveDeadCtorsOpts $ Map.fromList [("Ty1", ["Ty1C1", "Ty1C3", "Ty1C4"])]) s1 `prettyEqual` r1
   , testCase "removes dead ctors, and in the right order" $
       removeDeadCtors (RemoveDeadCtorsOpts $ Map.fromList [("Ty1", ["Ty1C1", "Ty1C3", "Ty1C4"])]) s2 `prettyEqual` r2
   ]
@@ -204,8 +204,9 @@ fun mk23 : Ty2
     r2 = [prog|
 data Ty1
     = Ty1C1 : Ty1
+    | Ty1C2 : Integer -> Ty1
     | Ty1C3 : Integer -> Integer -> Ty1
-    | Ty1C4 : Integer -> Integer -> Integer -> Ty1
+    | Ty1C5 : Integer -> Integer -> Integer -> Integer -> Ty1
 
 data Ty2
     = Ty2C1 : Ty2
@@ -216,8 +217,9 @@ fun matcher1 : Ty1 -> Integer
     = \(t : Ty1) .
       match_Ty1 t @Integer
         1
+        (\(a : Integer) . 2)
         (\(a : Integer) (b : Integer) . 3)
-        (\(a : Integer) (b : Integer) (c : Integer) . 4)
+        (\(a : Integer) (b : Integer) (c : Integer) (d : Integer) . 5)
 
 fun matcher2 : Ty2 -> Integer
     = \(t : Ty2) .
