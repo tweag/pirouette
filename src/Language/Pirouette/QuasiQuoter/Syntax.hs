@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -37,6 +38,7 @@ import Data.Foldable
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
+import Debug.Trace
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -68,7 +70,7 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
   parseConstant :: Parser (Constants lang)
 
   -- | Set of term names that are reserved; often include any builtin constructor names
-  reservedNames :: S.Set String
+  reservedTermNames :: S.Set String
 
   -- | Set of type names that are reserved; often include the builtin types
   reservedTypeNames :: S.Set String
@@ -113,7 +115,17 @@ data Expr lang
   | ExprLit (Constants lang)
   | ExprBase (BuiltinTerms lang)
   | ExprIf (Ty lang) (Expr lang) (Expr lang) (Expr lang)
+  | ExprCase (Ty lang) (Ty lang) (Expr lang) [(Pattern lang, Expr lang)]
   | ExprBottom (Ty lang)
+
+data Pattern lang
+  = PatternConstr String [Pattern lang]
+  | PatternVar String
+  | PatternAll
+
+deriving instance
+  (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
+  Show (Pattern lang)
 
 deriving instance
   (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
@@ -131,6 +143,7 @@ parseDecl :: (LanguageParser lang) => Parser (String, Either (DataDecl lang) (Fu
 parseDecl =
   (second Left <$> parseDataDecl)
     <|> (second Right <$> parseFunDecl)
+    <|> (second Right <$> parseNewFunDecl)
 
 -- | Parses a simple datatype declaration:
 --
@@ -162,6 +175,58 @@ parseFunDecl = label "Function declaration" $ do
   x <- parseTerm
   return (i, FunDecl r t x)
 
+data Param = Ident String | TyIdent String deriving (Eq, Show)
+
+-- | Parses functon declarations following the new syntax:
+--
+--  > fun suc : Integer -> Integer = \x : Integer -> x + 1
+parseNewFunDecl :: forall lang. (LanguageParser lang) => Parser (String, FunDecl lang)
+parseNewFunDecl = label "Function declaration (new syntax)" $ do
+  r <- NonRec <$ symbol "nonrec" <|> pure Rec
+  funIdent <- ident @lang
+  parseTyOf
+  funType <- parseType
+  symbol ";" -- HACK because whitespaces including new lines are removed
+  _ <- symbol funIdent
+  -- TODO Fail when there are duplicate names in the term or type worlds
+  -- TODO Add a regression test
+  params <- many $ (TyIdent <$> (char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
+  symbol "="
+  body <- parseTerm
+  traceM $ "---- Function (" <> show r <> ") ----"
+  traceM $ "Type: " <> show funType
+  traceM $ "Parameters: " <> show params
+  traceM $ "Body: " <> show body
+  traceM $ "Processed term: " <> show (funTerm funType params body)
+  return (funIdent, FunDecl r funType (funTerm funType params body))
+
+-- | Term corresponding to the desugared body declaration using given parameter
+-- types and names.
+funTerm :: forall lang. Ty lang -> [Param] -> Expr lang -> Expr lang
+funTerm (TyAll i k t2) (TyIdent tp : ps) body = ExprAbs tp k (funTerm (substTyVarType i tp t2) ps body)
+funTerm (TyFun t1 t2) (Ident p : ps) body = ExprLam p t1 (funTerm t2 ps body)
+funTerm _ [] body = body
+funTerm _ _ _ = error "Unexpected parameters in function declaration"
+
+substTyVarType :: String -> String -> Ty lang -> Ty lang
+-- For "TyLam" and "TyAll" there is a risk of name clash during name
+-- substitution.
+-- When it happens, conflicting names are rewritten recursively before
+-- performing the actual substitution.
+-- TODO Add test cases involving "TyLam"
+substTyVarType i i' (TyLam s ki ty)
+  | s == i' = TyLam (s <> "_") ki (substTyVarType i i' . substTyVarType s (s <> "_") $ ty)
+  | otherwise = TyLam s ki (substTyVarType i i' ty)
+substTyVarType i i' (TyAll s ki ty)
+  | s == i' = TyAll (s <> "_") ki (substTyVarType i i' . substTyVarType s (s <> "_") $ ty)
+  | otherwise = TyAll s ki (substTyVarType i i' ty)
+substTyVarType i i' (TyFun ty ty') = TyFun (substTyVarType i i' ty) (substTyVarType i i' ty')
+substTyVarType i i' (TyApp ty ty') = TyApp (substTyVarType i i' ty) (substTyVarType i i' ty')
+substTyVarType i i' (TyVar s)
+  | s == i = TyVar i'
+  | otherwise = TyVar s
+substTyVarType _ _ ty = ty -- TyFree, TyBase
+
 parseKind :: Parser SystF.Kind
 parseKind =
   label "Kind" $
@@ -186,6 +251,12 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
       try (symbol "all")
       parseBinder TyAll (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseType)
 
+    -- New syntax for foralls using the "forall" keyword and implied * kind if omitted
+    pNewAll :: Parser (Ty lang)
+    pNewAll = label "pNewAll" $ do
+      try (symbol "forall")
+      parseBinder TyAll (parseBinderNames (ident @lang) ((parseTyOf >> parseKind) <|> return SystF.KStar)) (symbol "." >> parseType)
+
     pLam :: Parser (Ty lang)
     pLam = label "pLam" $ do
       try (symbol "\\")
@@ -196,6 +267,7 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
         asum
           [ pLam,
             pAll,
+            pNewAll,
             parseTypeAtom
           ]
 
@@ -245,6 +317,16 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
       ty <- symbol "@" >> parseTypeAtom
       return (ExprBottom ty)
 
+    parseCase :: Parser (Expr lang)
+    parseCase = do
+      try (symbol "case")
+      ty <- symbol "@" >> parseTypeAtom
+      tyRes <- symbol "@" >> parseTypeAtom
+      term <- parseTerm
+      symbol "of"
+      cases <- sepBy1 ((,) <$> parsePattern <*> (symbol "->" >> parseTerm)) (symbol ";")
+      return (ExprCase ty tyRes term cases)
+
     pAtom :: Parser (Expr lang)
     pAtom =
       asum
@@ -252,12 +334,23 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           pLam,
           parens parseTerm,
           parseIf,
+          parseCase,
           parseBottom,
           ExprBase <$> try (parseBuiltinTerm @lang),
           ExprTy <$> (try (symbol "@") >> parseTypeAtom),
           ExprLit <$> try (parseConstant @lang),
           ExprVar <$> try (ident @lang <|> typeName @lang)
         ]
+
+parsePattern :: forall lang. LanguageParser lang => Parser (Pattern lang)
+parsePattern =
+  label "pattern" $
+    asum
+      [ parens parsePattern,
+        PatternAll <$ symbol "_",
+        PatternConstr <$> constructorName @lang <*> many parsePattern,
+        PatternVar <$> ident @lang
+      ]
 
 parseTyOf :: Parser ()
 parseTyOf = symbol ":"
@@ -285,26 +378,49 @@ spaceConsumer = L.space space1 (L.skipLineComment "--") empty
 symbol :: String -> Parser ()
 symbol = void . L.symbol spaceConsumer
 
-ident :: forall lang. (LanguageParser lang) => Parser String
-ident = label "identifier" $ do
+keywords :: S.Set String
+keywords =
+  S.fromList
+    [ "abs",
+      "all",
+      "case",
+      "data",
+      "forall",
+      "destructor",
+      "of",
+      "if",
+      "then",
+      "else",
+      "fun",
+      "bottom"
+    ]
+
+lowercaseIdent :: forall lang. (LanguageParser lang) => S.Set String -> Parser String
+lowercaseIdent reserved = do
   i <- lexeme ((:) <$> (lowerChar <|> char '_') <*> restOfName)
-  guard (i `S.notMember` reserved)
+  guard (i `S.notMember` S.union keywords reserved)
   return i
-  where
-    reserved :: S.Set String
-    reserved =
-      S.fromList ["abs", "all", "data", "destructor", "if", "then", "else", "fun", "bottom"]
-        `S.union` reservedNames @lang
 
-typeName :: forall lang. (LanguageParser lang) => Parser String
-typeName = label "type-identifier" $ do
-  t <- lexeme ((:) <$> upperChar <*> restOfName)
-  guard (t `S.notMember` reservedTypeNames @lang)
-  return t
-
--- where
---   reservedTypeNames :: S.Set String
---   reservedTypeNames =
+uppercaseIdent :: forall lang. (LanguageParser lang) => S.Set String -> Parser String
+uppercaseIdent reserved = do
+  i <- lexeme ((:) <$> upperChar <*> restOfName)
+  guard (i `S.notMember` S.union keywords reserved)
+  return i
 
 restOfName :: Parser String
 restOfName = many (alphaNumChar <|> oneOf ('_' : monoNameSep))
+
+typeName :: forall lang. (LanguageParser lang) => Parser String
+typeName =
+  label "type-identifier" $
+    uppercaseIdent @lang (reservedTypeNames @lang)
+
+constructorName :: forall lang. (LanguageParser lang) => Parser String
+constructorName =
+  label "constructor identifier" $
+    uppercaseIdent @lang (reservedTermNames @lang)
+
+ident :: forall lang. (LanguageParser lang) => Parser String
+ident =
+  label "identifier" $
+    lowercaseIdent @lang (reservedTermNames @lang)

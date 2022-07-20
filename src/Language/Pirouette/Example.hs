@@ -20,6 +20,8 @@ module Language.Pirouette.Example
     progNoTC,
     term,
     ty,
+    funDecl,
+    newFunDecl,
   )
 where
 
@@ -152,7 +154,7 @@ instance LanguageParser Ex where
       stringLiteral :: Parser String
       stringLiteral = L.lexeme spaceConsumer (char '"' >> manyTill L.charLiteral (char '"'))
 
-  reservedNames = S.fromList ["True", "False"]
+  reservedTermNames = S.fromList ["True", "False"]
   reservedTypeNames = S.fromList ["Integer", "Bool", "Type"]
 
   ifThenElse resTy c t e = SystF.App (SystF.Free $ Builtin TermIte) $ SystF.TyArg resTy : map SystF.TermArg [c, t, e]
@@ -280,3 +282,9 @@ term = QQ.term @Ex
 
 ty :: QQ.QuasiQuoter
 ty = QQ.ty @Ex
+
+funDecl :: QQ.QuasiQuoter
+funDecl = QQ.funDecl @Ex
+
+newFunDecl :: QQ.QuasiQuoter
+newFunDecl = QQ.newFunDecl @Ex
