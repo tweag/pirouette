@@ -4,9 +4,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TupleSections #-}
 
 -- | Simple parser for a simple language aimed at helping us
 -- writing terms for testing pirouette a with a little less work.
@@ -38,6 +38,7 @@ import Data.Foldable
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
+import Debug.Trace
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -45,7 +46,6 @@ import Pirouette.Transformations.Monomorphization (monoNameSep)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Debug.Trace
 
 -- ** Class for parsing language builtins
 
@@ -70,7 +70,7 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
   parseConstant :: Parser (Constants lang)
 
   -- | Set of term names that are reserved; often include any builtin constructor names
-  reservedNames :: S.Set String
+  reservedTermNames :: S.Set String
 
   -- | Set of type names that are reserved; often include the builtin types
   reservedTypeNames :: S.Set String
@@ -115,8 +115,17 @@ data Expr lang
   | ExprLit (Constants lang)
   | ExprBase (BuiltinTerms lang)
   | ExprIf (Ty lang) (Expr lang) (Expr lang) (Expr lang)
-  | ExprCase (Ty lang) (Ty lang) (Expr lang) [(Expr lang, Expr lang)]
+  | ExprCase (Ty lang) (Ty lang) (Expr lang) [(Pattern lang, Expr lang)]
   | ExprBottom (Ty lang)
+
+data Pattern lang
+  = PatternConstr String [Pattern lang]
+  | PatternVar String
+  | PatternAll
+
+deriving instance
+  (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
+  Show (Pattern lang)
 
 deriving instance
   (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
@@ -315,25 +324,8 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
       tyRes <- symbol "@" >> parseTypeAtom
       term <- parseTerm
       symbol "of"
-      traceM $ "hello" <> (show term)
-      pattern <- parsePattern
-      symbol "-"
-      -- cases <- some ((,) <$> parsePattern <*> (symbol "->" >> parseTerm))
-      let cases = [(pattern, ExprVar "undefined")]
+      cases <- sepBy1 ((,) <$> parsePattern <*> (symbol "->" >> parseTerm)) (symbol ";")
       return (ExprCase ty tyRes term cases)
-
-      where
-        isPattern :: Expr lang -> Bool
-        isPattern (ExprApp e1 e2) = isPattern e1 && isPattern e2
-        isPattern (ExprVar _) = True
-        isPattern _ = False
-
-        parsePattern :: Parser (Expr lang)
-        parsePattern = label "pattern" $ do
-          term <- parseTerm
-          if isPattern term
-             then return term
-             else fail "expression is not a pattern"
 
     pAtom :: Parser (Expr lang)
     pAtom =
@@ -349,6 +341,16 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           ExprLit <$> try (parseConstant @lang),
           ExprVar <$> try (ident @lang <|> typeName @lang)
         ]
+
+parsePattern :: forall lang. LanguageParser lang => Parser (Pattern lang)
+parsePattern =
+  label "pattern" $
+    asum
+      [ parens parsePattern,
+        PatternAll <$ symbol "_",
+        PatternConstr <$> constructorName @lang <*> many parsePattern,
+        PatternVar <$> ident @lang
+      ]
 
 parseTyOf :: Parser ()
 parseTyOf = symbol ":"
@@ -376,26 +378,49 @@ spaceConsumer = L.space space1 (L.skipLineComment "--") empty
 symbol :: String -> Parser ()
 symbol = void . L.symbol spaceConsumer
 
-ident :: forall lang. (LanguageParser lang) => Parser String
-ident = label "identifier" $ do
+keywords :: S.Set String
+keywords =
+  S.fromList
+    [ "abs",
+      "all",
+      "case",
+      "data",
+      "forall",
+      "destructor",
+      "of",
+      "if",
+      "then",
+      "else",
+      "fun",
+      "bottom"
+    ]
+
+lowercaseIdent :: forall lang. (LanguageParser lang) => S.Set String -> Parser String
+lowercaseIdent reserved = do
   i <- lexeme ((:) <$> (lowerChar <|> char '_') <*> restOfName)
-  guard (i `S.notMember` reserved)
+  guard (i `S.notMember` S.union keywords reserved)
   return i
-  where
-    reserved :: S.Set String
-    reserved =
-      S.fromList ["abs", "all", "case", "data", "forall", "destructor", "of", "if", "then", "else", "fun", "bottom"]
-        `S.union` reservedNames @lang
 
-typeName :: forall lang. (LanguageParser lang) => Parser String
-typeName = label "type-identifier" $ do
-  t <- lexeme ((:) <$> upperChar <*> restOfName)
-  guard (t `S.notMember` reservedTypeNames @lang)
-  return t
-
--- where
---   reservedTypeNames :: S.Set String
---   reservedTypeNames =
+uppercaseIdent :: forall lang. (LanguageParser lang) => S.Set String -> Parser String
+uppercaseIdent reserved = do
+  i <- lexeme ((:) <$> upperChar <*> restOfName)
+  guard (i `S.notMember` S.union keywords reserved)
+  return i
 
 restOfName :: Parser String
 restOfName = many (alphaNumChar <|> oneOf ('_' : monoNameSep))
+
+typeName :: forall lang. (LanguageParser lang) => Parser String
+typeName =
+  label "type-identifier" $
+    uppercaseIdent @lang (reservedTypeNames @lang)
+
+constructorName :: forall lang. (LanguageParser lang) => Parser String
+constructorName =
+  label "constructor identifier" $
+    uppercaseIdent @lang (reservedTermNames @lang)
+
+ident :: forall lang. (LanguageParser lang) => Parser String
+ident =
+  label "identifier" $
+    lowercaseIdent @lang (reservedTermNames @lang)

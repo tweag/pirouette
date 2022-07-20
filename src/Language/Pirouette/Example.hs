@@ -154,7 +154,7 @@ instance LanguageParser Ex where
       stringLiteral :: Parser String
       stringLiteral = L.lexeme spaceConsumer (char '"' >> manyTill L.charLiteral (char '"'))
 
-  reservedNames = S.fromList ["True", "False"]
+  reservedTermNames = S.fromList ["True", "False"]
   reservedTypeNames = S.fromList ["Integer", "Bool", "Type"]
 
   ifThenElse resTy c t e = SystF.App (SystF.Free $ Builtin TermIte) $ SystF.TyArg resTy : map SystF.TermArg [c, t, e]

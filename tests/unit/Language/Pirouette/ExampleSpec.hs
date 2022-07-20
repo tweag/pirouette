@@ -123,14 +123,42 @@ tests =
           ]
       ],
     testGroup "Case constructs" $
-      [ testCase "Simple case with lists" $
+      [
+        testCase "With one pattern (pair)" $
+          canParseDefinition
+                [newFunDecl|
+          fst : forall a . forall b . Pair a b -> a ;
+          fst @a @b p =
+            case @(Pair a b) @a p of
+              Pair x y -> x
+              |],
+        testCase "With two patterns (lists)" $
           canParseDefinition
                 [newFunDecl|
           head : forall a . List a -> Maybe a ;
           head @a l =
             case @(List a) @(Maybe a) l of
-              Cons x xs -       |]
-        ]
+              Cons x xs -> undefined ;
+              Nil -> undefined|]
+        ,
+        testCase "With two patterns (lists) and a catch all" $
+          canParseDefinition
+                [newFunDecl|
+          head : forall a . List a -> Maybe a ;
+          head @a l =
+            case @(List a) @(Maybe a) l of
+              Cons x xs -> undefined ;
+              _ -> undefined|]
+        ,
+        testCase "Nested patterns (list of pairs) with catch-alls" $
+          canParseDefinition
+                [newFunDecl|
+          fsthead : forall a . forall b . List (Pair a b) -> Maybe a ;
+          fsthead @a @b l =
+            case @(List (Pair a b)) @(Maybe a) l of
+              Cons (Pair x y) _ -> Just @a x ;
+              _ -> Nothing @a |]
+      ]
   ]
 
 assertRightBody :: Term Ex -> Definition Ex -> Assertion
