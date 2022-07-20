@@ -81,8 +81,8 @@ maybeQ :: (Pretty e) => Either e a -> Q a
 maybeQ (Left e) = fail $ show $ pretty e
 maybeQ (Right x) = return x
 
-instance (Lift k, Lift v) => Lift (M.Map k v) where
-  liftTyped m = unsafeTExpCoerce [e|M.fromList $(lift (M.toList m))|]
+instance (Ord k, Lift k, Lift v) => Lift (M.Map k v) where
+  liftTyped m = [||M.fromList $$(liftTyped (M.toList m))||]
 
 quoter :: (String -> Q Exp) -> QuasiQuoter
 quoter quote =

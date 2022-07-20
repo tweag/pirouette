@@ -1,8 +1,5 @@
 { 
   sources ? import ./sources.nix {},
-
-  # Bring in our pinned nixpkgs, but also brings in iohk's modiied nixpkgs
-  # which contains the precious ghc810420210212 needed for compiling plutus.
   rawpkgs ? import sources.nixpkgs {},
 }:
 { 
@@ -25,7 +22,7 @@
         ormolu
         haskellPackages.cabal-install
         haskellPackages.happy
-        haskell.compiler.ghc8107
+        haskell.compiler.ghc902
         cvc4 # required to run pirouette once its built
      ] ++ lib.optional (stdenv.isLinux) systemd.dev;
 
