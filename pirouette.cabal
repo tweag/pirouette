@@ -31,6 +31,7 @@ library
       Pirouette.SMT.FromTerm
       Pirouette.SMT.Monadic
       Pirouette.Symbolic.Eval
+      Pirouette.Symbolic.Eval.Anamorphism
       Pirouette.Symbolic.Eval.BranchingHelpers
       Pirouette.Symbolic.Eval.SMT
       Pirouette.Symbolic.Eval.Types
