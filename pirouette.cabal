@@ -58,6 +58,7 @@ library
       PureSMT
       PureSMT.Process
       PureSMT.SExpr
+      Supply
   other-modules:
       Paths_pirouette
   autogen-modules:
