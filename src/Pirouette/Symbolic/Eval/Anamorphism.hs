@@ -202,14 +202,19 @@ liftedTermAppN defs s body args = do
   aux <- termJoin <$> termMetaDistr res
   ana defs s aux
 
---    go :: (Show m) => [Tree (Term m)] -> Tree (Term m)
---    go targs = do
---      let body = cast $ gamma M.! r
---      res <- fmap termJoin $ termMetaDistr $ body `appN` (map meta targs)
---      ana gamma res
-
 termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
-termMetaDistr = undefined
+termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
+termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
+termMetaDistr (SystF.App hd args) = SystF.App <$> doVar hd <*> traverse doArgs args
+  where
+    doArgs :: (Applicative f) => SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) -> f (ArgMeta lang a)
+    doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
+    doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
+
+    doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
+    doVar (SystF.Meta fa) = SystF.Meta <$> fa
+    doVar (SystF.Free b) = pure $ SystF.Free b
+    doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
 
 {-
 This is how we open up the term in all of its possiblities, whenever we're met with
