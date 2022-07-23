@@ -23,6 +23,7 @@ module Pirouette.Term.Syntax.Base where
 import Control.Arrow ((&&&))
 import Control.Monad.Identity
 import Data.Data
+import qualified Data.Kind as K
 import qualified Data.Map as M
 import Data.Monoid (Sum (..))
 import qualified Data.Set as Set
@@ -33,6 +34,7 @@ import Optics.TH
 import Pirouette.Term.Syntax.Pretty.Class
 import Pirouette.Term.Syntax.Subst (shift)
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Unsafe.Coerce (unsafeCoerce)
 
 -- * Names
 
@@ -115,6 +117,14 @@ typeToMeta = runIdentity . typeMetaMapM absurd
 
 typeFromMeta :: TypeMeta lang meta -> Type lang
 typeFromMeta = runIdentity . typeMetaMapM (const $ error "Type with metavariables")
+
+-- | Will crash at runtime if the given argument contains metavariables
+typeCastMeta :: TypeMeta lang meta -> TypeMeta lang meta'
+typeCastMeta = typeToMeta . typeFromMeta
+
+-- | Unsafe coerces the type, will crash unpredictably if the type contains metavariables.
+typeUnsafeCastMeta :: TypeMeta lang meta -> TypeMeta lang meta'
+typeUnsafeCastMeta = unsafeCoerce
 
 -- | Returns all the (free) names used by a type
 typeNames :: TypeMeta lang meta -> Set.Set (SystF.Arg Name Name)
@@ -245,8 +255,26 @@ termMetaMapM ::
   m (TermMeta lang meta')
 termMetaMapM f = SystF.termTrimapM (typeMetaMapM f) return (SystF.varMapMetaM f)
 
+termMetaMap :: (meta -> meta') -> TermMeta lang meta -> TermMeta lang meta'
+termMetaMap f = runIdentity . termMetaMapM (Identity . f)
+
+-- | Monadic-multiplication on terms. Make sure that no type within the term
+-- has any metavariables as those types are 'unsafeCoerce'ed into the correct type.
+termJoin ::
+  (Show meta, LanguageBuiltins lang) =>
+  TermMeta lang (TermMeta lang meta) ->
+  TermMeta lang meta
+termJoin (SystF.App hd args) =
+  let args' = map (SystF.argMap typeUnsafeCastMeta termJoin) args
+   in case hd of
+        SystF.Meta m -> m `SystF.appN` args'
+        SystF.Free f -> SystF.Free f `SystF.App` args'
+        SystF.Bound ann i -> SystF.Bound ann i `SystF.App` args'
+termJoin (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) (termJoin t)
+termJoin (SystF.Abs ann k t) = SystF.Abs ann k (termJoin t)
+
 termToMeta :: Term lang -> TermMeta lang meta
-termToMeta = runIdentity . termMetaMapM absurd
+termToMeta = termMetaMap absurd
 
 -- | Returns all the (free) names used by a term
 termNames :: TermMeta lang meta -> Set.Set (SystF.Arg Name Name)
@@ -371,9 +399,9 @@ type LanguageConstrs lang =
 -- no idea what that is, defining an empty instance will use the default
 -- implementatino of @builtinPrelude = M.empty@, which is a fine definition.
 class (LanguageConstrs lang) => LanguageBuiltins lang where
-  type BuiltinTypes lang :: *
-  type BuiltinTerms lang :: *
-  type Constants lang :: *
+  type BuiltinTypes lang :: K.Type
+  type BuiltinTerms lang :: K.Type
+  type Constants lang :: K.Type
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =
