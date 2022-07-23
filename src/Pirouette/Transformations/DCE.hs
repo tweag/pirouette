@@ -9,6 +9,7 @@ import Control.Arrow (second)
 import Data.Generics.Uniplate.Data
 import qualified Data.List as L
 import qualified Data.Map as M
+import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
 import Pirouette.Monad
@@ -26,6 +27,8 @@ data CtorRemoveInfo = CtorRemoveInfo
 newtype RemoveDeadCtorsOpts = RemoveDeadCtorsOpts
   { rdcoCanRemove :: M.Map T.Text [T.Text]
   } deriving (Show)
+
+-- * Dead constructors elimination
 
 removeDeadCtors :: forall lang. (Language lang)
                 => RemoveDeadCtorsOpts
@@ -93,6 +96,93 @@ removeCtor CtorRemoveInfo{..} = updateMatchers . shiftSubsequentCtorsDefs . upda
       where
         (prefix, cases) = splitArgsTermsTail args
     removeCase t = t
+
+-- * Dead fields elimination
+
+removeDeadFields :: forall lang. (Language lang)
+                 => PrtUnorderedDefs lang
+                 -> PrtUnorderedDefs lang
+removeDeadFields defs = L.foldl' removeDfInType defs types
+  where
+    types = [ td | DTypeDef td <- M.elems $ prtUODecls defs ]
+
+removeDfInType :: forall lang. (Language lang)
+               => PrtUnorderedDefs lang
+               -> TypeDef lang
+               -> PrtUnorderedDefs lang
+removeDfInType defs ty@Datatype{..} = L.foldl' (removeDfInTypeCtor ty) defs [0 .. fromIntegral $ length constructors - 1]
+
+removeDfInTypeCtor :: forall lang. (Language lang)
+                   => TypeDef lang
+                   -> PrtUnorderedDefs lang
+                   -> Integer
+                   -> PrtUnorderedDefs lang
+removeDfInTypeCtor ty@Datatype{..} defs ctorIdx = defs
+  where
+    unused = reverse $ unusedFields defs ty ctorIdx
+
+-- | Tries to remove a single argument with the given index from a function's body.
+-- If the argument isn't used, it just decrements the indices of further arguments.
+-- If it's used, it fails, returning @Nothing@.
+tryDropArg :: Integer
+           -> Term lang
+           -> Maybe (Term lang)
+tryDropArg (-1) (SystF.Lam _ _ body) = tryDropArg 0 body
+tryDropArg (-1) (SystF.Abs _ _ body) = tryDropArg 0 body
+tryDropArg argIdx (SystF.App var args) = SystF.App <$> var' <*> args'
+  where
+    var'
+      | SystF.Bound ann idx <- var =
+        case idx `compare` argIdx of
+             -- the current var's idx is less than the argument we're removing, keep it as is
+             LT -> Just var
+             -- the argument is actually used, can't remove it
+             EQ -> Nothing
+             -- the current var's idx is greater than the argument we're removing,
+             -- decrement it to account for the argument removal
+             GT -> Just $ SystF.Bound ann (idx - 1)
+      | otherwise = Just var
+    args' = mapM (SystF.argElim (Just . SystF.TyArg) (fmap SystF.TermArg . tryDropArg argIdx)) args
+tryDropArg argIdx (SystF.Lam ann t body) = SystF.Lam ann t <$> tryDropArg (argIdx + 1) body
+tryDropArg argIdx (SystF.Abs ann k body) = SystF.Abs ann k <$> tryDropArg (argIdx + 1) body
+
+isArgUsed :: Integer
+          -> Term lang
+          -> Bool
+isArgUsed argIdx term = isNothing $ tryDropArg argIdx term
+
+isFieldUsed :: forall lang. (Language lang)
+            => PrtUnorderedDefs lang
+            -> Name     -- ^ destructor
+            -> Integer  -- ^ constructor idx
+            -> Integer  -- ^ field idx
+            -> Bool
+isFieldUsed defs matcher ctorIdx fieldIdx = any (isArgUsed fieldIdx) ctorBranches
+  where
+    ctorBranches = [ ctorBranch
+                   | SystF.App (SystF.Free (TermSig name)) args <- universeBi defs :: [Term lang]
+                   , name == matcher
+                   , let SystF.TermArg ctorBranch = snd (splitArgsTermsTail args) !! fromIntegral ctorIdx
+                   ]
+
+-- | Returns the indices of the fields in the given ctor of a given type
+-- that are unused in the whole program.
+--
+-- The returned list is sorted in asc order.
+unusedFields :: forall lang. (Language lang)
+             => PrtUnorderedDefs lang
+             -> TypeDef lang
+             -> Integer    -- ^ the constructor index
+             -> [Integer]
+unusedFields defs Datatype{..} ctorIdx =
+  [ fieldIdx
+  | fieldIdx <- [0 .. fieldsCnt - 1]
+  , not $ isFieldUsed defs destructor ctorIdx (fieldIdx - fieldsCnt)
+  ]
+  where
+    fieldsCnt = L.genericLength $ fst $ flattenType $ snd $ constructors !! fromIntegral ctorIdx
+
+-- * Misc utils
 
 removeAt :: Int -> [a] -> [a]
 removeAt pos = uncurry (<>) . second (drop 1) . splitAt pos
