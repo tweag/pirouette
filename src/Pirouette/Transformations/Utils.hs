@@ -8,16 +8,13 @@
 
 module Pirouette.Transformations.Utils where
 
-import Control.Arrow (first, second)
-import Data.Data
-import qualified Data.Map as M
-import qualified Data.Text as T
+import Control.Arrow (first, (***))
+import Data.Tuple
 import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF hiding (Arg)
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Prettyprinter hiding (Pretty, pretty)
 
 traceDefsId :: (LanguagePretty lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
@@ -81,6 +78,15 @@ flattenType ty@TyApp {} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
 flattenType (TyAll _ k ty) = first (FlatTyArg k :) $ flattenType ty
 flattenType TyLam {} = error "unnormalized type"
+
+-- | Splits a list of arguments into two lists:
+-- the first one containing all arguments up to and including the last type argument,
+-- and the second one containing the rest of the (term) arguments.
+--
+-- For example, on 'foo @ty1 term1 @ty2 term2 term3' it returns
+-- '([@ty1, term1, @ty2], [term2, term3])'.
+splitArgsTermsTail :: [SystF.Arg ty v] -> ([SystF.Arg ty v], [SystF.Arg ty v])
+splitArgsTermsTail = swap . (reverse *** reverse) . span SystF.isArg . reverse
 
 {-
 -- This really belongs to a Pretty module, but we need them here for nicer debugging anyway for now.

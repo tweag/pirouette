@@ -4,6 +4,7 @@ import qualified Pirouette.Symbolic.ProveSpec as SymbolicProve
 import qualified Pirouette.Term.Syntax.BaseSpec as Base
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Transformations.DefunctionalizationSpec as Defunc
+import qualified Pirouette.Transformations.DCESpec as DCE
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
 import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
 import qualified Pirouette.Transformations.PrenexSpec as Prenex
@@ -21,6 +22,7 @@ tests =
       testGroup
         "Transformations"
         [ testGroup "Defunctionalization" Defunc.tests,
+          testGroup "DCE" DCE.tests,
           testGroup "EtaExpand" Eta.tests,
           testGroup "Monomorphization" Mono.tests,
           testGroup "Prenex" Prenex.tests,
