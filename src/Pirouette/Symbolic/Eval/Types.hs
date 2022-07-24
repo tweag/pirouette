@@ -116,7 +116,7 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   isTrue :: PureSMT.SExpr -> PureSMT.SExpr
 
 newtype SymVar = SymVar {symVar :: Name}
-  deriving (Eq, Show, Data, Typeable, IsString)
+  deriving (Eq, Ord, Show, Data, Typeable, IsString)
 
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
