@@ -77,8 +77,7 @@ import qualified Supply
 
 -- | A 'Tree' which denotes a set of pairs of @(monoid, leaf)@
 data Tree lang monoid b
-  = Empty
-  | Leaf b
+  = Leaf b
   | Learn monoid (Tree lang monoid b)
   | Union [Tree lang monoid b]
   | -- | A function call, in an untyped setting, can be seen as something
@@ -111,7 +110,6 @@ instance Show (Tree lang monoid a) where
 data ConstructorInfo = ConstructorInfo TyName Name Int
 
 instance Functor (Tree lang m) where
-  fmap _ Empty = Empty
   fmap _ (Const c) = Const c
   fmap f (Leaf x) = Leaf $ f x
   fmap f (Union ts) = Union $ map (fmap f) ts
@@ -126,17 +124,14 @@ instance Applicative (Tree lang m) where
   (<*>) = ap
 
 instance Alternative (Tree lang m) where
-  empty = Empty
+  empty = Union []
 
-  Empty <|> u = u
-  t <|> Empty = t
   Union t <|> Union u = Union (t ++ u)
   Union t <|> u = Union (u : t)
   t <|> Union u = Union (t : u)
   t <|> u = Union [t, u]
 
 instance Monad (Tree lang m) where
-  Empty >>= _ = Empty
   Const c >>= _ = Const c
   Leaf x >>= f = f x
   Union ts >>= f = Union $ map (>>= f) ts
@@ -186,7 +181,7 @@ symbolically defs = runST $ do
           rec = ana sRec env
        in case hd of
             SystF.Bound ann _ -> error $ "Can't evaluate bound variable: " ++ show ann
-            SystF.Free Bottom -> Empty
+            SystF.Free Bottom -> pure t
             SystF.Free (Constant c) -> Const c
             SystF.Free (Builtin bin) -> Bin bin args'
             SystF.Free (TermSig n) ->
