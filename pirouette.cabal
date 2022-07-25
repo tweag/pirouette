@@ -33,6 +33,7 @@ library
       Pirouette.Symbolic.Eval
       Pirouette.Symbolic.Eval.Anamorphism
       Pirouette.Symbolic.Eval.BranchingHelpers
+      Pirouette.Symbolic.Eval.Catamorphism
       Pirouette.Symbolic.Eval.SMT
       Pirouette.Symbolic.Eval.Types
       Pirouette.Symbolic.Prover

@@ -14,7 +14,7 @@ import Control.Monad.ST
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import Pirouette.Monad
-import Pirouette.Symbolic.Eval.Types as X
+import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst (shift)
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -74,86 +74,6 @@ import qualified Supply
 --
 -- In reality we never really handle lambdas (TODO: why not? can't we start?) because
 -- we get defunctionalized terms.
-
--- | A 'Tree' which denotes a set of pairs of @(monoid, leaf)@
-data Tree lang monoid b
-  = Leaf b
-  | Learn monoid (Tree lang monoid b)
-  | Union [Tree lang monoid b]
-  | -- | A function call, in an untyped setting, can be seen as something
-    -- that takes a list of terms and returns a term (in fact, that's the type of
-    -- the partially applied 'SystF.App' constructor!).
-    --
-    -- > [Term lang] -> Term lang
-    --
-    -- The trick here consists in lifting those functions to trees:
-    --
-    -- > [Tree (Term lang)] -> Tree (Term lang)
-    --
-    -- Finally, because we want a monadic structure, we'll go polymorphic:
-    forall a. Call ([Tree lang monoid a] -> Tree lang monoid b) [Tree lang monoid a]
-  | -- | Destructors are also a little tricky, because in reality, we need to
-    -- consume the motive until /at least/ the first constructor is found, that
-    -- is the only guaranteed way to make any progress.
-    forall a. Dest (Tree lang monoid a) ((ConstructorInfo, [Tree lang monoid a]) -> Tree lang monoid b)
-  | -- | Naturally, to be able to effectively build a value with potentially infinite children,
-    -- we also need torepresent constructors
-    Cons ConstructorInfo [Tree lang monoid b]
-  | -- | A Builtin is also something that we're stuck on until we decide to
-    -- consume this tree
-    Bin (BuiltinTerms lang) [Tree lang monoid b]
-  | Const (Constants lang)
-
-instance Show (Tree lang monoid a) where
-  show _ = "Tree"
-
-data ConstructorInfo = ConstructorInfo TyName Name Int
-
-instance Functor (Tree lang m) where
-  fmap _ (Const c) = Const c
-  fmap f (Leaf x) = Leaf $ f x
-  fmap f (Union ts) = Union $ map (fmap f) ts
-  fmap f (Learn str t) = Learn str $ fmap f t
-  fmap f (Call ts as) = Call (fmap f . ts) as
-  fmap f (Dest motive worlds) = Dest motive (fmap f . worlds)
-  fmap f (Cons c args) = Cons c (map (fmap f) args)
-  fmap f (Bin c args) = Bin c (map (fmap f) args)
-
-instance Applicative (Tree lang m) where
-  pure = Leaf
-  (<*>) = ap
-
-instance Alternative (Tree lang m) where
-  empty = Union []
-
-  Union t <|> Union u = Union (t ++ u)
-  Union t <|> u = Union (u : t)
-  t <|> Union u = Union (t : u)
-  t <|> u = Union [t, u]
-
-instance Monad (Tree lang m) where
-  Const c >>= _ = Const c
-  Leaf x >>= f = f x
-  Union ts >>= f = Union $ map (>>= f) ts
-  Learn str t >>= f = Learn str (t >>= f)
-  Call body args >>= f = Call (f <=< body) args
-  Dest motive worlds >>= f = Dest motive (f <=< worlds)
-  Cons c args >>= f = Cons c $ map (>>= f) args
-  Bin c args >>= f = Bin c $ map (>>= f) args
-
-treeDistr :: (Traversable t) => t (Tree lang m a) -> Tree lang m (t a)
-treeDistr = sequenceA
-
-data Env lang = Env
-  { envSymVars :: [(SymVar, Type lang)],
-    envConstraint :: [Constraint lang]
-  }
-
-data DeltaEnv lang
-  = DeclSymVars (M.Map SymVar (Type lang))
-  | Assign SymVar (TermMeta lang SymVar)
-
-type SymTree lang a = Tree lang (DeltaEnv lang) a
 
 symbolically ::
   forall lang.
@@ -275,19 +195,26 @@ liftedTermAppN body args = do
     mkMeta :: meta -> TermMeta lang meta
     mkMeta m = SystF.Meta m `SystF.App` []
 
-termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
-termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
-termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
-termMetaDistr (SystF.App hd args) = SystF.App <$> doVar hd <*> traverse doArgs args
-  where
-    doArgs :: (Applicative f) => SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) -> f (ArgMeta lang a)
-    doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
-    doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
+    -- This function is local because it makes manya assumptios about where metavariables
+    -- occur. In this case, we assume they won't ever appear on types, so its safe to just
+    -- unsafeCoerce the types and avoid traversing them. In that sense, it's not /really/
+    -- a universal distributive law, only when the types have no metas.
+    termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
+    termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
+    termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
+    termMetaDistr (SystF.App hd args) = SystF.App <$> doVar hd <*> traverse doArgs args
+      where
+        doArgs ::
+          (Applicative f) =>
+          SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) ->
+          f (ArgMeta lang a)
+        doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
+        doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
 
-    doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
-    doVar (SystF.Meta fa) = SystF.Meta <$> fa
-    doVar (SystF.Free b) = pure $ SystF.Free b
-    doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+        doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
+        doVar (SystF.Meta fa) = SystF.Meta <$> fa
+        doVar (SystF.Free b) = pure $ SystF.Free b
+        doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
 
 -- | Given a supply of names, a list of type arguments and a constructor name/type pair
 -- we construct:
@@ -316,6 +243,9 @@ mkSymbolicCons sup tyParams (consName, consTy) =
           )
    in (sup', M.fromList svars, symbCons)
 
+-- | Given a list of types, split the supply into enough parts to be able to
+-- issue a name for each type and a new supply that should be used for any further
+-- supply-oriented operations.
 freshSymVars :: Supply SymVar -> [Type lang] -> (Supply SymVar, [(SymVar, Type lang)])
 freshSymVars s [] = (s, [])
 freshSymVars s tys =

@@ -2,8 +2,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -11,6 +11,8 @@
 
 module Pirouette.Symbolic.Eval.Types where
 
+import Control.Applicative hiding (Const)
+import Control.Monad (ap, (<=<))
 import Data.Data hiding (eqT)
 import Data.Default
 import qualified Data.Map.Strict as M
@@ -21,6 +23,95 @@ import qualified Pirouette.SMT as SMT
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
+
+-- | The intermediate datastructure of our symbolic engine, produced by
+-- the 'Pirouette.Symbolic.Eval.Anamorphism.symbolically' anamorphism and
+-- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
+type SymTree lang a = Tree lang (DeltaEnv lang) a
+
+-- | A 'Tree' which denotes a set of pairs of @(deltas, leaf)@
+data Tree lang deltas b
+  = Leaf b
+  | Learn deltas (Tree lang deltas b)
+  | Union [Tree lang deltas b]
+  | -- | A function call, in an untyped setting, can be seen as something
+    -- that takes a list of terms and returns a term (in fact, that's the type of
+    -- the partially applied 'SystF.App' constructor!).
+    --
+    -- > [Term lang] -> Term lang
+    --
+    -- The trick here consists in lifting those functions to trees:
+    --
+    -- > [Tree (Term lang)] -> Tree (Term lang)
+    --
+    -- Finally, because we want a monadic structure, we'll go polymorphic:
+    forall a. Call ([Tree lang deltas a] -> Tree lang deltas b) [Tree lang deltas a]
+  | -- | Destructors are also a little tricky, because in reality, we need to
+    -- consume the motive until /at least/ the first constructor is found, that
+    -- is the only guaranteed way to make any progress.
+    forall a. Dest (Tree lang deltas a) ((ConstructorInfo, [Tree lang deltas a]) -> Tree lang deltas b)
+  | -- | Naturally, to be able to effectively build a value with potentially infinite children,
+    -- we also need torepresent constructors
+    Cons ConstructorInfo [Tree lang deltas b]
+  | -- | A Builtin is also something that we're stuck on until we decide to
+    -- consume this tree
+    Bin (BuiltinTerms lang) [Tree lang deltas b]
+  | Const (Constants lang)
+
+data ConstructorInfo = ConstructorInfo
+  { ciTyName :: TyName,
+    ciCtorName :: Name,
+    ciCtorIx :: Int
+  }
+  deriving (Eq, Ord, Show)
+
+-- | A 'DeltaEnv' represents a small addition to the current environment; catamorphisms
+-- are free to process these however way they see fit.
+data DeltaEnv lang
+  = DeclSymVars (M.Map SymVar (Type lang))
+  | Assign SymVar (TermMeta lang SymVar)
+  deriving (Eq, Show)
+
+-- SystF.appN requires a show instance to make it easier to debug. In hindsight,
+-- it gets annoying when trying to use anything other than terms as arguments
+-- to appN. Nevertheless, once `cata`s are ready we can craft some custom
+-- show instances nicely.
+instance Show (Tree lang monoid a) where
+  show _ = "<internal Tree Show instance; check comment>"
+
+instance Functor (Tree lang m) where
+  fmap _ (Const c) = Const c
+  fmap f (Leaf x) = Leaf $ f x
+  fmap f (Union ts) = Union $ map (fmap f) ts
+  fmap f (Learn str t) = Learn str $ fmap f t
+  fmap f (Call ts as) = Call (fmap f . ts) as
+  fmap f (Dest motive worlds) = Dest motive (fmap f . worlds)
+  fmap f (Cons c args) = Cons c (map (fmap f) args)
+  fmap f (Bin c args) = Bin c (map (fmap f) args)
+
+instance Applicative (Tree lang m) where
+  pure = Leaf
+  (<*>) = ap
+
+instance Alternative (Tree lang m) where
+  empty = Union []
+
+  Union t <|> Union u = Union (t ++ u)
+  Union t <|> u = Union (u : t)
+  t <|> Union u = Union (t : u)
+  t <|> u = Union [t, u]
+
+instance Monad (Tree lang m) where
+  Const c >>= _ = Const c
+  Leaf x >>= f = f x
+  Union ts >>= f = Union $ map (>>= f) ts
+  Learn str t >>= f = Learn str (t >>= f)
+  Call body args >>= f = Call (f <=< body) args
+  Dest motive worlds >>= f = Dest motive (f <=< worlds)
+  Cons c args >>= f = Cons c $ map (>>= f) args
+  Bin c args >>= f = Bin c $ map (>>= f) args
+
+-- * Older Types
 
 -- | Options to run the symbolic engine with. This includes options for tunning the behavior
 -- of the SMT solver and internals of the symbolic execution engine.
