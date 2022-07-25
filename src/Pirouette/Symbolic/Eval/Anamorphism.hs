@@ -173,6 +173,8 @@ symbolically defs = runST $ do
                         Learn (Assign target symbCons) $
                           ana s'' env' symbCons
         -- If this symvar is of any other type, we're done. This is as far as we can go.
+        -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
+        -- and there's nothing else to do.
         _ -> pure $ SystF.termPure $ SystF.Meta target
 
 -- | Applies a term to tree arguments, yielding a tree of results.

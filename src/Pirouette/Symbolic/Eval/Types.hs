@@ -119,12 +119,9 @@ data Options = Options
   { -- | Specifies the command, number of workers and whether to run PureSMT in debug mode, where
     --  all interactions with the solvers are printed
     optsPureSMT :: PureSMT.Options,
-    -- | Specifies the stopping condition for the symbolic engine. By default, it is:
-    --
-    --  > \stat -> sestConstructors stat > 50
-    --
-    --  That is, we stop exploring any branch where we unfolded more than 50 constructors.
-    shouldStop :: StoppingCondition
+    -- | Specifies the stopping condition for the symbolic engine. By default, it is: 50
+    --  That is, we stop exploring any branch where we assignment more than 50 symbolic variables.
+    maxAssignments :: Integer
   }
 
 optsSolverDebug :: Options -> Options
@@ -132,7 +129,7 @@ optsSolverDebug opts =
   opts {optsPureSMT = (optsPureSMT opts) {PureSMT.debug = True}}
 
 instance Default Options where
-  def = Options def (\stat -> sestConstructors stat > 50)
+  def = Options def 50
 
 -- | The 'LanguageSymEval' class is used to instruct the symbolic evaluator on how to branch on certain builtins.
 -- It is inherently different from 'SMT.LanguageSMT' in the sense that, for instance, the 'SMT.LanguageSMT'
@@ -256,13 +253,13 @@ data AvailableFuel = Fuel Int | InfiniteFuel
 data SymEvalSt lang = SymEvalSt
   { sestConstraint :: Constraint lang,
     sestGamma :: M.Map Name (Type lang),
-    sestFreshCounter :: Int,
-    sestStatistics :: SymEvalStatistics,
-    -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
-    sestValidated :: Bool,
+    sestAssignments :: Integer,
     -- | The set of names the SMT solver is aware of
     sestKnownNames :: S.Set Name
   }
+
+instance Default (SymEvalSt lang) where
+  def = SymEvalSt mempty M.empty 0 S.empty
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt {..} =
@@ -270,33 +267,13 @@ instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
       <> "in environnement"
       <+> pretty (M.toList sestGamma)
       <> "\n"
-      <> "with a counter at"
-      <+> pretty sestFreshCounter
-      <+> "and"
-      <+> pretty (sestConsumedFuel sestStatistics)
-      <+> "fuel consumed"
-
-data SymEvalStatistics = SymEvalStatistics
-  { sestConsumedFuel :: Int,
-    sestConstructors :: Int
-  }
-  deriving (Eq, Show)
-
-type StoppingCondition = SymEvalStatistics -> Bool
-
-instance Semigroup SymEvalStatistics where
-  SymEvalStatistics f1 c1 <> SymEvalStatistics f2 c2 =
-    SymEvalStatistics (f1 + f2) (c1 + c2)
-
-instance Monoid SymEvalStatistics where
-  mempty = SymEvalStatistics 0 0
 
 -- | Given a result and a resulting state, returns a 'Path' representing it.
-path :: StoppingCondition -> a -> SymEvalSt lang -> Path lang a
-path stop x st =
+path :: PathStatus -> SymEvalSt lang -> a -> Path lang a
+path status st x =
   Path
     { pathConstraint = sestConstraint st,
       pathGamma = sestGamma st,
-      pathStatus = if stop (sestStatistics st) then OutOfFuel else Completed,
+      pathStatus = status,
       pathResult = x
     }
