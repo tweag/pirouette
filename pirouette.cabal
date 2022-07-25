@@ -18,6 +18,7 @@ library
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
       Language.Pirouette.QuasiQuoter
+      Language.Pirouette.QuasiQuoter.Playground
       Language.Pirouette.QuasiQuoter.Syntax
       Language.Pirouette.QuasiQuoter.ToTerm
       ListT.Weighted
