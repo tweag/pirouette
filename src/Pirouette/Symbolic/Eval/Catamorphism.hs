@@ -7,6 +7,7 @@
 module Pirouette.Symbolic.Eval.Catamorphism where
 
 import Control.Applicative hiding (Const)
+import Control.Arrow ((***))
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Identity
@@ -57,8 +58,8 @@ catamorphism ::
   (LanguagePretty lang, LanguageSymEval lang) =>
   SymEvalEnv lang ->
   SymTree lang (TermMeta lang SymVar) ->
-  [TermMeta lang SymVar]
-catamorphism env = concatMap whnfToTerm . cataWHNF def
+  [Path lang (TermMeta lang SymVar)]
+catamorphism env = map (uncurry path) . cata def
   where
     -- sharedSolve is here to hint to GHC not to create more than one pool
     -- of SMT solvers, which could happen if sharedSolve were inlined.
@@ -71,23 +72,29 @@ catamorphism env = concatMap whnfToTerm . cataWHNF def
     solve :: CheckPathProblem lang -> Bool
     solve = sharedSolve . CheckPath
 
+    cata ::
+      SymEvalSt lang ->
+      SymTree lang (TermMeta lang SymVar) ->
+      [(SymEvalSt lang, TermMeta lang SymVar)]
+    cata st = concatMap (uncurry whnfToTerm) . cataWHNF st
+
     -- Cata WHNF will lazily search for the first WHNF of the tree
     cataWHNF ::
       SymEvalSt lang ->
       SymTree lang a ->
-      [WHNF lang a]
-    cataWHNF st (Cons ci args) = return $ WHNFConstructor ci args
-    cataWHNF st (Const c) = return $ WHNFConstant c
-    cataWHNF st (Leaf t) = return $ WHNFOther t
+      [(SymEvalSt lang, WHNF lang a)]
+    cataWHNF st (Cons ci args) = return (st, WHNFConstructor ci args)
+    cataWHNF st (Const c) = return (st, WHNFConstant c)
+    cataWHNF st (Leaf t) = return (st, WHNFOther t)
     -- TODO: add something to language symeval to decide whether to run this
     -- in call-by-name/value or some mix the user might want.
     -- for now, we're just going on call-by-name:
     cataWHNF st (Call f xs) = cataWHNF st (f xs)
     cataWHNF st (Union trees) = concatMap (cataWHNF st) trees
     cataWHNF st (Dest motif cases) = do
-      motif' <- cataWHNF st motif
+      (st', motif') <- cataWHNF st motif
       case motif' of
-        WHNFConstructor ci args -> cataWHNF st (cases (ci, args))
+        WHNFConstructor ci args -> cataWHNF st' (cases (ci, args))
         _ -> error "Type error!"
     cataWHNF st (Learn delta t) =
       case learn delta st of
@@ -98,29 +105,13 @@ catamorphism env = concatMap whnfToTerm . cataWHNF def
     -- refining the interface to evaluating builtins in LanguageSymEval
     cataWHNF st (Bin b args) = undefined
 
-    whnfToTerm :: WHNF lang (TermMeta lang SymVar) -> [TermMeta lang SymVar]
-    whnfToTerm (WHNFConstructor ci args) = do
-      -- TODO: seems like we have to thread state through or re-structure the whole function;
-      -- without a 'SymEvalSt' we can't recursively call cataWHNF. In fact, we might have
-      -- the need for a synchronization point here anyway; say we have the following WHNF:
-      --
-      -- > WHNFConstructor "Tuple2"
-      -- >   [ { (ca , ra) , (ca', ra') } -- here are SymTrees, written as a set of (Constraint,Res)
-      -- >   , { (cb , rb) }
-      -- >   ]
-      -- > ===>
-      -- > { (ca && cb , Tuple2 ca cb) , (ca' && cb , Tuple2 ca' cb) }
-      --
-      -- CH: Doesn't this suggest the anamorphism should be doing this branching so we
-      -- never have to come back up?
-      --
-      -- VM: Actually; it's not really a state monad that we need and should avoid it at all costs.
-      -- We can evaluate args, below, in parallel, we just have to wait for the return values
-      -- then compute the foldM of the path constraints before returning
-      args' <- mapM _ args
-      return $ mkConsApp (ciCtorName ci) args'
-    whnfToTerm (WHNFConstant t) = return $ mkConstant t
-    whnfToTerm (WHNFOther t) = return t
+    whnfToTerm :: SymEvalSt lang -> WHNF lang (TermMeta lang SymVar) -> [(SymEvalSt lang, TermMeta lang SymVar)]
+    whnfToTerm st (WHNFConstructor ci args) =
+      flip map (traverse (cata st) args) $
+        (mconcat *** mkConsApp (ciCtorName ci)) . unzip
+    -- return $ mkConsApp (ciCtorName ci) args'
+    whnfToTerm st (WHNFConstant t) = return (st, mkConstant t)
+    whnfToTerm st (WHNFOther t) = return (st, t)
 
 -- return $ fmap (mkConsApp (ciCtorName ci)) args'
 
@@ -162,38 +153,5 @@ mkSolverCtx defs =
       Just (DFunDef fdef) -> Just (name, fdef)
       _ -> Nothing
 
-{-
-data L a where
-  L :: forall a b . ([b] -> [b]) -> (b -> a) -> L a
-
-toList :: L a -> [a]
-toList (L xs f) = map f (xs [])
-
-fromList :: [a] -> L a
-fromList xs = L (xs ++) id
-
-singletonL :: a -> L a
-singletonL a = L (a:) id
-
-instance Functor L where
-  fmap f (L x fs) = L x (f . fs)
-
--- | Difference lists for efficient concats, but we also want efficient maps,
--- so we'll coyoneda this monster in the actual type we use: 'L'
-newtype L0 a = L0 {unL0 :: [a] -> [a]}
-
-singletonL0 :: a -> L0 a
-singletonL0 = L0 . (:)
-
-emptyL0 :: L0 a
-emptyL0 = L0 id
-
-consL0 :: a -> L0 a -> L0 a
-consL0 x xs = L0 $ (x :) . unL0 xs
-
-cat2 :: L0 a -> L0 a -> L0 a
-L0 f `cat2` L0 g = L0 (f . g)
-
-concatL0 :: [L0 a] -> L0 a
-concatL0 = foldl cat2 emptyL0
--}
+-- TODO: instead of lists, we can rely on the impredicative encoding of lists:
+-- > type List a = forall r. (a -> r -> r) -> r -> r

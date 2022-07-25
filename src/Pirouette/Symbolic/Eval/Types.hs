@@ -229,7 +229,6 @@ instance Pretty PathStatus where
 data Path lang res = Path
   { pathConstraint :: Constraint lang,
     pathGamma :: M.Map Name (Type lang),
-    pathStatus :: PathStatus,
     pathResult :: res
   }
   deriving (Functor, Traversable, Foldable)
@@ -239,11 +238,10 @@ deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lan
 deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
-  pretty (Path conds _gamma ps res) =
+  pretty (Path conds _gamma res) =
     vsep
       [ "", -- "Env:" <+> hsep (map pretty (M.toList gamma)),
         "Path:" <+> indent 2 (pretty conds),
-        "Status:" <+> pretty ps,
         "Tip:" <+> indent 2 (pretty res)
       ]
 
@@ -258,8 +256,15 @@ data SymEvalSt lang = SymEvalSt
     sestKnownNames :: S.Set Name
   }
 
+instance Semigroup (SymEvalSt lang) where
+  SymEvalSt c1 g1 a1 n1 <> SymEvalSt c2 g2 a2 n2 =
+    SymEvalSt (c1 <> c2) (g1 <> g2) (max a1 a2) (n1 <> n2)
+
+instance Monoid (SymEvalSt lang) where
+  mempty = SymEvalSt mempty M.empty 0 S.empty
+
 instance Default (SymEvalSt lang) where
-  def = SymEvalSt mempty M.empty 0 S.empty
+  def = mempty
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt {..} =
@@ -269,11 +274,10 @@ instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
       <> "\n"
 
 -- | Given a result and a resulting state, returns a 'Path' representing it.
-path :: PathStatus -> SymEvalSt lang -> a -> Path lang a
-path status st x =
+path :: SymEvalSt lang -> a -> Path lang a
+path st x =
   Path
     { pathConstraint = sestConstraint st,
       pathGamma = sestGamma st,
-      pathStatus = status,
       pathResult = x
     }
