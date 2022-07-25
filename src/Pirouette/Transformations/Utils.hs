@@ -69,15 +69,21 @@ findHOFDefs funPred tyPred declsPairs =
 -- @Arg Kind (Type lang)@ could've been used here instead,
 -- but having a distinct type seems to be a bit nicer, at least for now for hole-driven development reasons.
 data FlatArgType lang
-  = FlatTyArg Kind
+  = FlatTyArg (Ann Name) Kind
   | FlatTermArg (Type lang)
   deriving (Show)
 
 flattenType :: Type lang -> ([FlatArgType lang], Type lang)
 flattenType ty@TyApp {} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
-flattenType (TyAll _ k ty) = first (FlatTyArg k :) $ flattenType ty
+flattenType (TyAll a k ty) = first (FlatTyArg a k :) $ flattenType ty
 flattenType TyLam {} = error "unnormalized type"
+
+unflattenType :: [FlatArgType lang] -> Type lang -> Type lang
+unflattenType = flip $ foldr f
+  where
+    f (FlatTermArg dom) cod = dom `TyFun` cod
+    f (FlatTyArg a k) ty = TyAll a k ty
 
 -- | Splits a list of arguments into two lists:
 -- the first one containing all arguments up to and including the last type argument,
