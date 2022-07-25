@@ -16,7 +16,7 @@ import qualified Control.Monad.State.Strict as Strict
 import Data.Data (Data)
 import qualified Data.Map as M
 import qualified Data.Map as Map
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Set as Set
 import ListT.Weighted (WeightedListT)
 import Pirouette.Monad.Maybe
@@ -319,6 +319,10 @@ unDest (SystF.App (SystF.Free (TermSig n)) args) = do
     -- overloading the MonadFail instance, which was helpful for debugging in the past.
     _ -> fail "unDest: Destructor arguments has non-cannonical structure"
 unDest _ = fail "unDest: not an SystF.App"
+
+-- | Same as 'unDest' but crashes if the term is not the application of a destructor.
+unsafeUnDest :: (PirouetteReadDefs lang m) => TermMeta lang meta -> m (UnDestMeta lang meta)
+unsafeUnDest = fmap (fromMaybe (error "unsafeUnDest: not a destructor")) . runMaybeT . unDest
 
 data UnConsMeta lang meta = UnConsMeta
   { unconsTypeName :: TyName,
