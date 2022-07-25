@@ -148,12 +148,14 @@ removeDfInTypeCtor ty defs ctorIdx = PrtUnorderedDefs
 -- then the variables pointing to the @i@th bound variable are attempted to be removed.
 -- If it's negative, then the lambda abstraction with the index @-i - 1@ (from the left)
 -- is attempted to be removed, as long as its binder isn't used.
+-- In particular, if a function has N arguments, then @-1@ refers to the outermost one,
+-- and @-N@ refers to the innermost one.
 --
 -- This is better illustrated by an example. Consider
 --
 -- > λ Ty0. λ Ty1. λ Ty2. foo #0 #2 #4
 --
--- so @#0@ points to the @Ty2@, @#2@ points ot the @Ty0@, and @#4@ points to the
+-- so @#0@ points to the @Ty2@, @#2@ points to the @Ty0@, and @#4@ points to the
 -- @4 - 3 = 1@st variable in the context.
 --
 -- Then:
