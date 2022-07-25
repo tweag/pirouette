@@ -93,6 +93,9 @@ catamorphism env = concatMap whnfToTerm . cataWHNF def
       case learn delta st of
         Just st' | sestAssignments st' <= maxAssignments (seeOptions env) -> cataWHNF st' t
         _ -> empty
+    -- Let's not worry about builtins at all right now. With plain inductive types
+    -- we can already do so much to check whether this monster is going to work before
+    -- refining the interface to evaluating builtins in LanguageSymEval
     cataWHNF st (Bin b args) = undefined
 
     whnfToTerm :: WHNF lang (TermMeta lang SymVar) -> [TermMeta lang SymVar]
