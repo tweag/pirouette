@@ -117,9 +117,28 @@ removeDfInTypeCtor :: forall lang. (Language lang)
                    -> PrtUnorderedDefs lang
                    -> Integer
                    -> PrtUnorderedDefs lang
-removeDfInTypeCtor ty@Datatype{..} defs ctorIdx = defs
+removeDfInTypeCtor ty defs ctorIdx = PrtUnorderedDefs
+                                   $ transformBi updateDtor
+                                   $ updateCtor <$> prtUODecls defs
   where
-    unused = reverse $ unusedFields defs ty ctorIdx
+    ctor = constructors ty !! fromIntegral ctorIdx
+    fieldsIdxes = unusedFields defs ty ctorIdx
+    (flatArgs, res) = flattenType $ snd ctor
+
+    updateCtor (DTypeDef other) | destructor other == destructor ty = DTypeDef ty {constructors = ctors'}
+      where
+        ctor' = (fst ctor, unflattenType (removeAts fieldsIdxes flatArgs) res)
+        ctors' = updateAt ctorIdx (constructors ty) ctor'
+    updateCtor def = def
+
+    updateDtor :: Term lang -> Term lang
+    updateDtor (SystF.App (SystF.Free (TermSig dtorName)) dtorArgs)
+      | dtorName == destructor ty = SystF.App (SystF.Free (TermSig dtorName)) $ prefix <> branches'
+      where
+        (prefix, branches) = splitArgsTermsTail dtorArgs
+        branches' = updateAt ctorIdx branches branch'
+        branch' = SystF.argMap id (dropArgs fieldsIdxes) $ branches !! fromIntegral ctorIdx
+    updateDtor x = x
 
 -- | Tries to remove a single bound variable with the given index from a function.
 -- If the argument isn't used, it just decrements the indices of further arguments.
@@ -166,6 +185,11 @@ tryDropArg argIdx (SystF.App var args) = SystF.App <$> var' <*> args'
 tryDropArg argIdx (SystF.Lam ann t body) = SystF.Lam ann t <$> tryDropArg (argIdx + 1) body
 tryDropArg argIdx (SystF.Abs ann k body) = SystF.Abs ann k <$> tryDropArg (argIdx + 1) body
 
+dropArgs :: [Integer]
+         -> Term lang
+         -> Term lang
+dropArgs argsIxes term = foldr (\ix t -> fromJust $ tryDropArg ix t) term argsIxes
+
 isArgUsed :: Integer
           -> Term lang
           -> Bool
@@ -204,5 +228,19 @@ unusedFields defs Datatype{..} ctorIdx =
 
 -- * Misc utils
 
-removeAt :: Int -> [a] -> [a]
-removeAt pos = uncurry (<>) . second (drop 1) . splitAt pos
+removeAt :: Integral ix => ix -> [a] -> [a]
+removeAt pos = uncurry (<>) . second tail . splitAt (fromIntegral pos)
+
+removeAts :: Integral ix => [ix] -> [a] -> [a]
+removeAts = go 0
+  where
+    go _ [] xs = xs
+    go _ _  [] = error "removeAts: empty remainder"
+    go curIdx (ix:ixes) (x:xs)
+      | curIdx == ix = go (curIdx + 1) ixes xs
+      | otherwise = x : go (curIdx + 1) (ix:ixes) xs
+
+updateAt :: Integral ix => ix -> [a] -> a -> [a]
+updateAt pos xs x = prefix <> (x : tail suffix)
+  where
+    (prefix, suffix) = splitAt (fromIntegral pos) xs
