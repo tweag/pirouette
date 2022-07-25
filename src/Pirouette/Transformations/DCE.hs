@@ -121,9 +121,29 @@ removeDfInTypeCtor ty@Datatype{..} defs ctorIdx = defs
   where
     unused = reverse $ unusedFields defs ty ctorIdx
 
--- | Tries to remove a single argument with the given index from a function's body.
+-- | Tries to remove a single bound variable with the given index from a function.
 -- If the argument isn't used, it just decrements the indices of further arguments.
 -- If it's used, it fails, returning @Nothing@.
+--
+-- If the index @i@ is non-negative,
+-- then the variables pointing to the @i@th bound variable are attempted to be removed.
+-- If it's negative, then the lambda abstraction with the index @-i - 1@ (from the left)
+-- is attempted to be removed, as long as its binder isn't used.
+--
+-- This is better illustrated by an example. Consider
+--
+-- > λ Ty0. λ Ty1. λ Ty2. foo #0 #2 #4
+--
+-- so @#0@ points to the @Ty2@, @#2@ points ot the @Ty0@, and @#4@ points to the
+-- @4 - 3 = 1@st variable in the context.
+--
+-- Then:
+-- * @tryDropArg 1@ fails, since it sees that the variable is used via the @#4@.
+-- * @tryDropArg 0@ suceeds, and the resulting term would be @λ Ty0. λ Ty1. λ Ty2. foo #0 #2 #3@
+--   (note the index decremented).
+-- * @tryDropArg (-1)@  fails, since it tries to remove the first abstraction (with the @Ty0@),
+--   which is used via @#2@.
+-- * @tryDropArg (-2)@  succeeds, resulting in @λ Ty0. λ Ty2. foo #0 #1 #3@.
 tryDropArg :: Integer
            -> Term lang
            -> Maybe (Term lang)
