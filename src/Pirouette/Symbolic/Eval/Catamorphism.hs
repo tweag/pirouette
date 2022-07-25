@@ -113,6 +113,10 @@ catamorphism env = concatMap whnfToTerm . cataWHNF def
       --
       -- CH: Doesn't this suggest the anamorphism should be doing this branching so we
       -- never have to come back up?
+      --
+      -- VM: Actually; it's not really a state monad that we need and should avoid it at all costs.
+      -- We can evaluate args, below, in parallel, we just have to wait for the return values
+      -- then compute the foldM of the path constraints before returning
       args' <- mapM _ args
       return $ mkConsApp (ciCtorName ci) args'
     whnfToTerm (WHNFConstant t) = return $ mkConstant t
