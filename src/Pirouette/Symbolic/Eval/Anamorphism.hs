@@ -7,7 +7,6 @@
 
 module Pirouette.Symbolic.Eval.Anamorphism where
 
-import Control.Applicative hiding (Const)
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.ST
@@ -77,7 +76,7 @@ import qualified Supply
 
 symbolically ::
   forall lang.
-  (LanguagePretty lang, LanguageSymEval lang) =>
+  (Language lang) =>
   PrtUnorderedDefs lang ->
   TermMeta lang SymVar ->
   SymTree lang (TermMeta lang SymVar)
@@ -179,7 +178,7 @@ symbolically defs = runST $ do
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
   forall lang.
-  (LanguagePretty lang, LanguageSymEval lang) =>
+  (Language lang) =>
   TermMeta lang SymVar ->
   [SymTree lang (TermMeta lang SymVar)] ->
   SymTree lang (TermMeta lang SymVar)
@@ -202,7 +201,7 @@ liftedTermAppN body args = do
     termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
     termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
     termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
-    termMetaDistr (SystF.App hd args) = SystF.App <$> doVar hd <*> traverse doArgs args
+    termMetaDistr (SystF.App hd args0) = SystF.App <$> doVar hd <*> traverse doArgs args0
       where
         doArgs ::
           (Applicative f) =>
