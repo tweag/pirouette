@@ -64,6 +64,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Parallel.Strategies
+import Data.Default
 import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
@@ -134,7 +135,7 @@ symeval opts prob = do
   defs <- getPrtOrderedDefs
   return $ runSymEval opts defs st0 prob
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
+    st0 = def
 
 symevalAnyPathAccum ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
@@ -148,7 +149,7 @@ symevalAnyPathAccum f s0 opts p prob = do
   defs <- getPrtOrderedDefs
   return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs st0 prob
   where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
+    st0 = def
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -191,7 +192,7 @@ runSymEvalWorker opts defs st f = do
   let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
-  let paths = uncurry (path $ shouldStop opts) solvPair
+  let paths = uncurry undefined solvPair
   return paths
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
@@ -247,7 +248,7 @@ weightedParFilter f (ListT.Yield a w) =
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
 --  of whether or not we had already validated it before.
 learn :: (SymEvalConstr lang) => Constraint lang -> SymEval lang ()
-learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
+learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st})
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
@@ -258,6 +259,9 @@ declSymVars vs = do
 -- freshSymVar ty = head <$> freshSymVars [ty]
 
 freshSymVars :: (SymEvalConstr lang) => [Type lang] -> SymEval lang [SymVar]
+freshSymVars = undefined
+
+{-
 freshSymVars [] = return []
 freshSymVars tys = do
   let n = length tys
@@ -265,9 +269,14 @@ freshSymVars tys = do
   modify (\st -> st {sestFreshCounter = sestFreshCounter st + n})
   let vars = zipWith (\i ty -> (Name "s" (Just i), ty)) [ctr ..] tys
   declSymVars vars
+-}
+
+type SymEvalStatistics = Int
 
 currentStatistics :: (SymEvalConstr lang) => SymEval lang SymEvalStatistics
-currentStatistics = gets sestStatistics
+currentStatistics = undefined
+
+-- currentStatistics = gets sestStatistics
 
 -- | Take one step of evaluation.
 -- We wrap everything in an additional 'Writer' which tells us
@@ -516,12 +525,14 @@ signalEvaluation = tell (Any True)
 -- | Consume one unit of fuel.
 -- This also tells the symbolic evaluator that a step was taken.
 consumeFuel :: (SymEvalConstr lang) => WriterT Any (SymEval lang) ()
-consumeFuel = do
-  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConsumedFuel = 1}})
+consumeFuel = undefined
+
+--  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConsumedFuel = 1}})
 
 moreConstructors :: (SymEvalConstr lang) => Int -> WriterT Any (SymEval lang) ()
-moreConstructors n = do
-  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
+moreConstructors n = undefined
+
+--  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
 unify (R.App (R.Meta s) []) (R.App (R.Meta r) []) = Just (symVarEq s r)

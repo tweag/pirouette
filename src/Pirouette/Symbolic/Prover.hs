@@ -74,7 +74,7 @@ proveUnbounded ::
   Options ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
-proveUnbounded opts = prove (opts {shouldStop = const False})
+proveUnbounded opts = prove undefined
 
 -- | Executes the problem while the stopping condition is valid until
 --  the supplied predicate returns @True@. A return value of @Nothing@
@@ -190,7 +190,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   mayProveCond <- fmap (isTrue @lang) <$> translate proveTerm
   -- introduce the assumption about the result, if useful
   case mayBodyTerm of
-    Right _ -> learn $ And [Assign resultVar bodyTerm]
+    Right _ -> learn $ And [Pirouette.SMT.Constraints.Assign resultVar bodyTerm]
     _ -> pure ()
   -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
@@ -222,7 +222,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- debugPrint (pretty proveTerm')
       -- debugPrint somethingWasEval
       -- check the fuel
-      noMoreFuel <- asks (shouldStop . seeOptions) >>= \s -> s <$> currentStatistics
+      noMoreFuel <- asks (undefined . seeOptions) >>= \s -> s <$> currentStatistics
       -- currentFuel >>= liftIO . print
       if noMoreFuel || somethingWasEval == Any False
         then pure $ CounterExample bodyTerm' (Model [])

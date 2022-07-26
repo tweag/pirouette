@@ -126,24 +126,22 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
         (LanguageSMT lang) =>
         SymEvalSt lang ->
         HackSolver lang Bool
-      pathIsPlausible env
-        | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
-        | otherwise = do
-          solverPush
-          decl <- runExceptT (declareVariables (sestGamma env))
-          case decl of
-            Right _ -> return ()
-            Left err -> error err
-          -- Here we do not care about the totality of the translation,
-          -- since we want to prune unsatisfiable path.
-          -- And if a partial translation is already unsat,
-          -- so is the translation of the whole set of constraints.
-          void $ assertConstraint (sestKnownNames env) (sestConstraint env)
-          res <- checkSat
-          solverPop
-          return $ case res of
-            Unsat -> False
-            _ -> True
+      pathIsPlausible env = do
+        solverPush
+        decl <- runExceptT (declareVariables (sestGamma env))
+        case decl of
+          Right _ -> return ()
+          Left err -> error err
+        -- Here we do not care about the totality of the translation,
+        -- since we want to prune unsatisfiable path.
+        -- And if a partial translation is already unsat,
+        -- so is the translation of the whole set of constraints.
+        void $ assertConstraint (sestKnownNames env) (sestConstraint env)
+        res <- checkSat
+        solverPop
+        return $ case res of
+          Unsat -> False
+          _ -> True
   solveProblem (CheckProperty CheckPropertyProblem {..}) s =
     hackSolverPrt s cpropDefs $ checkProperty cpropOut cpropIn cpropAxioms cpropState
     where

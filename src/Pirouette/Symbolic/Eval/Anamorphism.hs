@@ -78,13 +78,25 @@ symbolically ::
   forall lang.
   (Language lang) =>
   PrtUnorderedDefs lang ->
-  TermMeta lang SymVar ->
+  Term lang ->
   SymTree lang (TermMeta lang SymVar)
 symbolically defs = runST $ do
   s0 <- Supply.newSupply (SymVar $ Name "s" (Just 0)) nextSymVar
-  return (ana s0 M.empty)
+  return (withSymVars s0)
   where
     nextSymVar (SymVar n) = SymVar (n {nameUnique = Just $ maybe 1 succ (nameUnique n)})
+
+    withSymVars ::
+      Supply SymVar ->
+      Term lang ->
+      SymTree lang (TermMeta lang SymVar)
+    withSymVars s t =
+      let (args, _) = SystF.getHeadLams t
+          (s', svars) = freshSymVars s (map (typeToMeta . snd) args)
+          body =
+            SystF.appN (termToMeta t) $
+              map (SystF.TermArg . SystF.termPure . SystF.Meta . fst) svars
+       in declSymVars (M.fromList svars) $ ana s' (M.fromList svars) body
 
     -- For ana to really be infinite, it should never return a term that
     -- is only a metavariable; if that's ever the case, we should open that term
@@ -169,13 +181,18 @@ symbolically defs = runST $ do
                 for2 (Supply.split s) consList $ \s' consNameTy ->
                   let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
                       env' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) env delta
-                   in Learn (DeclSymVars delta) $
+                   in declSymVars delta $
                         Learn (Assign target symbCons) $
                           ana s'' env' symbCons
         -- If this symvar is of any other type, we're done. This is as far as we can go.
         -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
         -- and there's nothing else to do.
         _ -> pure $ SystF.termPure $ SystF.Meta target
+
+declSymVars :: M.Map SymVar (Type lang) -> Tree lang (DeltaEnv lang) a -> Tree lang (DeltaEnv lang) a
+declSymVars vs
+  | not (M.null vs) = Learn (DeclSymVars vs)
+  | otherwise = id
 
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::

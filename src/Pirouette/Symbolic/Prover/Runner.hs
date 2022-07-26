@@ -48,11 +48,12 @@ runIncorrectnessLogic ::
   IncorrectnessParams lang ->
   IncorrectnessResult lang
 runIncorrectnessLogic opts prog parms =
-  runIdentity $ execIncorrectnessLogic (proveAny opts isCounter) prog parms
+  runIdentity $ execIncorrectnessLogic (proveAny opts undefined) prog parms
   where
-    isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
-      | s /= OutOfFuel = True
-    isCounter _ = False
+
+-- isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
+--   | s /= OutOfFuel = True
+-- isCounter _ = False
 
 -- | Prepares a 'IncorrectnessParams' into a 'Problem', to be passed to
 --  some worker function. Chances are that you are looking for
@@ -111,7 +112,7 @@ replIncorrectnessLogic ::
   IO ()
 replIncorrectnessLogic maxCstrs defs params =
   printIRResult maxCstrs $
-    runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params
+    runIncorrectnessLogic (def {- {shouldStop = (> maxCstrs) . sestConstructors} -}) defs params
 
 replIncorrectnessLogicSingl ::
   (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
@@ -120,7 +121,7 @@ replIncorrectnessLogicSingl ::
   IO ()
 replIncorrectnessLogicSingl maxCstrs params =
   printIRResult maxCstrs $
-    runIncorrectnessLogicSingl (def {shouldStop = (> maxCstrs) . sestConstructors}) params
+    runIncorrectnessLogicSingl (def {- {shouldStop = (> maxCstrs) . sestConstructors} -}) params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
@@ -131,4 +132,4 @@ assertIncorrectnessLogic ::
   IncorrectnessParams lang ->
   Test.Assertion
 assertIncorrectnessLogic maxCstrs defs params =
-  assertIRResult (runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params)
+  assertIRResult (runIncorrectnessLogic (def {- {shouldStop = (> maxCstrs) . sestConstructors} -}) defs params)

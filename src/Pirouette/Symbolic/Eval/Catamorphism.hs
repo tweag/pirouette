@@ -21,6 +21,7 @@ import Data.List (genericLength)
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
+import Debug.Trace
 import ListT.Weighted (WeightedList)
 import qualified ListT.Weighted as ListT
 import Pirouette.Monad hiding (WHNFResult (..))
@@ -33,6 +34,7 @@ import Pirouette.Symbolic.Eval.Types as X
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Transformations
 import qualified PureSMT
 
 data SymEvalSolvers lang = SymEvalSolvers
@@ -43,7 +45,7 @@ data SymEvalSolvers lang = SymEvalSolvers
   }
 
 data SymEvalEnv lang = SymEvalEnv
-  { seeDefs :: PrtOrderedDefs lang,
+  { seeDefs :: PrtUnorderedDefs lang,
     seeSolvers :: SymEvalSolvers lang,
     seeOptions :: Options
   }
@@ -56,18 +58,21 @@ data WHNF lang a
 catamorphism ::
   forall lang.
   (LanguagePretty lang, LanguageSymEval lang) =>
-  SymEvalEnv lang ->
+  PrtUnorderedDefs lang ->
+  Options ->
   SymTree lang (TermMeta lang SymVar) ->
   [Path lang (TermMeta lang SymVar)]
-catamorphism env = map (uncurry path) . cata def
+catamorphism defs opts = map (uncurry path) . cata def
   where
+    orderedDefs = elimEvenOddMutRec defs
+
     -- sharedSolve is here to hint to GHC not to create more than one pool
     -- of SMT solvers, which could happen if sharedSolve were inlined.
     -- TODO: Write a test to check that only one SMT pool is actually created over
     --       multiple calls to runSymEvalWorker.
     {-# NOINLINE sharedSolve #-}
     sharedSolve :: SolverProblem lang res -> res
-    sharedSolve = PureSMT.solveOpts (optsPureSMT $ seeOptions env) (mkSolverCtx $ seeDefs env)
+    sharedSolve = PureSMT.solveOpts (optsPureSMT opts) (mkSolverCtx orderedDefs)
 
     solve :: CheckPathProblem lang -> Bool
     solve = sharedSolve . CheckPath
@@ -98,17 +103,21 @@ catamorphism env = map (uncurry path) . cata def
         _ -> error "Type error!"
     cataWHNF st (Learn delta t) =
       case learn delta st of
-        Just st' | sestAssignments st' <= maxAssignments (seeOptions env) -> cataWHNF st' t
+        Just st'
+          | sestAssignments st' <= maxAssignments opts -> cataWHNF st' t
         _ -> empty
     -- Let's not worry about builtins at all right now. With plain inductive types
     -- we can already do so much to check whether this monster is going to work before
     -- refining the interface to evaluating builtins in LanguageSymEval
-    cataWHNF st (Bin b args) = undefined
+    cataWHNF st (Bin b args) = return (st, WHNFOther undefined)
 
     whnfToTerm :: SymEvalSt lang -> WHNF lang (TermMeta lang SymVar) -> [(SymEvalSt lang, TermMeta lang SymVar)]
     whnfToTerm st (WHNFConstructor ci args) =
-      flip map (traverse (cata st) args) $
-        (mconcat *** mkConsApp (ciCtorName ci)) . unzip
+      let args' = traverse (cata st) args
+          ctor = mkConsApp (ciCtorName ci)
+       in flip map args' $ \xs ->
+            (if null xs then const st else mconcat) *** mkConsApp (ciCtorName ci) $
+              unzip xs
     -- return $ mkConsApp (ciCtorName ci) args'
     whnfToTerm st (WHNFConstant t) = return (st, mkConstant t)
     whnfToTerm st (WHNFOther t) = return (st, t)
@@ -116,23 +125,23 @@ catamorphism env = map (uncurry path) . cata def
 -- return $ fmap (mkConsApp (ciCtorName ci)) args'
 
 learn :: DeltaEnv lang -> SymEvalSt lang -> Maybe (SymEvalSt lang)
-learn = undefined
+learn (DeclSymVars vs) st = Just $ st {sestGamma = sestGamma st `union` M.mapKeys symVar vs}
+  where
+    union = M.unionWithKey (\k _ _ -> error $ "Key already declared: " ++ show k)
+learn (Assign v t) st =
+  Just $
+    st
+      { sestConstraint = c <> sestConstraint st,
+        sestAssignments = sestAssignments st + 1
+      }
+  where
+    c = SMT.And [SMT.Assign v t]
 
 mkConsApp :: Name -> [TermMeta lang SymVar] -> TermMeta lang SymVar
 mkConsApp n args = SystF.App (SystF.Free (TermSig n)) $ map SystF.TermArg args
 
 mkConstant :: Constants lang -> TermMeta lang SymVar
 mkConstant c = SystF.App (SystF.Free (Constant c)) []
-
-pathDistr :: [Path lang res] -> Path lang [res]
-pathDistr = foldl' combineOne emptyPath
-  where
-    emptyPath :: Path lang [res]
-    emptyPath = undefined
-
-    -- mappends things like constraint, etc...
-    combineOne :: Path lang [res] -> Path lang res -> Path lang [res]
-    combineOne = undefined
 
 -- * Auxiliar Defs
 

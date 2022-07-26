@@ -238,10 +238,10 @@ deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lan
 deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
-  pretty (Path conds _gamma res) =
+  pretty (Path conds gamma res) =
     vsep
-      [ "", -- "Env:" <+> hsep (map pretty (M.toList gamma)),
-        "Path:" <+> indent 2 (pretty conds),
+      [ "Env:" <+> hsep (map pretty (M.toList gamma)),
+        "Conds:" <+> indent 2 (pretty conds),
         "Tip:" <+> indent 2 (pretty res)
       ]
 
@@ -258,7 +258,11 @@ data SymEvalSt lang = SymEvalSt
 
 instance Semigroup (SymEvalSt lang) where
   SymEvalSt c1 g1 a1 n1 <> SymEvalSt c2 g2 a2 n2 =
-    SymEvalSt (c1 <> c2) (g1 <> g2) (max a1 a2) (n1 <> n2)
+    SymEvalSt
+      (c1 <> c2)
+      (M.unionWithKey (\k _ _ -> error $ "Key already declared: " ++ show k) g1 g2)
+      (max a1 a2)
+      (n1 <> n2)
 
 instance Monoid (SymEvalSt lang) where
   mempty = SymEvalSt mempty M.empty 0 S.empty
