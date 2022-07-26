@@ -6,11 +6,13 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Pirouette.Transformations.DCESpec (tests) where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
+import Data.Generics.Uniplate.Data
 import Data.Map as Map
 import Language.Pirouette.Example
 import Pirouette.Monad
@@ -26,7 +28,78 @@ tests =
   [ testGroup "Finding dead constructors" findDeadCtorsTest
   , testGroup "Executing constructor removal" removeCtorsTest
   , testGroup "Everything together: eliminating dead constructors" removeDeadCtorsTest
+  , testGroup "Unused fields" unusedFieldsTest
   ]
+
+unusedFieldsTest :: [TestTree]
+unusedFieldsTest =
+  [ testCase "detected correctly" $ do
+      unusedFields src1 ty1 0 @?= []
+      unusedFields src1 ty1 1 @?= [2]
+  , testCase "removed correctly, given their list" $ do
+      transformBi (updateDtor @Ex "match_Ty1" 1 [0, 2]) (getFunBody src1 "foo") @?= getFunBody resFoo1 "foo"
+      transformBi (updateDtor @Ex "match_Ty1" 1 [2])    (getFunBody src1 "foo") @?= getFunBody res1    "foo"
+  , testCase "detected and removed correctly" $
+      removeDeadFields src1 @?= res1
+  ]
+  where
+    DTypeDef ty1 = prtUODecls src1 Map.! (TypeNamespace, "Ty1")
+
+    getFunBody prog name = case prtUODecls prog Map.! (TermNamespace, name) of
+                                DFunDef fd -> funBody fd
+                                _ -> error "not a function"
+
+    src1 :: PrtUnorderedDefs Ex
+    src1 = [prog|
+data Ty1
+  = Ty1C1 : Integer -> Ty1
+  | Ty2C1 : Integer -> Ty1 -> Integer -> Ty1
+
+fun foo : Ty1 -> Integer
+  = \(t : Ty1).
+    match_Ty1 t @Integer
+      (\(a : Integer). 1)
+      (\(a : Integer) (b : Ty1) (c : Integer). foo b)
+
+fun bar : Ty1 -> Integer
+  = \(t : Ty1).
+    match_Ty1 t @Integer
+      (\(a : Integer). a)
+      (\(a : Integer) (b : Ty1) (c : Integer). a + foo b)
+|]
+
+    resFoo1 :: PrtUnorderedDefs Ex
+    resFoo1 = [prog|
+data Ty1
+  = Ty1C1 : Integer -> Ty1
+  | Ty2C1 : Ty1 -> Ty1
+
+fun foo : Ty1 -> Integer
+  = \(t : Ty1).
+    match_Ty1 t @Integer
+      (\(a : Integer). 1)
+      (\(b : Ty1). foo b)
+|]
+
+    res1 :: PrtUnorderedDefs Ex
+    res1 = [prog|
+data Ty1
+  = Ty1C1 : Integer -> Ty1
+  | Ty2C1 : Integer -> Ty1 -> Ty1
+
+fun foo : Ty1 -> Integer
+  = \(t : Ty1).
+    match_Ty1 t @Integer
+      (\(a : Integer). 1)
+      (\(a : Integer) (b : Ty1). foo b)
+
+fun bar : Ty1 -> Integer
+  = \(t : Ty1).
+    match_Ty1 t @Integer
+      (\(a : Integer). a)
+      (\(a : Integer) (b : Ty1). a + foo b)
+|]
+
 
 findDeadCtorsTest :: [TestTree]
 findDeadCtorsTest =
