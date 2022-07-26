@@ -87,21 +87,21 @@ etaExpandAux decls env (hd `SystF.App` args) =
     -- used.
     mkExpIndices :: Integer -> Integer -> [FlatArgType lang] -> [Arg lang]
     mkExpIndices _ _ [] = []
-    mkExpIndices mTy mTerm (FlatTyArg _ : as) =
-      SystF.TyArg (SystF.TyPure $ SystF.Bound (SystF.Ann "H") (mTy - 1)) : -- H is capital η :)
+    mkExpIndices mTy mTerm (FlatTyArg ann _ : as) =
+      SystF.TyArg (SystF.TyPure $ SystF.Bound ann (mTy - 1)) :
       mkExpIndices (mTy - 1) mTerm as
     mkExpIndices mTy mTerm (FlatTermArg _ : as) =
       SystF.TermArg (SystF.termPure $ SystF.Bound (SystF.Ann "η") (mTerm - 1)) :
       mkExpIndices mTy (mTerm - 1) as
 
 isTyArg :: FlatArgType lang -> Bool
-isTyArg (FlatTyArg _) = True
+isTyArg (FlatTyArg _ _) = True
 isTyArg _ = False
 
 wrapInLambdas :: [FlatArgType lang] -> Term lang -> Term lang
 wrapInLambdas types term = foldr f term types
   where
-    f (FlatTyArg k) = SystF.Abs (SystF.Ann "η") k
+    f (FlatTyArg ann k) = SystF.Abs ann k
     f (FlatTermArg ty) = SystF.Lam (SystF.Ann "η") ty
 
 -- TODO have a proper @instance HasSubst (Arg lang)@ or smth similar
