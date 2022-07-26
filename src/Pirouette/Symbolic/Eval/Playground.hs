@@ -23,10 +23,10 @@ fun add : Nat -> Nat -> Nat
 |]
 
 opts :: Options
-opts = def {maxAssignments = 2}
+opts = def {maxAssignments = 1}
 
 x :: [Path Ex (TermMeta Ex SymVar)]
-x = catamorphism defs opts (symbolically defs [term| \(n : Nat) . add n n |])
+x = catamorphism defs opts (symbolically defs [term| \(n : Nat) . add n (Suc n) |])
 
 xio :: IO ()
 xio = mapM_ (\p -> putStrLn "Path:" >> putStrLn (prettyIndent p)) x

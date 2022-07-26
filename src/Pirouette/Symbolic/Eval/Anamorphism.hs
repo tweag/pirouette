@@ -12,6 +12,7 @@ import Control.Monad.Reader
 import Control.Monad.ST
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
@@ -96,20 +97,39 @@ symbolically defs = runST $ do
           body =
             SystF.appN (termToMeta t) $
               map (SystF.TermArg . SystF.termPure . SystF.Meta . fst) svars
-       in declSymVars (M.fromList svars) $ ana s' (M.fromList svars) body
+       in declSymVars (M.fromList svars) $ ana s' (M.fromList svars) M.empty body
+
+    ana ::
+      Supply SymVar ->
+      M.Map SymVar (Type lang) ->
+      M.Map SymVar (TermMeta lang SymVar) ->
+      TermMeta lang SymVar ->
+      SymTree lang (TermMeta lang SymVar)
+    ana s env knowns t =
+      trace str $ ana' s env knowns t
+      where
+        str =
+          unlines
+            [ "term: " ++ renderSingleLineStr (pretty t),
+              "  env: " ++ renderSingleLineStr (pretty $ M.toList env),
+              "  knowns: " ++ renderSingleLineStr (pretty $ M.toList knowns)
+            ]
 
     -- For ana to really be infinite, it should never return a term that
     -- is only a metavariable; if that's ever the case, we should open that term
     -- up in all of its constructors.
-    ana ::
+    ana' ::
       Supply SymVar ->
       M.Map SymVar (Type lang) ->
+      M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
       SymTree lang (TermMeta lang SymVar)
-    ana s env t@(hd `SystF.App` args) =
+    ana' s env knowns t@(hd `SystF.App` args) =
       let sRec : sRest = Supply.split s
-          args' = zipWith (`ana` env) sRest (mapMaybe SystF.fromArg args)
-          rec = ana sRec env
+          -- TODO: how do we communicate in between the arguments? Take the following call as an example:
+          -- > add $s0 (Suc $s0)
+          -- We'll evaluate each argument separately, which is not ideal.
+          args' = zipWith (\s0 -> ana s0 env knowns) sRest (mapMaybe SystF.fromArg args)
        in case hd of
             SystF.Bound ann _ -> error $ "Can't evaluate bound variable: " ++ show ann
             SystF.Free Bottom -> pure t
@@ -119,17 +139,17 @@ symbolically defs = runST $ do
               case prtDefOf TermNamespace n `runReader` defs of
                 DTypeDef _ -> error "Can't evaluate typedefs"
                 DConstructor ix tyName -> Cons (ConstructorInfo tyName n ix) args'
-                DDestructor _ -> anaDestructor s env (unsafeUnDest t `runReader` defs)
-                DFunction _ body _ -> Call (liftedTermAppN (termToMeta body) >=> rec) args'
-            SystF.Meta vr -> anaMeta sRec env vr
-    ana _ _ t@SystF.Lam {} =
+                DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
+                DFunction _ body _ -> Call (liftedTermAppN (termToMeta body) >=> ana sRec env knowns) args'
+            SystF.Meta vr -> anaMeta sRec env knowns vr
+    ana' _ _ _ t@SystF.Lam {} =
       error $
         unlines
           [ "Can't symbolically evaluate lambdas",
             "Did you not defunctionalize before?",
             "term: " ++ renderSingleLineStr (pretty t)
           ]
-    ana _ _ t@SystF.Abs {} =
+    ana' _ _ _ t@SystF.Abs {} =
       error $
         unlines
           [ "Can't symbolically evaluate polymorphic terms",
@@ -145,13 +165,14 @@ symbolically defs = runST $ do
     anaDestructor ::
       Supply SymVar ->
       M.Map SymVar (Type lang) ->
+      M.Map SymVar (TermMeta lang SymVar) ->
       UnDestMeta lang SymVar ->
       SymTree lang (TermMeta lang SymVar)
-    anaDestructor s env (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
+    anaDestructor s env knowns (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
       let (s0 : ss) = Supply.split s
-       in Dest (ana s0 env motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+       in Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
             let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
-             in liftedTermAppN caseTerm consArgs >>= ana (ss !! consIx) env
+             in liftedTermAppN caseTerm consArgs >>= ana (ss !! consIx) env knowns
       where
         -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
         -- can be something like:
@@ -168,26 +189,29 @@ symbolically defs = runST $ do
     anaMeta ::
       Supply SymVar ->
       M.Map SymVar (Type lang) ->
+      M.Map SymVar (TermMeta lang SymVar) ->
       SymVar ->
       SymTree lang (TermMeta lang SymVar)
-    anaMeta s env target =
-      case env M.! target of
-        -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
-        -- Sat @target@ is of type @Either a b@, then:
-        -- @symeval target == symeval (Left fresh) ++ symeval (Right fresh)@
-        SystF.TyApp (SystF.Free (TySig tyName)) tyArgs ->
-          let Datatype _ _ _ consList = prtTypeDefOf tyName `runReader` defs
-           in Union $
-                for2 (Supply.split s) consList $ \s' consNameTy ->
-                  let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
-                      env' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) env delta
-                   in declSymVars delta $
-                        Learn (Assign target symbCons) $
-                          ana s'' env' symbCons
-        -- If this symvar is of any other type, we're done. This is as far as we can go.
-        -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
-        -- and there's nothing else to do.
-        _ -> pure $ SystF.termPure $ SystF.Meta target
+    anaMeta s env knowns target
+      | Just res <- M.lookup target knowns = pure res
+      | otherwise =
+        case env M.! target of
+          -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
+          -- Sat @target@ is of type @Either a b@, then:
+          -- @symeval target == symeval (Left fresh) ++ symeval (Right fresh)@
+          SystF.TyApp (SystF.Free (TySig tyName)) tyArgs ->
+            let Datatype _ _ _ consList = prtTypeDefOf tyName `runReader` defs
+             in Union $
+                  for2 (Supply.split s) consList $ \s' consNameTy ->
+                    let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
+                        env' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) env delta
+                     in declSymVars delta $
+                          Learn (Assign target symbCons) $
+                            ana s'' env' (M.insert target symbCons knowns) symbCons
+          -- If this symvar is of any other type, we're done. This is as far as we can go.
+          -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
+          -- and there's nothing else to do.
+          _ -> pure $ SystF.termPure $ SystF.Meta target
 
 declSymVars :: M.Map SymVar (Type lang) -> Tree lang (DeltaEnv lang) a -> Tree lang (DeltaEnv lang) a
 declSymVars vs
