@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Pirouette.Transformations.DCE where
 
@@ -118,7 +119,7 @@ removeDfInTypeCtor :: forall lang. (Language lang)
                    -> Integer
                    -> PrtUnorderedDefs lang
 removeDfInTypeCtor ty defs ctorIdx = PrtUnorderedDefs
-                                   $ transformBi updateDtor
+                                   $ transformBi (updateDtor @lang (destructor ty) ctorIdx fieldsIdxes)
                                    $ updateCtor <$> prtUODecls defs
   where
     ctor = constructors ty !! fromIntegral ctorIdx
@@ -131,14 +132,19 @@ removeDfInTypeCtor ty defs ctorIdx = PrtUnorderedDefs
         ctors' = updateAt ctorIdx (constructors ty) ctor'
     updateCtor def = def
 
-    updateDtor :: Term lang -> Term lang
-    updateDtor (SystF.App (SystF.Free (TermSig dtorName)) dtorArgs)
-      | dtorName == destructor ty = SystF.App (SystF.Free (TermSig dtorName)) $ prefix <> branches'
-      where
-        (prefix, branches) = splitArgsTermsTail dtorArgs
-        branches' = updateAt ctorIdx branches branch'
-        branch' = SystF.argMap id (dropArgs fieldsIdxes) $ branches !! fromIntegral ctorIdx
-    updateDtor x = x
+updateDtor :: Language lang
+           => Name
+           -> Integer
+           -> [Integer]
+           -> Term lang
+           -> Term lang
+updateDtor dtorName ctorIdx fieldsIdxes (SystF.App (SystF.Free (TermSig funName)) dtorArgs)
+  | funName == dtorName = SystF.App (SystF.Free (TermSig dtorName)) $ prefix <> branches'
+  where
+    (prefix, branches) = splitArgsTermsTail dtorArgs
+    branches' = updateAt ctorIdx branches branch'
+    branch' = SystF.argMap id (dropArgs $ (\ix -> -ix - 1) <$> fieldsIdxes) $ branches !! fromIntegral ctorIdx
+updateDtor _ _ _ x = x
 
 -- | Tries to remove a single bound variable with the given index from a function.
 -- If the argument isn't used, it just decrements the indices of further arguments.
@@ -203,7 +209,7 @@ isFieldUsed :: forall lang. (Language lang)
             -> Integer  -- ^ constructor idx
             -> Integer  -- ^ field idx
             -> Bool
-isFieldUsed defs matcher ctorIdx fieldIdx = any (isArgUsed fieldIdx) ctorBranches
+isFieldUsed defs matcher ctorIdx fieldIdx = any (isArgUsed $ -fieldIdx - 1) ctorBranches
   where
     ctorBranches = [ ctorBranch
                    | SystF.App (SystF.Free (TermSig name)) args <- universeBi defs :: [Term lang]
@@ -223,7 +229,7 @@ unusedFields :: forall lang. (Language lang)
 unusedFields defs Datatype{..} ctorIdx =
   [ fieldIdx
   | fieldIdx <- [0 .. fieldsCnt - 1]
-  , not $ isFieldUsed defs destructor ctorIdx (fieldIdx - fieldsCnt)
+  , not $ isFieldUsed defs destructor ctorIdx fieldIdx
   ]
   where
     fieldsCnt = L.genericLength $ fst $ flattenType $ snd $ constructors !! fromIntegral ctorIdx
