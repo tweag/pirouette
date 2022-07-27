@@ -34,8 +34,11 @@ tests =
 unusedFieldsTest :: [TestTree]
 unusedFieldsTest =
   [ testCase "detected correctly" $ do
-      unusedFields src1 ty1 0 @?= []
-      unusedFields src1 ty1 1 @?= [2]
+      unusedFields src1 (getType src1 "Ty1") 0 @?= []
+      unusedFields src1 (getType src1 "Ty1") 1 @?= [2]
+      unusedFields srcPoly (getType srcPoly "Extended") 0 @?= [1]
+      unusedFields srcPoly (getType srcPoly "Extended") 1 @?= []
+      unusedFields srcPoly (getType srcPoly "Extended") 2 @?= []
   , testCase "removed correctly, given their list" $ do
       transformBi (updateDtor @Ex "match_Ty1" 1 [0, 2]) (getFunBody src1 "foo") @?= getFunBody resFoo1 "foo"
       transformBi (updateDtor @Ex "match_Ty1" 1 [2])    (getFunBody src1 "foo") @?= getFunBody res1    "foo"
@@ -43,7 +46,8 @@ unusedFieldsTest =
       removeDeadFields src1 @?= res1
   ]
   where
-    DTypeDef ty1 = prtUODecls src1 Map.! (TypeNamespace, "Ty1")
+    getType prog name = case prtUODecls prog Map.! (TypeNamespace, name) of
+                             DTypeDef td -> td
 
     getFunBody prog name = case prtUODecls prog Map.! (TermNamespace, name) of
                                 DFunDef fd -> funBody fd
@@ -100,6 +104,13 @@ fun bar : Ty1 -> Integer
       (\(a : Integer) (b : Ty1). a + foo b)
 |]
 
+    srcPoly :: PrtUnorderedDefs Ex
+    srcPoly = [prog|
+data Extended (a : Type)
+  = Finite : a -> Extended a
+  | NegInf : Extended a
+  | PosInf : Extended a
+|]
 
 findDeadCtorsTest :: [TestTree]
 findDeadCtorsTest =
