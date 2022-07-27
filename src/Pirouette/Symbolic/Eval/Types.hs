@@ -35,6 +35,7 @@ type TermSet lang meta = Fix (TermTree lang meta)
 newtype Fix f = Fix {unFix :: f (Fix f)}
 
 newtype TermTree lang meta a = TermTree {open :: Tree (DeltaEnv lang) (SymbTerm lang meta a)}
+  deriving (Show)
 
 -- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
 data Tree deltas a
@@ -55,22 +56,28 @@ data SymbTerm lang meta x
     -- > [Tree (Term lang)] -> Tree (Term lang)
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    Call Name ([x] -> x) [x]
+    forall a. Call Name ([TermTree lang meta a] -> TermTree lang meta x) [TermTree lang meta a]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    Dest ((ConstructorInfo, [x]) -> x) x
-  | WHNF (WHNFTerm lang meta x)
+    forall a. Dest ((ConstructorInfo, [TermTree lang meta a]) -> TermTree lang meta x) (TermTree lang meta a)
+  | WHNF (WHNFTermHead lang meta) [TermTree lang meta x]
+
+instance Functor (SymbTerm lang meta) where
+  fmap f (Call n body args) = Call n (fmap f . body) args
+  fmap f (Dest cs motive) = Dest (fmap f . cs) motive
+  fmap f (WHNF hd args) = WHNF hd (map (fmap f) args)
+
+instance Functor (TermTree lang meta) where
+  fmap f (TermTree x) = TermTree $ fmap (fmap f) x
+
+instance Show (SymbTerm lang meta x) where
+  show _ = "<symbterm>"
 
 data WHNFTermHead lang meta
   = WHNFCotr ConstructorInfo
   | WHNFBuiltin (BuiltinTerms lang)
   | WHNFMeta meta
-
-data WHNFTerm lang meta x = WHNFTerm
-  { whnfHead :: WHNFTermHead lang meta,
-    whnfArgs :: [x]
-  }
 
 -- THE ISSUE:
 --

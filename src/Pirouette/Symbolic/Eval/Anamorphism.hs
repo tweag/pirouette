@@ -131,7 +131,7 @@ symbolically defs = runST $ do
           -- > add $s0 (Suc $s0)
           -- We'll evaluate each argument separately, which is not ideal.
           termArgs = mapMaybe SystF.fromArg args
-          args' = zipWith (\s0 -> ana s0 env knowns) sRest
+          args' = zipWith (\s0 -> ana' s0 env knowns) sRest termArgs
        in -- TODO: can't constructors loop on this?!
           -- doCall callHd term = Call callHd (liftedTermAppN term >=> ana sRec env knowns) args'
           case hd of
@@ -141,9 +141,9 @@ symbolically defs = runST $ do
                 DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
                 DTypeDef _ -> error "Can't evaluate typedefs"
                 DConstructor ix tyName ->
-                  TermTree $ pure $ WHNF $ WHNFTerm (WHNFCotr $ ConstructorInfo tyName n ix) termArgs
-                -- doCall (CallCotr $ ) (SystF.termPure hd)
-                DFunction _ body _ -> undefined -- doCall (CallSig n) (termToMeta body)
+                  TermTree $ pure $ WHNF (WHNFCotr $ ConstructorInfo tyName n ix) termArgs
+                DFunction _ body _ ->
+                  TermTree $ pure $ Call n (liftedTermAppN (termToMeta body) >=> ana' sRec env knowns) args'
             SystF.Free (Builtin bin) -> undefined -- doCall (CallBuiltin bin) (SystF.termPure hd)
             SystF.Free Bottom -> pure t
             SystF.Free (Constant _) -> pure t
