@@ -16,8 +16,11 @@ import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF hiding (Arg)
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 
+traceDefs :: (LanguagePretty lang) => PrtUnorderedDefs lang -> a -> a
+traceDefs = trace . renderSingleLineStr . pretty . prtUODecls
+
 traceDefsId :: (LanguagePretty lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
+traceDefsId defs = defs `traceDefs` defs
 
 -- @Arg Kind (Type lang)@ could've been used here instead,
 -- but having a distinct type seems to be a bit nicer, at least for now for hole-driven development reasons.
