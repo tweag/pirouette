@@ -138,7 +138,7 @@ symbolically defs = runST $ do
               case prtDefOf TermNamespace n `runReader` defs of
                 DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
                 DTypeDef _ -> error "Can't evaluate typedefs"
-                DConstructor ix tyName -> doCall (CallCotr $ ConstructorInfo n tyName ix) (SystF.termPure hd)
+                DConstructor ix tyName -> doCall (CallCotr $ ConstructorInfo tyName n ix) (SystF.termPure hd)
                 DFunction _ body _ -> doCall (CallSig n) (termToMeta body)
             SystF.Free (Builtin bin) -> doCall (CallBuiltin bin) (SystF.termPure hd)
             SystF.Free Bottom -> pure t
@@ -223,17 +223,33 @@ declSymVars vs
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
   forall lang meta f.
-  (Language lang, Applicative f, Show (f (TermMeta lang meta)), Show meta) =>
+  (Language lang, Applicative f, Show (f (TermMeta lang meta)), Show meta, Pretty meta) =>
   TermMeta lang meta ->
   [f (TermMeta lang meta)] ->
   f (TermMeta lang meta)
 liftedTermAppN body args =
   let body' = termMetaMap (pure . mkMeta) body
       args' = map (SystF.TermArg . mkMeta) args
-   in termJoin <$> termMetaDistr (SystF.appN body' args')
+      -- res = termJoin <$> termMetaDistr (SystF.appN body' args')
+      -- x :: Term (f Term)
+      x = SystF.appN body' args'
+      res = _ $ x
+   in trace (information res) res
   where
+    information x =
+      unlines $
+        [ "liftedTermAppN:",
+          "  term: " ++ renderSingleLineStr (pretty body),
+          "  args: "
+        ]
+          ++ map (("  - " ++) . show) args
+          ++ ["  res: " ++ show x]
+
     mkMeta :: m -> TermMeta lang m
     mkMeta m = SystF.Meta m `SystF.App` []
+
+    termMetaUnDistr :: (Applicative f) => f (TermMeta lang a) -> TermMeta lang (f a)
+    termMetaUnDistr = undefined
 
     -- This function is local because it makes manya assumptios about where metavariables
     -- occur. In this case, we assume they won't ever appear on types, so its safe to just

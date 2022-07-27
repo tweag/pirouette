@@ -58,10 +58,45 @@ data Tree deltas lang meta a
       ((ConstructorInfo, [Tree deltas lang meta (TermMeta lang meta)]) -> Tree deltas lang meta a)
       (Tree deltas lang meta (TermMeta lang meta))
 
+-- THE ISSUE:
+--
+-- When liftedTermAppN takes the following term:
+--
+-- > λ (n : Nat) (m : Nat) . Nat_match 1#n @Nat 0#m (λ sn : Nat . Suc (add 0#sn 1#m))
+--
+-- Applied to the following trees:
+--
+-- > n == Union
+-- >    [ Learn (s0 === Zero) (Call (Cotr Zero) []) -- (A)
+-- >    , Learn (Fresh s1) (Learn (s0 == Suc s1) (Call (Cotr Suc) ${ ana s1 }))
+-- >    ]
+-- >
+-- > m == Call (Cotr Suc) ${ ana s0 }
+--
+-- We wold expect to push "Nat_match" down the different combinations, yielding something like:
+--
+-- > Union
+-- >   [ Learn (s0 === Zero) (Leaf $ Nat_match (Call (Ctor Zero) []) @Nat ... )
+-- >   , ...
+-- >   ]
+--
+-- And that's the issue! In the first branch of the union, (A) above, there is no 'Leaf' constructor
+-- whatsoever, so any sort of distributive law will pull that @Call (Cotr Zero) []@ to the top level with it.
+-- Indeed, that's what is happening:
+--
+-- > result = Union
+-- >   [Learn (s0 === Zero) (Call (Cotr Zero) [])
+-- >   ,Learn (Fresh s1) (Learn (s0 === Suc s1) (Call (Cotr Suc) #{ ana s1 } )))]
+--
+-- IDEA: split it up into two functors, which will be mutually recursive (or explicitely fixpointed)
+-- This could show us all the /layers/ of the ana, giving us a chance to act productively PER LAYER!
+
 data CallHead lang
   = CallSig Name
   | CallCotr ConstructorInfo
   | CallBuiltin (BuiltinTerms lang)
+
+deriving instance (LanguageBuiltins lang) => Show (CallHead lang)
 
 -- TODO: Document how we CANNOT put constructors that mirror the term structure because
 -- the distributive law would push the term "under evaluation" below constructors. For instance:
@@ -99,8 +134,12 @@ data DeltaEnv lang
 -- it gets annoying when trying to use anything other than terms as arguments
 -- to appN. Nevertheless, once `cata`s are ready we can craft some custom
 -- show instances nicely.
-instance Show (Tree deltas lang meta a) where
-  show _ = "<internal Tree Show instance; check comment>"
+instance (LanguageBuiltins lang, Show a, Show meta, Show deltas) => Show (Tree deltas lang meta a) where
+  show (Leaf x) = "(Leaf " ++ show x ++ ")"
+  show (Union xs) = "(Union " ++ show xs ++ ")"
+  show (Learn d t) = "(Learn (" ++ show d ++ ") " ++ show t ++ ")"
+  show (Call hd _ args) = "(Call " ++ show hd ++ " " ++ show (length args) ++ ")"
+  show (Dest _ motive) = "(Dest " ++ show motive ++ ")"
 
 instance Functor (Tree deltas lang meta) where
   fmap f (Leaf x) = Leaf $ f x
