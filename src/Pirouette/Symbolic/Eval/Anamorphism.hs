@@ -130,17 +130,20 @@ symbolically defs = runST $ do
           -- > add $s0 (Suc $s0)
           -- We'll evaluate each argument separately, which is not ideal.
           args' = zipWith (\s0 -> ana s0 env knowns) sRest (mapMaybe SystF.fromArg args)
+          -- TODO: can't constructors loop on this?!
+          doCall callHd term = Call callHd (liftedTermAppN term >=> ana sRec env knowns) args'
        in case hd of
             SystF.Bound ann _ -> error $ "Can't evaluate bound variable: " ++ show ann
             SystF.Free (TermSig n) ->
               case prtDefOf TermNamespace n `runReader` defs of
-                DTypeDef _ -> error "Can't evaluate typedefs"
-                DConstructor _ _ -> pure t -- liftedTermAppN (SystF.Free $ TermSig n) args'
                 DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
-                DFunction _ body _ -> Call (liftedTermAppN (termToMeta body) >=> ana sRec env knowns) args'
+                DTypeDef _ -> error "Can't evaluate typedefs"
+                DConstructor ix tyName -> doCall (CallCotr $ ConstructorInfo n tyName ix) (SystF.termPure hd)
+                DFunction _ body _ -> doCall (CallSig n) (termToMeta body)
+            SystF.Free (Builtin bin) -> doCall (CallBuiltin bin) (SystF.termPure hd)
+            SystF.Free Bottom -> pure t
+            SystF.Free (Constant _) -> pure t
             SystF.Meta vr -> anaMeta sRec env knowns vr
-            -- Bottom, Constant an Builtin
-            _ -> pure t
     ana' _ _ _ t@SystF.Lam {} =
       error $
         unlines

@@ -29,6 +29,8 @@ import qualified PureSMT
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
 type SymTree lang meta a = Tree (DeltaEnv lang) lang meta a
 
+type TermSet lang meta = Tree (DeltaEnv lang) lang meta (TermMeta lang meta)
+
 -- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
 data Tree deltas lang meta a
   = Leaf a
@@ -46,6 +48,7 @@ data Tree deltas lang meta a
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
     Call
+      (CallHead lang)
       ([Tree deltas lang meta (TermMeta lang meta)] -> Tree deltas lang meta a)
       [Tree deltas lang meta (TermMeta lang meta)]
   | -- | Destructors are also a little tricky, because in reality, we need to
@@ -54,6 +57,11 @@ data Tree deltas lang meta a
     Dest
       ((ConstructorInfo, [Tree deltas lang meta (TermMeta lang meta)]) -> Tree deltas lang meta a)
       (Tree deltas lang meta (TermMeta lang meta))
+
+data CallHead lang
+  = CallSig Name
+  | CallCotr ConstructorInfo
+  | CallBuiltin (BuiltinTerms lang)
 
 -- TODO: Document how we CANNOT put constructors that mirror the term structure because
 -- the distributive law would push the term "under evaluation" below constructors. For instance:
@@ -98,7 +106,7 @@ instance Functor (Tree deltas lang meta) where
   fmap f (Leaf x) = Leaf $ f x
   fmap f (Union ts) = Union $ map (fmap f) ts
   fmap f (Learn str t) = Learn str $ fmap f t
-  fmap f (Call ts as) = Call (fmap f . ts) as
+  fmap f (Call hd ts as) = Call hd (fmap f . ts) as
   fmap f (Dest worlds motive) = Dest (fmap f . worlds) motive
 
 instance Applicative (Tree deltas lang meta) where
@@ -117,7 +125,7 @@ instance Monad (Tree deltas lang meta) where
   Leaf x >>= f = f x
   Union ts >>= f = Union $ map (>>= f) ts
   Learn str t >>= f = Learn str (t >>= f)
-  Call body args >>= f = Call (f <=< body) args
+  Call hd body args >>= f = Call hd (f <=< body) args
   Dest worlds motive >>= f = Dest (f <=< worlds) motive
 
 -- * Older Types

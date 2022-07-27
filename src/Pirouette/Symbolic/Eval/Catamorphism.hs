@@ -51,8 +51,7 @@ data SymEvalEnv lang = SymEvalEnv
   }
 
 data WHNF lang a
-  = WHNFConstructor ConstructorInfo [SymTree lang a]
-  | WHNFConstant (Constants lang)
+  = WHNFConstructor ConstructorInfo [SymTree lang SymVar a]
   | WHNFOther a
 
 catamorphism ::
@@ -60,7 +59,7 @@ catamorphism ::
   (LanguagePretty lang, LanguageSymEval lang) =>
   PrtUnorderedDefs lang ->
   Options ->
-  SymTree lang (TermMeta lang SymVar) ->
+  TermSet lang SymVar ->
   [Path lang (TermMeta lang SymVar)]
 catamorphism defs opts = map (uncurry path) . cata def
   where
@@ -79,24 +78,26 @@ catamorphism defs opts = map (uncurry path) . cata def
 
     cata ::
       SymEvalSt lang ->
-      SymTree lang (TermMeta lang SymVar) ->
+      TermSet lang SymVar ->
       [(SymEvalSt lang, TermMeta lang SymVar)]
     cata st = concatMap (uncurry whnfToTerm) . cataWHNF st
 
     -- Cata WHNF will lazily search for the first WHNF of the tree
     cataWHNF ::
       SymEvalSt lang ->
-      SymTree lang a ->
-      [(SymEvalSt lang, WHNF lang a)]
-    cataWHNF st (Cons ci args) = return (st, WHNFConstructor ci args)
-    cataWHNF st (Const c) = return (st, WHNFConstant c)
+      SymTree lang SymVar (TermMeta lang SymVar) ->
+      [(SymEvalSt lang, WHNF lang (TermMeta lang SymVar))]
     cataWHNF st (Leaf t) = return (st, WHNFOther t)
     -- TODO: add something to language symeval to decide whether to run this
     -- in call-by-name/value or some mix the user might want.
     -- for now, we're just going on call-by-name:
-    cataWHNF st (Call f xs) = cataWHNF st (f xs)
+    cataWHNF st (Call hd f xs) =
+      case hd of
+        CallSig _ -> cataWHNF st (f xs)
+        CallBuiltin _ -> undefined
+        CallCotr ci -> return (st, WHNFConstructor ci xs)
     cataWHNF st (Union trees) = concatMap (cataWHNF st) trees
-    cataWHNF st (Dest motif cases) = do
+    cataWHNF st (Dest cases motif) = do
       (st', motif') <- cataWHNF st motif
       case motif' of
         WHNFConstructor ci args -> cataWHNF st' (cases (ci, args))
@@ -109,17 +110,14 @@ catamorphism defs opts = map (uncurry path) . cata def
     -- Let's not worry about builtins at all right now. With plain inductive types
     -- we can already do so much to check whether this monster is going to work before
     -- refining the interface to evaluating builtins in LanguageSymEval
-    cataWHNF st (Bin b args) = return (st, WHNFOther undefined)
 
     whnfToTerm :: SymEvalSt lang -> WHNF lang (TermMeta lang SymVar) -> [(SymEvalSt lang, TermMeta lang SymVar)]
     whnfToTerm st (WHNFConstructor ci args) =
       let args' = traverse (cata st) args
-          ctor = mkConsApp (ciCtorName ci)
        in flip map args' $ \xs ->
             (if null xs then const st else mconcat) *** mkConsApp (ciCtorName ci) $
               unzip xs
     -- return $ mkConsApp (ciCtorName ci) args'
-    whnfToTerm st (WHNFConstant t) = return (st, mkConstant t)
     whnfToTerm st (WHNFOther t) = return (st, t)
 
 -- return $ fmap (mkConsApp (ciCtorName ci)) args'
