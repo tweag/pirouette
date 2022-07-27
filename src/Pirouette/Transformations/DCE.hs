@@ -111,7 +111,7 @@ removeDfInType :: forall lang. (Language lang)
                => PrtUnorderedDefs lang
                -> TypeDef lang
                -> PrtUnorderedDefs lang
-removeDfInType defs ty@Datatype{..} = L.foldl' (removeDfInTypeCtor ty) defs [0 .. fromIntegral $ length constructors - 1]
+removeDfInType defs ty@Datatype{..} = L.foldl' (removeDfInTypeCtor ty) defs [0 .. L.genericLength constructors - 1]
 
 removeDfInTypeCtor :: forall lang. (Language lang)
                    => TypeDef lang
@@ -230,11 +230,12 @@ unusedFields :: forall lang. (Language lang)
              -> [Integer]
 unusedFields defs Datatype{..} ctorIdx =
   [ fieldIdx
-  | fieldIdx <- [0 .. fieldsCnt - 1]
+  | fieldIdx <- [0 .. L.genericLength flatArgs - 1]
   , not $ isFieldUsed defs destructor ctorIdx fieldIdx
+  , isFlatTermArg $ flatArgs !! fromIntegral fieldIdx
   ]
   where
-    fieldsCnt = L.genericLength $ fst $ flattenType $ snd $ constructors !! fromIntegral ctorIdx
+    (flatArgs, _) = flattenType $ snd $ constructors !! fromIntegral ctorIdx
 
 -- * Misc utils
 

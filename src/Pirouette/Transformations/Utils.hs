@@ -29,6 +29,14 @@ data FlatArgType lang
   | FlatTermArg (Type lang)
   deriving (Show)
 
+isFlatTyArg :: FlatArgType lang -> Bool
+isFlatTyArg FlatTyArg{} = True
+isFlatTyArg _ = False
+
+isFlatTermArg :: FlatArgType lang -> Bool
+isFlatTermArg FlatTermArg{} = True
+isFlatTermArg _ = False
+
 flattenType :: Type lang -> ([FlatArgType lang], Type lang)
 flattenType ty@TyApp {} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod
