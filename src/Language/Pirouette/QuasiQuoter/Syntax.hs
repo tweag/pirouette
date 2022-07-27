@@ -237,6 +237,9 @@ parseKind =
 parens :: Parser a -> Parser a
 parens a = try (symbol "(") *> a <* symbol ")"
 
+curlyBrackets :: Parser a -> Parser a
+curlyBrackets a = try (symbol "{") *> a <* symbol "}"
+
 parseType :: forall lang. (LanguageParser lang) => Parser (Ty lang)
 parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
   where
@@ -324,7 +327,11 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
       tyRes <- symbol "@" >> parseTypeAtom
       term <- parseTerm
       symbol "of"
-      cases <- sepBy1 ((,) <$> parsePattern <*> (symbol "->" >> parseTerm)) (symbol ";")
+      cases <-
+        curlyBrackets $
+          sepBy1
+            ((,) <$> parsePattern <*> (symbol "->" >> parseTerm))
+            (symbol ";")
       return (ExprCase ty tyRes term cases)
 
     pAtom :: Parser (Expr lang)
