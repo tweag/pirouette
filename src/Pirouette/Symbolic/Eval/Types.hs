@@ -4,9 +4,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StarIsType #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Symbolic.Eval.Types where
@@ -15,6 +17,7 @@ import Control.Applicative hiding (Const)
 import Control.Monad (ap, (<=<))
 import Data.Data hiding (eqT)
 import Data.Default
+import qualified Data.Kind as K
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.String (IsString)
@@ -27,16 +30,21 @@ import qualified PureSMT
 -- | The intermediate datastructure of our symbolic engine, produced by
 -- the 'Pirouette.Symbolic.Eval.Anamorphism.symbolically' anamorphism and
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
-type SymTree lang meta a = Tree (DeltaEnv lang) lang meta a
+type TermSet lang meta = Fix (TermTree lang meta)
 
-type TermSet lang meta = Tree (DeltaEnv lang) lang meta (TermMeta lang meta)
+newtype Fix f = Fix {unFix :: f (Fix f)}
+
+newtype TermTree lang meta a = TermTree {open :: Tree (DeltaEnv lang) (SymbTerm lang meta a)}
 
 -- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
-data Tree deltas lang meta a
+data Tree deltas a
   = Leaf a
-  | Learn deltas (Tree deltas lang meta a)
-  | Union [Tree deltas lang meta a]
-  | -- | A function call, in an untyped setting, can be seen as something
+  | Learn deltas (Tree deltas a)
+  | Union [Tree deltas a]
+  deriving (Show)
+
+data SymbTerm lang meta x
+  = -- | A function call, in an untyped setting, can be seen as something
     -- that takes a list of terms and returns a term (in fact, that's the type of
     -- the partially applied 'SystF.App' constructor!).
     --
@@ -47,16 +55,22 @@ data Tree deltas lang meta a
     -- > [Tree (Term lang)] -> Tree (Term lang)
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    Call
-      (CallHead lang)
-      ([Tree deltas lang meta (TermMeta lang meta)] -> Tree deltas lang meta a)
-      [Tree deltas lang meta (TermMeta lang meta)]
+    Call Name ([x] -> x) [x]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    Dest
-      ((ConstructorInfo, [Tree deltas lang meta (TermMeta lang meta)]) -> Tree deltas lang meta a)
-      (Tree deltas lang meta (TermMeta lang meta))
+    Dest ((ConstructorInfo, [x]) -> x) x
+  | WHNF (WHNFTerm lang meta x)
+
+data WHNFTermHead lang meta
+  = WHNFCotr ConstructorInfo
+  | WHNFBuiltin (BuiltinTerms lang)
+  | WHNFMeta meta
+
+data WHNFTerm lang meta x = WHNFTerm
+  { whnfHead :: WHNFTermHead lang meta,
+    whnfArgs :: [x]
+  }
 
 -- THE ISSUE:
 --
@@ -91,12 +105,7 @@ data Tree deltas lang meta a
 -- IDEA: split it up into two functors, which will be mutually recursive (or explicitely fixpointed)
 -- This could show us all the /layers/ of the ana, giving us a chance to act productively PER LAYER!
 
-data CallHead lang
-  = CallSig Name
-  | CallCotr ConstructorInfo
-  | CallBuiltin (BuiltinTerms lang)
-
-deriving instance (LanguageBuiltins lang) => Show (CallHead lang)
+-- deriving instance (LanguageBuiltins lang) => Show (CallHead lang)
 
 -- TODO: Document how we CANNOT put constructors that mirror the term structure because
 -- the distributive law would push the term "under evaluation" below constructors. For instance:
@@ -130,29 +139,19 @@ data DeltaEnv lang
   | Assign SymVar (TermMeta lang SymVar)
   deriving (Eq, Show)
 
--- SystF.appN requires a show instance to make it easier to debug. In hindsight,
--- it gets annoying when trying to use anything other than terms as arguments
--- to appN. Nevertheless, once `cata`s are ready we can craft some custom
--- show instances nicely.
-instance (LanguageBuiltins lang, Show a, Show meta, Show deltas) => Show (Tree deltas lang meta a) where
-  show (Leaf x) = "(Leaf " ++ show x ++ ")"
-  show (Union xs) = "(Union " ++ show xs ++ ")"
-  show (Learn d t) = "(Learn (" ++ show d ++ ") " ++ show t ++ ")"
-  show (Call hd _ args) = "(Call " ++ show hd ++ " " ++ show (length args) ++ ")"
-  show (Dest _ motive) = "(Dest " ++ show motive ++ ")"
-
-instance Functor (Tree deltas lang meta) where
+instance Functor (Tree deltas) where
   fmap f (Leaf x) = Leaf $ f x
   fmap f (Union ts) = Union $ map (fmap f) ts
   fmap f (Learn str t) = Learn str $ fmap f t
-  fmap f (Call hd ts as) = Call hd (fmap f . ts) as
-  fmap f (Dest worlds motive) = Dest (fmap f . worlds) motive
 
-instance Applicative (Tree deltas lang meta) where
+-- fmap f (Call hd ts as) = Call hd (fmap f . ts) as
+-- fmap f (Dest worlds motive) = Dest (fmap f . worlds) motive
+
+instance Applicative (Tree deltas) where
   pure = Leaf
   (<*>) = ap
 
-instance Alternative (Tree deltas lang meta) where
+instance Alternative (Tree deltas) where
   empty = Union []
 
   Union t <|> Union u = Union (t ++ u)
@@ -160,12 +159,13 @@ instance Alternative (Tree deltas lang meta) where
   t <|> Union u = Union (t : u)
   t <|> u = Union [t, u]
 
-instance Monad (Tree deltas lang meta) where
+instance Monad (Tree deltas) where
   Leaf x >>= f = f x
   Union ts >>= f = Union $ map (>>= f) ts
   Learn str t >>= f = Learn str (t >>= f)
-  Call hd body args >>= f = Call hd (f <=< body) args
-  Dest worlds motive >>= f = Dest (f <=< worlds) motive
+
+-- Call hd body args >>= f = Call hd (f <=< body) args
+-- Dest worlds motive >>= f = Dest (f <=< worlds) motive
 
 -- * Older Types
 

@@ -80,7 +80,7 @@ symbolically ::
   (Language lang) =>
   PrtUnorderedDefs lang ->
   Term lang ->
-  SymTree lang SymVar (TermMeta lang SymVar)
+  TermSet lang SymVar
 symbolically defs = runST $ do
   s0 <- Supply.newSupply (SymVar $ Name "s" (Just 0)) nextSymVar
   return (withSymVars s0)
@@ -90,7 +90,7 @@ symbolically defs = runST $ do
     withSymVars ::
       Supply SymVar ->
       Term lang ->
-      SymTree lang SymVar (TermMeta lang SymVar)
+      TermSet lang SymVar
     withSymVars s t =
       let (args, _) = SystF.getHeadLams t
           (s', svars) = freshSymVars s (map (typeToMeta . snd) args)
@@ -104,10 +104,11 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      SymTree lang SymVar (TermMeta lang SymVar)
-    ana s env knowns t =
-      trace str $ ana' s env knowns t
+      TermSet lang SymVar
+    ana s env knowns t = undefined
       where
+        -- trace str $ ana' s env knowns t
+
         str =
           unlines
             [ "term: " ++ renderSingleLineStr (pretty t),
@@ -123,27 +124,30 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      SymTree lang SymVar (TermMeta lang SymVar)
+      TermTree lang SymVar (TermMeta lang SymVar)
     ana' s env knowns t@(hd `SystF.App` args) =
       let sRec : sRest = Supply.split s
           -- TODO: how do we communicate in between the arguments? Take the following call as an example:
           -- > add $s0 (Suc $s0)
           -- We'll evaluate each argument separately, which is not ideal.
-          args' = zipWith (\s0 -> ana s0 env knowns) sRest (mapMaybe SystF.fromArg args)
-          -- TODO: can't constructors loop on this?!
-          doCall callHd term = Call callHd (liftedTermAppN term >=> ana sRec env knowns) args'
-       in case hd of
+          termArgs = mapMaybe SystF.fromArg args
+          args' = zipWith (\s0 -> ana s0 env knowns) sRest
+       in -- TODO: can't constructors loop on this?!
+          -- doCall callHd term = Call callHd (liftedTermAppN term >=> ana sRec env knowns) args'
+          case hd of
             SystF.Bound ann _ -> error $ "Can't evaluate bound variable: " ++ show ann
             SystF.Free (TermSig n) ->
               case prtDefOf TermNamespace n `runReader` defs of
                 DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
                 DTypeDef _ -> error "Can't evaluate typedefs"
-                DConstructor ix tyName -> doCall (CallCotr $ ConstructorInfo tyName n ix) (SystF.termPure hd)
-                DFunction _ body _ -> doCall (CallSig n) (termToMeta body)
-            SystF.Free (Builtin bin) -> doCall (CallBuiltin bin) (SystF.termPure hd)
+                DConstructor ix tyName ->
+                  TermTree $ pure $ WHNF $ WHNFTerm (WHNFCotr $ ConstructorInfo tyName n ix) termArgs
+                -- doCall (CallCotr $ ) (SystF.termPure hd)
+                DFunction _ body _ -> undefined -- doCall (CallSig n) (termToMeta body)
+            SystF.Free (Builtin bin) -> undefined -- doCall (CallBuiltin bin) (SystF.termPure hd)
             SystF.Free Bottom -> pure t
             SystF.Free (Constant _) -> pure t
-            SystF.Meta vr -> anaMeta sRec env knowns vr
+            SystF.Meta vr -> undefined -- anaMeta sRec env knowns vr
     ana' _ _ _ t@SystF.Lam {} =
       error $
         unlines
@@ -169,13 +173,15 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       UnDestMeta lang SymVar ->
-      SymTree lang SymVar (TermMeta lang SymVar)
+      TermTree lang SymVar (TermMeta lang SymVar)
     anaDestructor s env knowns (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
       let (s0 : ss) = Supply.split s
-       in flip Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
-            let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
-             in liftedTermAppN caseTerm consArgs >>= ana (ss !! consIx) env knowns
+       in undefined
       where
+        --   flip Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+        --     let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
+        --      in liftedTermAppN caseTerm consArgs -- >>= ana (ss !! consIx) env knowns
+
         -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
         -- can be something like:
         -- > caseTerm = \x xs u -> x
@@ -193,9 +199,9 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       SymVar ->
-      SymTree lang SymVar (TermMeta lang SymVar)
+      TermTree lang SymVar (TermMeta lang SymVar)
     anaMeta s env knowns target
-      | Just res <- M.lookup target knowns = pure res
+      | Just res <- M.lookup target knowns = undefined -- pure res
       | otherwise =
         case env M.! target of
           -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
@@ -203,21 +209,22 @@ symbolically defs = runST $ do
           -- @symeval target == symeval (Left fresh) ++ symeval (Right fresh)@
           SystF.TyApp (SystF.Free (TySig tyName)) tyArgs ->
             let Datatype _ _ _ consList = prtTypeDefOf tyName `runReader` defs
-             in Union $
-                  for2 (Supply.split s) consList $ \s' consNameTy ->
-                    let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
-                        env' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) env delta
-                     in declSymVars delta $
-                          Learn (Assign target symbCons) $
-                            ana s'' env' (M.insert target symbCons knowns) symbCons
+             in undefined
+          --   Union $
+          --     for2 (Supply.split s) consList $ \s' consNameTy ->
+          --       let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
+          --           env' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) env delta
+          --        in declSymVars delta $
+          --             Learn (Assign target symbCons) $
+          --               ana s'' env' (M.insert target symbCons knowns) symbCons
           -- If this symvar is of any other type, we're done. This is as far as we can go.
           -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
           -- and there's nothing else to do.
           _ -> pure $ SystF.termPure $ SystF.Meta target
 
-declSymVars :: M.Map SymVar (Type lang) -> Tree (DeltaEnv lang) lang meta a -> Tree (DeltaEnv lang) lang meta a
+declSymVars :: M.Map SymVar (Type lang) -> TermSet lang meta -> TermSet lang meta
 declSymVars vs
-  | not (M.null vs) = Learn (DeclSymVars vs)
+  | not (M.null vs) = undefined -- Learn (DeclSymVars vs)
   | otherwise = id
 
 -- | Applies a term to tree arguments, yielding a tree of results.
@@ -230,10 +237,7 @@ liftedTermAppN ::
 liftedTermAppN body args =
   let body' = termMetaMap (pure . mkMeta) body
       args' = map (SystF.TermArg . mkMeta) args
-      -- res = termJoin <$> termMetaDistr (SystF.appN body' args')
-      -- x :: Term (f Term)
-      x = SystF.appN body' args'
-      res = _ $ x
+      res = termJoin <$> termMetaDistr (SystF.appN body' args')
    in trace (information res) res
   where
     information x =
