@@ -27,13 +27,13 @@ import qualified PureSMT
 -- | The intermediate datastructure of our symbolic engine, produced by
 -- the 'Pirouette.Symbolic.Eval.Anamorphism.symbolically' anamorphism and
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
-type SymTree lang a = Tree lang (DeltaEnv lang) a
+type SymTree lang meta a = Tree (DeltaEnv lang) lang meta a
 
--- | A 'Tree' which denotes a set of pairs of @(deltas, leaf)@
-data Tree lang deltas b
-  = Leaf b
-  | Learn deltas (Tree lang deltas b)
-  | Union [Tree lang deltas b]
+-- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
+data Tree deltas lang meta a
+  = Leaf a
+  | Learn deltas (Tree deltas lang meta a)
+  | Union [Tree deltas lang meta a]
   | -- | A function call, in an untyped setting, can be seen as something
     -- that takes a list of terms and returns a term (in fact, that's the type of
     -- the partially applied 'SystF.App' constructor!).
@@ -45,18 +45,33 @@ data Tree lang deltas b
     -- > [Tree (Term lang)] -> Tree (Term lang)
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    forall a. Call ([Tree lang deltas a] -> Tree lang deltas b) [Tree lang deltas a]
+    Call
+      ([Tree deltas lang meta (TermMeta lang meta)] -> Tree deltas lang meta a)
+      [Tree deltas lang meta (TermMeta lang meta)]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    forall a. Dest (Tree lang deltas a) ((ConstructorInfo, [Tree lang deltas a]) -> Tree lang deltas b)
-  | -- | Naturally, to be able to effectively build a value with potentially infinite children,
-    -- we also need torepresent constructors
-    Cons ConstructorInfo [Tree lang deltas b]
-  | -- | A Builtin is also something that we're stuck on until we decide to
-    -- consume this tree
-    Bin (BuiltinTerms lang) [Tree lang deltas b]
-  | Const (Constants lang)
+    Dest
+      ((ConstructorInfo, [Tree deltas lang meta (TermMeta lang meta)]) -> Tree deltas lang meta a)
+      (Tree deltas lang meta (TermMeta lang meta))
+
+-- TODO: Document how we CANNOT put constructors that mirror the term structure because
+-- the distributive law would push the term "under evaluation" below constructors. For instance:
+-- > Nat_match ${ HypotheticalConstructor X args } ...
+-- Would become: @HypotheticalConstructor X { map Nat_match args ... }
+-- Which is REALLY different! One is supposed to match on an argument, the other returns a value.
+
+-- TODO: We also depend on terms explicitely on 'Call' and 'Dest' in order to let the
+-- cata match on these constructors and have a little more information and freedom to
+-- traverse the trees as it wishes. If we were to say something like:
+-- > Call :: forall a . ([Tree a] -> Tree b) -> [Tree a] -> Tree b
+-- Now, say the cata is looking at a call:
+-- > cata (Call f args) = ...
+-- We cannot know that args are actually sets of terms and the only things we can do are:
+-- 1. evaluate args completely: @Tree [a]@, then apply. Which corresponds to full blown call-by-value and
+-- would never terminate in our case.
+-- 2. just apply, corresponding to call-by-name.
+-- Yet, we might want to do more interesting things such as evaluate up to depth 3 then apply or whatever.
 
 data ConstructorInfo = ConstructorInfo
   { ciTyName :: TyName,
@@ -76,24 +91,21 @@ data DeltaEnv lang
 -- it gets annoying when trying to use anything other than terms as arguments
 -- to appN. Nevertheless, once `cata`s are ready we can craft some custom
 -- show instances nicely.
-instance Show (Tree lang monoid a) where
+instance Show (Tree deltas lang meta a) where
   show _ = "<internal Tree Show instance; check comment>"
 
-instance Functor (Tree lang m) where
-  fmap _ (Const c) = Const c
+instance Functor (Tree deltas lang meta) where
   fmap f (Leaf x) = Leaf $ f x
   fmap f (Union ts) = Union $ map (fmap f) ts
   fmap f (Learn str t) = Learn str $ fmap f t
   fmap f (Call ts as) = Call (fmap f . ts) as
-  fmap f (Dest motive worlds) = Dest motive (fmap f . worlds)
-  fmap f (Cons c args) = Cons c (map (fmap f) args)
-  fmap f (Bin c args) = Bin c (map (fmap f) args)
+  fmap f (Dest worlds motive) = Dest (fmap f . worlds) motive
 
-instance Applicative (Tree lang m) where
+instance Applicative (Tree deltas lang meta) where
   pure = Leaf
   (<*>) = ap
 
-instance Alternative (Tree lang m) where
+instance Alternative (Tree deltas lang meta) where
   empty = Union []
 
   Union t <|> Union u = Union (t ++ u)
@@ -101,15 +113,12 @@ instance Alternative (Tree lang m) where
   t <|> Union u = Union (t : u)
   t <|> u = Union [t, u]
 
-instance Monad (Tree lang m) where
-  Const c >>= _ = Const c
+instance Monad (Tree deltas lang meta) where
   Leaf x >>= f = f x
   Union ts >>= f = Union $ map (>>= f) ts
   Learn str t >>= f = Learn str (t >>= f)
   Call body args >>= f = Call (f <=< body) args
-  Dest motive worlds >>= f = Dest motive (f <=< worlds)
-  Cons c args >>= f = Cons c $ map (>>= f) args
-  Bin c args >>= f = Bin c $ map (>>= f) args
+  Dest worlds motive >>= f = Dest (f <=< worlds) motive
 
 -- * Older Types
 

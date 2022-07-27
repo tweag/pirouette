@@ -80,7 +80,7 @@ symbolically ::
   (Language lang) =>
   PrtUnorderedDefs lang ->
   Term lang ->
-  SymTree lang (TermMeta lang SymVar)
+  SymTree lang SymVar (TermMeta lang SymVar)
 symbolically defs = runST $ do
   s0 <- Supply.newSupply (SymVar $ Name "s" (Just 0)) nextSymVar
   return (withSymVars s0)
@@ -90,7 +90,7 @@ symbolically defs = runST $ do
     withSymVars ::
       Supply SymVar ->
       Term lang ->
-      SymTree lang (TermMeta lang SymVar)
+      SymTree lang SymVar (TermMeta lang SymVar)
     withSymVars s t =
       let (args, _) = SystF.getHeadLams t
           (s', svars) = freshSymVars s (map (typeToMeta . snd) args)
@@ -104,7 +104,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      SymTree lang (TermMeta lang SymVar)
+      SymTree lang SymVar (TermMeta lang SymVar)
     ana s env knowns t =
       trace str $ ana' s env knowns t
       where
@@ -123,7 +123,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      SymTree lang (TermMeta lang SymVar)
+      SymTree lang SymVar (TermMeta lang SymVar)
     ana' s env knowns t@(hd `SystF.App` args) =
       let sRec : sRest = Supply.split s
           -- TODO: how do we communicate in between the arguments? Take the following call as an example:
@@ -132,16 +132,15 @@ symbolically defs = runST $ do
           args' = zipWith (\s0 -> ana s0 env knowns) sRest (mapMaybe SystF.fromArg args)
        in case hd of
             SystF.Bound ann _ -> error $ "Can't evaluate bound variable: " ++ show ann
-            SystF.Free Bottom -> pure t
-            SystF.Free (Constant c) -> Const c
-            SystF.Free (Builtin bin) -> Bin bin args'
             SystF.Free (TermSig n) ->
               case prtDefOf TermNamespace n `runReader` defs of
                 DTypeDef _ -> error "Can't evaluate typedefs"
-                DConstructor ix tyName -> Cons (ConstructorInfo tyName n ix) args'
+                DConstructor _ _ -> pure t -- liftedTermAppN (SystF.Free $ TermSig n) args'
                 DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
                 DFunction _ body _ -> Call (liftedTermAppN (termToMeta body) >=> ana sRec env knowns) args'
             SystF.Meta vr -> anaMeta sRec env knowns vr
+            -- Bottom, Constant an Builtin
+            _ -> pure t
     ana' _ _ _ t@SystF.Lam {} =
       error $
         unlines
@@ -167,10 +166,10 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       UnDestMeta lang SymVar ->
-      SymTree lang (TermMeta lang SymVar)
+      SymTree lang SymVar (TermMeta lang SymVar)
     anaDestructor s env knowns (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
       let (s0 : ss) = Supply.split s
-       in Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+       in flip Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
             let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
              in liftedTermAppN caseTerm consArgs >>= ana (ss !! consIx) env knowns
       where
@@ -191,7 +190,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       SymVar ->
-      SymTree lang (TermMeta lang SymVar)
+      SymTree lang SymVar (TermMeta lang SymVar)
     anaMeta s env knowns target
       | Just res <- M.lookup target knowns = pure res
       | otherwise =
@@ -213,28 +212,24 @@ symbolically defs = runST $ do
           -- and there's nothing else to do.
           _ -> pure $ SystF.termPure $ SystF.Meta target
 
-declSymVars :: M.Map SymVar (Type lang) -> Tree lang (DeltaEnv lang) a -> Tree lang (DeltaEnv lang) a
+declSymVars :: M.Map SymVar (Type lang) -> Tree (DeltaEnv lang) lang meta a -> Tree (DeltaEnv lang) lang meta a
 declSymVars vs
   | not (M.null vs) = Learn (DeclSymVars vs)
   | otherwise = id
 
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
-  forall lang.
-  (Language lang) =>
-  TermMeta lang SymVar ->
-  [SymTree lang (TermMeta lang SymVar)] ->
-  SymTree lang (TermMeta lang SymVar)
-liftedTermAppN body args = do
+  forall lang meta f.
+  (Language lang, Applicative f, Show (f (TermMeta lang meta)), Show meta) =>
+  TermMeta lang meta ->
+  [f (TermMeta lang meta)] ->
+  f (TermMeta lang meta)
+liftedTermAppN body args =
   let body' = termMetaMap (pure . mkMeta) body
       args' = map (SystF.TermArg . mkMeta) args
-      -- The resulting term is a term that has trees which
-      -- contain further terms down its leaves
-      res :: TermMeta lang (SymTree lang (TermMeta lang SymVar))
-      res = SystF.appN body' args'
-  termJoin <$> termMetaDistr res
+   in termJoin <$> termMetaDistr (SystF.appN body' args')
   where
-    mkMeta :: meta -> TermMeta lang meta
+    mkMeta :: m -> TermMeta lang m
     mkMeta m = SystF.Meta m `SystF.App` []
 
     -- This function is local because it makes manya assumptios about where metavariables
