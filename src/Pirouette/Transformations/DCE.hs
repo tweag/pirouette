@@ -177,7 +177,7 @@ tryDropArg :: Integer
            -> Term lang
            -> Maybe (Term lang)
 tryDropArg (-1) (SystF.Lam _ _ body) = tryDropArg 0 body
-tryDropArg (-1) (SystF.Abs _ _ body) = tryDropArg 0 body
+tryDropArg (-1) SystF.Abs {} = Nothing
 tryDropArg argIdx (SystF.App var args) = SystF.App <$> var' <*> args'
   where
     var'
