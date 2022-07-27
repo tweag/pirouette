@@ -18,6 +18,7 @@ module Language.Pirouette.QuasiQuoter (QuasiQuoter, prog, progNoTC, term, ty, fu
 
 import Control.Monad.Except (runExcept)
 import qualified Data.Map as M
+import qualified Data.Set as Set
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax hiding (Name, Type)
 import Language.Pirouette.QuasiQuoter.Syntax
@@ -27,6 +28,7 @@ import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
+import Control.Monad.Reader
 
 prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, LanguagePretty lang) => QuasiQuoter
 prog = quoter $ \str -> do
@@ -68,9 +70,10 @@ newFunDecl = quoter $ \str -> do
 -- * Internals
 
 parseQ :: Parser a -> String -> Q a
-parseQ p str = case parse p "<template-haskell>" str of
-  Left err -> fail (errorBundlePretty err)
-  Right r -> return r
+parseQ p str =
+  case runReader (runParserT p "<template-haskell>" str) Set.empty of
+    Left err -> fail (errorBundlePretty err)
+    Right r -> return r
 
 trQ :: TrM a -> Q a
 trQ f = case runExcept f of

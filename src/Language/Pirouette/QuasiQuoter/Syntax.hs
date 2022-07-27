@@ -4,7 +4,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -33,10 +32,13 @@ module Language.Pirouette.QuasiQuoter.Syntax where
 
 import Control.Arrow (second)
 import Control.Monad
+import Control.Monad.Reader
 import Control.Monad.Combinators.Expr
 import Data.Foldable
-import qualified Data.Map as M
-import qualified Data.Set as S
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set as Set (Set)
+import qualified Data.Set as Set
 import Data.Void
 import Debug.Trace
 import Language.Haskell.TH.Syntax (Lift)
@@ -49,7 +51,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 
 -- ** Class for parsing language builtins
 
-type Parser = Parsec Void String
+type Parser = ParsecT Void String (Reader (Set String))
 
 -- | Auxiliary constraint for lifting terms of a given language.
 type LanguageLift lang =
@@ -70,10 +72,10 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
   parseConstant :: Parser (Constants lang)
 
   -- | Set of term names that are reserved; often include any builtin constructor names
-  reservedTermNames :: S.Set String
+  reservedTermNames :: Set String
 
   -- | Set of type names that are reserved; often include the builtin types
-  reservedTypeNames :: S.Set String
+  reservedTypeNames :: Set String
 
   -- This next 'ifThenElse' function is here due to a technicality in 'Language.Pirouette.QuasiQuoter.ToTerm.trTerm';
   -- because we have dedicated syntax for if-statements, we need a way of translating them into
@@ -136,8 +138,8 @@ deriving instance
 -- | A program is some set of declarations
 parseProgram ::
   (LanguageParser lang) =>
-  Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)))
-parseProgram = M.fromList <$> many parseDecl
+  Parser (Map String (Either (DataDecl lang) (FunDecl lang)))
+parseProgram = Map.fromList <$> many parseDecl
 
 parseDecl :: (LanguageParser lang) => Parser (String, Either (DataDecl lang) (FunDecl lang))
 parseDecl =
@@ -175,6 +177,11 @@ parseFunDecl = label "Function declaration" $ do
   x <- parseTerm
   return (i, FunDecl r t x)
 
+-- | Function parameter: either term or type level
+-- 
+-- TODO "Ident String" is eventually intended to be replaced by "Pattern lang"
+-- to provide syntaxic sugar for pattern matching without using explicit case
+-- statements
 data Param = Ident String | TyIdent String deriving (Eq, Show)
 
 -- | Parses functon declarations following the new syntax:
@@ -185,8 +192,8 @@ parseNewFunDecl = label "Function declaration (new syntax)" $ do
   r <- NonRec <$ symbol "nonrec" <|> pure Rec
   funIdent <- ident @lang
   parseTyOf
-  funType <- parseType
-  symbol ";" -- HACK because whitespaces including new lines are removed
+  funType <- local (Set.insert funIdent) parseType
+  -- symbol ";" -- HACK because whitespaces including new lines are removed
   _ <- symbol funIdent
   -- TODO Fail when there are duplicate names in the term or type worlds
   -- TODO Add a regression test
@@ -385,9 +392,9 @@ spaceConsumer = L.space space1 (L.skipLineComment "--") empty
 symbol :: String -> Parser ()
 symbol = void . L.symbol spaceConsumer
 
-keywords :: S.Set String
+keywords :: Set String
 keywords =
-  S.fromList
+  Set.fromList
     [ "abs",
       "all",
       "case",
@@ -402,16 +409,16 @@ keywords =
       "bottom"
     ]
 
-lowercaseIdent :: forall lang. (LanguageParser lang) => S.Set String -> Parser String
+lowercaseIdent :: forall lang. (LanguageParser lang) => Set String -> Parser String
 lowercaseIdent reserved = do
   i <- lexeme ((:) <$> (lowerChar <|> char '_') <*> restOfName)
-  guard (i `S.notMember` S.union keywords reserved)
+  guard (i `Set.notMember` Set.union keywords reserved)
   return i
 
-uppercaseIdent :: forall lang. (LanguageParser lang) => S.Set String -> Parser String
+uppercaseIdent :: forall lang. (LanguageParser lang) => Set String -> Parser String
 uppercaseIdent reserved = do
   i <- lexeme ((:) <$> upperChar <*> restOfName)
-  guard (i `S.notMember` S.union keywords reserved)
+  guard (i `Set.notMember` Set.union keywords reserved)
   return i
 
 restOfName :: Parser String
@@ -428,6 +435,7 @@ constructorName =
     uppercaseIdent @lang (reservedTermNames @lang)
 
 ident :: forall lang. (LanguageParser lang) => Parser String
-ident =
+ident = do
+  usedNames <- ask
   label "identifier" $
-    lowercaseIdent @lang (reservedTermNames @lang)
+    lowercaseIdent @lang (Set.union usedNames (reservedTermNames @lang))

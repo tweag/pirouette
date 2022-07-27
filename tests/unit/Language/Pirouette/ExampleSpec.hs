@@ -56,37 +56,37 @@ tests =
           [ testCase "Declaration of all parameters" $
               canParseDefinition
                 [newFunDecl|
-          foo : Bool -> Integer -> Integer ;
+          foo : Bool -> Integer -> Integer
           foo b i = if @Integer b then (i + 1) else (i - 1)
         |],
             testCase "Partially point-free" $
               canParseDefinition
                 [newFunDecl|
-          foo : Bool -> Integer -> Integer ;
+          foo : Bool -> Integer -> Integer
           foo b = \ (i : Integer) . if @Integer b then (i + 1) else (i - 1)
         |],
             testCase "With a type parameter with explicit kind" $
               canParseDefinition
                 [newFunDecl|
-          foo : forall (a : Type) . List a -> Maybe a ;
+          foo : forall (a : Type) . List a -> Maybe a
           foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
         |],
             testCase "With a type parameter with omitted kind" $
               canParseDefinition
                 [newFunDecl|
-          foo : forall a . List a -> Maybe a ;
+          foo : forall a . List a -> Maybe a
           foo @a l = if @(Maybe (List a)) empty l then Nothing @a else Just @a l
         |],
             testCase "With a type parameters and naming the type variable differently in the body" $
               canParseDefinition
                 [newFunDecl|
-          foo : forall a . List a -> Maybe a ;
+          foo : forall a . List a -> Maybe a
           foo @b l = if @(Maybe (List b)) empty l then Nothing @b else Just @b l
         |],
             testCase "With type parameters and naming it the same in the body" $
               canParseDefinition
                 [newFunDecl|
-          foo : forall a . List a -> (forall b . List b -> Either b a) ;
+          foo : forall a . List a -> (forall b . List b -> Either b a)
           foo @a l1 @b l2 =
             if @(Either (List a) (List b)) empty l1
             then Left @b l2
@@ -95,7 +95,7 @@ tests =
             testCase "With type parameters and naming them in the body" $
               canParseDefinition
                 [newFunDecl|
-          foo : forall a . List a -> (forall b . List b -> Either b a) ;
+          foo : forall a . List a -> (forall b . List b -> Either b a)
           foo @c l1 @d l2 =
             if @(Either (List c) (List d)) empty l1
             then Left @c l2
@@ -104,7 +104,7 @@ tests =
             testCase "With type parameters where there is name shadowing" $
               canParseDefinition
                 [newFunDecl|
-          foo : forall a . List a -> (forall a . List a -> Maybe a) ;
+          foo : forall a . List a -> (forall a . List a -> Maybe a)
           foo @c l1 @d l2 =
             if @(Maybe (List d)) empty l1
             then Nothing
@@ -117,7 +117,7 @@ tests =
               assertRightBody
                 (Abs (Ann "b") KStar (Lam (Ann "l") (TyApp (Free (TySig "List")) [TyApp (Bound (Ann "b") 0) []]) (Abs (Ann "a") KStar (Lam (Ann "e") (TyApp (Free (TySig "Either")) [TyApp (Bound (Ann "a") 0) [], TyApp (Bound (Ann "b") 1) []]) (App (Free (TermSig "undefined")) [])))))
                 [newFunDecl|
-          foo : forall a . List a -> (forall b . Either b a -> Int) ;
+          foo : forall a . List a -> (forall b . Either b a -> Int)
           foo @b l @a e = undefined
         |]
           ]
@@ -127,7 +127,7 @@ tests =
         testCase "With one pattern (pair)" $
           canParseDefinition
                 [newFunDecl|
-          fst : forall a . forall b . Pair a b -> a ;
+          fst : forall a . forall b . Pair a b -> a
           fst @a @b p =
             case @(Pair a b) @a p of {
               Pair x y -> x
@@ -136,7 +136,7 @@ tests =
         testCase "With two patterns (lists)" $
           canParseDefinition
                 [newFunDecl|
-          head : forall a . List a -> Maybe a ;
+          head : forall a . List a -> Maybe a
           head @a l =
             case @(List a) @(Maybe a) l of {
               Cons x xs -> undefined ;
@@ -146,7 +146,7 @@ tests =
         testCase "With two patterns (lists) and a catch all" $
           canParseDefinition
                 [newFunDecl|
-          head : forall a . List a -> Maybe a ;
+          head : forall a . List a -> Maybe a
           head @a l =
             case @(List a) @(Maybe a) l of {
               Cons x xs -> undefined ;
@@ -156,7 +156,7 @@ tests =
         testCase "Nested patterns (list of pairs) with catch-alls" $
           canParseDefinition
                 [newFunDecl|
-          fsthead : forall a . forall b . List (Pair a b) -> Maybe a ;
+          fsthead : forall a . forall b . List (Pair a b) -> Maybe a
           fsthead @a @b l =
             case @(List (Pair a b)) @(Maybe a) l of {
               Cons (Pair x y) _ -> Just @a x ;
