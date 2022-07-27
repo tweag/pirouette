@@ -20,7 +20,6 @@ import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
 import Debug.Trace
-import GHC.Num.BigNat (bigNatFromWordListUnsafe)
 
 -- ** Class for parsing language builtins
 
@@ -153,7 +152,7 @@ pDecl = P.label "Declaration" $ do
     <*> lineFold pExpr
 
 pProg :: Parser Prog
-pProg = Prog <$> many pDecl <* P.atEnd
+pProg = Prog <$> many pDecl <* P.eof
 
 input1 :: String
 input1 = "a = foo + bar - (baz + x) + y\n"
@@ -197,45 +196,100 @@ input6 =
   \         y = foo\n\
   \    in bar)"
 
+go :: String -> IO ()
+go input = case evalState (P.runParserT pProg "input" input) [] of
+  Left err -> putStrLn (P.errorBundlePretty err)
+  Right prog -> print prog
+
 -- TODO Comment a clear example of why we cannot get with it with a list of pos
 -- only
 -- let x =
 --    let y = let z = let a =
 
--- many $ lineFold (symbol "bla" >> lineFold (some (symbol "blu")))
---
--- bla blu blu blu 
---
--- bla 
---  blu blu blu
---
--- bla 
---  blu
---  blu
---  blu
---
--- bla 
---    blu
---    blu
---   blu
---
--- bla
---  blu blu
---  blu
---
--- bla
---  blu
---     blu
---   blu
---    blu
---
--- SHOULD NOT PARSE
--- bla blu bla
--- bla
---
--- TODO Use that toy language to develop and debug lineFolds
 
-go :: String -> IO ()
-go input = case evalState (P.runParserT pProg "input" input) [] of
+-- Bla blu toy language
+
+data Bla = Bla [Blu] deriving Show
+data Blu = Blu [Blo] deriving (Show)
+data Blo = Blo deriving (Show)
+
+pBlo :: Parser Blo
+pBlo = P.label "Blo" $ Blo <$ symbol "blo"
+
+pBla :: Parser Bla
+pBla = P.label "Bla" $ do
+  symbol "bla"
+  blus <- many pBlu -- TODO Introduce linefold here
+  return (Bla blus)
+
+pBlu :: Parser Blu
+pBlu = P.label "Blu" $ do
+  symbol "blu"
+  blos <- many pBlo
+  return (Blu blos)
+
+pBlas :: Parser [Bla]
+pBlas = many (lineFold pBla) <* P.eof
+
+bla0 :: String -- Should fail
+bla0 = "blablu"
+
+bla1 :: String
+bla1 = "bla blu blu blu"
+
+bla2 :: String
+bla2 = "bla\n\
+       \  blu\n\
+       \  blu\n\
+       \  blu"
+
+bla3 :: String -- Fails as expected
+bla3 = "bla\n\
+       \  blu\n\
+       \  blu\n\
+       \ blu"
+
+bla4 :: String
+bla4 = "bla\n\
+       \  blu blu\n\
+       \  blu\n"
+
+bla5 :: String
+bla5 = "bla\n\
+       \  blu\n\
+       \       blu\n\
+       \    blu\n\
+       \     blu"
+
+bla6 :: String
+bla6 = "bla blu\n\
+       \  blu\n\
+       \  blu\n\
+       \bla blu"
+
+-- Should fail but succeeds
+-- We would like to specify that bla must begin a line
+bla7 :: String
+bla7 = "bla blu bla\n\
+       \bla"
+
+bla8 :: String
+bla8 = "bla blu blo blo blu"
+
+bla9 :: String
+bla9 = "bla\n\
+        \    blu blo\n\
+        \        blo\n\
+        \    blu"
+
+-- Should succeed but fails
+bla10 :: String
+bla10 = "bla blu blo\n\
+       \         blo\n\
+       \     blu"
+
+
+go2 :: String -> IO ()
+go2 input = case evalState (P.runParserT pBlas "input" input) [] of
   Left err -> putStrLn (P.errorBundlePretty err)
   Right prog -> print prog
