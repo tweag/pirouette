@@ -70,6 +70,9 @@ fun bar : Ty1 -> Integer
     match_Ty1 t @Integer
       (\(a : Integer). a)
       (\(a : Integer) (b : Ty1) (c : Integer). a + foo b)
+
+fun mkTy1 : Ty1
+  = Ty2C1 0 (Ty1C1 1) 2
 |]
 
     resFoo1 :: PrtUnorderedDefs Ex
@@ -102,6 +105,9 @@ fun bar : Ty1 -> Integer
     match_Ty1 t @Integer
       (\(a : Integer). a)
       (\(a : Integer) (b : Ty1). a + foo b)
+
+fun mkTy1 : Ty1
+  = Ty2C1 0 (Ty1C1 1)
 |]
 
     srcPoly :: PrtUnorderedDefs Ex

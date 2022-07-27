@@ -121,6 +121,7 @@ removeDfInTypeCtor :: forall lang. (Language lang)
 removeDfInTypeCtor ty defs ctorIdx
   | null fieldsIdxes = defs
   | otherwise = PrtUnorderedDefs
+              $ transformBi (removeCtorArgs @lang (fst ctor) fieldsIdxes)
               $ transformBi (updateDtor @lang (destructor ty) ctorIdx fieldsIdxes)
               $ updateCtor <$> prtUODecls defs
   where
@@ -141,12 +142,21 @@ updateDtor :: Language lang
            -> Term lang
            -> Term lang
 updateDtor dtorName ctorIdx fieldsIdxes (SystF.App (SystF.Free (TermSig funName)) dtorArgs)
-  | funName == dtorName = SystF.App (SystF.Free (TermSig dtorName)) $ prefix <> branches'
+  | funName == dtorName = SystF.App (SystF.Free (TermSig funName)) $ prefix <> branches'
   where
     (prefix, branches) = splitArgsTermsTail dtorArgs
     branches' = updateAt ctorIdx branches branch'
-    branch' = SystF.argMap id (dropArgs $ (\ix -> -ix - 1) <$> fieldsIdxes) $ branches !! fromIntegral ctorIdx
+    branch' = SystF.argMap id (dropDtorFields $ (\ix -> -ix - 1) <$> fieldsIdxes) $ branches !! fromIntegral ctorIdx
 updateDtor _ _ _ x = x
+
+removeCtorArgs :: Language lang
+               => Name
+               -> [Integer]
+               -> Term lang
+               -> Term lang
+removeCtorArgs ctor fieldsIdxes (SystF.App (SystF.Free (TermSig funName)) args)
+  | funName == ctor = SystF.App (SystF.Free (TermSig funName)) (removeAts fieldsIdxes args)
+removeCtorArgs _ _ x = x
 
 -- | Tries to remove a single bound variable with the given index from a function.
 -- If the argument isn't used, it just decrements the indices of further arguments.
@@ -195,10 +205,15 @@ tryDropArg argIdx (SystF.App var args) = SystF.App <$> var' <*> args'
 tryDropArg argIdx (SystF.Lam ann t body) = SystF.Lam ann t <$> tryDropArg (argIdx + 1) body
 tryDropArg argIdx (SystF.Abs ann k body) = SystF.Abs ann k <$> tryDropArg (argIdx + 1) body
 
-dropArgs :: [Integer]
-         -> Term lang
-         -> Term lang
-dropArgs argsIxes term = foldr (\ix t -> fromJust $ tryDropArg ix t) term argsIxes
+-- | Removes the arguments with the given indices assuming they are unused.
+--
+-- The indexes list is supposed to be ordered.
+--
+-- For indexing semantics, see 'tryDropArg'.
+dropDtorFields :: [Integer]
+               -> Term lang
+               -> Term lang
+dropDtorFields argsIxes term = foldr (\ix t -> fromJust $ tryDropArg ix t) term argsIxes
 
 isArgUsed :: Integer
           -> Term lang
