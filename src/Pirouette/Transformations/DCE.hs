@@ -118,9 +118,11 @@ removeDfInTypeCtor :: forall lang. (Language lang)
                    -> PrtUnorderedDefs lang
                    -> Integer
                    -> PrtUnorderedDefs lang
-removeDfInTypeCtor ty defs ctorIdx = PrtUnorderedDefs
-                                   $ transformBi (updateDtor @lang (destructor ty) ctorIdx fieldsIdxes)
-                                   $ updateCtor <$> prtUODecls defs
+removeDfInTypeCtor ty defs ctorIdx
+  | null fieldsIdxes = defs
+  | otherwise = PrtUnorderedDefs
+              $ transformBi (updateDtor @lang (destructor ty) ctorIdx fieldsIdxes)
+              $ updateCtor <$> prtUODecls defs
   where
     ctor = constructors ty !! fromIntegral ctorIdx
     fieldsIdxes = unusedFields defs ty ctorIdx
