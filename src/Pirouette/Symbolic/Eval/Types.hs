@@ -14,7 +14,7 @@
 module Pirouette.Symbolic.Eval.Types where
 
 import Control.Applicative hiding (Const)
-import Control.Monad (ap, (<=<))
+import Control.Monad (ap, (<=<), (>=>))
 import Data.Data hiding (eqT)
 import Data.Default
 import qualified Data.Kind as K
@@ -30,21 +30,20 @@ import qualified PureSMT
 -- | The intermediate datastructure of our symbolic engine, produced by
 -- the 'Pirouette.Symbolic.Eval.Anamorphism.symbolically' anamorphism and
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
-type TermSet lang meta = Fix (TermTree lang meta)
+--
+-- It denotes a set of pairs of @TermMeta lang SymVar@ and @Constraint lang@.
+newtype TermSet lang meta = TermSet {unTermSet :: SpineTree lang meta (TermSet lang meta)}
 
-newtype Fix f = Fix {unFix :: f (Fix f)}
+-- | A 'SpineTree' is a functor which represents a /set of/ 'Spine's with holes of
+-- type @a@. The trick is that once we take the fixpoint of this functor, as in 'TermSet',
+-- we now have an infinite structure that alternates between branching and some concrete spines.
+newtype SpineTree lang meta a = SpineTree {unSpineTree :: Tree (DeltaEnv lang) (Spine lang meta a)}
 
-newtype TermTree lang meta a = TermTree {open :: Tree (DeltaEnv lang) (SymbTerm lang meta a)}
-  deriving (Show)
-
--- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
-data Tree deltas a
-  = Leaf a
-  | Learn deltas (Tree deltas a)
-  | Union [Tree deltas a]
-  deriving (Show)
-
-data SymbTerm lang meta x
+-- | A @Spine lang meta x@ represents a value in @lang@ with holes of type @x@.
+--  The slight trick to you usual representation of values is that we are also representing
+--  function and destructor calls explicitely in the tree, leaving the consumer to
+--  decide how these values should be computed, depending on the semantics of @lang@.
+data Spine lang meta x
   = -- | A function call, in an untyped setting, can be seen as something
     -- that takes a list of terms and returns a term (in fact, that's the type of
     -- the partially applied 'SystF.App' constructor!).
@@ -53,31 +52,42 @@ data SymbTerm lang meta x
     --
     -- The trick here consists in lifting those functions to trees:
     --
-    -- > [Tree (Term lang)] -> Tree (Term lang)
+    -- > [Spine lang a] -> Spine lang a
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    forall a. Call Name ([TermTree lang meta a] -> TermTree lang meta x) [TermTree lang meta a]
+    forall a. Call Name ([Spine lang meta a] -> Spine lang meta x) [Spine lang meta a]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    forall a. Dest ((ConstructorInfo, [TermTree lang meta a]) -> TermTree lang meta x) (TermTree lang meta a)
-  | WHNF (WHNFTermHead lang meta) [TermTree lang meta x]
+    forall a. Dest ((ConstructorInfo, [Spine lang meta a]) -> Spine lang meta x) (Spine lang meta a)
+  | Head (WHNFTermHead lang) [Spine lang meta x]
+  | Next x
 
-instance Functor (SymbTerm lang meta) where
-  fmap f (Call n body args) = Call n (fmap f . body) args
-  fmap f (Dest cs motive) = Dest (fmap f . cs) motive
-  fmap f (WHNF hd args) = WHNF hd (map (fmap f) args)
-
-instance Functor (TermTree lang meta) where
-  fmap f (TermTree x) = TermTree $ fmap (fmap f) x
-
-instance Show (SymbTerm lang meta x) where
-  show _ = "<symbterm>"
-
-data WHNFTermHead lang meta
+data WHNFTermHead lang
   = WHNFCotr ConstructorInfo
   | WHNFBuiltin (BuiltinTerms lang)
-  | WHNFMeta meta
+
+instance Functor (Spine meta lang) where
+  fmap f (Call n body args) = Call n (fmap f . body) args
+  fmap f (Dest cs motive) = Dest (fmap f . cs) motive
+  fmap f (Head hd args) = Head hd (map (fmap f) args)
+  fmap f (Next x) = Next (f x)
+
+instance Applicative (Spine meta lang) where
+  pure = Next
+  (<*>) = ap
+
+instance Monad (Spine meta lang) where
+  (Next x) >>= h = h x
+  (Call n f xs) >>= h = Call n (f >=> h) xs
+  (Dest cs mot) >>= h = Dest (cs >=> h) mot
+  (Head hd xs) >>= h = Head hd (map (h =<<) xs)
+
+-- instance Functor (TermTree lang meta) where
+--   fmap f (TermTree x) = TermTree $ fmap (fmap f) x
+--
+-- instance Show (SymbTerm lang x) where
+--   show _ = "<symbterm>"
 
 -- THE ISSUE:
 --
@@ -145,6 +155,13 @@ data DeltaEnv lang
   = DeclSymVars (M.Map SymVar (Type lang))
   | Assign SymVar (TermMeta lang SymVar)
   deriving (Eq, Show)
+
+-- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
+data Tree deltas a
+  = Leaf a
+  | Learn deltas (Tree deltas a)
+  | Union [Tree deltas a]
+  deriving (Show)
 
 instance Functor (Tree deltas) where
   fmap f (Leaf x) = Leaf $ f x

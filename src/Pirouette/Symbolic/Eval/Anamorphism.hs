@@ -80,7 +80,7 @@ symbolically ::
   (Language lang) =>
   PrtUnorderedDefs lang ->
   Term lang ->
-  TermSet lang SymVar
+  TermTree lang SymVar
 symbolically defs = runST $ do
   s0 <- Supply.newSupply (SymVar $ Name "s" (Just 0)) nextSymVar
   return (withSymVars s0)
@@ -90,7 +90,7 @@ symbolically defs = runST $ do
     withSymVars ::
       Supply SymVar ->
       Term lang ->
-      TermSet lang SymVar
+      TermTree lang SymVar
     withSymVars s t =
       let (args, _) = SystF.getHeadLams t
           (s', svars) = freshSymVars s (map (typeToMeta . snd) args)
@@ -104,7 +104,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      TermSet lang SymVar
+      TermTree lang SymVar
     ana s env knowns t = undefined
       where
         -- trace str $ ana' s env knowns t
@@ -124,7 +124,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      TermTree lang SymVar (TermMeta lang SymVar)
+      TermTree lang SymVar
     ana' s env knowns t@(hd `SystF.App` args) =
       let sRec : sRest = Supply.split s
           -- TODO: how do we communicate in between the arguments? Take the following call as an example:
@@ -141,9 +141,11 @@ symbolically defs = runST $ do
                 DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
                 DTypeDef _ -> error "Can't evaluate typedefs"
                 DConstructor ix tyName ->
-                  TermTree $ pure $ WHNF (WHNFCotr $ ConstructorInfo tyName n ix) termArgs
+                  pure $ WHNF (WHNFCotr $ ConstructorInfo tyName n ix) args'
                 DFunction _ body _ ->
-                  TermTree $ pure $ Call n (liftedTermAppN (termToMeta body) >=> ana' sRec env knowns) args'
+                  let xxx = liftedTermAppN (termToMeta body)
+                   in -- (liftedTermAppN (termToMeta body) >=> ana' sRec env knowns)
+                      pure $ Call n (xxx >=> _) args'
             SystF.Free (Builtin bin) -> undefined -- doCall (CallBuiltin bin) (SystF.termPure hd)
             SystF.Free Bottom -> pure t
             SystF.Free (Constant _) -> pure t
@@ -173,7 +175,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       UnDestMeta lang SymVar ->
-      TermTree lang SymVar (TermMeta lang SymVar)
+      TermTree lang SymVar
     anaDestructor s env knowns (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
       let (s0 : ss) = Supply.split s
        in undefined
@@ -199,7 +201,7 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       SymVar ->
-      TermTree lang SymVar (TermMeta lang SymVar)
+      TermTree lang SymVar
     anaMeta s env knowns target
       | Just res <- M.lookup target knowns = undefined -- pure res
       | otherwise =
@@ -222,11 +224,20 @@ symbolically defs = runST $ do
           -- and there's nothing else to do.
           _ -> pure $ SystF.termPure $ SystF.Meta target
 
-declSymVars :: M.Map SymVar (Type lang) -> TermSet lang meta -> TermSet lang meta
+declSymVars :: M.Map SymVar (Type lang) -> TermTree lang meta -> TermTree lang meta
 declSymVars vs
   | not (M.null vs) = undefined -- Learn (DeclSymVars vs)
   | otherwise = id
 
+liftedTermAppN ::
+  forall lang meta f.
+  (Language lang, Applicative f, Show (f (TermMeta lang meta)), Show meta, Pretty meta) =>
+  TermMeta lang meta ->
+  [f (SymbTerm lang meta)] ->
+  f (SymbTerm lang meta)
+liftedTermAppN = _
+
+{-
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
   forall lang meta f.
@@ -275,6 +286,7 @@ liftedTermAppN body args =
         doVar (SystF.Meta fa) = SystF.Meta <$> fa
         doVar (SystF.Free b) = pure $ SystF.Free b
         doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+-}
 
 -- | Given a supply of names, a list of type arguments and a constructor name/type pair
 -- we construct:
