@@ -37,6 +37,14 @@ isFlatTermArg :: FlatArgType lang -> Bool
 isFlatTermArg FlatTermArg{} = True
 isFlatTermArg _ = False
 
+flatTyArg :: FlatArgType lang -> Maybe Kind
+flatTyArg (FlatTyArg _ k) = Just k
+flatTyArg _ = Nothing
+
+flatTermArg :: FlatArgType lang -> Maybe (Type lang)
+flatTermArg (FlatTermArg ty) = Just ty
+flatTermArg _ = Nothing
+
 flattenType :: Type lang -> ([FlatArgType lang], Type lang)
 flattenType ty@TyApp {} = ([], ty)
 flattenType (dom `TyFun` cod) = first (FlatTermArg dom :) $ flattenType cod

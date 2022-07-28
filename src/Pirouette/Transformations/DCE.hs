@@ -119,19 +119,19 @@ removeDfInTypeCtor :: forall lang. (Language lang)
                    -> Integer
                    -> PrtUnorderedDefs lang
 removeDfInTypeCtor ty defs ctorIdx
-  | null fieldsIdxes = defs
+  | null ufAllFieldsIdxes = defs
   | otherwise = PrtUnorderedDefs
-              $ transformBi (removeCtorArgs @lang (fst ctor) fieldsIdxes)
-              $ transformBi (updateDtor @lang (destructor ty) ctorIdx fieldsIdxes)
+              $ transformBi (removeCtorArgs @lang (fst ctor) ufAllFieldsIdxes)
+              $ transformBi (updateDtor @lang (destructor ty) ctorIdx ufTermOnlyFieldsIdxes)
               $ updateCtor <$> prtUODecls defs
   where
     ctor = constructors ty !! fromIntegral ctorIdx
-    fieldsIdxes = unusedFields defs ty ctorIdx
+    UnusedFields{..} = unusedFields defs ty ctorIdx
     (flatArgs, res) = flattenType $ snd ctor
 
     updateCtor (DTypeDef other) | destructor other == destructor ty = DTypeDef ty {constructors = ctors'}
       where
-        ctor' = (fst ctor, unflattenType (removeAts fieldsIdxes flatArgs) res)
+        ctor' = (fst ctor, unflattenType (removeAts ufAllFieldsIdxes flatArgs) res)
         ctors' = updateAt ctorIdx (constructors ty) ctor'
     updateCtor def = def
 
@@ -226,13 +226,19 @@ isFieldUsed :: forall lang. (Language lang)
             -> Integer  -- ^ constructor idx
             -> Integer  -- ^ field idx
             -> Bool
-isFieldUsed defs matcher ctorIdx fieldIdx = any (isArgUsed $ -fieldIdx - 1) ctorBranches
+isFieldUsed defs dtorName ctorIdx fieldIdx = any (isArgUsed $ -fieldIdx - 1) dtorBranches
   where
-    ctorBranches = [ ctorBranch
+    dtorBranches = [ dtorBranch
                    | SystF.App (SystF.Free (TermSig name)) args <- universeBi defs :: [Term lang]
-                   , name == matcher
-                   , let SystF.TermArg ctorBranch = snd (splitArgsTermsTail args) !! fromIntegral ctorIdx
+                   , name == dtorName
+                   , let SystF.TermArg dtorBranch = snd (splitArgsTermsTail args) !! fromIntegral ctorIdx
                    ]
+    dbg = nameString dtorName == "MultiplicativeMonoid_match"
+
+data UnusedFields = UnusedFields
+  { ufTermOnlyFieldsIdxes :: [Integer]
+  , ufAllFieldsIdxes :: [Integer]
+  } deriving (Eq, Ord, Show)
 
 -- | Returns the indices of the fields in the given ctor of a given type
 -- that are unused in the whole program.
@@ -242,15 +248,21 @@ unusedFields :: forall lang. (Language lang)
              => PrtUnorderedDefs lang
              -> TypeDef lang
              -> Integer    -- ^ the constructor index
-             -> [Integer]
-unusedFields defs Datatype{..} ctorIdx =
-  [ fieldIdx
-  | fieldIdx <- [0 .. L.genericLength flatArgs - 1]
-  , not $ isFieldUsed defs destructor ctorIdx fieldIdx
-  , isFlatTermArg $ flatArgs !! fromIntegral fieldIdx
-  ]
+             -> UnusedFields
+unusedFields defs Datatype{..} ctorIdx = UnusedFields{..}
   where
     (flatArgs, _) = flattenType $ snd $ constructors !! fromIntegral ctorIdx
+    ufAllFieldsIdxes = [ fieldIdx
+                       | fieldIdx <- [0 .. L.genericLength flatArgs - 1]
+                       , not $ isFieldUsed defs destructor ctorIdx fieldIdx
+                       , isFlatTermArg $ flatArgs !! fromIntegral fieldIdx
+                       ]
+
+    termArgs = mapMaybe flatTermArg flatArgs
+    ufTermOnlyFieldsIdxes = [ fieldIdx
+                            | fieldIdx <- [0 .. L.genericLength termArgs - 1]
+                            , not $ isFieldUsed defs destructor ctorIdx fieldIdx
+                            ]
 
 -- * Misc utils
 

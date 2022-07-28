@@ -19,6 +19,7 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.TypeChecker
 import Pirouette.Transformations.DCE
+import Pirouette.Transformations.Utils
 import Test.Tasty
 import Test.Tasty.ExpectedFailure
 import Test.Tasty.HUnit
@@ -34,11 +35,11 @@ tests =
 unusedFieldsTest :: [TestTree]
 unusedFieldsTest =
   [ testCase "detected correctly" $ do
-      unusedFields src1 (getType src1 "Ty1") 0 @?= []
-      unusedFields src1 (getType src1 "Ty1") 1 @?= [2]
-      unusedFields srcPoly (getType srcPoly "Extended") 0 @?= [1]
-      unusedFields srcPoly (getType srcPoly "Extended") 1 @?= []
-      unusedFields srcPoly (getType srcPoly "Extended") 2 @?= []
+      unusedFields' src1 (getType src1 "Ty1") 0 @?= []
+      unusedFields' src1 (getType src1 "Ty1") 1 @?= [2]
+      unusedFields' srcPoly (getType srcPoly "Extended") 0 @?= [1]
+      unusedFields' srcPoly (getType srcPoly "Extended") 1 @?= []
+      unusedFields' srcPoly (getType srcPoly "Extended") 2 @?= []
   , testCase "removed correctly, given their list" $ do
       transformBi (updateDtor @Ex "match_Ty1" 1 [0, 2]) (getFunBody src1 "foo") @?= getFunBody resFoo1 "foo"
       transformBi (updateDtor @Ex "match_Ty1" 1 [2])    (getFunBody src1 "foo") @?= getFunBody res1    "foo"
@@ -46,6 +47,7 @@ unusedFieldsTest =
       removeDeadFields src1 @?= res1
   ]
   where
+    unusedFields' prog ty idx = ufAllFieldsIdxes $ unusedFields prog ty idx
     getType prog name = case prtUODecls prog Map.! (TypeNamespace, name) of
                              DTypeDef td -> td
 
