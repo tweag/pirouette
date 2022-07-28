@@ -27,7 +27,7 @@ withUnorderedDecls prog m =
 sampleProgram :: PrtUnorderedDefs Ex
 sampleProgram =
   [prog|
-data Maybe (a : Type)
+data Maybe (a : *)
   = Nothing : Maybe a
   | Just : a -> Maybe a
 

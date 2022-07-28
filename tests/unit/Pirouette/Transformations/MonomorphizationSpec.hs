@@ -30,20 +30,20 @@ sampleUDefs =
 -- Here we're overloading the constructor name on purpose, to make
 -- sure monomorphization understands that it must monomorphize
 -- both the type and the constructor
-data Monoid (a : Type)
+data Monoid (a : *)
   = Monoid : a -> (a -> a -> a) -> Monoid a
 
-data List (a : Type)
+data List (a : *)
   = Cons : a -> List a -> List a
   | Nil : List a
 
 -- Here's a tricky one! It's an indirect need for monomorphizing:
 -- If we don't monomorphize @Ind@, defunctionalization will not
 -- be able to properly generate closures for the arguments.
-data Indirect (a : Type)
+data Indirect (a : *)
   = Ind : Maybe (a -> a) -> Indirect a
 
-data Maybe (a : Type)
+data Maybe (a : *)
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
@@ -168,14 +168,14 @@ tests =
 constDef :: FunOrTypeDef Ex
 constDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
-    funtype = [ty| all (a : Type) (b : Type) . a -> b -> a |]
-    funterm = [term| /\ (a : Type) (b : Type) . \ (x : a) (y : b) . x |]
+    funtype = [ty| all (a : *) (b : *) . a -> b -> a |]
+    funterm = [term| /\ (a : *) (b : *) . \ (x : a) (y : b) . x |]
 
 idDef :: FunOrTypeDef Ex
 idDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
-    funtype = [ty| all a : Type . a -> a |]
-    funterm = [term| /\ a : Type . \ x : a . x |]
+    funtype = [ty| all a : * . a -> a |]
+    funterm = [term| /\ a : * . \ x : a . x |]
 
 either3Def :: FunOrTypeDef Ex
 either3Def =
@@ -185,9 +185,9 @@ either3Def =
         typeVariables = [("a", SystF.KStar), ("b", SystF.KStar), ("c", SystF.KStar)],
         destructor = "match_Either3",
         constructors =
-          [ ("Left", [ty| all (a : Type) (b : Type) (c : Type) . a -> Either3 a b c |]),
-            ("Mid", [ty| all (a : Type) (b : Type) (c : Type) . b -> Either3 a b c |]),
-            ("Right", [ty| all (a : Type) (b : Type) (c : Type) . c -> Either3 a b c |])
+          [ ("Left", [ty| all (a : *) (b : *) (c : *) . a -> Either3 a b c |]),
+            ("Mid", [ty| all (a : *) (b : *) (c : *) . b -> Either3 a b c |]),
+            ("Right", [ty| all (a : *) (b : *) (c : *) . c -> Either3 a b c |])
           ]
       }
 
@@ -201,9 +201,9 @@ either3Def_Bool_Integer_decls =
               typeVariables = [("c", SystF.KStar)],
               destructor = "match_Either3<TyBool$TyInteger>",
               constructors =
-                [ ("Left<TyBool$TyInteger>", [ty| all (c : Type) . Bool -> Either3<TyBool$TyInteger> c |]),
-                  ("Mid<TyBool$TyInteger>", [ty| all (c : Type) . Integer -> Either3<TyBool$TyInteger> c |]),
-                  ("Right<TyBool$TyInteger>", [ty| all (c : Type) . c -> Either3<TyBool$TyInteger> c |])
+                [ ("Left<TyBool$TyInteger>", [ty| all (c : *) . Bool -> Either3<TyBool$TyInteger> c |]),
+                  ("Mid<TyBool$TyInteger>", [ty| all (c : *) . Integer -> Either3<TyBool$TyInteger> c |]),
+                  ("Right<TyBool$TyInteger>", [ty| all (c : *) . c -> Either3<TyBool$TyInteger> c |])
                 ]
             }
       ),

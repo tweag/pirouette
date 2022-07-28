@@ -34,7 +34,6 @@ module Language.Pirouette.QuasiQuoter.Syntax where
 import Control.Arrow (second)
 import Control.Monad
 import Control.Monad.Reader
-import Control.Monad.State
 import Control.Monad.Combinators.Expr
 import Data.Foldable
 import Data.Map (Map)
@@ -165,7 +164,7 @@ parseDataDecl :: forall lang. (LanguageParser lang) => Parser (String, DataDecl 
 parseDataDecl = P.label "Data declaration" $ do
   P.try (symbol "data")
   i <- typeName @lang
-  vars <- many (parens $ (,) <$> ident @lang <*> (parseTyOf >> parseKind))
+  vars <- many (parens $ (,) <$> ident @lang <*> parseOptKindOf)
   cons <-
     (P.try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `P.sepBy1` symbol "|")
       <|> return []
@@ -237,8 +236,11 @@ parseKind :: Parser SystF.Kind
 parseKind =
   P.label "Kind" $
     makeExprParser
-      (parens parseKind <|> (SystF.KStar <$ symbol "Type"))
+      (parens parseKind <|> (SystF.KStar <$ symbol "*"))
       [[InfixR $ SystF.KTo <$ symbol "->"]]
+
+parseOptKindOf :: Parser SystF.Kind
+parseOptKindOf = P.try (parseTyOf *> parseKind) <|> return SystF.KStar
 
 parens :: Parser a -> Parser a
 parens a = P.try (symbol "(") *> a <* symbol ")"
@@ -255,28 +257,22 @@ parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
     pFun :: Parser (Ty lang -> Ty lang -> Ty lang)
     pFun = TyFun <$ symbol "->"
 
+    -- New syntax for foralls using the "forall" keyword and implied * kind if omitted
     pAll :: Parser (Ty lang)
     pAll = P.label "pAll" $ do
-      P.try (symbol "all")
-      parseBinder TyAll (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseType)
-
-    -- New syntax for foralls using the "forall" keyword and implied * kind if omitted
-    pNewAll :: Parser (Ty lang)
-    pNewAll = P.label "pNewAll" $ do
       P.try (symbol "forall")
-      parseBinder TyAll (parseBinderNames (ident @lang) ((parseTyOf >> parseKind) <|> return SystF.KStar)) (symbol "." >> parseType)
+      parseBinder TyAll (parseBinderNames (ident @lang) parseOptKindOf) (symbol "." >> parseType)
 
     pLam :: Parser (Ty lang)
     pLam = P.label "pLam" $ do
       P.try (symbol "\\")
-      parseBinder TyLam (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseType)
+      parseBinder TyLam (parseBinderNames (ident @lang) parseOptKindOf) (symbol "." >> parseType)
 
     pAtom =
       P.try $
         asum
           [ pLam,
             pAll,
-            pNewAll,
             parseTypeAtom
           ]
 
@@ -420,7 +416,6 @@ spaceConsumerNew = ask >>= \case
            else fail "not indented enough to line fold",
       return ()
          ]
-
 
 spaceConsumerOld :: Parser ()
 spaceConsumerOld = L.space P.space1 (L.skipLineComment "--") empty

@@ -205,10 +205,10 @@ defuncTestsPoly =
 nested :: PrtUnorderedDefs Ex
 nested =
   [prog|
-data Monoid (a : Type)
+data Monoid (a : *)
   = Mon : (a -> a -> a) -> a -> Monoid a
 
-data AdditiveMonoid (a : Type)
+data AdditiveMonoid (a : *)
   = AdditiveMon : (a -> a -> a) -> a -> AdditiveMonoid a
 
 additiveToMonoid : forall a . AdditiveMonoid a -> Monoid a
@@ -216,7 +216,7 @@ additiveToMonoid @a x =
     Mon @a (match_AdditiveMonoid @a x @(a -> a -> a) (\(f : a -> a -> a) (z : a) . f))
            (match_AdditiveMonoid @a x @a (\(f : a -> a -> a) (z : a) . z))
 
-data List (a : Type)
+data List (a : *)
   = Nil : List a
   | Cons : a -> List a -> List a
 
@@ -224,13 +224,13 @@ listMon : forall a . AdditiveMonoid (List a)
 listMon @a = AdditiveMon @(List a) (\(k : List a) (l : List a)
     . foldr @a @(List a) (Cons @a) l k) (Nil @a)
 
-foldr : forall (a : Type) (b : Type) . (a -> b -> b) -> b -> List a -> b
+foldr : forall (a : *) (b : *) . (a -> b -> b) -> b -> List a -> b
 foldr @a @b f m xs =
    match_List @a xs @b
      m
      (\(h : a) (tl : List a) . f h (foldr @a @b f m tl))
 
-foldMap : forall (a : Type) (b : Type) . (a -> b) -> Monoid b -> List a -> b
+foldMap : forall (a : *) (b : *) . (a -> b) -> Monoid b -> List a -> b
 foldMap @a @b f m xs =
   match_Monoid @b m @b
     (\ (mplus : b -> b -> b) (mzero : b)
@@ -257,7 +257,7 @@ main = length @Integer (concat @Integer (Nil @(List Integer)))
 destructors :: PrtUnorderedDefs Ex
 destructors =
   [prog|
-data Maybe (a : Type)
+data Maybe (a : *)
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
@@ -274,10 +274,10 @@ main = match_Maybe @(Integer -> Integer) val @Integer (\(f : Integer -> Integer)
 indirect :: PrtUnorderedDefs Ex
 indirect =
   [prog|
-data Predicate (a : Type)
+data Predicate (a : *)
   = Prob : Maybe (Integer -> a) -> Predicate a
 
-data Maybe (a : Type)
+data Maybe (a : *)
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
@@ -301,13 +301,13 @@ main = match_Maybe @Bool (run @Bool val 42) @Bool (\x : Bool . x) False
 mixed :: PrtUnorderedDefs Ex
 mixed =
   [prog|
-data Mixed (a : Type)
+data Mixed (a : *)
   = Mix : a -> (a -> a) -> Mixed a
 
 run : forall a . Mixed a -> a
 run @a m = match_Mixed @a m @a (\(x : a) (f : a -> a) . f x)
 
-data Maybe (a : Type)
+data Maybe (a : *)
   = Just : a -> Maybe a
   | Nothing : Maybe a
 

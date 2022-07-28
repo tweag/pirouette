@@ -48,7 +48,7 @@ eqInt x y = x == y
 eqString : String -> String -> Bool
 eqString x y = x ~~ y
 
-data List (a : Type)
+data List (a : *)
   = Nil : List a
   | Cons : a -> List a -> List a
 
@@ -74,7 +74,7 @@ contains @a eq x0 =
     False
     (\(x : a) (xs : List a) . or (eq x) (contains @a eq xs))
 
-data Pair (x : Type) (y : Type)
+data Pair (x : *) (y : *)
   = P : x -> y -> Pair x y
 
 pairEq :
@@ -87,7 +87,7 @@ pairEq @a @b eqA eqB x y =
     (\(x0 : a) (x1 : b) . match_Pair @a @b y @Bool
       (\(y0 : a) (y1 : b) . and (eqA x0 y0) (eqB x1 y1)))
 
-data Maybe (x : Type)
+data Maybe (x : *)
   = Just : x -> Maybe x
   | Nothing : Maybe x
 
@@ -101,7 +101,7 @@ isJust : forall x . Maybe x -> Bool
 isJust @x mx =
   match_Maybe @x mx @Bool (\(jx : x) . True) False
 
-data KVMap (k : Type) (v : Type)
+data KVMap (k : *) (v : *)
   = KV : List (Pair k v) -> KVMap k v
 
 toList : forall k . forall v . KVMap k v -> List (Pair k v)
