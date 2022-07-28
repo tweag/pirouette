@@ -297,6 +297,7 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   --  This function is meant to be used with @-XTypeApplications@
   isTrue :: PureSMT.SExpr -> PureSMT.SExpr
 
+-- TODO: symvars should be flexible or rigid: rigid symvars can't be instantiated to anything.
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Ord, Show, Data, Typeable, IsString)
 

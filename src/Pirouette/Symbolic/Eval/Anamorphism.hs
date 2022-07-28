@@ -75,6 +75,12 @@ import qualified Supply
 -- In reality we never really handle lambdas (TODO: why not? can't we start?) because
 -- we get defunctionalized terms.
 
+data AnaEnv lang = AnaEnv
+  { supply :: Supply SymVar,
+    gamma :: M.Map SymVar (Type lang),
+    knowns :: M.Map SymVar (TermMeta lang SymVar)
+  }
+
 symbolically ::
   forall lang.
   (Language lang) =>
@@ -148,12 +154,46 @@ symbolically defs = runST $ do
             "term: " ++ renderSingleLineStr (pretty t)
           ]
 
+    termTree ::
+      AnaEnv lang ->
+      TermMeta lang SymVar ->
+      Tree (DeltaEnv lang) (AnaEnv lang, Either SymVar (TermMeta lang SymVar))
+    termTree _ SystF.Lam {} = error "Lam has no tree"
+    termTree _ SystF.Abs {} = error "Abs has no tree"
+    termTree env t@(SystF.Meta tgt `SystF.App` args)
+      | Just res <- M.lookup tgt (knowns env) = pure (env, Right res)
+      | otherwise =
+        case gamma env M.! tgt of
+          -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
+          -- Sat @target@ is of type @Either a b@, then:
+          -- @symeval target == symeval (Left fresh) ++ symeval (Right fresh)@
+          SystF.TyApp (SystF.Free (TySig tyName)) tyArgs ->
+            let Datatype _ _ _ consList = prtTypeDefOf tyName `runReader` defs
+                sHere : sThere = Supply.split (supply env)
+             in Union $
+                  for2 sThere consList $ \s' consNameTy ->
+                    let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
+                        gamma' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) (gamma env) delta
+                        env' = AnaEnv s'' gamma' (M.insert tgt symbCons (knowns env))
+                     in declSymVars delta $ Learn (Assign tgt symbCons) $ pure (env', Right symbCons)
+          --   Union $
+          --     for2 (Supply.split s) consList $ \s' consNameTy ->
+          --       let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
+          --        in declSymVars delta $
+          --             Learn (Assign target symbCons) $
+          --               ana s'' env' (M.insert target symbCons knowns) symbCons
+          -- If this symvar is of any other type, we're done. This is as far as we can go.
+          -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
+          -- and there's nothing else to do.
+          _ -> pure (env, Left tgt)
+    termTree env t = pure (env, Right t)
+
     -- A spine can be thought of as the parts without any choice: there's only one thing to do: evaluate.
     termSpine ::
       TermMeta lang SymVar ->
       Spine lang SymVar (TermMeta lang SymVar)
     termSpine SystF.Lam {} = error "Lam has no spine"
-    termSpine SystF.Abs {} = error "Lam has no spine"
+    termSpine SystF.Abs {} = error "Abs has no spine"
     termSpine t@(hd `SystF.App` args) =
       let args' = mapMaybe (fmap termSpine . SystF.fromArg) args
        in case hd of
@@ -180,27 +220,6 @@ symbolically defs = runST $ do
             -- I think so, since metavariables can never be of function type anyway.
             -- Therefore, they'll never be applied.
             SystF.Meta _ -> Next t -- anaMeta sRec env knowns vr
-
-    -- Symbolically evaluating a match/case is trivial. Let @$m@ be the symbolic
-    -- evaluation of the motive, we can lift the case semantics to being a function
-    -- that given a constructor and its arguments, yields a new tree:
-    --
-    -- > forall a. Dest (Tree monoid a) ((ConstructorInfo, [Tree monoid a]) -> Tree monoid b)
-    anaDestructor ::
-      Supply SymVar ->
-      M.Map SymVar (Type lang) ->
-      M.Map SymVar (TermMeta lang SymVar) ->
-      UnDestMeta lang SymVar ->
-      Spine lang meta (TermSet lang SymVar)
-    anaDestructor s env knowns (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
-      let (s0 : ss) = Supply.split s
-       in flip Dest (Next $ ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
-            let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
-             in liftedTermAppN caseTerm consArgs >>= _
-
-    --   flip Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
-    --     let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
-    --      in liftedTermAppN caseTerm consArgs -- >>= ana (ss !! consIx) env knowns
 
     -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
     -- can be something like:
@@ -242,9 +261,9 @@ symbolically defs = runST $ do
           -- and there's nothing else to do.
           _ -> pure $ SystF.termPure $ SystF.Meta target
 
-declSymVars :: M.Map SymVar (Type lang) -> TermSet lang meta -> TermSet lang meta
+declSymVars :: M.Map SymVar (Type lang) -> Tree (DeltaEnv lang) a -> Tree (DeltaEnv lang) a
 declSymVars vs
-  | not (M.null vs) = undefined -- Learn (DeclSymVars vs)
+  | not (M.null vs) = Learn (DeclSymVars vs)
   | otherwise = id
 
 -- | Applies a term to tree arguments, yielding a tree of results.
