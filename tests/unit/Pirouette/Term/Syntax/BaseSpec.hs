@@ -16,9 +16,9 @@ either3Def =
       typeVariables = [("a", SystF.KStar), ("b", SystF.KStar), ("c", SystF.KStar)],
       destructor = "match_Either3",
       constructors =
-        [ ("Left", [ty| all (a : Type) (b : Type) (c : Type) . a -> Either3 a b c |]),
-          ("Mid", [ty| all (a : Type) (b : Type) (c : Type) . b -> Either3 a b c |]),
-          ("Right", [ty| all (a : Type) (b : Type) (c : Type) . c -> Either3 a b c |])
+        [ ("Left", [ty| forall (a : *) (b : *) (c : *) . a -> Either3 a b c |]),
+          ("Mid", [ty| forall (a : *) (b : *) (c : *) . b -> Either3 a b c |]),
+          ("Right", [ty| forall (a : *) (b : *) (c : *) . c -> Either3 a b c |])
         ]
     }
 
@@ -26,6 +26,6 @@ tests :: [TestTree]
 tests =
   [ testCase "destructorTypeFor Either3" $
       destructorTypeFor (fromString "Either3") either3Def @?=
-        [ty| all (a : Type) (b : Type) (c : Type)
-             . Either3 a b c -> all (r : Type) . (a -> r) -> (b -> r) -> (c -> r) -> r |]
+        [ty| forall (a : *) (b : *) (c : *)
+             . Either3 a b c -> forall (r : *) . (a -> r) -> (b -> r) -> (c -> r) -> r |]
   ]

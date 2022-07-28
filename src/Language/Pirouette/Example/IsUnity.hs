@@ -36,7 +36,10 @@ checkOk =
 definitions :: PrtUnorderedDefs Ex
 definitions =
   [prog|
-and : Bool -> Bool -> Bool
+and :
+  Bool ->
+  Bool ->
+  Bool
 and x y = if @Bool x then y else False
 
 or : Bool -> Bool -> Bool

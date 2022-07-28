@@ -28,12 +28,12 @@ tests :: [TestTree]
 tests =
   [ testCase "Can parse types" $ do
       canParseType [ty| \x : * . x |]
-      canParseType [ty| all f : * -> * . \(x : *) (y : *) . f x -> f y |]
+      canParseType [ty| forall f : * -> * . \(x : *) (y : *) . f x -> f y |]
       canParseType [ty| One (Two Three) (Four Five) Six Seven |]
-      canParseType [ty| all a : * . all b : * . a -> b -> a |]
-      canParseType [ty| Integer -> (all a : * . Integer) |]
-      canParseType [ty| all a : * . a -> all b : * . a -> Integer |]
-      canParseType [ty| all a : * . a -> all b : (* -> *) . Integer -> b a -> Integer |],
+      canParseType [ty| forall a : * . forall b : * . a -> b -> a |]
+      canParseType [ty| Integer -> (forall a : * . Integer) |]
+      canParseType [ty| forall a : * . a -> forall b : * . a -> Integer |]
+      canParseType [ty| forall a : * . a -> forall b : (* -> *) . Integer -> b a -> Integer |],
     testCase "Type binders with or without parenthesis" $ do
       let t1 = [ty| \(x : *) (y : *) (z : *) . F x y |]
           t2 = [ty| \(x : *) . \(y : *) . \(z : *) . F x y |]
@@ -164,6 +164,33 @@ tests =
               Cons (Pair x y) _ -> Just @a x ;
               _ -> Nothing @a
             }|]
+      ],
+    testGroup "Line folding and whitespaces" $
+      [
+        testCase "Two one-liner functions" $
+          canParseProgram
+                [prog|
+          inc : Integer -> Integer
+          inc x = x + 1
+          dec : Integer -> Integer
+          dec x = x - 1
+              |],
+        testCase "Multiline functions with comments, empty lines, and trailing spaces" $
+          canParseProgram
+                [prog|
+          -- Increments a number
+          inc : Integer -> Integer  
+          inc x = x + 1
+     
+          -- Decrements a number
+          dec :
+               Integer -- Number to be decremented
+            -> Integer
+                  
+          dec x =
+            x - 1
+
+              |]
       ]
   ]
 

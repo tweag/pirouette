@@ -23,14 +23,14 @@ tests :: [TestTree]
 tests =
   [ testCase "Type-Type application, #1" $
       sameTy
-        [ty| \f : Type -> Type . (\x : Type . f x) (\w : Type . w) |]
-        [ty| \f : Type -> Type . f (\w : Type . w) |],
+        [ty| \f : * -> * . (\x : * . f x) (\w : * . w) |]
+        [ty| \f : * -> * . f (\w : * . w) |],
     testCase "Type-Type application, #2" $
       sameTy
-        [ty| \y : Type -> Type . \z : Type -> Type . (\x : Type . y x) (\w : Type . z w) |]
-        [ty| \y : Type -> Type . \z : Type -> Type . y (\w : Type . z w) |],
+        [ty| \y : * -> * . \z : * -> * . (\x : * . y x) (\w : * . z w) |]
+        [ty| \y : * -> * . \z : * -> * . y (\w : * . z w) |],
     testCase "Term-Type application" $
-      sameTerm [term| (\a : Integer . /\ r : Type . \b : r . a) 3 @Bool 4 |] [term| 3 |],
+      sameTerm [term| (\a : Integer . /\ r : * . \b : r . a) 3 @Bool 4 |] [term| 3 |],
     testCase "Terms equality is alpha-equivalence" $
       sameTerm [term| \a : Integer . a |] [term| \b : Integer . b |]
   ]

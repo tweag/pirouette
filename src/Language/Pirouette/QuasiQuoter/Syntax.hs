@@ -384,30 +384,23 @@ lexeme = L.lexeme spaceConsumer
 spaceConsumer :: Parser ()
 spaceConsumer = spaceConsumerNew
 
--- TODO Parse lines with horiz space in it
--- For some reason `P.hspace >> P.newline` doesn't work
-parseEmptyLine :: Parser ()
-parseEmptyLine = void P.newline
+skipEmptyLine :: Parser ()
+skipEmptyLine = P.try (hspaceComment <* P.newline)
+
+hspaceComment :: Parser ()
+hspaceComment = do
+  P.hspace
+  P.try (L.skipLineComment "--") <|> return ()
 
 spaceConsumerNew :: Parser ()
 spaceConsumerNew = ask >>= \case
   Nothing -> spaceConsumerOld
   Just startCol -> do
-    traceM $ "Consuming space " <> show startCol
-    P.hspace
-    P.SourcePos _ _ pos1 <- P.getSourcePos
-    traceM $ "Position 1: " <> show pos1
+    hspaceComment
     asum [
       P.try $ do
-        traceM "Trying to consume new line..."
         _ <- P.newline
-        traceM "New line consumed."
-        P.SourcePos _ line _ <- P.getSourcePos
-        traceM $ "Consuming empty lines (currently at line " <> show line <> ")"
-        _ <- many parseEmptyLine
-        P.SourcePos _ line2 _ <- P.getSourcePos
-        traceM $ "Finished consuming empty lines (currently at line " <> show line2 <> ")"
-        traceM "Consuming horiz space..."
+        _ <- many skipEmptyLine
         _ <- P.hspace
         P.SourcePos _ _ currentCol <- P.getSourcePos
         traceM $ "Horiz space consumed." <> show (startCol, currentCol)

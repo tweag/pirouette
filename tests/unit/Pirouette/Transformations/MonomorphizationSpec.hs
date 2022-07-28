@@ -168,13 +168,13 @@ tests =
 constDef :: FunOrTypeDef Ex
 constDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
-    funtype = [ty| all (a : *) (b : *) . a -> b -> a |]
+    funtype = [ty| forall (a : *) (b : *) . a -> b -> a |]
     funterm = [term| /\ (a : *) (b : *) . \ (x : a) (y : b) . x |]
 
 idDef :: FunOrTypeDef Ex
 idDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
-    funtype = [ty| all a : * . a -> a |]
+    funtype = [ty| forall a : * . a -> a |]
     funterm = [term| /\ a : * . \ x : a . x |]
 
 either3Def :: FunOrTypeDef Ex
@@ -185,9 +185,9 @@ either3Def =
         typeVariables = [("a", SystF.KStar), ("b", SystF.KStar), ("c", SystF.KStar)],
         destructor = "match_Either3",
         constructors =
-          [ ("Left", [ty| all (a : *) (b : *) (c : *) . a -> Either3 a b c |]),
-            ("Mid", [ty| all (a : *) (b : *) (c : *) . b -> Either3 a b c |]),
-            ("Right", [ty| all (a : *) (b : *) (c : *) . c -> Either3 a b c |])
+          [ ("Left", [ty| forall (a : *) (b : *) (c : *) . a -> Either3 a b c |]),
+            ("Mid", [ty| forall (a : *) (b : *) (c : *) . b -> Either3 a b c |]),
+            ("Right", [ty| forall (a : *) (b : *) (c : *) . c -> Either3 a b c |])
           ]
       }
 
@@ -201,9 +201,9 @@ either3Def_Bool_Integer_decls =
               typeVariables = [("c", SystF.KStar)],
               destructor = "match_Either3<TyBool$TyInteger>",
               constructors =
-                [ ("Left<TyBool$TyInteger>", [ty| all (c : *) . Bool -> Either3<TyBool$TyInteger> c |]),
-                  ("Mid<TyBool$TyInteger>", [ty| all (c : *) . Integer -> Either3<TyBool$TyInteger> c |]),
-                  ("Right<TyBool$TyInteger>", [ty| all (c : *) . c -> Either3<TyBool$TyInteger> c |])
+                [ ("Left<TyBool$TyInteger>", [ty| forall (c : *) . Bool -> Either3<TyBool$TyInteger> c |]),
+                  ("Mid<TyBool$TyInteger>", [ty| forall (c : *) . Integer -> Either3<TyBool$TyInteger> c |]),
+                  ("Right<TyBool$TyInteger>", [ty| forall (c : *) . c -> Either3<TyBool$TyInteger> c |])
                 ]
             }
       ),
