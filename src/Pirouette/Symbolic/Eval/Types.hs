@@ -39,6 +39,16 @@ newtype TermSet lang meta = TermSet {unTermSet :: SpineTree lang meta (TermSet l
 -- we now have an infinite structure that alternates between branching and some concrete spines.
 newtype SpineTree lang meta a = SpineTree {unSpineTree :: Tree (DeltaEnv lang) (Spine lang meta a)}
 
+instance Functor (SpineTree lang meta) where
+  fmap f = SpineTree . fmap (fmap f) . unSpineTree
+
+instance Applicative (SpineTree lang meta) where
+  pure = SpineTree . pure . pure
+  SpineTree fs <*> SpineTree xs = SpineTree $ do
+    spineF <- fs
+    x <- xs
+    return $ spineF <*> x
+
 -- | A @Spine lang meta x@ represents a value in @lang@ with holes of type @x@.
 --  The slight trick to you usual representation of values is that we are also representing
 --  function and destructor calls explicitely in the tree, leaving the consumer to
@@ -62,22 +72,26 @@ data Spine lang meta x
     forall a. Dest ((ConstructorInfo, [Spine lang meta a]) -> Spine lang meta x) (Spine lang meta a)
   | Head (WHNFTermHead lang) [Spine lang meta x]
   | Next x
+  | Const (Constants lang)
 
 data WHNFTermHead lang
   = WHNFCotr ConstructorInfo
   | WHNFBuiltin (BuiltinTerms lang)
+  | WHNFBottom
 
 instance Functor (Spine meta lang) where
   fmap f (Call n body args) = Call n (fmap f . body) args
   fmap f (Dest cs motive) = Dest (fmap f . cs) motive
   fmap f (Head hd args) = Head hd (map (fmap f) args)
   fmap f (Next x) = Next (f x)
+  fmap _ (Const c) = Const c
 
 instance Applicative (Spine meta lang) where
   pure = Next
   (<*>) = ap
 
 instance Monad (Spine meta lang) where
+  (Const c) >>= _ = Const c
   (Next x) >>= h = h x
   (Call n f xs) >>= h = Call n (f >=> h) xs
   (Dest cs mot) >>= h = Dest (cs >=> h) mot

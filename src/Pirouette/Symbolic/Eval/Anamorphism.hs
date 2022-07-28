@@ -13,7 +13,7 @@ import Control.Monad.ST
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import Debug.Trace
-import Pirouette.Monad
+import Pirouette.Monad hiding (WHNFConstant)
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst (shift)
@@ -80,7 +80,7 @@ symbolically ::
   (Language lang) =>
   PrtUnorderedDefs lang ->
   Term lang ->
-  TermTree lang SymVar
+  TermSet lang SymVar
 symbolically defs = runST $ do
   s0 <- Supply.newSupply (SymVar $ Name "s" (Just 0)) nextSymVar
   return (withSymVars s0)
@@ -90,7 +90,7 @@ symbolically defs = runST $ do
     withSymVars ::
       Supply SymVar ->
       Term lang ->
-      TermTree lang SymVar
+      TermSet lang SymVar
     withSymVars s t =
       let (args, _) = SystF.getHeadLams t
           (s', svars) = freshSymVars s (map (typeToMeta . snd) args)
@@ -104,11 +104,9 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      TermTree lang SymVar
-    ana s env knowns t = undefined
+      TermSet lang SymVar
+    ana s env knowns t = trace str $ ana' s env knowns t
       where
-        -- trace str $ ana' s env knowns t
-
         str =
           unlines
             [ "term: " ++ renderSingleLineStr (pretty t),
@@ -124,32 +122,17 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       TermMeta lang SymVar ->
-      TermTree lang SymVar
+      TermSet lang SymVar
     ana' s env knowns t@(hd `SystF.App` args) =
       let sRec : sRest = Supply.split s
           -- TODO: how do we communicate in between the arguments? Take the following call as an example:
           -- > add $s0 (Suc $s0)
           -- We'll evaluate each argument separately, which is not ideal.
           termArgs = mapMaybe SystF.fromArg args
-          args' = zipWith (\s0 -> ana' s0 env knowns) sRest termArgs
-       in -- TODO: can't constructors loop on this?!
-          -- doCall callHd term = Call callHd (liftedTermAppN term >=> ana sRec env knowns) args'
-          case hd of
-            SystF.Bound ann _ -> error $ "Can't evaluate bound variable: " ++ show ann
-            SystF.Free (TermSig n) ->
-              case prtDefOf TermNamespace n `runReader` defs of
-                DDestructor _ -> anaDestructor s env knowns (unsafeUnDest t `runReader` defs)
-                DTypeDef _ -> error "Can't evaluate typedefs"
-                DConstructor ix tyName ->
-                  pure $ WHNF (WHNFCotr $ ConstructorInfo tyName n ix) args'
-                DFunction _ body _ ->
-                  let xxx = liftedTermAppN (termToMeta body)
-                   in -- (liftedTermAppN (termToMeta body) >=> ana' sRec env knowns)
-                      pure $ Call n (xxx >=> _) args'
-            SystF.Free (Builtin bin) -> undefined -- doCall (CallBuiltin bin) (SystF.termPure hd)
-            SystF.Free Bottom -> pure t
-            SystF.Free (Constant _) -> pure t
-            SystF.Meta vr -> undefined -- anaMeta sRec env knowns vr
+          args' = zipWith (\s0 -> Next . ana s0 env knowns) sRest termArgs
+
+          st = pure $ termSpine t
+       in TermSet $ SpineTree $ _
     ana' _ _ _ t@SystF.Lam {} =
       error $
         unlines
@@ -165,6 +148,39 @@ symbolically defs = runST $ do
             "term: " ++ renderSingleLineStr (pretty t)
           ]
 
+    -- A spine can be thought of as the parts without any choice: there's only one thing to do: evaluate.
+    termSpine ::
+      TermMeta lang SymVar ->
+      Spine lang SymVar (TermMeta lang SymVar)
+    termSpine SystF.Lam {} = error "Lam has no spine"
+    termSpine SystF.Abs {} = error "Lam has no spine"
+    termSpine t@(hd `SystF.App` args) =
+      let args' = mapMaybe (fmap termSpine . SystF.fromArg) args
+       in case hd of
+            SystF.Bound ann _ -> error $ "Bound has no spine" ++ show ann
+            SystF.Free (TermSig n) ->
+              case prtDefOf TermNamespace n `runReader` defs of
+                DTypeDef _ -> error "TypeDef has no spine"
+                -- The spine of a destructor is its semantics upon finding a constructor in the motive
+                DDestructor _ ->
+                  let UnDestMeta _ _tyName _tyParams motive _ cases excess = unsafeUnDest t `runReader` defs
+                   in flip Dest (termSpine motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+                        let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
+                         in liftedTermAppN caseTerm consArgs
+                -- Similarly to functions, but here we'll ignore all type arguments
+                DFunction _ body _ ->
+                  Call n (liftedTermAppN (termToMeta body)) args'
+                -- Constructors are trivial:
+                DConstructor ix tyName ->
+                  Head (WHNFCotr $ ConstructorInfo tyName n ix) args'
+            SystF.Free (Builtin bin) -> Head (WHNFBuiltin bin) args'
+            SystF.Free Bottom -> Head WHNFBottom args'
+            SystF.Free (Constant x) -> Const x
+            -- TODO: we're ignoring the arguments of our metavariable... is this ok?
+            -- I think so, since metavariables can never be of function type anyway.
+            -- Therefore, they'll never be applied.
+            SystF.Meta _ -> Next t -- anaMeta sRec env knowns vr
+
     -- Symbolically evaluating a match/case is trivial. Let @$m@ be the symbolic
     -- evaluation of the motive, we can lift the case semantics to being a function
     -- that given a constructor and its arguments, yields a new tree:
@@ -175,33 +191,35 @@ symbolically defs = runST $ do
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       UnDestMeta lang SymVar ->
-      TermTree lang SymVar
+      Spine lang meta (TermSet lang SymVar)
     anaDestructor s env knowns (UnDestMeta _ _tyName _tyParams motive _ cases excess) =
       let (s0 : ss) = Supply.split s
-       in undefined
-      where
-        --   flip Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
-        --     let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
-        --      in liftedTermAppN caseTerm consArgs -- >>= ana (ss !! consIx) env knowns
+       in flip Dest (Next $ ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+            let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
+             in liftedTermAppN caseTerm consArgs >>= _
 
-        -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
-        -- can be something like:
-        -- > caseTerm = \x xs u -> x
-        -- and @excess@ above will have a list of the excess arguments. A call to
-        -- @appExcess 2 caseTerm excess@ will preserve the first 2 lambdas, then apply
-        -- the excess arguments to the term, getting rid of them.
-        -- This was mostly copied from Pirouette.Transformations.Term.removeExcessiveDestrArgs
-        appExcess :: Int -> TermMeta lang SymVar -> [ArgMeta lang SymVar] -> TermMeta lang SymVar
-        appExcess n (SystF.Lam ann ty t) = SystF.Lam ann ty . appExcess (n - 1) t . map (SystF.argMap id (shift 1))
-        appExcess 0 t = SystF.appN t
-        appExcess _ _ = error "Non-well formed destructor case"
+    --   flip Dest (ana s0 env knowns motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+    --     let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
+    --      in liftedTermAppN caseTerm consArgs -- >>= ana (ss !! consIx) env knowns
+
+    -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
+    -- can be something like:
+    -- > caseTerm = \x xs u -> x
+    -- and @excess@ above will have a list of the excess arguments. A call to
+    -- @appExcess 2 caseTerm excess@ will preserve the first 2 lambdas, then apply
+    -- the excess arguments to the term, getting rid of them.
+    -- This was mostly copied from Pirouette.Transformations.Term.removeExcessiveDestrArgs
+    appExcess :: Int -> TermMeta lang SymVar -> [ArgMeta lang SymVar] -> TermMeta lang SymVar
+    appExcess n (SystF.Lam ann ty t) = SystF.Lam ann ty . appExcess (n - 1) t . map (SystF.argMap id (shift 1))
+    appExcess 0 t = SystF.appN t
+    appExcess _ _ = error "Non-well formed destructor case"
 
     anaMeta ::
       Supply SymVar ->
       M.Map SymVar (Type lang) ->
       M.Map SymVar (TermMeta lang SymVar) ->
       SymVar ->
-      TermTree lang SymVar
+      TermSet lang SymVar
     anaMeta s env knowns target
       | Just res <- M.lookup target knowns = undefined -- pure res
       | otherwise =
@@ -224,20 +242,22 @@ symbolically defs = runST $ do
           -- and there's nothing else to do.
           _ -> pure $ SystF.termPure $ SystF.Meta target
 
-declSymVars :: M.Map SymVar (Type lang) -> TermTree lang meta -> TermTree lang meta
+declSymVars :: M.Map SymVar (Type lang) -> TermSet lang meta -> TermSet lang meta
 declSymVars vs
   | not (M.null vs) = undefined -- Learn (DeclSymVars vs)
   | otherwise = id
 
+-- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
   forall lang meta f.
   (Language lang, Applicative f, Show (f (TermMeta lang meta)), Show meta, Pretty meta) =>
   TermMeta lang meta ->
-  [f (SymbTerm lang meta)] ->
-  f (SymbTerm lang meta)
-liftedTermAppN = _
+  [f (TermMeta lang meta)] ->
+  f (TermMeta lang meta)
+liftedTermAppN = undefined
 
 {-
+
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
   forall lang meta f.
