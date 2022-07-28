@@ -10,6 +10,7 @@ import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 import Test.Tasty
 import Test.Tasty.HUnit
+import Language.Haskell.TH (Lit(IntegerL))
 
 canParseTerm :: Term Ex -> Assertion
 canParseTerm _ = return ()
@@ -48,7 +49,8 @@ tests =
       canParseProgram
         [prog|
           data Either (a : Type) (b : Type) = Left : Either a b | Right : Either a b
-          fun main : Integer = 42
+          main : Integer
+          main = 42
         |],
     testGroup "New syntax for function declaration" $
       [ testGroup

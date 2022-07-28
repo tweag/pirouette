@@ -47,31 +47,32 @@ data Maybe (a : Type)
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
-fun foldMon : all a : Type . Monoid a -> List (Maybe a) -> Maybe a
-      = /\ a : Type . \(m : Monoid a) (xs : List (Maybe a))
-      . match_Monoid @(Maybe a) (maybeMonoid @a m) @(Maybe a)
-          (\(zero : Maybe a) (mplus : Maybe a -> Maybe a -> Maybe a)
-            . match_List @(Maybe a) xs @(Maybe a)
-                (\(x : Maybe a) (xs2 : List (Maybe a)) . mplus x (foldMon @a m xs2))
-                zero
-          )
+foldMon : forall a . Monoid a -> List (Maybe a) -> Maybe a
+foldMon @a m xs =
+      match_Monoid @(Maybe a) (maybeMonoid @a m) @(Maybe a)
+        (\(zero : Maybe a) (mplus : Maybe a -> Maybe a -> Maybe a)
+          . match_List @(Maybe a) xs @(Maybe a)
+              (\(x : Maybe a) (xs2 : List (Maybe a)) . mplus x (foldMon @a m xs2))
+              zero
+        )
 
-fun maybeMonoid : all (a : Type) . Monoid a -> Monoid (Maybe a)
-     = /\(a : Type) . \(m : Monoid a)
-     . match_Monoid @a m @(Monoid (Maybe a))
-       (\(z : a) (f : a -> a -> a)
-       . Monoid @(Maybe a) (Nothing @a)
-          (\(ma : Maybe a) (mb : Maybe a)
-          . match_Maybe @a ma @(Maybe a)
-              (\(x : a) . match_Maybe @a mb @(Maybe a)
-                (\(y : a) . Just @a (f x y))
-                (Just @a x))
-              mb))
+maybeMonoid : forall a . Monoid a -> Monoid (Maybe a)
+maybeMonoid @a m =
+     match_Monoid @a m @(Monoid (Maybe a))
+     (\(z : a) (f : a -> a -> a)
+     . Monoid @(Maybe a) (Nothing @a)
+        (\(ma : Maybe a) (mb : Maybe a)
+        . match_Maybe @a ma @(Maybe a)
+            (\(x : a) . match_Maybe @a mb @(Maybe a)
+              (\(y : a) . Just @a (f x y))
+              (Just @a x))
+            mb))
 
-fun intMonoid : Monoid Integer
-     = Monoid @Integer 0 (\(x : Integer) (y : Integer) . x + y)
+intMonoid : Monoid Integer
+intMonoid = Monoid @Integer 0 (\(x : Integer) (y : Integer) . x + y)
 
-fun main : Maybe Integer = foldMon @Integer intMonoid (Nil @(Maybe Integer))
+main : Maybe Integer
+main = foldMon @Integer intMonoid (Nil @(Maybe Integer))
 |]
 
 castTy :: Type Ex -> Type Ex
