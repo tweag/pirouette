@@ -33,6 +33,9 @@ import qualified PureSMT
 -- It denotes a set of pairs of @TermMeta lang SymVar@ and @Constraint lang@.
 newtype TermSet lang = TermSet {unTermSet :: Tree (DeltaEnv lang) (Spine lang (TermSet lang))}
 
+instance Show (TermSet lang) where
+  show _ = "<termset>"
+
 -- | A 'SpineTree' is a functor which represents a /set of/ 'Spine's with holes of
 -- type @a@. The trick is that once we take the fixpoint of this functor, as in 'TermSet',
 -- we now have an infinite structure that alternates between branching and some concrete spines.

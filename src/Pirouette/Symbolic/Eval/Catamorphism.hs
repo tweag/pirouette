@@ -80,7 +80,7 @@ catamorphism defs opts = map (uncurry path) . concatMap inject . cataWHNF def
              in (mconcat sts, buildTerm hd args')
 
     buildTerm :: WHNFTermHead lang -> [TermMeta lang SymVar] -> TermMeta lang SymVar
-    buildTerm (WHNFCotr (ConstructorInfo n _ _)) args = SystF.App (SystF.Free $ TermSig n) (map SystF.TermArg args)
+    buildTerm (WHNFCotr (ConstructorInfo _ n _)) args = SystF.App (SystF.Free $ TermSig n) (map SystF.TermArg args)
     buildTerm _ _ = error "not yet implemented"
 
     cataWHNF ::
