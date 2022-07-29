@@ -108,7 +108,8 @@ instance Monad (Spine lang) where
 -- instance Show (SymbTerm lang x) where
 --   show _ = "<symbterm>"
 
--- THE ISSUE:
+-- THE ISSUE (WHICH IS NO LONGER RELEVANT, AND IS THE REASON FOR SPLITTING DATATYPES
+-- INTO TWO FUNCTORS):
 --
 -- When liftedTermAppN takes the following term:
 --
