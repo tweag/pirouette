@@ -362,7 +362,8 @@ instance Semigroup (SymEvalSt lang) where
   SymEvalSt c1 g1 a1 n1 <> SymEvalSt c2 g2 a2 n2 =
     SymEvalSt
       (c1 <> c2)
-      (M.unionWithKey (\k _ _ -> error $ "Key already declared: " ++ show k) g1 g2)
+      -- (M.unionWithKey (\k _ _ -> error $ "Key already declared: " ++ show k) g1 g2)
+      (M.union g1 g2)
       (max a1 a2)
       (n1 <> n2)
 

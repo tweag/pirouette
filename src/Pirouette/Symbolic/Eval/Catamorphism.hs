@@ -77,7 +77,7 @@ catamorphism defs opts = map (uncurry path) . concatMap inject . cataWHNF def
       let worlds = map (concatMap inject . cataWHNF st) args
        in flip map worlds $ \xs ->
             let (sts, args') = unzip xs
-             in (mconcat sts, buildTerm hd args')
+             in (if null sts then st else mconcat sts, buildTerm hd args')
 
     buildTerm :: WHNFTermHead lang -> [TermMeta lang SymVar] -> TermMeta lang SymVar
     buildTerm (WHNFCotr (ConstructorInfo _ n _)) args = SystF.App (SystF.Free $ TermSig n) (map SystF.TermArg args)
