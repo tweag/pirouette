@@ -195,12 +195,54 @@ declSymVars vs
   | otherwise = id
 
 liftedTermAppN ::
-  forall lang meta f.
-  (Language lang, Applicative f, Show (f (TermSet lang))) =>
+  forall lang meta.
+  -- (Language lang, Applicative f, Show (f (TermSet lang)), Pretty meta) =>
+  (Language lang) =>
   TermMeta lang meta ->
-  [f (TermSet lang)] ->
-  f (TermSet lang)
-liftedTermAppN = undefined
+  [Spine lang (TermSet lang)] ->
+  Spine lang (TermSet lang)
+liftedTermAppN body args =
+  let body' = termMetaMap (_ . mkMeta) body -- termMetaMap (pure . mkMeta) body
+      args' = map (SystF.TermArg . mkMeta) args
+
+      foo :: TermMeta lang (Spine lang (TermSet lang))
+      foo = body' `SystF.appN` args'
+
+      res = TermSet . Leaf . _ <$> termMetaDistr foo
+   in res -- trace (information res) res
+  where
+    -- information x =
+    --   unlines $
+    --     [ "liftedTermAppN:",
+    --       "  term: " ++ renderSingleLineStr (pretty body),
+    --       "  args: "
+    --     ]
+    --       ++ map (("  - " ++) . show) args
+    --       ++ ["  res: " ++ show x]
+
+    mkMeta :: m -> TermMeta lang m
+    mkMeta m = SystF.Meta m `SystF.App` []
+
+    -- This function is local because it makes many assumptios about where metavariables
+    -- occur. In this case, we assume they won't ever appear on types, so its safe to just
+    -- unsafeCoerce the types and avoid traversing them. In that sense, it's not /really/
+    -- a universal distributive law, only when the types have no metas.
+    termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
+    termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
+    termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
+    termMetaDistr (SystF.App hd args0) = SystF.App <$> doVar hd <*> traverse doArgs args0
+      where
+        doArgs ::
+          (Applicative f) =>
+          SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) ->
+          f (ArgMeta lang a)
+        doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
+        doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
+
+        doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
+        doVar (SystF.Meta fa) = SystF.Meta <$> fa
+        doVar (SystF.Free b) = pure $ SystF.Free b
+        doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
 
 {-
 -- | Applies a term to tree arguments, yielding a tree of results.
