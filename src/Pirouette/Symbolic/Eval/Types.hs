@@ -14,10 +14,9 @@
 module Pirouette.Symbolic.Eval.Types where
 
 import Control.Applicative hiding (Const)
-import Control.Monad (ap, (<=<), (>=>))
+import Control.Monad (ap, (>=>))
 import Data.Data hiding (eqT)
 import Data.Default
-import qualified Data.Kind as K
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.String (IsString)
@@ -32,28 +31,27 @@ import qualified PureSMT
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
 --
 -- It denotes a set of pairs of @TermMeta lang SymVar@ and @Constraint lang@.
-newtype TermSet lang meta = TermSet {unTermSet :: SpineTree lang meta (TermSet lang meta)}
+newtype TermSet lang = TermSet {unTermSet :: Tree (DeltaEnv lang) (Spine lang (TermSet lang))}
 
 -- | A 'SpineTree' is a functor which represents a /set of/ 'Spine's with holes of
 -- type @a@. The trick is that once we take the fixpoint of this functor, as in 'TermSet',
 -- we now have an infinite structure that alternates between branching and some concrete spines.
-newtype SpineTree lang meta a = SpineTree {unSpineTree :: Tree (DeltaEnv lang) (Spine lang meta a)}
 
-instance Functor (SpineTree lang meta) where
-  fmap f = SpineTree . fmap (fmap f) . unSpineTree
-
-instance Applicative (SpineTree lang meta) where
-  pure = SpineTree . pure . pure
-  SpineTree fs <*> SpineTree xs = SpineTree $ do
-    spineF <- fs
-    x <- xs
-    return $ spineF <*> x
+-- instance Functor (SpineTree lang) where
+--   fmap f = SpineTree . fmap (fmap f) . unSpineTree
+--
+-- instance Applicative (SpineTree lang) where
+--   pure = SpineTree . pure . pure
+--   SpineTree fs <*> SpineTree xs = SpineTree $ do
+--     spineF <- fs
+--     x <- xs
+--     return $ spineF <*> x
 
 -- | A @Spine lang meta x@ represents a value in @lang@ with holes of type @x@.
 --  The slight trick to you usual representation of values is that we are also representing
 --  function and destructor calls explicitely in the tree, leaving the consumer to
 --  decide how these values should be computed, depending on the semantics of @lang@.
-data Spine lang meta x
+data Spine lang x
   = -- | A function call, in an untyped setting, can be seen as something
     -- that takes a list of terms and returns a term (in fact, that's the type of
     -- the partially applied 'SystF.App' constructor!).
@@ -65,32 +63,38 @@ data Spine lang meta x
     -- > [Spine lang a] -> Spine lang a
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    forall a. Call Name ([Spine lang meta a] -> Spine lang meta x) [Spine lang meta a]
+    forall a. Call Name ([Spine lang a] -> Spine lang x) [Spine lang a]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    forall a. Dest ((ConstructorInfo, [Spine lang meta a]) -> Spine lang meta x) (Spine lang meta a)
-  | Head (WHNFTermHead lang) [Spine lang meta x]
-  | Next x
+    forall a. Dest ((ConstructorInfo, [Spine lang a]) -> Spine lang x) (Spine lang a)
+  | Head (WHNFTermHead lang) [Spine lang x]
   | Const (Constants lang)
+  | RigidSymVar SymVar
+  | Next x
+
+instance Show (Spine lang x) where
+  show _ = "<spine>"
 
 data WHNFTermHead lang
   = WHNFCotr ConstructorInfo
   | WHNFBuiltin (BuiltinTerms lang)
   | WHNFBottom
 
-instance Functor (Spine meta lang) where
+instance Functor (Spine lang) where
   fmap f (Call n body args) = Call n (fmap f . body) args
   fmap f (Dest cs motive) = Dest (fmap f . cs) motive
   fmap f (Head hd args) = Head hd (map (fmap f) args)
   fmap f (Next x) = Next (f x)
   fmap _ (Const c) = Const c
+  fmap _ (RigidSymVar sv) = RigidSymVar sv
 
-instance Applicative (Spine meta lang) where
+instance Applicative (Spine lang) where
   pure = Next
   (<*>) = ap
 
-instance Monad (Spine meta lang) where
+instance Monad (Spine lang) where
+  (RigidSymVar sv) >>= _ = RigidSymVar sv
   (Const c) >>= _ = Const c
   (Next x) >>= h = h x
   (Call n f xs) >>= h = Call n (f >=> h) xs
@@ -297,12 +301,14 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   --  This function is meant to be used with @-XTypeApplications@
   isTrue :: PureSMT.SExpr -> PureSMT.SExpr
 
--- TODO: symvars should be flexible or rigid: rigid symvars can't be instantiated to anything.
+data Flexibility = Flexible | Rigid
+  deriving (Show)
+
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Ord, Show, Data, Typeable, IsString)
 
 instance Pretty SymVar where
-  pretty (SymVar n) = pretty n
+  pretty = pretty . symVar
 
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar

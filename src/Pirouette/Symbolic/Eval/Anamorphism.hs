@@ -76,7 +76,7 @@ import qualified Supply
 -- we get defunctionalized terms.
 
 data AnaEnv lang = AnaEnv
-  { supply :: Supply SymVar,
+  { supply :: Supply Int,
     gamma :: M.Map SymVar (Type lang),
     knowns :: M.Map SymVar (TermMeta lang SymVar)
   }
@@ -86,73 +86,39 @@ symbolically ::
   (Language lang) =>
   PrtUnorderedDefs lang ->
   Term lang ->
-  TermSet lang SymVar
+  TermSet lang
 symbolically defs = runST $ do
-  s0 <- Supply.newSupply (SymVar $ Name "s" (Just 0)) nextSymVar
+  s0 <- Supply.newSupply 0 succ
   return (withSymVars s0)
   where
-    nextSymVar (SymVar n) = SymVar (n {nameUnique = Just $ maybe 1 succ (nameUnique n)})
-
     withSymVars ::
-      Supply SymVar ->
+      Supply Int ->
       Term lang ->
-      TermSet lang SymVar
+      TermSet lang
     withSymVars s t =
       let (args, _) = SystF.getHeadLams t
           (s', svars) = freshSymVars s (map (typeToMeta . snd) args)
           body =
             SystF.appN (termToMeta t) $
               map (SystF.TermArg . SystF.termPure . SystF.Meta . fst) svars
-       in declSymVars (M.fromList svars) $ ana s' (M.fromList svars) M.empty body
+       in TermSet $
+            declSymVars (M.fromList svars) $
+              unTermSet $
+                termSet (AnaEnv s' (M.fromList svars) M.empty) body
 
-    ana ::
-      Supply SymVar ->
-      M.Map SymVar (Type lang) ->
-      M.Map SymVar (TermMeta lang SymVar) ->
+    termSet ::
+      AnaEnv lang ->
       TermMeta lang SymVar ->
-      TermSet lang SymVar
-    ana s env knowns t = trace str $ ana' s env knowns t
-      where
-        str =
-          unlines
-            [ "term: " ++ renderSingleLineStr (pretty t),
-              "  env: " ++ renderSingleLineStr (pretty $ M.toList env),
-              "  knowns: " ++ renderSingleLineStr (pretty $ M.toList knowns)
-            ]
+      TermSet lang
+    termSet env t = TermSet $ fmap (fmap (uncurry termSet)) (oneLayer env t)
 
-    -- For ana to really be infinite, it should never return a term that
-    -- is only a metavariable; if that's ever the case, we should open that term
-    -- up in all of its constructors.
-    ana' ::
-      Supply SymVar ->
-      M.Map SymVar (Type lang) ->
-      M.Map SymVar (TermMeta lang SymVar) ->
+    oneLayer ::
+      AnaEnv lang ->
       TermMeta lang SymVar ->
-      TermSet lang SymVar
-    ana' s env knowns t@(hd `SystF.App` args) =
-      let sRec : sRest = Supply.split s
-          -- TODO: how do we communicate in between the arguments? Take the following call as an example:
-          -- > add $s0 (Suc $s0)
-          -- We'll evaluate each argument separately, which is not ideal.
-          termArgs = mapMaybe SystF.fromArg args
-          args' = zipWith (\s0 -> Next . ana s0 env knowns) sRest termArgs
-
-          st = pure $ termSpine t
-       in TermSet $ SpineTree $ _
-    ana' _ _ _ t@SystF.Lam {} =
-      error $
-        unlines
-          [ "Can't symbolically evaluate lambdas",
-            "Did you not defunctionalize before?",
-            "term: " ++ renderSingleLineStr (pretty t)
-          ]
-    ana' _ _ _ t@SystF.Abs {} =
-      error $
-        unlines
-          [ "Can't symbolically evaluate polymorphic terms",
-            "Did you not monomorphize before?",
-            "term: " ++ renderSingleLineStr (pretty t)
-          ]
+      Tree (DeltaEnv lang) (Spine lang (AnaEnv lang, TermMeta lang SymVar))
+    oneLayer env t = do
+      (env', t') <- termTree env t
+      return $ (env',) <$> either RigidSymVar termSpine t'
 
     termTree ::
       AnaEnv lang ->
@@ -191,7 +157,7 @@ symbolically defs = runST $ do
     -- A spine can be thought of as the parts without any choice: there's only one thing to do: evaluate.
     termSpine ::
       TermMeta lang SymVar ->
-      Spine lang SymVar (TermMeta lang SymVar)
+      Spine lang (TermMeta lang SymVar)
     termSpine SystF.Lam {} = error "Lam has no spine"
     termSpine SystF.Abs {} = error "Abs has no spine"
     termSpine t@(hd `SystF.App` args) =
@@ -219,7 +185,7 @@ symbolically defs = runST $ do
             -- TODO: we're ignoring the arguments of our metavariable... is this ok?
             -- I think so, since metavariables can never be of function type anyway.
             -- Therefore, they'll never be applied.
-            SystF.Meta _ -> Next t -- anaMeta sRec env knowns vr
+            SystF.Meta _ -> Next t
 
     -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
     -- can be something like:
@@ -233,49 +199,10 @@ symbolically defs = runST $ do
     appExcess 0 t = SystF.appN t
     appExcess _ _ = error "Non-well formed destructor case"
 
-    anaMeta ::
-      Supply SymVar ->
-      M.Map SymVar (Type lang) ->
-      M.Map SymVar (TermMeta lang SymVar) ->
-      SymVar ->
-      TermSet lang SymVar
-    anaMeta s env knowns target
-      | Just res <- M.lookup target knowns = undefined -- pure res
-      | otherwise =
-        case env M.! target of
-          -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
-          -- Sat @target@ is of type @Either a b@, then:
-          -- @symeval target == symeval (Left fresh) ++ symeval (Right fresh)@
-          SystF.TyApp (SystF.Free (TySig tyName)) tyArgs ->
-            let Datatype _ _ _ consList = prtTypeDefOf tyName `runReader` defs
-             in undefined
-          --   Union $
-          --     for2 (Supply.split s) consList $ \s' consNameTy ->
-          --       let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
-          --           env' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) env delta
-          --        in declSymVars delta $
-          --             Learn (Assign target symbCons) $
-          --               ana s'' env' (M.insert target symbCons knowns) symbCons
-          -- If this symvar is of any other type, we're done. This is as far as we can go.
-          -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
-          -- and there's nothing else to do.
-          _ -> pure $ SystF.termPure $ SystF.Meta target
-
 declSymVars :: M.Map SymVar (Type lang) -> Tree (DeltaEnv lang) a -> Tree (DeltaEnv lang) a
 declSymVars vs
   | not (M.null vs) = Learn (DeclSymVars vs)
   | otherwise = id
-
--- | Applies a term to tree arguments, yielding a tree of results.
-liftedTermAppN ::
-  forall lang meta f.
-  (Language lang, Applicative f, Show (f (TermMeta lang meta)), Show meta, Pretty meta) =>
-  TermMeta lang meta ->
-  [f (TermMeta lang meta)] ->
-  f (TermMeta lang meta)
-liftedTermAppN = undefined
-
-{-
 
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
@@ -302,9 +229,6 @@ liftedTermAppN body args =
     mkMeta :: m -> TermMeta lang m
     mkMeta m = SystF.Meta m `SystF.App` []
 
-    termMetaUnDistr :: (Applicative f) => f (TermMeta lang a) -> TermMeta lang (f a)
-    termMetaUnDistr = undefined
-
     -- This function is local because it makes manya assumptios about where metavariables
     -- occur. In this case, we assume they won't ever appear on types, so its safe to just
     -- unsafeCoerce the types and avoid traversing them. In that sense, it's not /really/
@@ -325,7 +249,6 @@ liftedTermAppN body args =
         doVar (SystF.Meta fa) = SystF.Meta <$> fa
         doVar (SystF.Free b) = pure $ SystF.Free b
         doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
--}
 
 -- | Given a supply of names, a list of type arguments and a constructor name/type pair
 -- we construct:
@@ -337,10 +260,10 @@ liftedTermAppN body args =
 -- will return a new supply, a @DeclSymVar [("vx", "Int"), ("vxs", "List Int")]@
 -- and a term @Cons $vx $vxs@.
 mkSymbolicCons ::
-  Supply SymVar ->
+  Supply Int ->
   [Type lang] ->
   (Name, Type lang) ->
-  (Supply SymVar, M.Map SymVar (Type lang), TermMeta lang SymVar)
+  (Supply Int, M.Map SymVar (Type lang), TermMeta lang SymVar)
 mkSymbolicCons sup tyParams (consName, consTy) =
   let instantiatedTy = SystF.tyInstantiateN consTy tyParams
       (consArgs, _) = SystF.tyFunArgs instantiatedTy
@@ -357,14 +280,17 @@ mkSymbolicCons sup tyParams (consName, consTy) =
 -- | Given a list of types, split the supply into enough parts to be able to
 -- issue a name for each type and a new supply that should be used for any further
 -- supply-oriented operations.
-freshSymVars :: Supply SymVar -> [Type lang] -> (Supply SymVar, [(SymVar, Type lang)])
+freshSymVars :: Supply Int -> [Type lang] -> (Supply Int, [(SymVar, Type lang)])
 freshSymVars s [] = (s, [])
 freshSymVars s tys =
   case take (length tys + 1) (Supply.split s) of
     [] -> error "impossible: take (n+1) of infinite list is non-nil"
     (s' : ss) ->
-      let vars = zipWith (\i ty -> (Supply.supplyValue i, ty)) ss tys
+      let vars = zipWith (\i ty -> (supplySymVar i, ty)) ss tys
        in (s', vars)
+  where
+    supplySymVar :: Supply Int -> SymVar
+    supplySymVar = SymVar . Name "s" . Just . Supply.supplyValue
 
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
