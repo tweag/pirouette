@@ -50,18 +50,14 @@ data SymEvalEnv lang = SymEvalEnv
     seeOptions :: Options
   }
 
-data WHNF lang a
-  = WHNFConstructor ConstructorInfo [SymTree lang SymVar a]
-  | WHNFOther a
-
 catamorphism ::
   forall lang.
   (LanguagePretty lang, LanguageSymEval lang) =>
   PrtUnorderedDefs lang ->
   Options ->
-  TermSet lang SymVar ->
+  TermSet lang ->
   [Path lang (TermMeta lang SymVar)]
-catamorphism defs opts = map (uncurry path) . cata def
+catamorphism defs opts = map (uncurry path) . concatMap inject . cataWHNF def
   where
     orderedDefs = elimEvenOddMutRec defs
 
@@ -76,11 +72,67 @@ catamorphism defs opts = map (uncurry path) . cata def
     solve :: CheckPathProblem lang -> Bool
     solve = sharedSolve . CheckPath
 
-    cata ::
+    inject :: (SymEvalSt lang, (WHNFTermHead lang, [TermSet lang])) -> [(SymEvalSt lang, TermMeta lang SymVar)]
+    inject (st, (hd, args)) =
+      let worlds = map (concatMap inject . cataWHNF st) args
+       in flip map worlds $ \xs ->
+            let (sts, args') = unzip xs
+             in (mconcat sts, buildTerm hd args')
+
+    buildTerm :: WHNFTermHead lang -> [TermMeta lang SymVar] -> TermMeta lang SymVar
+    buildTerm (WHNFCotr (ConstructorInfo n _ _)) args = SystF.App (SystF.Free $ TermSig n) (map SystF.TermArg args)
+    buildTerm _ _ = error "not yet implemented"
+
+    cataWHNF ::
       SymEvalSt lang ->
-      TermSet lang SymVar ->
-      [(SymEvalSt lang, TermMeta lang SymVar)]
-    cata st = concatMap (uncurry whnfToTerm) . cataWHNF st
+      TermSet lang ->
+      [(SymEvalSt lang, (WHNFTermHead lang, [TermSet lang]))]
+    cataWHNF st (TermSet t) = concatMap (uncurry cataSpine) $ cataTree st t
+
+    cataTree ::
+      SymEvalSt lang ->
+      Tree (DeltaEnv lang) (Spine lang (TermSet lang)) ->
+      [(SymEvalSt lang, Spine lang (TermSet lang))]
+    cataTree st (Leaf spine) = return (st, spine)
+    cataTree st (Union worlds) = concatMap (cataTree st) worlds
+    cataTree st (Learn delta t) =
+      case learn delta st of
+        Just st'
+          | sestAssignments st' <= maxAssignments opts -> cataTree st' t
+        _ -> empty
+
+    cataSpine ::
+      SymEvalSt lang ->
+      Spine lang (TermSet lang) ->
+      [(SymEvalSt lang, (WHNFTermHead lang, [TermSet lang]))]
+    cataSpine s0 (Next x) =
+      concatMap (uncurry cataSpine) (cataTree s0 $ unTermSet x)
+    cataSpine s0 (Dest worlds motive) = do
+      (s1, (hd, args)) <- cataSpine s0 motive
+      case hd of
+        WHNFCotr ci -> cataSpine s1 (worlds (ci, map Next args))
+        _ -> error "Type error: destructing something that is not a constructor!"
+    -- TODO: add something to LanguageSymEval to do call by value. See
+    -- issues #137 and #138 for more
+    cataSpine s0 (Call _n f args) = cataSpine s0 (f args)
+    cataSpine s0 (Head hd args) = return (s0, (hd, map (TermSet . pure) args))
+
+{-
+    cataWHNF ::
+      SymEvalSt lang ->
+      Spine lang (TermMeta lang SymVar) ->
+      [(SymEvalSt lang, (WHNFTermHead lang, [Spine lang (TermMeta lang SymVar)]))]
+    cataWHNF s0 (Next x) =
+      concatMap (uncurry cataWHNF) (cataTree s0 x)
+    cataWHNF s0 (Dest worlds motive) = do
+      (s1, (hd, args)) <- cataWHNF s0 _
+      case hd of
+        WHNFCotr ci -> cataWHNF s1 (worlds (ci, args))
+        _ -> error "Type error: destructing something that is not a constructor!"
+    cataWHNF _ _ = undefined
+-}
+
+{-
 
     -- Cata WHNF will lazily search for the first WHNF of the tree
     cataWHNF ::
@@ -88,9 +140,6 @@ catamorphism defs opts = map (uncurry path) . cata def
       SymTree lang SymVar (TermMeta lang SymVar) ->
       [(SymEvalSt lang, WHNF lang (TermMeta lang SymVar))]
     cataWHNF st (Leaf t) = return (st, WHNFOther t)
-    -- TODO: add something to language symeval to decide whether to run this
-    -- in call-by-name/value or some mix the user might want.
-    -- for now, we're just going on call-by-name:
     cataWHNF st (Call hd f xs) =
       case hd of
         CallSig _ -> cataWHNF st (f xs)
@@ -103,10 +152,6 @@ catamorphism defs opts = map (uncurry path) . cata def
         WHNFConstructor ci args -> cataWHNF st' (cases (ci, args))
         _ -> error "Type error!"
     cataWHNF st (Learn delta t) =
-      case learn delta st of
-        Just st'
-          | sestAssignments st' <= maxAssignments opts -> cataWHNF st' t
-        _ -> empty
     -- Let's not worry about builtins at all right now. With plain inductive types
     -- we can already do so much to check whether this monster is going to work before
     -- refining the interface to evaluating builtins in LanguageSymEval
@@ -119,7 +164,7 @@ catamorphism defs opts = map (uncurry path) . cata def
               unzip xs
     -- return $ mkConsApp (ciCtorName ci) args'
     whnfToTerm st (WHNFOther t) = return (st, t)
-
+-}
 -- return $ fmap (mkConsApp (ciCtorName ci)) args'
 
 learn :: DeltaEnv lang -> SymEvalSt lang -> Maybe (SymEvalSt lang)

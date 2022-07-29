@@ -63,14 +63,12 @@ data Spine lang x
     -- > [Spine lang a] -> Spine lang a
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    forall a. Call Name ([Spine lang a] -> Spine lang x) [Spine lang a]
+    Call Name ([Spine lang (TermSet lang)] -> Spine lang x) [Spine lang (TermSet lang)]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    forall a. Dest ((ConstructorInfo, [Spine lang a]) -> Spine lang x) (Spine lang a)
+    Dest ((ConstructorInfo, [Spine lang (TermSet lang)]) -> Spine lang x) (Spine lang (TermSet lang))
   | Head (WHNFTermHead lang) [Spine lang x]
-  | Const (Constants lang)
-  | RigidSymVar SymVar
   | Next x
 
 instance Show (Spine lang x) where
@@ -80,22 +78,22 @@ data WHNFTermHead lang
   = WHNFCotr ConstructorInfo
   | WHNFBuiltin (BuiltinTerms lang)
   | WHNFBottom
+  | WHNFConst (Constants lang)
+  | -- Rigid symvars are those symbolic variables of types weknow no inductive
+    -- definition of. For example, builtin integers.
+    WHNFSymVar SymVar
 
 instance Functor (Spine lang) where
   fmap f (Call n body args) = Call n (fmap f . body) args
   fmap f (Dest cs motive) = Dest (fmap f . cs) motive
   fmap f (Head hd args) = Head hd (map (fmap f) args)
   fmap f (Next x) = Next (f x)
-  fmap _ (Const c) = Const c
-  fmap _ (RigidSymVar sv) = RigidSymVar sv
 
 instance Applicative (Spine lang) where
   pure = Next
   (<*>) = ap
 
 instance Monad (Spine lang) where
-  (RigidSymVar sv) >>= _ = RigidSymVar sv
-  (Const c) >>= _ = Const c
   (Next x) >>= h = h x
   (Call n f xs) >>= h = Call n (f >=> h) xs
   (Dest cs mot) >>= h = Dest (cs >=> h) mot

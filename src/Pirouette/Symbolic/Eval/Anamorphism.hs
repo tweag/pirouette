@@ -7,7 +7,6 @@
 
 module Pirouette.Symbolic.Eval.Anamorphism where
 
-import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.ST
 import qualified Data.Map.Strict as M
@@ -110,24 +109,18 @@ symbolically defs = runST $ do
       AnaEnv lang ->
       TermMeta lang SymVar ->
       TermSet lang
-    termSet env t = TermSet $ fmap (fmap (uncurry termSet)) (oneLayer env t)
-
-    oneLayer ::
-      AnaEnv lang ->
-      TermMeta lang SymVar ->
-      Tree (DeltaEnv lang) (Spine lang (AnaEnv lang, TermMeta lang SymVar))
-    oneLayer env t = do
-      (env', t') <- termTree env t
-      return $ (env',) <$> either RigidSymVar termSpine t'
+    termSet env = TermSet . termTree env
 
     termTree ::
       AnaEnv lang ->
       TermMeta lang SymVar ->
-      Tree (DeltaEnv lang) (AnaEnv lang, Either SymVar (TermMeta lang SymVar))
+      Tree (DeltaEnv lang) (Spine lang (TermSet lang))
     termTree _ SystF.Lam {} = error "Lam has no tree"
     termTree _ SystF.Abs {} = error "Abs has no tree"
-    termTree env t@(SystF.Meta tgt `SystF.App` args)
-      | Just res <- M.lookup tgt (knowns env) = pure (env, Right res)
+    -- TODO: What do we do with args here? I think it must always be empty: symbolic variables
+    -- will never be of function type, at least for sure not until we add closures... or will they?
+    termTree env (SystF.Meta tgt `SystF.App` _args)
+      | Just res <- M.lookup tgt (knowns env) = pure $ termSpine env res
       | otherwise =
         case gamma env M.! tgt of
           -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
@@ -135,33 +128,30 @@ symbolically defs = runST $ do
           -- @symeval target == symeval (Left fresh) ++ symeval (Right fresh)@
           SystF.TyApp (SystF.Free (TySig tyName)) tyArgs ->
             let Datatype _ _ _ consList = prtTypeDefOf tyName `runReader` defs
-                sHere : sThere = Supply.split (supply env)
              in Union $
-                  for2 sThere consList $ \s' consNameTy ->
+                  for2 (Supply.split $ supply env) consList $ \s' consNameTy ->
                     let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
                         gamma' = M.unionWithKey (\k _ _ -> error $ "Conflicting names for: " ++ show k) (gamma env) delta
                         env' = AnaEnv s'' gamma' (M.insert tgt symbCons (knowns env))
-                     in declSymVars delta $ Learn (Assign tgt symbCons) $ pure (env', Right symbCons)
-          --   Union $
-          --     for2 (Supply.split s) consList $ \s' consNameTy ->
-          --       let (s'', delta, symbCons) = mkSymbolicCons s' (map typeFromMeta tyArgs) consNameTy
-          --        in declSymVars delta $
-          --             Learn (Assign target symbCons) $
-          --               ana s'' env' (M.insert target symbCons knowns) symbCons
+                     in declSymVars delta $
+                          Learn (Assign tgt symbCons) $
+                            pure $
+                              termSpine env' symbCons
           -- If this symvar is of any other type, we're done. This is as far as we can go.
           -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
           -- and there's nothing else to do.
-          _ -> pure (env, Left tgt)
-    termTree env t = pure (env, Right t)
+          _ -> pure $ Head (WHNFSymVar tgt) []
+    termTree env t = pure $ termSpine env t
 
     -- A spine can be thought of as the parts without any choice: there's only one thing to do: evaluate.
     termSpine ::
+      AnaEnv lang ->
       TermMeta lang SymVar ->
-      Spine lang (TermMeta lang SymVar)
-    termSpine SystF.Lam {} = error "Lam has no spine"
-    termSpine SystF.Abs {} = error "Abs has no spine"
-    termSpine t@(hd `SystF.App` args) =
-      let args' = mapMaybe (fmap termSpine . SystF.fromArg) args
+      Spine lang (TermSet lang)
+    termSpine _ SystF.Lam {} = error "Lam has no spine"
+    termSpine _ SystF.Abs {} = error "Abs has no spine"
+    termSpine env t@(hd `SystF.App` args) =
+      let args' = mapMaybe (fmap (termSpine env) . SystF.fromArg) args
        in case hd of
             SystF.Bound ann _ -> error $ "Bound has no spine" ++ show ann
             SystF.Free (TermSig n) ->
@@ -170,7 +160,7 @@ symbolically defs = runST $ do
                 -- The spine of a destructor is its semantics upon finding a constructor in the motive
                 DDestructor _ ->
                   let UnDestMeta _ _tyName _tyParams motive _ cases excess = unsafeUnDest t `runReader` defs
-                   in flip Dest (termSpine motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+                   in flip Dest (termSpine env motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
                         let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
                          in liftedTermAppN caseTerm consArgs
                 -- Similarly to functions, but here we'll ignore all type arguments
@@ -181,11 +171,11 @@ symbolically defs = runST $ do
                   Head (WHNFCotr $ ConstructorInfo tyName n ix) args'
             SystF.Free (Builtin bin) -> Head (WHNFBuiltin bin) args'
             SystF.Free Bottom -> Head WHNFBottom args'
-            SystF.Free (Constant x) -> Const x
+            SystF.Free (Constant x) -> Head (WHNFConst x) []
             -- TODO: we're ignoring the arguments of our metavariable... is this ok?
             -- I think so, since metavariables can never be of function type anyway.
             -- Therefore, they'll never be applied.
-            SystF.Meta _ -> Next t
+            SystF.Meta _ -> Next $ TermSet $ termTree env t
 
     -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
     -- can be something like:
@@ -204,6 +194,15 @@ declSymVars vs
   | not (M.null vs) = Learn (DeclSymVars vs)
   | otherwise = id
 
+liftedTermAppN ::
+  forall lang meta f.
+  (Language lang, Applicative f, Show (f (TermSet lang))) =>
+  TermMeta lang meta ->
+  [f (TermSet lang)] ->
+  f (TermSet lang)
+liftedTermAppN = undefined
+
+{-
 -- | Applies a term to tree arguments, yielding a tree of results.
 liftedTermAppN ::
   forall lang meta f.
@@ -249,6 +248,7 @@ liftedTermAppN body args =
         doVar (SystF.Meta fa) = SystF.Meta <$> fa
         doVar (SystF.Free b) = pure $ SystF.Free b
         doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+-}
 
 -- | Given a supply of names, a list of type arguments and a constructor name/type pair
 -- we construct:
