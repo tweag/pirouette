@@ -103,8 +103,11 @@ removeCtor CtorRemoveInfo{..} = updateMatchers . shiftSubsequentCtorsDefs . upda
 removeDeadFields :: forall lang. (Language lang)
                  => PrtUnorderedDefs lang
                  -> PrtUnorderedDefs lang
-removeDeadFields defs = L.foldl' removeDfInType defs types
+removeDeadFields defs
+  | defs' == defs = defs'
+  | otherwise = removeDeadFields defs'
   where
+    defs' = L.foldl' removeDfInType defs types
     types = [ td | DTypeDef td <- M.elems $ prtUODecls defs ]
 
 removeDfInType :: forall lang. (Language lang)
