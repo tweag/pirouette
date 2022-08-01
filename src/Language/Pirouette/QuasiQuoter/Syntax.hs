@@ -42,7 +42,6 @@ import qualified Data.Map as Map
 import Data.Set as Set (Set)
 import qualified Data.Set as Set
 import Data.Void
-import Debug.Trace
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -162,7 +161,7 @@ parseDecl ::
   Parser (String, Either (DataDecl lang) (FunDecl lang))
 parseDecl =
   (second Left <$> lineFold parseDataDecl)
-    <|> (second Right <$> parseNewFunDecl)
+    <|> (second Right <$> parseFunDecl)
 
 -- | Parses a simple datatype declaration:
 --
@@ -192,8 +191,8 @@ data Param = Ident String | TyIdent String deriving (Eq, Show)
 -- | Parses functon declarations following the new syntax:
 --
 --  > fun suc : Integer -> Integer = \x : Integer -> x + 1
-parseNewFunDecl :: forall lang. (LanguageParser lang) => Parser (String, FunDecl lang)
-parseNewFunDecl = P.label "Function declaration (new syntax)" $ do
+parseFunDecl :: forall lang. (LanguageParser lang) => Parser (String, FunDecl lang)
+parseFunDecl = P.label "Function declaration (new syntax)" $ do
   (r, funIdent, funType) <- lineFold $ do
     r <- NonRec <$ symbol "nonrec" <|> pure Rec
     funIdent <- ident @lang
@@ -203,7 +202,7 @@ parseNewFunDecl = P.label "Function declaration (new syntax)" $ do
   lineFold $ do
     _ <- symbol funIdent
     -- TODO Fail when there are duplicate names in the term or type worlds
-    -- TODO Add a regression test
+    -- and add a regression test
     params <- many $ (TyIdent <$> (P.char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
     symbol "="
     body <- parseTerm
