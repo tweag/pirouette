@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+
 module Pirouette.Term.Syntax.BaseSpec (tests) where
 
+import Data.String (fromString)
+import Language.Pirouette.Example
 import Pirouette.Term.Syntax.Base
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Language.Pirouette.Example
 import Test.Tasty
 import Test.Tasty.HUnit
-import Data.String (fromString)
 
 either3Def :: TypeDef Ex
 either3Def =
@@ -25,7 +26,7 @@ either3Def =
 tests :: [TestTree]
 tests =
   [ testCase "destructorTypeFor Either3" $
-      destructorTypeFor (fromString "Either3") either3Def @?=
-        [ty| forall (a : *) (b : *) (c : *)
+      destructorTypeFor (fromString "Either3") either3Def
+        @?= [ty| forall (a : *) (b : *) (c : *)
              . Either3 a b c -> forall (r : *) . (a -> r) -> (b -> r) -> (c -> r) -> r |]
   ]

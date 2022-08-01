@@ -220,10 +220,3 @@ correct_validator tx =
     (\(inputs : List (Pair TxOutRef TxOut)) (outputs : List TxOut) (fee : Value) (mint : Value) (txId : TxId).
       correct_isUnity mint example_ac)
 |]
-
-
-
-
-
-
-

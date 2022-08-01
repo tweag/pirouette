@@ -4,13 +4,13 @@
 module Language.Pirouette.ExampleSpec (tests) where
 
 import Control.Monad (when)
+import Language.Haskell.TH (Lit (IntegerL))
 import Language.Pirouette.Example
 import Pirouette.Monad (PrtUnorderedDefs (..))
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
 import Test.Tasty
 import Test.Tasty.HUnit
-import Language.Haskell.TH (Lit(IntegerL))
 
 canParseTerm :: Term Ex -> Assertion
 canParseTerm _ = return ()
@@ -114,8 +114,7 @@ tests =
         |]
           ],
         testGroup "Parsed function declarations match expectations" $
-          [
-            testCase "With type parameters and conflict-prone type parameter names in the body" $
+          [ testCase "With type parameters and conflict-prone type parameter names in the body" $
               assertRightBody
                 (Abs (Ann "b") KStar (Lam (Ann "l") (TyApp (Free (TySig "List")) [TyApp (Bound (Ann "b") 0) []]) (Abs (Ann "a") KStar (Lam (Ann "e") (TyApp (Free (TySig "Either")) [TyApp (Bound (Ann "a") 0) [], TyApp (Bound (Ann "b") 1) []]) (App (Free (TermSig "undefined")) [])))))
                 [newFunDecl|
@@ -125,10 +124,9 @@ tests =
           ]
       ],
     testGroup "Case constructs" $
-      [
-        testCase "With one pattern (pair)" $
+      [ testCase "With one pattern (pair)" $
           canParseDefinition
-                [newFunDecl|
+            [newFunDecl|
           fst : forall a . forall b . Pair a b -> a
           fst @a @b p =
             case @(Pair a b) @a p of {
@@ -137,27 +135,25 @@ tests =
               |],
         testCase "With two patterns (lists)" $
           canParseDefinition
-                [newFunDecl|
+            [newFunDecl|
           head : forall a . List a -> Maybe a
           head @a l =
             case @(List a) @(Maybe a) l of {
               Cons x xs -> undefined ;
               Nil -> undefined
-            }|]
-        ,
+            }|],
         testCase "With two patterns (lists) and a catch all" $
           canParseDefinition
-                [newFunDecl|
+            [newFunDecl|
           head : forall a . List a -> Maybe a
           head @a l =
             case @(List a) @(Maybe a) l of {
               Cons x xs -> undefined ;
               _ -> undefined
-            }|]
-        ,
+            }|],
         testCase "Nested patterns (list of pairs) with catch-alls" $
           canParseDefinition
-                [newFunDecl|
+            [newFunDecl|
           fsthead : forall a . forall b . List (Pair a b) -> Maybe a
           fsthead @a @b l =
             case @(List (Pair a b)) @(Maybe a) l of {
@@ -165,11 +161,11 @@ tests =
               _ -> Nothing @a
             }|]
       ],
-    testGroup "Line folding and whitespaces" 
-      [
-        testCase "Two one-liner functions" $
+    testGroup
+      "Line folding and whitespaces"
+      [ testCase "Two one-liner functions" $
           canParseProgram
-                [prog|
+            [prog|
           inc : Integer -> Integer
           inc x = x + 1
           dec : Integer -> Integer
@@ -177,7 +173,7 @@ tests =
               |],
         testCase "Multiline functions with comments, empty lines, and trailing spaces" $
           canParseProgram
-                [prog|
+            [prog|
           -- Increments a number
           inc : Integer -> Integer  
           inc x = x + 1
@@ -192,34 +188,31 @@ tests =
 
               |]
       ],
-    testGroup "Explicit and implicit kinds"
-      [
-        testCase "Explicit kinds in datatype declaration" $
+    testGroup
+      "Explicit and implicit kinds"
+      [ testCase "Explicit kinds in datatype declaration" $
           canParseProgram
-                [prog|
+            [prog|
                 data MaybePair (a : *) (b : *)
                   = Nothing : MaybePair a b
                   | JustPair : a -> b -> MaybePair a b
-              |]
-      ,
+              |],
         testCase "Implicit kinds in datatype declaration" $
           canParseProgram
-                [prog|
+            [prog|
                 data MaybePair a b
                   = Nothing : MaybePair a b
                   | JustPair : a -> b -> MaybePair a b
-              |]
-      ,
+              |],
         testCase "Explicit kinds in function declaration" $
           canParseProgram
-                [prog|
+            [prog|
                 foo : forall (a : * -> * -> *) (b : *) (c : *) . a b c
                 foo @a @b @c = bottom @(a b c)
-              |]
-      ,
+              |],
         testCase "Implicit kinds in function declaration" $
           canParseProgram
-                [prog|
+            [prog|
                 foo : forall (a : * -> * -> *) b c . a b c
                 foo @a @b @c = bottom @(a b c)
               |]
