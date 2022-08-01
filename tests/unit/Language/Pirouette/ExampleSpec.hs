@@ -165,7 +165,7 @@ tests =
               _ -> Nothing @a
             }|]
       ],
-    testGroup "Line folding and whitespaces" $
+    testGroup "Line folding and whitespaces" 
       [
         testCase "Two one-liner functions" $
           canParseProgram
@@ -190,6 +190,38 @@ tests =
           dec x =
             x - 1
 
+              |]
+      ],
+    testGroup "Explicit and implicit kinds"
+      [
+        testCase "Explicit kinds in datatype declaration" $
+          canParseProgram
+                [prog|
+                data MaybePair (a : *) (b : *)
+                  = Nothing : MaybePair a b
+                  | JustPair : a -> b -> MaybePair a b
+              |]
+      ,
+        testCase "Implicit kinds in datatype declaration" $
+          canParseProgram
+                [prog|
+                data MaybePair a b
+                  = Nothing : MaybePair a b
+                  | JustPair : a -> b -> MaybePair a b
+              |]
+      ,
+        testCase "Explicit kinds in function declaration" $
+          canParseProgram
+                [prog|
+                foo : forall (a : * -> * -> *) (b : *) (c : *) . a b c
+                foo @a @b @c = bottom @(a b c)
+              |]
+      ,
+        testCase "Implicit kinds in function declaration" $
+          canParseProgram
+                [prog|
+                foo : forall (a : * -> * -> *) b c . a b c
+                foo @a @b @c = bottom @(a b c)
               |]
       ]
   ]

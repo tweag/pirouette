@@ -30,20 +30,20 @@ sampleUDefs =
 -- Here we're overloading the constructor name on purpose, to make
 -- sure monomorphization understands that it must monomorphize
 -- both the type and the constructor
-data Monoid (a : *)
+data Monoid a
   = Monoid : a -> (a -> a -> a) -> Monoid a
 
-data List (a : *)
+data List a
   = Cons : a -> List a -> List a
   | Nil : List a
 
 -- Here's a tricky one! It's an indirect need for monomorphizing:
 -- If we don't monomorphize @Ind@, defunctionalization will not
 -- be able to properly generate closures for the arguments.
-data Indirect (a : *)
+data Indirect a
   = Ind : Maybe (a -> a) -> Indirect a
 
-data Maybe (a : *)
+data Maybe a
   = Just : a -> Maybe a
   | Nothing : Maybe a
 

@@ -173,7 +173,7 @@ parseDataDecl :: forall lang. (LanguageParser lang) => Parser (String, DataDecl 
 parseDataDecl = P.label "Data declaration" $ do
   P.try (symbol "data")
   i <- typeName @lang
-  vars <- many (parens $ (,) <$> ident @lang <*> parseOptKindOf)
+  vars <- many (parseTypeVarKind @lang)
   cons <-
     (P.try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `P.sepBy1` symbol "|")
       <|> return []
@@ -296,12 +296,18 @@ parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
     pAll :: Parser (Ty lang)
     pAll = P.label "pAll" $ do
       P.try (symbol "forall")
-      parseBinder TyAll (parseBinderNames (ident @lang) parseOptKindOf) (symbol "." >> parseType)
+      parseBinder
+        TyAll
+        (some (parseTypeVarKind @lang))
+        (symbol "." >> parseType)
 
     pLam :: Parser (Ty lang)
     pLam = P.label "pLam" $ do
       P.try (symbol "\\")
-      parseBinder TyLam (parseBinderNames (ident @lang) parseOptKindOf) (symbol "." >> parseType)
+      parseBinder
+        TyLam
+        (some (parseTypeVarKind @lang))
+        (symbol "." >> parseType)
 
     pAtom =
       P.try $
@@ -434,6 +440,18 @@ parseBinder binder parseVars parseBody = do
   b <- parseBody
   return $ foldr (uncurry binder) b vars
 
+-- | Parse a declaration of a type variable and its kind. The kind is `*` by
+-- default if omitted.
+-- E.g. `(a : * -> * -> *)`
+-- E.g. `(a : *)` and `a` are equivalent
+parseTypeVarKind :: forall lang. LanguageParser lang => Parser (String, SystF.Kind)
+parseTypeVarKind = parens p <|> p
+  where
+    p =
+      (,)
+        <$> ident @lang
+        <*> (P.try (parseTyOf *> parseKind) <|> return SystF.KStar)
+
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
 
@@ -480,7 +498,6 @@ spaceConsumer =
             _ <- many skipEmptyLine
             _ <- P.hspace
             P.SourcePos _ _ currentCol <- P.getSourcePos
-            traceM $ "Horiz space consumed." <> show (startCol, currentCol)
             if P.unPos currentCol > P.unPos startCol
               then return ()
               else fail "not indented enough to line fold",
@@ -497,8 +514,7 @@ symbol = void . L.symbol spaceConsumer
 keywords :: Set String
 keywords =
   Set.fromList
-    [ "abs",
-      "case",
+    [ "case",
       "data",
       "forall",
       "destructor",
@@ -507,7 +523,6 @@ keywords =
       "if",
       "then",
       "else",
-      "fun",
       "bottom"
     ]
 

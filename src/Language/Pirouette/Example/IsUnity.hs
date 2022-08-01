@@ -51,11 +51,11 @@ eqInt x y = x == y
 eqString : String -> String -> Bool
 eqString x y = x ~~ y
 
-data List (a : *)
+data List a
   = Nil : List a
   | Cons : a -> List a -> List a
 
-foldr : forall a . forall r . (a -> r -> r) -> r -> List a -> r
+foldr : forall a r . (a -> r -> r) -> r -> List a -> r
 foldr @a @r f e l =
   match_List @a l @r
     e

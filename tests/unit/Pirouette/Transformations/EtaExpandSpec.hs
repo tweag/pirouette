@@ -25,20 +25,20 @@ withUnorderedDecls defs f = runReader f defs
 samplePrtUnorderedDefs :: PrtUnorderedDefs Ex
 samplePrtUnorderedDefs =
   [prog|
-data Maybe (a : *)
+data Maybe a
   = Nothing : Maybe a
   | Just : a -> Maybe a
 
 add : Integer -> Integer -> Integer
 add x y = x + y
 
-const : forall (a : *) (b : *) . a -> b -> a
+const : forall a b . a -> b -> a
 const @a @b x y = x
 
-omg : forall (a : *) . Integer -> a -> forall (f : (* -> *)) . f a -> Integer
+omg : forall a . Integer -> a -> forall (f : (* -> *)) . f a -> Integer
 omg @a i x @f = const @Integer @(f a) i
 
-appOne : forall (k : *) . (k -> Bool) -> k -> Bool
+appOne : forall k . (k -> Bool) -> k -> Bool
 appOne @k predi m = predi m
 
 main : Integer
