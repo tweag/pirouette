@@ -100,6 +100,10 @@ removeCtor CtorRemoveInfo{..} = updateMatchers . shiftSubsequentCtorsDefs . upda
 
 -- * Dead fields elimination
 
+-- | Removes dead (aka unused) fields in constructors of all data types in the program.
+--
+-- This needs to be done until a fixpoint, since if a field is found to be dead in one type
+-- and is thus removed, then the corresponding values coming from other types might also become unused.
 removeDeadFields :: forall lang. (Language lang)
                  => PrtUnorderedDefs lang
                  -> PrtUnorderedDefs lang
@@ -138,11 +142,20 @@ removeDfInTypeCtor ty defs ctorIdx
         ctors' = updateAt ctorIdx (constructors ty) ctor'
     updateCtor def = def
 
+-- | Updates the calls to the destructor to account for
+-- the given fields being removed of a given constructor.
+--
+-- Removes the parameters corresponding to the fields being removed in the function
+-- corresponding to the given constructor's case branch for a dtor.
+--
+-- This function is intended to be used within @transformBi@:
+-- if the passed term is not an application of the destructor to its case branches,
+-- this function just returns it untouched.
 updateDtor :: Language lang
-           => Name
-           -> Integer
-           -> [Integer]
-           -> Term lang
+           => Name           -- ^ the destructor
+           -> Integer        -- ^ the index of the constructor
+           -> [Integer]      -- ^ the fields of the constructor to be removed
+           -> Term lang      -- ^ a term, potentially an application of the destructor
            -> Term lang
 updateDtor dtorName ctorIdx fieldsIdxes (SystF.App (SystF.Free (TermSig funName)) dtorArgs)
   | funName == dtorName = SystF.App (SystF.Free (TermSig funName)) $ prefix <> branches'
@@ -152,10 +165,15 @@ updateDtor dtorName ctorIdx fieldsIdxes (SystF.App (SystF.Free (TermSig funName)
     branch' = SystF.argMap id (dropDtorFields $ (\ix -> -ix - 1) <$> fieldsIdxes) $ branches !! fromIntegral ctorIdx
 updateDtor _ _ _ x = x
 
+-- | Updates the calls to the constructor to account for the given fields being removed.
+--
+-- This function is intended to be used within @transformBi@:
+-- if the passed term is not an application of the constructor to some arguments,
+-- this function just returns it untouched.
 removeCtorArgs :: Language lang
-               => Name
-               -> [Integer]
-               -> Term lang
+               => Name             -- ^ the name of the constructor
+               -> [Integer]        -- ^ the fields to remove
+               -> Term lang        -- ^ a term, potentially an application of the constructor
                -> Term lang
 removeCtorArgs ctor fieldsIdxes (SystF.App (SystF.Free (TermSig funName)) args)
   | funName == ctor = SystF.App (SystF.Free (TermSig funName)) (removeAts fieldsIdxes args)
@@ -218,16 +236,20 @@ dropDtorFields :: [Integer]
                -> Term lang
 dropDtorFields argsIxes term = foldr (\ix t -> fromJust $ tryDropArg ix t) term argsIxes
 
+-- An argument is used in a term if dropping it fails
+--
+-- For indexing semantics, see 'tryDropArg'.
 isArgUsed :: Integer
           -> Term lang
           -> Bool
 isArgUsed argIdx term = isNothing $ tryDropArg argIdx term
 
+-- | Check whether the field of a type's constructor is used anywhere in the program.
 isFieldUsed :: forall lang. (Language lang)
             => PrtUnorderedDefs lang
-            -> Name     -- ^ destructor
-            -> Integer  -- ^ constructor idx
-            -> Integer  -- ^ field idx
+            -> Name     -- ^ the destructor
+            -> Integer  -- ^ the constructor idx
+            -> Integer  -- ^ the field idx
             -> Bool
 isFieldUsed defs dtorName ctorIdx fieldIdx = any (isArgUsed $ -fieldIdx - 1) dtorBranches
   where
@@ -236,7 +258,6 @@ isFieldUsed defs dtorName ctorIdx fieldIdx = any (isArgUsed $ -fieldIdx - 1) dto
                    , name == dtorName
                    , let SystF.TermArg dtorBranch = snd (splitArgsTermsTail args) !! fromIntegral ctorIdx
                    ]
-    dbg = nameString dtorName == "MultiplicativeMonoid_match"
 
 data UnusedFields = UnusedFields
   { ufTermOnlyFieldsIdxes :: [Integer]
@@ -269,9 +290,13 @@ unusedFields defs Datatype{..} ctorIdx = UnusedFields{..}
 
 -- * Misc utils
 
+-- | Remove the element of a list at a given position.
 removeAt :: Integral ix => ix -> [a] -> [a]
 removeAt pos = uncurry (<>) . second tail . splitAt (fromIntegral pos)
 
+-- | Remove some elements of the list at their given positions.
+--
+-- The positions are expected to be sorted ascendingly.
 removeAts :: Integral ix => [ix] -> [a] -> [a]
 removeAts = go 0
   where
