@@ -17,8 +17,8 @@
 module Language.Pirouette.QuasiQuoter (QuasiQuoter, prog, progNoTC, term, ty, newFunDecl) where
 
 import Control.Monad.Except (runExcept)
+import Control.Monad.Reader
 import qualified Data.Map as M
-import qualified Data.Set as Set
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax hiding (Name, Type)
 import Language.Pirouette.QuasiQuoter.Syntax
@@ -28,7 +28,6 @@ import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
-import Control.Monad.Reader
 
 prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, LanguagePretty lang) => QuasiQuoter
 prog = quoter $ \str -> do

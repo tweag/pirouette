@@ -207,11 +207,12 @@ parseNewFunDecl = P.label "Function declaration (new syntax)" $ do
     params <- many $ (TyIdent <$> (P.char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
     symbol "="
     body <- parseTerm
-    traceM $ "---- Function \"" <> funIdent <> "\" (" <> show r <> ") ----"
-    traceM $ "Type: " <> show funType
-    traceM $ "Parameters: " <> show params
-    traceM $ "Body: " <> show body
-    traceM $ "Processed term: " <> show (funTerm funType params body)
+    -- Uncomment the following for debug info
+    -- traceM $ "---- Function \"" <> funIdent <> "\" (" <> show r <> ") ----"
+    -- traceM $ "Type: " <> show funType
+    -- traceM $ "Parameters: " <> show params
+    -- traceM $ "Body: " <> show body
+    -- traceM $ "Processed term: " <> show (funTerm funType params body)
     return (funIdent, FunDecl r funType (funTerm funType params body))
 
 -- | Term corresponding to the desugared body declaration using given parameter
