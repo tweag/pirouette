@@ -259,25 +259,6 @@ parseKind =
       (parens parseKind <|> (SystF.KStar <$ symbol "*"))
       [[InfixR $ SystF.KTo <$ symbol "->"]]
 
--- | EXPERIMENTAL
--- Parse a kind after the `:` operator or default to kind `*` if omitted.
--- For now, omitting the kind is not yet bug free.
---
--- It only works in `forall` constructions with a single type variable.
--- E.g. `forall a . forall b . a -> b -> b`
---
--- TODO Fix
--- It does not work with multiple variables in a common `forall`:
--- E.g. `forall a b . a -> b -> b` does not work.
--- Use either `forall (a : *) (b : *) . a -> b -> b` or `forall a . forall b .
--- a -> b -> b`
---
--- It also does not work yet in datatype declaration:
--- E.g. `data Maybe a = ...` does not work. Use `data Maybe (a : *) = ...`
--- instead.
-parseOptKindOf :: Parser SystF.Kind
-parseOptKindOf = P.try (parseTyOf *> parseKind) <|> return SystF.KStar
-
 -- | Parse a type. The following features are supported:
 --
 -- - Application: `Either a b`
@@ -477,8 +458,8 @@ hspaceComment = do
 -- Note that, as long as lines begin after the reference column, they are
 -- considered part of the section. This means that a three line block whose
 -- lines start at columns 1, 4, then 2, is valid. Using the first indented line
--- as a reference (4 in this example) would require "State" instead of
--- "Reader" or cumbersome and ineffient look aheads.
+-- as a reference (4 in this example) would require "State" instead of "Reader"
+-- or cumbersome and ineffient look aheads.
 lineFold :: Parser a -> Parser a
 lineFold p = do
   P.SourcePos _ _ currentCol <- P.getSourcePos
