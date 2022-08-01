@@ -463,21 +463,22 @@ hspaceComment = do
   P.hspace
   P.try (L.skipLineComment "--") <|> return ()
 
--- | Parse content in a line-folded fashion. The beginning column position
--- serves as a reference. Every line starting strictly after that column is
--- considered to be part of the section. The first line that goes back to a
--- lower indentation level is considered belonging to another unit.
+-- | Parse content in a line-folded fashion. The initial column number serves
+-- as a reference. Every line that begins after that indentation level is
+-- considered to be part of the line-folded section. The first line that goes
+-- back to a lower indentation level marks the end of the line-folded section.
 --
--- This must be used with parsers that use "spaceConsumer".
+-- "lineFold" is expected to be applied to parsers that use "spaceConsumer"
+-- exclusively.
 --
--- For now, only basic top-level line folding is supported. This fails at
--- runtime if line foled sections are nested.
+-- For now, only basic top-level line folding is supported. A runtime error is
+-- raised if line-folded sections are nested.
 --
 -- Note that, as long as lines begin after the reference column, they are
 -- considered part of the section. This means that a three line block whose
 -- lines start at columns 1, 4, then 2, is valid. Using the first indented line
 -- as a reference (4 in this example) would require "State" instead of
--- "Reader".
+-- "Reader" or cumbersome and ineffient look aheads.
 lineFold :: Parser a -> Parser a
 lineFold p = do
   P.SourcePos _ _ currentCol <- P.getSourcePos
