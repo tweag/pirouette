@@ -33,8 +33,11 @@ import qualified PureSMT
 -- It denotes a set of pairs of @TermMeta lang SymVar@ and @Constraint lang@.
 newtype TermSet lang = TermSet {unTermSet :: Tree (DeltaEnv lang) (Spine lang (TermSet lang))}
 
-instance Show (TermSet lang) where
-  show _ = "<termset>"
+instance (LanguagePretty lang) => Show (TermSet lang) where
+  show = show . pretty
+
+instance (LanguagePretty lang) => Pretty (TermSet lang) where
+  pretty (TermSet t) = pretty t
 
 -- | A 'SpineTree' is a functor which represents a /set of/ 'Spine's with holes of
 -- type @a@. The trick is that once we take the fixpoint of this functor, as in 'TermSet',
@@ -74,8 +77,14 @@ data Spine lang x
   | Head (WHNFTermHead lang) [Spine lang x]
   | Next x
 
-instance Show (Spine lang x) where
-  show _ = "<spine>"
+instance (LanguagePretty lang, Pretty x) => Show (Spine lang x) where
+  show = show . pretty
+
+instance (LanguagePretty lang, Pretty x) => Pretty (Spine lang x) where
+  pretty (Call n _ _) = "Call" <+> pretty n
+  pretty (Dest _ _) = "Dest"
+  pretty (Head hd args) = vsep [pretty hd, nest 2 $ vsep (map pretty args)]
+  pretty (Next x) = "Next" <+> pretty x
 
 data WHNFTermHead lang
   = WHNFCotr ConstructorInfo
@@ -85,6 +94,13 @@ data WHNFTermHead lang
   | -- Rigid symvars are those symbolic variables of types weknow no inductive
     -- definition of. For example, builtin integers.
     WHNFSymVar SymVar
+
+instance LanguagePretty lang => Pretty (WHNFTermHead lang) where
+  pretty (WHNFCotr ci) = pretty $ ciCtorName ci
+  pretty (WHNFBuiltin b) = pretty b
+  pretty WHNFBottom = "bottom"
+  pretty (WHNFConst c) = pretty c
+  pretty (WHNFSymVar s) = pretty s
 
 instance Functor (Spine lang) where
   fmap f (Call n body args) = Call n (fmap f . body) args
@@ -176,12 +192,21 @@ data DeltaEnv lang
   | Assign SymVar (TermMeta lang SymVar)
   deriving (Eq, Show)
 
+instance LanguagePretty lang => Pretty (DeltaEnv lang) where
+  pretty (DeclSymVars ds) = hsep $ punctuate ";" (map (\(s, t) -> pretty s <+> ":" <+> pretty t) $ M.toList ds)
+  pretty (Assign s t) = pretty s <+> ":=" <+> pretty t
+
 -- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
 data Tree deltas a
   = Leaf a
   | Learn deltas (Tree deltas a)
   | Union [Tree deltas a]
   deriving (Show)
+
+instance (Pretty deltas, Pretty a) => Pretty (Tree deltas a) where
+  pretty (Leaf a) = pretty a
+  pretty (Union ts) = nest 2 $ vsep ["Union", align $ vsep (map (("-" <+>) . pretty) ts)]
+  pretty (Learn d t) = vsep ["+" <> parens (pretty d), nest 2 (pretty t)]
 
 instance Functor (Tree deltas) where
   fmap f (Leaf x) = Leaf $ f x
