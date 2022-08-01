@@ -111,7 +111,9 @@ catamorphism defs opts = map (uncurry path) . concatMap inject . cataWHNF def
     cataSpine s0 (Dest worlds motive) = do
       (s1, (hd, args)) <- cataSpine s0 motive
       case hd of
-        WHNFCotr ci -> cataSpine s1 (worlds (ci, map Next args))
+        WHNFCotr ci ->
+          let info = unlines ["Destructing: " ++ show (pretty hd), "With: " ++ renderSingleLineStr (pretty args)]
+           in trace info $ cataSpine s1 (worlds (ci, map Next args))
         _ -> error "Type error: destructing something that is not a constructor!"
     -- TODO: add something to LanguageSymEval to do call by value. See
     -- issues #137 and #138 for more

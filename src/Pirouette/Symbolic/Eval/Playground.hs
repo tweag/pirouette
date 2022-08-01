@@ -23,7 +23,7 @@ fun add : Nat -> Nat -> Nat
 |]
 
 opts :: Options
-opts = def {maxAssignments = 5}
+opts = def {maxAssignments = 1}
 
 x :: [Path Ex (TermMeta Ex SymVar)]
 x = catamorphism defs opts (symbolically defs [term| \(n : Nat) . add n (Suc n) |])

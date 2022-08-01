@@ -81,10 +81,13 @@ instance (LanguagePretty lang, Pretty x) => Show (Spine lang x) where
   show = show . pretty
 
 instance (LanguagePretty lang, Pretty x) => Pretty (Spine lang x) where
-  pretty (Call n _ _) = "Call" <+> pretty n
-  pretty (Dest _ _) = "Dest"
-  pretty (Head hd args) = vsep [pretty hd, nest 2 $ vsep (map pretty args)]
-  pretty (Next x) = "Next" <+> pretty x
+  pretty = prettySpine 2
+
+prettySpine :: (LanguagePretty lang, Pretty x) => Int -> Spine lang x -> Doc ann
+prettySpine d (Call n _ args) = "Call" <+> vsep [pretty n, nest 2 $ vcat (map (prettySpine (d - 1)) args)]
+prettySpine d (Dest _ mot) = vsep ["Dest", prettySpine (d - 1) mot]
+prettySpine d (Head hd args) = parens $ nest 2 $ sep $ pretty hd : map (prettySpine (d - 1)) args
+prettySpine _ (Next x) = "Next"
 
 data WHNFTermHead lang
   = WHNFCotr ConstructorInfo
@@ -205,8 +208,8 @@ data Tree deltas a
 
 instance (Pretty deltas, Pretty a) => Pretty (Tree deltas a) where
   pretty (Leaf a) = pretty a
-  pretty (Union ts) = nest 2 $ vsep ["Union", align $ vsep (map (("-" <+>) . pretty) ts)]
-  pretty (Learn d t) = vsep ["+" <> parens (pretty d), nest 2 (pretty t)]
+  pretty (Union ts) = "Union" <+> brackets (align $ vsep $ punctuate ";" (map pretty ts))
+  pretty (Learn d t) = "Learn" <+> braces (pretty d) <+> nest 2 (parens $ pretty t)
 
 instance Functor (Tree deltas) where
   fmap f (Leaf x) = Leaf $ f x

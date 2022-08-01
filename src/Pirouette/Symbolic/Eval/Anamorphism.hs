@@ -121,11 +121,20 @@ symbolically defs = runST $ do
       AnaEnv lang ->
       TermMeta lang SymVar ->
       Tree (DeltaEnv lang) (Spine lang (TermSet lang))
-    termTree _ _ SystF.Lam {} = error "Lam has no tree"
-    termTree _ _ SystF.Abs {} = error "Abs has no tree"
+    termTree s env t = trace inf $ termTreeAux s env t
+      where
+        inf = unlines ["termTree:", renderSingleLineStr (pretty t)]
+
+    termTreeAux ::
+      Supply Int ->
+      AnaEnv lang ->
+      TermMeta lang SymVar ->
+      Tree (DeltaEnv lang) (Spine lang (TermSet lang))
+    termTreeAux _ _ SystF.Lam {} = error "Lam has no tree"
+    termTreeAux _ _ SystF.Abs {} = error "Abs has no tree"
     -- TODO: What do we do with args here? I think it must always be empty: symbolic variables
     -- will never be of function type, at least for sure not until we add closures... or will they?
-    termTree s env (SystF.Meta tgt `SystF.App` _args)
+    termTreeAux s env (SystF.Meta tgt `SystF.App` _args)
       | Just res <- M.lookup tgt (knowns env) = pure $ termSpine s (termTreeMeta env) res
       | otherwise =
         case gamma env M.! tgt of
@@ -147,12 +156,12 @@ symbolically defs = runST $ do
           -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
           -- and there's nothing else to do.
           _ -> pure $ Head (WHNFSymVar tgt) []
-    termTree s env t = pure $ termSpine s (termTreeMeta env) t
+    termTreeAux s env t = pure $ termSpine s (termTreeMeta env) t
 
     -- A spine can be thought of as the parts without any choice: there's only one thing to do: evaluate.
     termSpine ::
       forall meta.
-      (Show meta) =>
+      (Show meta, Pretty meta) =>
       Supply Int ->
       (Supply Int -> meta -> TermSet lang) ->
       TermMeta lang meta ->
@@ -189,6 +198,7 @@ symbolically defs = runST $ do
 
     liftedTermAppN ::
       forall meta.
+      (Pretty meta) =>
       Supply Int ->
       (Supply Int -> meta -> TermSet lang) ->
       TermMeta lang meta ->
@@ -203,16 +213,16 @@ symbolically defs = runST $ do
           foo = body' `SystF.appN` args'
 
           res = TermSet . Leaf . termSpine s1 (const id) <$> termMetaDistr foo
-       in res -- trace (information res) res
+       in trace (information res) res
       where
-        -- information x =
-        --   unlines $
-        --     [ "liftedTermAppN:",
-        --       "  term: " ++ renderSingleLineStr (pretty body),
-        --       "  args: "
-        --     ]
-        --       ++ map (("  - " ++) . show) args
-        --       ++ ["  res: " ++ show x]
+        information x =
+          unlines $
+            [ "liftedTermAppN:",
+              "  term: " ++ renderSingleLineStr (pretty body),
+              "  args: "
+            ]
+              ++ map (("  - " ++) . show) args
+              ++ ["  res: " ++ show x]
 
         -- This function is local because it makes many assumptios about where metavariables
         -- occur. In this case, we assume they won't ever appear on types, so its safe to just
@@ -251,6 +261,48 @@ declSymVars :: M.Map SymVar (Type lang) -> Tree (DeltaEnv lang) a -> Tree (Delta
 declSymVars vs
   | not (M.null vs) = Learn (DeclSymVars vs)
   | otherwise = id
+
+termSetAbsorb :: TermMeta lang (TermSet lang) -> TermSet lang
+termSetAbsorb =
+  TermSet
+    . fmap (fmap termSetAbsorb . termMetaDistr)
+    . termMetaDistr
+    . termMetaMap unTermSet
+  where
+    termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
+    termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
+    termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
+    termMetaDistr (SystF.App hd args0) = SystF.App <$> doVar hd <*> traverse doArgs args0
+      where
+        doArgs ::
+          (Applicative f) =>
+          SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) ->
+          f (ArgMeta lang a)
+        doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
+        doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
+
+        doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
+        doVar (SystF.Meta fa) = SystF.Meta <$> fa
+        doVar (SystF.Free b) = pure $ SystF.Free b
+        doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+
+{-
+termSetAbsorb (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
+termSetAbsorb (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
+termSetAbsorb (SystF.App hd args0) = SystF.App <$> doVar hd <*> traverse doArgs args0
+  where
+    doArgs ::
+      (Applicative f) =>
+      SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) ->
+      f (ArgMeta lang a)
+    doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
+    doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
+
+    doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
+    doVar (SystF.Meta fa) = SystF.Meta <$> fa
+    doVar (SystF.Free b) = pure $ SystF.Free b
+    doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+-}
 
 {-
 -- | Applies a term to tree arguments, yielding a tree of results.
