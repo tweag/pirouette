@@ -188,6 +188,18 @@ parseDataDecl = P.label "Data declaration" $ do
 -- the required multi body functions
 data Param = Ident String | TyIdent String deriving (Eq, Show)
 
+-- | Check against duplicate identifiers among a list of parameters. A term and
+-- a type variable can share the same name without clash.
+noDuplicateParamName :: [Param] -> Bool
+noDuplicateParamName = aux Set.empty Set.empty
+  where
+    aux :: Set String -> Set String -> [Param] -> Bool
+    aux _ _ [] = True
+    aux termvars tyvars (Ident str : xs) =
+      not (Set.member str termvars) && aux (Set.insert str termvars) tyvars xs
+    aux termvars tyvars (TyIdent str : xs) =
+      not (Set.member str tyvars) && aux termvars (Set.insert str tyvars) xs
+
 -- | Parses functon declarations following the new syntax:
 --
 --  > fun suc : Integer -> Integer = \x : Integer -> x + 1
@@ -201,9 +213,8 @@ parseFunDecl = P.label "Function declaration (new syntax)" $ do
     return (r, funIdent, funType)
   lineFold $ do
     _ <- symbol funIdent
-    -- TODO Fail when there are duplicate names in the term or type worlds
-    -- and add a regression test
     params <- many $ (TyIdent <$> (P.char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
+    unless (noDuplicateParamName params) $ fail "duplicate parameter name"
     symbol "="
     body <- parseTerm
     -- Uncomment the following for debug info
