@@ -261,10 +261,10 @@ parseKind =
 
 -- | Parse a type. The following features are supported:
 --
--- - Application: `Either a b`
--- - Function arrow: `b -> (a -> b) -> c`
--- - Quantification: `forall (a : * -> *) (b : *) . `
--- - Type lambdas: `\(a : * -> *) (b : *) . `
+-- - Application: @Either a b@
+-- - Function arrow: @b -> (a -> b) -> c@
+-- - Quantification: @forall (a : * -> *) (b : *) . @
+-- - Type lambdas: @\(a : * -> *) (b : *) . @
 parseType :: forall lang. (LanguageParser lang) => Parser (Ty lang)
 parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
   where
