@@ -16,6 +16,7 @@ import Data.IORef
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Void
+import Debug.Trace
 import System.IO.Unsafe
 
 ----------------------------------------
@@ -25,9 +26,6 @@ import System.IO.Unsafe
 data Term m
   = Lam String (Term m)
   | App (Var m) [Term m]
-  | NatCase (Term m) (Term m) (Term m)
-  | ConsZero
-  | ConsSucc (Term m)
   deriving (Show, Functor)
 
 data Var m
@@ -35,6 +33,9 @@ data Var m
   | Free String
   | Meta m
   | Bottom
+  | ConsZero
+  | ConsSucc
+  | NatCase
   deriving (Show, Functor)
 
 type Defs = M.Map String (Term Void)
@@ -49,12 +50,16 @@ data TermSet
   = Simple {unTermSet :: Tree (Spines TermSet)}
   | Inst {unMeta :: Meta, unTermSet :: Tree (Spines TermSet)}
 
+instance Show TermSet where
+  show (Simple _) = "<simple-ts>"
+  show (Inst m _) = "ts$" ++ show m
+
 data CotrInfo = CIZero | CISucc
 
 -- Spine Layer
 data S r
-  = forall a. Call ([Spines a] -> r) [Spines a]
-  | forall a. Dest ((CotrInfo, [Term a]) -> r) (Spines a)
+  = Call ([TermSet] -> r) TermSet
+  | Dest ((CotrInfo, [TermSet]) -> r) TermSet
   | Cotr CotrInfo [r]
   | Bot
 
@@ -68,6 +73,9 @@ data Spines r
   = One (S (Spines r))
   | None r
   deriving (Functor)
+
+instance Show (Spines r) where
+  show _ = "<spine>"
 
 spinesJoin :: Spines (Spines r) -> Spines r
 spinesJoin (None r) = r
@@ -85,43 +93,51 @@ type ScopedTerm = (S.Set Meta, Term Meta)
 
 type ScopedMeta = (S.Set Meta, Meta)
 
+termVars :: Term m -> ([String], Term m)
+termVars (Lam n t) = first (n :) $ termVars t
+termVars t = ([], t)
+
 -- The anamorphism!
 symbolically :: Defs -> Term Void -> TermSet
-symbolically defs = withSymVars []
+symbolically defs = withSymVars
   where
-    withSymVars :: [Meta] -> Term Void -> TermSet
-    withSymVars s (Lam n t) = withSymVars (n : s) t
-    withSymVars s body =
-      Simple $
-        Learn (show s) $
-          Leaf $ evalChooseLoop (S.fromList s, appN (termCast body) (map meta s))
+    withSymVars :: Term Void -> TermSet
+    withSymVars t =
+      let vs = fst $ termVars t
+       in Simple $
+            Learn (show vs) $
+              Leaf $ evalChooseLoop (S.fromList vs, appN (termCast t) (map meta vs))
 
     evalChooseLoop :: ScopedTerm -> Spines TermSet
-    evalChooseLoop = fmap termSet . eval
+    evalChooseLoop t = trace inf $ fmap termSet . eval $ t
+      where
+        inf = "evalChooseLoop: " ++ show t
 
     termSet :: ScopedMeta -> TermSet
     termSet = uncurry Inst . choose
 
     eval :: ScopedTerm -> Spines ScopedMeta
-    eval (s, t) = (\m -> (S.insert m s, m)) <$> eval1 t
+    eval (s, t) = (\m -> (S.insert m s, m)) <$> eval1 _ t
 
-    eval1 :: Term m -> Spines m
-    eval1 Lam {} = error "Lam has no eval"
-    eval1 ConsZero = One $ Cotr CIZero []
-    eval1 (ConsSucc t) = One $ Cotr CISucc [eval1 t]
-    eval1 (NatCase mot cZ cS) = One $
-      flip Dest (eval1 mot) $ \case
-        (CIZero, []) -> eval1 cZ
-        (CISucc, [x]) -> eval1 $ cS `appN` [x]
-        _ -> error "type error"
-    eval1 t@(App hd args) =
+    eval1 :: (m -> TermSet) -> Term m -> Spines m
+    eval1 f Lam {} = error "Lam has no eval"
+    eval1 f t@(App hd args) =
       case hd of
+        ConsSucc -> One $ Cotr CISucc [eval1 f $ head args]
+        ConsZero -> One $ Cotr CIZero []
+        NatCase -> case args of
+          [mot, cZ, cS] -> One $
+            flip Dest (_eval1 mot) $ \case
+              (CIZero, []) -> eval1 f cZ
+              (CISucc, [x]) -> magic2 cS [x]
+              _ -> error "type error"
+          _ -> error "too little args to NatCase"
         Bound _ -> error "Bound head"
         Meta n -> None n
         Bottom -> One Bot
         Free n ->
           let bodyN = termCast $ defs M.! n
-           in magic bodyN $ map eval1 args
+           in magic bodyN $ map (eval1 f) args
 
     choose :: ScopedMeta -> (Meta, Tree (Spines TermSet))
     choose (s, n) = (n,) $
@@ -132,19 +148,22 @@ symbolically defs = withSymVars []
            in Learn ("(++ " ++ show vs ++ ")") $
                 Learn (res ++ " == " ++ show vs) $ Leaf $ evalChooseLoop (S.union s vs, cotr)
 
-    magic :: forall m. Term m -> [Spines m] -> Spines m
+    magic :: forall m. (Show m) => Term m -> [Spines m] -> Spines m
     magic body args =
       let body' = fmap None body
           args' = map meta args
           res :: Term (Spines m)
           res = body' `appN` args'
-       in spinesJoin $ eval1 res
+       in spinesJoin $ eval1 _ res
+
+magic2 :: Term m -> [TermSet] -> Spines m
+magic2 = _
 
 mkSymbolicCotr :: CotrInfo -> (S.Set Meta, Term Meta)
-mkSymbolicCotr CIZero = (S.empty, ConsZero)
+mkSymbolicCotr CIZero = (S.empty, App ConsZero [])
 mkSymbolicCotr CISucc =
   let v = "$s" ++ show (unsafePerformIO fresh)
-   in (S.singleton v, ConsSucc (meta v))
+   in (S.singleton v, App ConsSucc [meta v])
 
 ------
 
@@ -173,7 +192,7 @@ cata cc depth = go depth []
           let sts' = if null sts then st' else mconcat sts
           return (sts', termJoin t'')
 
-    goWHNF :: Integer -> State -> Tree (Spines a) -> [(State, Term a)]
+    goWHNF :: (Show a) => Integer -> State -> Tree (Spines a) -> [(State, Term a)]
     goWHNF n st ts = concatMap (uncurry (goSpines n)) $ goTree st ts
 
     goTree :: State -> Tree a -> [(State, a)]
@@ -181,27 +200,28 @@ cata cc depth = go depth []
     goTree st (Branch ts) = asum $ map (goTree st) ts
     goTree st (Leaf x) = return (st, x)
 
-    goSpines :: Integer -> State -> Spines a -> [(State, Term a)]
+    goSpines :: (Show a) => Integer -> State -> Spines a -> [(State, Term a)]
     goSpines n st (None a) = return (st, meta a)
     goSpines n st (One s) =
       case s of
         Bot -> return (st, bottom)
         Cotr ci rs ->
           case ci of
-            CIZero -> return (st, ConsZero)
+            CIZero -> return (st, App ConsZero [])
             CISucc -> do
               -- because this is succ, we know it has one argument
-              (st', [rs']) <- combineArgs st <$> traverse (goSpines (n - 1) st) rs
-              return (st', ConsSucc rs')
+              (st', rs') <- combineArgs st <$> traverse (goSpines (n - 1) st) rs
+              return (st', App ConsSucc rs')
         Call f args -> case cc of
           CallByName -> goSpines n st (f args)
           CallByValue -> undefined
         Dest f x -> do
           (st', x') <- goSpines n st x
           case x' of
-            ConsZero -> goSpines n st' $ f (CIZero, [])
-            ConsSucc as -> goSpines n st' $ f (CISucc, [as])
-            _ -> error "Type Error"
+            (App ConsZero as) -> goSpines n st' $ f (CIZero, as)
+            (App ConsSucc as) -> goSpines n st' $ f (CISucc, as)
+            (App hd _) -> error $ "Type Error: App " ++ show hd
+            (Lam s _) -> error $ "Type Error: Lam " ++ show s
 
     combineArgs :: State -> [(State, a)] -> (State, [a])
     combineArgs s0 [] = (s0, [])
@@ -220,10 +240,12 @@ add =
   ( "add",
     Lam "n" $
       Lam "m" $
-        NatCase
-          (bound "n")
-          (bound "m")
-          (Lam "sn" $ ConsSucc $ appN (free "add") [bound "sn", bound "m"])
+        App
+          NatCase
+          [ bound "n",
+            bound "m",
+            Lam "sn" $ App ConsSucc [appN (free "add") [bound "sn", bound "m"]]
+          ]
   )
 
 constF :: (String, Term m)
@@ -235,7 +257,7 @@ defs = M.fromList [add, constF]
 res :: CallConvention -> Integer -> IO ()
 res cc n =
   cataIO cc n $
-    symbolically defs $ Lam "k" (appN (free "add") [bound "k", ConsSucc (bound "k")])
+    symbolically defs $ Lam "k" (appN (free "add") [bound "k", App ConsSucc [bound "k"]])
 
 -- Boilerplate:
 
@@ -256,14 +278,14 @@ meta s = App (Meta s) []
 termDistr :: (Applicative f) => Term (f a) -> f (Term a)
 termDistr (App fa args) = App <$> varDistr fa <*> traverse termDistr args
 termDistr (Lam s t) = Lam s <$> termDistr t
-termDistr (NatCase m z s) = NatCase <$> termDistr m <*> termDistr z <*> termDistr s
-termDistr ConsZero = pure ConsZero
-termDistr (ConsSucc n) = ConsSucc <$> termDistr n
 
 varDistr :: (Applicative f) => Var (f a) -> f (Var a)
 varDistr (Bound s) = pure (Bound s)
 varDistr (Free s) = pure (Free s)
 varDistr Bottom = pure Bottom
+varDistr NatCase = pure NatCase
+varDistr ConsZero = pure ConsZero
+varDistr ConsSucc = pure ConsSucc
 varDistr (Meta s) = Meta <$> s
 
 termStr :: Term (a, b) -> ([a], Term b)
@@ -272,18 +294,14 @@ termStr (App fa args) =
       (as, args') = unzip $ map termStr args
    in (a1 ++ concat as, App fa' args')
 termStr (Lam s t) = second (Lam s) (termStr t)
-termStr (NatCase m z s) =
-  let (a1, m') = termStr m
-      (a2, z') = termStr z
-      (a3, s') = termStr s
-   in (a1 ++ a2 ++ a3, NatCase m' z' s')
-termStr ConsZero = pure ConsZero
-termStr (ConsSucc n) = second ConsSucc $ termStr n
 
 varStr :: Var (a, b) -> ([a], Var b)
 varStr (Bound s) = ([], Bound s)
 varStr (Free s) = ([], Free s)
 varStr Bottom = ([], Bottom)
+varStr ConsZero = ([], ConsZero)
+varStr ConsSucc = ([], ConsSucc)
+varStr NatCase = ([], NatCase)
 varStr (Meta (a, b)) = ([a], Meta b)
 
 termJoin :: Term (Term a) -> Term a
@@ -291,10 +309,10 @@ termJoin (App (Meta m) args) = appN m (map termJoin args)
 termJoin (App (Bound s) args) = App (Bound s) (map termJoin args)
 termJoin (App (Free s) args) = App (Free s) (map termJoin args)
 termJoin (App Bottom args) = App Bottom (map termJoin args)
+termJoin (App ConsZero args) = App ConsZero (map termJoin args)
+termJoin (App ConsSucc args) = App ConsSucc (map termJoin args)
+termJoin (App NatCase args) = App NatCase (map termJoin args)
 termJoin (Lam s t) = Lam s (termJoin t)
-termJoin (NatCase m z s) = NatCase (termJoin m) (termJoin z) (termJoin s)
-termJoin (ConsSucc s) = ConsSucc (termJoin s)
-termJoin ConsZero = ConsZero
 
 termCast :: Term Void -> Term m
 termCast = fmap absurd
@@ -302,13 +320,6 @@ termCast = fmap absurd
 app :: Term m -> Term m -> Term m
 app (App hd args) u = App hd (args ++ [u])
 app (Lam s t) u = subst s u t
-app t u =
-  error $
-    unlines
-      [ "Cant app: ",
-        "t " ++ show (fmap (const ()) t),
-        "u " ++ show (fmap (const ()) u)
-      ]
 
 appN :: Term m -> [Term m] -> Term m
 appN = foldl app
