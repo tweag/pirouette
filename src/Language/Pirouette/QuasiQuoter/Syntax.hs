@@ -316,13 +316,13 @@ exprBinApp f x = ExprApp (ExprApp (ExprBase f) x)
 
 -- | Parse an expression. The following features are supported:
 --
--- - Type abstraction: `/\ (a : * -> *) (b : *) . `
--- - Lambdas: `\ (x : Maybe a) (y : a) . `
--- - If/then/else: `if @resultType (x == y) then expr1 else expr2`
+-- - Type abstraction: @/\ (a : * -> *) (b : *) .@
+-- - Lambdas: @\ (x : Maybe a) (y : a) . @
+-- - If/then/else: @if \@resultType (x == y) then expr1 else expr2@
 -- - Case statements:
---   `case @type @resultType x of {pattern1 -> expr1 ; pattern2 -> expr2}`
--- - Bottom: `bottom @resultType`
--- - Type and term application: `f @a @b x @c y z`
+--   @case \@type \@resultType x of {pattern1 -> expr1 ; pattern2 -> expr2}@
+-- - Bottom: @bottom \@resultType@
+-- - Type and term application: @f \@a \@b x \@c y z@
 parseTerm :: forall lang. (LanguageParser lang) => Parser (Expr lang)
 parseTerm = P.label "Term" $ makeExprParser pAtom ops
   where
