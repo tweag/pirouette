@@ -172,7 +172,7 @@ parseDataDecl :: forall lang. (LanguageParser lang) => Parser (String, DataDecl 
 parseDataDecl = P.label "Data declaration" $ do
   P.try (symbol "data")
   i <- typeName @lang
-  vars <- many (parseTypeVarKind @lang)
+  vars <- many (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang)
   cons <-
     (P.try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `P.sepBy1` symbol "|")
       <|> return []
@@ -290,7 +290,7 @@ parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
       P.try (symbol "forall")
       parseBinder
         TyAll
-        (some (parseTypeVarKind @lang))
+        (some (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang))
         (symbol "." >> parseType)
 
     pLam :: Parser (Ty lang)
@@ -298,7 +298,7 @@ parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
       P.try (symbol "\\")
       parseBinder
         TyLam
-        (some (parseTypeVarKind @lang))
+        (some (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang))
         (symbol "." >> parseType)
 
     pAtom =
@@ -437,12 +437,10 @@ parseBinder binder parseVars parseBody = do
 -- E.g. `(a : * -> * -> *)`
 -- E.g. `(a : *)` and `a` are equivalent
 parseTypeVarKind :: forall lang. LanguageParser lang => Parser (String, SystF.Kind)
-parseTypeVarKind = parens p <|> p
-  where
-    p =
-      (,)
-        <$> ident @lang
-        <*> (P.try (parseTyOf *> parseKind) <|> return SystF.KStar)
+parseTypeVarKind =
+  (,)
+    <$> ident @lang
+    <*> (P.try (parseTyOf *> parseKind) <|> return SystF.KStar)
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
