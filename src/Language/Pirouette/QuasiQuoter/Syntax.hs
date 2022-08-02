@@ -237,8 +237,8 @@ funTerm _ _ _ = error "Unexpected parameters in function declaration"
 
 -- | Apply a type variable name substitution taking into account naming
 -- collisions by renaming the conficting name beforehand.
--- E.g. In `/\ a : * . /\ b : * . a -> b -> b`, by applying the type to `b`,
--- the result will be: `/\ b_ : * . b -> b_ -> b_`
+-- E.g. In @/\ a : * . /\ b : * . a -> b -> b@, by applying the type to @b@,
+-- the result will be: @/\ b_ : * . b -> b_ -> b_@
 substTyVarType :: String -> String -> Ty lang -> Ty lang
 -- TODO Add test cases involving "TyLam"
 substTyVarType i i' (TyLam s ki ty)
@@ -272,10 +272,10 @@ parseKind =
 
 -- | Parse a type. The following features are supported:
 --
--- - Application: `Either a b`
--- - Function arrow: `b -> (a -> b) -> c`
--- - Quantification: `forall (a : * -> *) (b : *) . `
--- - Type lambdas: `\(a : * -> *) (b : *) . `
+-- - Application: @Either a b@
+-- - Function arrow: @b -> (a -> b) -> c@
+-- - Quantification: @forall (a : * -> *) (b : *) . @
+-- - Type lambdas: @\(a : * -> *) (b : *) . @
 parseType :: forall lang. (LanguageParser lang) => Parser (Ty lang)
 parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
   where
@@ -327,13 +327,13 @@ exprBinApp f x = ExprApp (ExprApp (ExprBase f) x)
 
 -- | Parse an expression. The following features are supported:
 --
--- - Type abstraction: `/\ (a : * -> *) (b : *) . `
--- - Lambdas: `\ (x : Maybe a) (y : a) . `
--- - If/then/else: `if @resultType (x == y) then expr1 else expr2`
+-- - Type abstraction: @/\ (a : * -> *) (b : *) .@
+-- - Lambdas: @\ (x : Maybe a) (y : a) . @
+-- - If/then/else: @if \@resultType (x == y) then expr1 else expr2@
 -- - Case statements:
---   `case @type @resultType x of {pattern1 -> expr1 ; pattern2 -> expr2}`
--- - Bottom: `bottom @resultType`
--- - Type and term application: `f @a @b x @c y z`
+--   @case \@type \@resultType x of {pattern1 -> expr1 ; pattern2 -> expr2}@
+-- - Bottom: @bottom \@resultType@
+-- - Type and term application: @f \@a \@b x \@c y z@
 parseTerm :: forall lang. (LanguageParser lang) => Parser (Expr lang)
 parseTerm = P.label "Term" $ makeExprParser pAtom ops
   where
