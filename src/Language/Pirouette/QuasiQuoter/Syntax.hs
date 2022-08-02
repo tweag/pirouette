@@ -226,8 +226,8 @@ funTerm _ _ _ = error "Unexpected parameters in function declaration"
 
 -- | Apply a type variable name substitution taking into account naming
 -- collisions by renaming the conficting name beforehand.
--- E.g. In `/\ a : * . /\ b : * . a -> b -> b`, by applying the type to `b`,
--- the result will be: `/\ b_ : * . b -> b_ -> b_`
+-- E.g. In @/\ a : * . /\ b : * . a -> b -> b@, by applying the type to @b@,
+-- the result will be: @/\ b_ : * . b -> b_ -> b_@
 substTyVarType :: String -> String -> Ty lang -> Ty lang
 -- TODO Add test cases involving "TyLam"
 substTyVarType i i' (TyLam s ki ty)
