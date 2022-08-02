@@ -102,26 +102,14 @@ symbolically defs = runST $ do
        in TermSet $
             declSymVars (M.fromList svars) $
               unTermSet $
-                termSet s' (AnaEnv (M.fromList svars) M.empty) body
-
-    termSet ::
-      Supply Int ->
-      AnaEnv lang ->
-      TermMeta lang SymVar ->
-      TermSet lang
-    termSet s env = TermSet . termTree s env
-
-    termTreeMeta :: AnaEnv lang -> Supply Int -> SymVar -> TermSet lang
-    termTreeMeta env s = TermSet . termTree s env . mkMeta
-
-    mkMeta s = SystF.App (SystF.Meta s) []
+                termTree (AnaEnv (M.fromList svars) M.empty) s' body
 
     termTree ::
-      Supply Int ->
       AnaEnv lang ->
+      Supply Int ->
       TermMeta lang SymVar ->
-      Tree (DeltaEnv lang) (Spine lang (TermSet lang))
-    termTree s env t = trace inf $ termTreeAux s env t
+      TermSet lang
+    termTree env s t = trace inf $ TermSet $ termTreeAux s env t
       where
         inf = unlines ["termTree:", renderSingleLineStr (pretty t)]
 
@@ -135,7 +123,7 @@ symbolically defs = runST $ do
     -- TODO: What do we do with args here? I think it must always be empty: symbolic variables
     -- will never be of function type, at least for sure not until we add closures... or will they?
     termTreeAux s env (SystF.Meta tgt `SystF.App` _args)
-      | Just res <- M.lookup tgt (knowns env) = pure $ termSpine s (termTreeMeta env) res
+      | Just res <- M.lookup tgt (knowns env) = pure $ termSpine s (termTree env) res
       | otherwise =
         case gamma env M.! tgt of
           -- If the symvar is of type that we have a definition for, we can "eta-expand" it!
@@ -151,26 +139,26 @@ symbolically defs = runST $ do
                      in declSymVars delta $
                           Learn (Assign tgt symbCons) $
                             pure $
-                              termSpine s'' (termTreeMeta env') symbCons
+                              termSpine s'' (termTree env') symbCons
           -- If this symvar is of any other type, we're done. This is as far as we can go.
           -- Maybe we need a dedicated constructor for this. We should mark that this is really stuck
           -- and there's nothing else to do.
           _ -> pure $ Head (WHNFSymVar tgt) []
-    termTreeAux s env t = pure $ termSpine s (termTreeMeta env) t
+    termTreeAux s env t = pure $ termSpine s (termTree env) t
 
     -- A spine can be thought of as the parts without any choice: there's only one thing to do: evaluate.
     termSpine ::
       forall meta.
       (Show meta, Pretty meta) =>
       Supply Int ->
-      (Supply Int -> meta -> TermSet lang) ->
+      (Supply Int -> TermMeta lang meta -> TermSet lang) ->
       TermMeta lang meta ->
       Spine lang (TermSet lang)
     termSpine _ _ SystF.Lam {} = error "Lam has no spine"
     termSpine _ _ SystF.Abs {} = error "Abs has no spine"
     termSpine s f t0@(hd `SystF.App` args) =
       let sHd : sHd' : sTl = Supply.split s
-          args' = mapMaybe (\(s', t) -> fmap (termSpine s' f) . SystF.fromArg $ t) (zip sTl args)
+          args' = mapMaybe (\(s', t) -> fmap (f s') . SystF.fromArg $ t) (zip sTl args)
        in case hd of
             SystF.Bound ann _ -> error $ "Bound has no spine" ++ show ann
             SystF.Free (TermSig n) ->
@@ -179,71 +167,22 @@ symbolically defs = runST $ do
                 -- The spine of a destructor is its semantics upon finding a constructor in the motive
                 DDestructor _ ->
                   let UnDestMeta _ _tyName _tyParams motive _ cases excess = unsafeUnDest t0 `runReader` defs
-                   in flip Dest (termSpine sHd f motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
+                   in flip Dest (f sHd motive) $ \(ConstructorInfo _ _ consIx, consArgs) ->
                         let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
-                         in liftedTermAppN sHd' f caseTerm consArgs
+                         in Next $ liftedTermAppN sHd' f caseTerm consArgs
                 -- Similarly to functions, but here we'll ignore all type arguments
                 DFunction _ body _ ->
-                  Call n (liftedTermAppN sHd f (termToMeta body)) args'
+                  Call n (Next . liftedTermAppN sHd f (termToMeta body)) args'
                 -- Constructors are trivial:
                 DConstructor ix tyName ->
-                  Head (WHNFCotr $ ConstructorInfo tyName n ix) args'
-            SystF.Free (Builtin bin) -> Head (WHNFBuiltin bin) args'
-            SystF.Free Bottom -> Head WHNFBottom args'
+                  Head (WHNFCotr $ ConstructorInfo tyName n ix) $ map Next args'
+            SystF.Free (Builtin bin) -> Head (WHNFBuiltin bin) $ map Next args'
+            SystF.Free Bottom -> Head WHNFBottom $ map Next args'
             SystF.Free (Constant x) -> Head (WHNFConst x) []
             -- TODO: we're ignoring the arguments of our metavariable... is this ok?
             -- I think so, since metavariables can never be of function type anyway.
             -- Therefore, they'll never be applied.
-            SystF.Meta sv -> Next $ f s sv
-
-    liftedTermAppN ::
-      forall meta.
-      (Pretty meta) =>
-      Supply Int ->
-      (Supply Int -> meta -> TermSet lang) ->
-      TermMeta lang meta ->
-      [Spine lang (TermSet lang)] ->
-      Spine lang (TermSet lang)
-    liftedTermAppN s go body args =
-      let (s0, s1) = Supply.split2 s
-          body' = termMetaMap (Next . go s0) body -- termMetaMap (pure . mkMeta) body
-          args' = map (SystF.TermArg . mkMeta) args
-
-          foo :: TermMeta lang (Spine lang (TermSet lang))
-          foo = body' `SystF.appN` args'
-
-          res = TermSet . Leaf . termSpine s1 (const id) <$> termMetaDistr foo
-       in trace (information res) res
-      where
-        information x =
-          unlines $
-            [ "liftedTermAppN:",
-              "  term: " ++ renderSingleLineStr (pretty body),
-              "  args: "
-            ]
-              ++ map (("  - " ++) . show) args
-              ++ ["  res: " ++ show x]
-
-        -- This function is local because it makes many assumptios about where metavariables
-        -- occur. In this case, we assume they won't ever appear on types, so its safe to just
-        -- unsafeCoerce the types and avoid traversing them. In that sense, it's not /really/
-        -- a universal distributive law, only when the types have no metas.
-        termMetaDistr :: (Applicative f) => TermMeta lang (f a) -> f (TermMeta lang a)
-        termMetaDistr (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t
-        termMetaDistr (SystF.Abs ann ki t) = SystF.Abs ann ki <$> termMetaDistr t
-        termMetaDistr (SystF.App hd args0) = SystF.App <$> doVar hd <*> traverse doArgs args0
-          where
-            doArgs ::
-              (Applicative f) =>
-              SystF.Arg (TypeMeta lang (f a)) (TermMeta lang (f a)) ->
-              f (ArgMeta lang a)
-            doArgs (SystF.TyArg ty) = pure $ SystF.TyArg $ typeUnsafeCastMeta ty
-            doArgs (SystF.TermArg t) = SystF.TermArg <$> termMetaDistr t
-
-            doVar :: (Applicative f) => SystF.VarMeta (f a) name base -> f (SystF.VarMeta a name base)
-            doVar (SystF.Meta fa) = SystF.Meta <$> fa
-            doVar (SystF.Free b) = pure $ SystF.Free b
-            doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+            SystF.Meta _ -> Next $ f s t0
 
     -- If we're destructing a 'List Int' into a 'Unit -> Int', the term in question
     -- can be something like:
@@ -285,6 +224,47 @@ termSetAbsorb =
         doVar (SystF.Meta fa) = SystF.Meta <$> fa
         doVar (SystF.Free b) = pure $ SystF.Free b
         doVar (SystF.Bound ann i) = pure $ SystF.Bound ann i
+
+{-
+magic ::
+  TermMeta lang meta ->
+  [args] ->
+  res
+magic body args =
+  let body' = termMetaMap Left body
+   in _
+-}
+
+-- | Lifts term application to termsets.
+liftedTermAppN ::
+  forall lang meta.
+  (Language lang, Pretty meta) =>
+  Supply Int ->
+  (Supply Int -> TermMeta lang meta -> TermSet lang) ->
+  TermMeta lang meta ->
+  [TermSet lang] ->
+  TermSet lang
+liftedTermAppN s go body args =
+  let (s0, s1) = Supply.split2 s
+      body' = termMetaMap (go s0 . mkMeta) body
+      args' = map (SystF.TermArg . mkMeta) args
+
+      foo :: TermMeta lang (TermSet lang)
+      foo = body' `SystF.appN` args'
+
+      res = termSetAbsorb foo
+   in trace (information res) res
+  where
+    mkMeta = (`SystF.App` []) . SystF.Meta
+
+    information x =
+      unlines $
+        [ "liftedTermAppN:",
+          "  term: " ++ renderSingleLineStr (pretty body),
+          "  args: "
+        ]
+          ++ map (("  - " ++) . show) args
+          ++ ["  res: " ++ show x]
 
 {-
 termSetAbsorb (SystF.Lam ann ty t) = SystF.Lam ann (typeUnsafeCastMeta ty) <$> termMetaDistr t

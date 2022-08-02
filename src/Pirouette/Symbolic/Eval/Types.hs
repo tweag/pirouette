@@ -69,11 +69,11 @@ data Spine lang x
     -- > [Spine lang a] -> Spine lang a
     --
     -- Finally, because we want a monadic structure, we'll go polymorphic:
-    Call Name ([Spine lang (TermSet lang)] -> Spine lang x) [Spine lang (TermSet lang)]
+    Call Name ([TermSet lang] -> Spine lang x) [TermSet lang]
   | -- | Destructors are also a little tricky, because in reality, we need to
     -- consume the motive until /at least/ the first constructor is found, that
     -- is the only guaranteed way to make any progress.
-    Dest ((ConstructorInfo, [Spine lang (TermSet lang)]) -> Spine lang x) (Spine lang (TermSet lang))
+    Dest ((ConstructorInfo, [TermSet lang]) -> Spine lang x) (TermSet lang)
   | Head (WHNFTermHead lang) [Spine lang x]
   | Next x
 
@@ -84,8 +84,8 @@ instance (LanguagePretty lang, Pretty x) => Pretty (Spine lang x) where
   pretty = prettySpine 2
 
 prettySpine :: (LanguagePretty lang, Pretty x) => Int -> Spine lang x -> Doc ann
-prettySpine d (Call n _ args) = "Call" <+> vsep [pretty n, nest 2 $ vcat (map (prettySpine (d - 1)) args)]
-prettySpine d (Dest _ mot) = vsep ["Dest", prettySpine (d - 1) mot]
+prettySpine d (Call n _ args) = "Call" <+> vsep [pretty n, nest 2 $ vcat (map pretty args)]
+prettySpine d (Dest _ mot) = vsep ["Dest", pretty mot]
 prettySpine d (Head hd args) = parens $ nest 2 $ sep $ pretty hd : map (prettySpine (d - 1)) args
 prettySpine _ (Next x) = "Next"
 
