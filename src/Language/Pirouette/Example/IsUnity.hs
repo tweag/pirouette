@@ -81,7 +81,7 @@ data Pair (x : *) (y : *)
   = P : x -> y -> Pair x y
 
 pairEq :
-  forall a . forall b .
+  forall a b .
   (a -> a -> Bool) ->
   (b -> b -> Bool) ->
   Pair a b -> Pair a b -> Bool
@@ -90,7 +90,7 @@ pairEq @a @b eqA eqB x y =
     (\(x0 : a) (x1 : b) . match_Pair @a @b y @Bool
       (\(y0 : a) (y1 : b) . and (eqA x0 y0) (eqB x1 y1)))
 
-data Maybe (x : *)
+data Maybe x
   = Just : x -> Maybe x
   | Nothing : Maybe x
 
@@ -104,18 +104,18 @@ isJust : forall x . Maybe x -> Bool
 isJust @x mx =
   match_Maybe @x mx @Bool (\(jx : x) . True) False
 
-data KVMap (k : *) (v : *)
+data KVMap k v
   = KV : List (Pair k v) -> KVMap k v
 
-toList : forall k . forall v . KVMap k v -> List (Pair k v)
+toList : forall k v . KVMap k v -> List (Pair k v)
 toList @k @v m = match_KVMap @k @v m @(List (Pair k v)) (\(x : List (Pair k v)) . x)
 
-lkupOne : forall k . forall v . (k -> Bool) -> Pair k v -> Maybe v
+lkupOne : forall k v . (k -> Bool) -> Pair k v -> Maybe v
 lkupOne @k @v predi m =
   match_Pair @k @v m @(Maybe v)
     (\(fst : k) (snd : v) . if @(Maybe v) predi fst then Just @v snd else Nothing @v)
 
-lkup : forall k . forall v . (k -> k -> Bool) -> KVMap k v -> k -> Maybe v
+lkup : forall k v . (k -> k -> Bool) -> KVMap k v -> k -> Maybe v
 lkup @k @v eq m tgt =
   match_KVMap @k @v m @(Maybe v)
     (foldr @(Pair k v) @(Maybe v) (\(pk : Pair k v) . maybeSum @v (lkupOne @k @v (eq tgt) pk)) (Nothing @v))
