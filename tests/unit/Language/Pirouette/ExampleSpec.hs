@@ -48,9 +48,7 @@ tests =
     testCase "Can parse program" $
       canParseProgram
         [prog|
-          data Either (a : *) (b : *) = Left : Either a b | Right : Either a b
-          main : Integer
-          main = 42
+          data Either a b = Left : Either a b | Right : Either a b
         |],
     testGroup
       "New syntax for function declaration"
