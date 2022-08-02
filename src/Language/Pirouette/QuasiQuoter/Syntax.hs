@@ -381,7 +381,7 @@ parseTerm = P.label "Term" $ makeExprParser pAtom ops
       term <- parseTerm
       symbol "of"
       cases <-
-        curlyBrackets $
+        braces $
           P.sepBy1
             ((,) <$> parsePattern <*> (symbol "->" >> parseTerm))
             (symbol ";")
@@ -522,8 +522,8 @@ parens :: Parser a -> Parser a
 parens a = P.try (symbol "(") *> a <* symbol ")"
 
 -- | Parse an expression in curly brackets
-curlyBrackets :: Parser a -> Parser a
-curlyBrackets a = P.try (symbol "{") *> a <* symbol "}"
+braces :: Parser a -> Parser a
+braces a = P.try (symbol "{") *> a <* symbol "}"
 
 -- | Parse identifiers starting with a lowercase letter or "_"
 lowercaseIdent :: forall lang. (LanguageParser lang) => Set String -> Parser String
