@@ -47,27 +47,39 @@ type Meta = String
 ------------------------------------------------
 
 data TermSet
-  = Simple {unTermSet :: Tree (Spines TermSet)}
-  | Inst {unMeta :: Meta, unTermSet :: Tree (Spines TermSet)}
+  = Union [TermSet]
+  | Learn String TermSet
+  | Spine (Term TermSet)
+  | Call ([TermSet] -> TermSet) [TermSet]
+  | Dest ((CotrInfo, [TermSet]) -> TermSet) TermSet
+  | Inst Meta (Maybe TermSet)
+
+tsSingleton :: Term Meta -> TermSet
+tsSingleton = Spine . fmap (`Inst` Nothing)
+
+--   = Simple {unTermSet :: Tree (Spines TermSet)}
+--   | Inst {unMeta :: Meta, unTermSet :: Tree (Spines TermSet)}
 
 instance Show TermSet where
-  show (Simple _) = "<simple-ts>"
   show (Inst m _) = "ts$" ++ show m
+  show _ = "<ts>"
 
-data CotrInfo = CIZero | CISucc
+data CotrInfo = CIZero | CISucc | CIBottom
+  deriving (Eq)
 
+{-
 -- Spine Layer
 data S r
-  = Call ([TermSet] -> r) TermSet
-  | Dest ((CotrInfo, [TermSet]) -> r) TermSet
+  = Call ([TermSet] -> TermSet) TermSet
+  | Dest ((CotrInfo, [TermSet]) -> TermSet) TermSet
   | Cotr CotrInfo [r]
   | Bot
 
 instance Functor S where
   fmap f Bot = Bot
   fmap f (Cotr ci rs) = Cotr ci $ fmap f rs
-  fmap f (Dest cs mot) = Dest (f . cs) mot
-  fmap f (Call func args) = Call (f . func) args
+  fmap f (Dest cs mot) = Dest cs mot
+  fmap f (Call func args) = Call func args
 
 data Spines r
   = One (S (Spines r))
@@ -80,12 +92,15 @@ instance Show (Spines r) where
 spinesJoin :: Spines (Spines r) -> Spines r
 spinesJoin (None r) = r
 spinesJoin (One s) = One $ fmap spinesJoin s
+-}
 
+{-
 data Tree a
   = Leaf a
   | Learn String (Tree a)
   | Branch [Tree a]
   deriving (Show, Functor)
+-}
 
 ------
 
@@ -104,66 +119,62 @@ symbolically defs = withSymVars
     withSymVars :: Term Void -> TermSet
     withSymVars t =
       let vs = fst $ termVars t
-       in Simple $
-            Learn (show vs) $
-              Leaf $ evalChooseLoop (S.fromList vs, appN (termCast t) (map meta vs))
+       in Learn ("decl " ++ show vs) $ evalChooseLoop (S.fromList vs, appN (termCast t) (map meta vs))
 
-    evalChooseLoop :: ScopedTerm -> Spines TermSet
-    evalChooseLoop t = trace inf $ fmap termSet . eval $ t
+    evalChooseLoop :: ScopedTerm -> TermSet
+    evalChooseLoop t = trace inf $ eval choose t
       where
         inf = "evalChooseLoop: " ++ show t
 
-    termSet :: ScopedMeta -> TermSet
-    termSet = uncurry Inst . choose
-
-    eval :: ScopedTerm -> Spines ScopedMeta
-    eval (s, t) = (\m -> (S.insert m s, m)) <$> eval1 _ t
-
-    eval1 :: (m -> TermSet) -> Term m -> Spines m
-    eval1 f Lam {} = error "Lam has no eval"
-    eval1 f t@(App hd args) =
+    eval :: ((S.Set Meta, m) -> TermSet) -> (S.Set Meta, Term m) -> TermSet
+    eval _ (_, Lam {}) = error "Lam has no eval"
+    eval f (s, App hd args) =
       case hd of
-        ConsSucc -> One $ Cotr CISucc [eval1 f $ head args]
-        ConsZero -> One $ Cotr CIZero []
+        ConsSucc -> Spine $ App ConsSucc $ map (meta . eval f . (s,)) args
+        ConsZero -> Spine $ App ConsZero []
+        Bottom -> Spine $ App Bottom []
         NatCase -> case args of
-          [mot, cZ, cS] -> One $
-            flip Dest (_eval1 mot) $ \case
-              (CIZero, []) -> eval1 f cZ
-              (CISucc, [x]) -> magic2 cS [x]
+          [mot, cZ, cS] ->
+            flip Dest (eval f (s, mot)) $ \case
+              (CIZero, []) -> eval f (s, cZ)
+              (CISucc, [x]) -> liftedApp' s (fmap (f . (s,)) cS) [x]
               _ -> error "type error"
           _ -> error "too little args to NatCase"
         Bound _ -> error "Bound head"
-        Meta n -> None n
-        Bottom -> One Bot
+        Meta n -> f (s, n)
         Free n ->
           let bodyN = termCast $ defs M.! n
-           in magic bodyN $ map (eval1 f) args
+           in Call (liftedApp s bodyN) (map (eval f . (s,)) args)
 
-    choose :: ScopedMeta -> (Meta, Tree (Spines TermSet))
-    choose (s, n) = (n,) $
-      Branch $
-        flip map [CIZero, CISucc] $ \cons ->
-          let (vs, cotr) = mkSymbolicCotr cons
-              res = "$s" ++ show (unsafePerformIO fresh)
-           in Learn ("(++ " ++ show vs ++ ")") $
-                Learn (res ++ " == " ++ show vs) $ Leaf $ evalChooseLoop (S.union s vs, cotr)
+    choose :: ScopedMeta -> TermSet
+    choose (s, n) = Inst n $
+      Just $
+        Union $
+          flip map [CIZero, CISucc] $ \cons ->
+            let (vs, cotr) = mkSymbolicCotr cons
+             in (if S.null vs then id else Learn ("decl " ++ show (S.toList vs) ++ "")) $
+                  Learn (n ++ " == " ++ show cotr) $ eval choose (S.union s vs, cotr)
 
-    magic :: forall m. (Show m) => Term m -> [Spines m] -> Spines m
-    magic body args =
-      let body' = fmap None body
-          args' = map meta args
-          res :: Term (Spines m)
-          res = body' `appN` args'
-       in spinesJoin $ eval1 _ res
+    liftedApp' :: S.Set Meta -> Term TermSet -> [TermSet] -> TermSet
+    liftedApp' s body args =
+      eval snd (s, either id id <$> genericApp body args)
 
-magic2 :: Term m -> [TermSet] -> Spines m
-magic2 = _
+    liftedApp :: S.Set Meta -> Term Meta -> [TermSet] -> TermSet
+    liftedApp s body args =
+      eval snd (s, either (choose . (s,)) id <$> genericApp body args)
+
+    genericApp :: Term m -> [arg] -> Term (Either m arg)
+    genericApp body args =
+      let body' = fmap Left body
+          args' = fmap (meta . Right) args
+       in body' `appN` args'
 
 mkSymbolicCotr :: CotrInfo -> (S.Set Meta, Term Meta)
 mkSymbolicCotr CIZero = (S.empty, App ConsZero [])
 mkSymbolicCotr CISucc =
   let v = "$s" ++ show (unsafePerformIO fresh)
    in (S.singleton v, App ConsSucc [meta v])
+mkSymbolicCotr _ = error "x"
 
 ------
 
@@ -173,65 +184,78 @@ data CallConvention
 
 type State = [String]
 
+-- cbv :: TermSet -> TermSet
+-- cbv (Learn s ts) = Learn s (cbv ts)
+-- cbv (Union tss) = Union (map cbv tss)
+-- cbv (Inst n ts) = Inst n (cbv ts)
+-- cbv (Dest w x) = Dest (cbv . w) (cbv x)
+-- cbv (Spine s) = Spine (fmap cbv s)
+-- cbv (Call f xs) = _
+
 cata :: CallConvention -> Integer -> TermSet -> [(State, Term Meta)]
 cata cc depth = go depth []
   where
     go :: Integer -> State -> TermSet -> [(State, Term Meta)]
-    go n st (Inst m ts)
-      | n <= 0 = return (st, meta m)
-      | otherwise = goAux n st ts
-    go n st (Simple ts) = goAux n st ts
-
-    goAux :: Integer -> State -> Tree (Spines TermSet) -> [(State, Term Meta)]
-    goAux n st = concatMap (uncurry goAgain) . goWHNF n st
-      where
-        goAgain :: State -> Term TermSet -> [(State, Term Meta)]
-        goAgain st' t = do
-          t' <- termDistr $ fmap (go (n - 1) st') t
-          let (sts, t'') = termStr t'
-          let sts' = if null sts then st' else mconcat sts
-          return (sts', termJoin t'')
-
-    goWHNF :: (Show a) => Integer -> State -> Tree (Spines a) -> [(State, Term a)]
-    goWHNF n st ts = concatMap (uncurry (goSpines n)) $ goTree st ts
-
-    goTree :: State -> Tree a -> [(State, a)]
-    goTree st (Learn s t) = goTree (s : st) t
-    goTree st (Branch ts) = asum $ map (goTree st) ts
-    goTree st (Leaf x) = return (st, x)
-
-    goSpines :: (Show a) => Integer -> State -> Spines a -> [(State, Term a)]
-    goSpines n st (None a) = return (st, meta a)
-    goSpines n st (One s) =
-      case s of
-        Bot -> return (st, bottom)
-        Cotr ci rs ->
+    go n st ts = do
+      (st', res) <- goWHNF n st ts
+      case res of
+        Left m -> return (st', App (Meta m) [])
+        Right (ci, ts') ->
           case ci of
-            CIZero -> return (st, App ConsZero [])
+            CIBottom -> return (st', App Bottom [])
+            CIZero -> return (st', App ConsZero [])
             CISucc -> do
-              -- because this is succ, we know it has one argument
-              (st', rs') <- combineArgs st <$> traverse (goSpines (n - 1) st) rs
-              return (st', App ConsSucc rs')
-        Call f args -> case cc of
-          CallByName -> goSpines n st (f args)
-          CallByValue -> undefined
-        Dest f x -> do
-          (st', x') <- goSpines n st x
-          case x' of
-            (App ConsZero as) -> goSpines n st' $ f (CIZero, as)
-            (App ConsSucc as) -> goSpines n st' $ f (CISucc, as)
-            (App hd _) -> error $ "Type Error: App " ++ show hd
-            (Lam s _) -> error $ "Type Error: Lam " ++ show s
+              (sts, args) <- combineArgs st' <$> traverse (go (n - 1) st') ts'
+              return (sts, App ConsSucc args)
+
+    goWHNF :: Integer -> State -> TermSet -> [(State, Either Meta (CotrInfo, [TermSet]))]
+    goWHNF n st (Learn s ts) = goWHNF (n - 1) (s : st) ts
+    goWHNF n st (Union tss) = asum (map (goWHNF n st) tss)
+    goWHNF n st (Inst m Nothing) = return (st, Left m)
+    goWHNF n st (Inst m (Just ts))
+      | n <= 0 = return (st, Left m)
+      | otherwise = goWHNF (n - 1) st ts
+    goWHNF n st (Call f args) =
+      case cc of
+        CallByName -> goWHNF n st (f args)
+        CallByValue -> do
+          (st', xs) <- combineArgs st <$> traverse (go n st) args
+          if any isBottom xs
+            then return (st', Right (CIBottom, []))
+            else goWHNF n st' (f $ map tsSingleton xs)
+    goWHNF n st (Dest f x) = do
+      (st', res) <- goWHNF n st x
+      case res of
+        Left m -> [] -- can't match on meta
+        Right (ci, ts) ->
+          if ci == CIBottom
+            then return (st', Right (ci, ts))
+            else goWHNF (n - 1) st' (f (ci, ts))
+    goWHNF n st (Spine t) =
+      case t of
+        Lam {} -> error "I won't return lams to you"
+        App (Bound _) _ -> error "I won't return bounds to you"
+        App (Free _) _ -> error "I won't return frees to you"
+        App NatCase _ -> error "I won't return cases to you"
+        App ConsZero args -> return (st, Right (CIZero, map Spine args))
+        App ConsSucc args -> return (st, Right (CISucc, map Spine args))
+        App Bottom args -> return (st, Right (CIBottom, []))
+        App (Meta ts') (_ : _) -> error "I won't return an applied term set to you"
+        App (Meta ts') [] -> goWHNF n st ts'
 
     combineArgs :: State -> [(State, a)] -> (State, [a])
     combineArgs s0 [] = (s0, [])
     combineArgs s0 xs = first concat . unzip $ xs
 
+isBottom :: Term Meta -> Bool
+isBottom (App Bottom _) = True
+isBottom _ = False
+
 cataIO :: CallConvention -> Integer -> TermSet -> IO ()
 cataIO cc n t = mapM_ (uncurry pretty) $ cata cc n t
   where
     pretty strs res =
-      putStrLn $ "- " ++ show res -- ++ "\n" ++ unlines (map ("    " ++) strs)
+      putStrLn $ "- " ++ show res ++ "\n" ++ unlines (map ("    " ++) strs)
 
 -----------------
 
@@ -244,7 +268,7 @@ add =
           NatCase
           [ bound "n",
             bound "m",
-            Lam "sn" $ App ConsSucc [appN (free "add") [bound "sn", bound "m"]]
+            Lam "sn" $ App ConsSucc [appN (free "add") [appN (free "const") [bound "sn", App Bottom []], bound "m"]]
           ]
   )
 
@@ -254,8 +278,8 @@ constF = ("const", Lam "n" $ Lam "m" $ bound "n")
 defs :: Defs
 defs = M.fromList [add, constF]
 
-res :: CallConvention -> Integer -> IO ()
-res cc n =
+go :: CallConvention -> Integer -> IO ()
+go cc n =
   cataIO cc n $
     symbolically defs $ Lam "k" (appN (free "add") [bound "k", App ConsSucc [bound "k"]])
 
@@ -337,6 +361,7 @@ substVar _ _ t = App t []
 
 --
 
+{-
 instance Applicative Tree where
   pure = Leaf
   (<*>) = ap
@@ -349,6 +374,7 @@ instance Monad Tree where
 distr :: [Tree a] -> Tree [a]
 distr [] = Leaf []
 distr (tx : txs) = (:) <$> tx <*> distr txs
+-}
 
 -- Fresh names:
 
