@@ -23,6 +23,7 @@ import System.IO.Unsafe
 -- Term type to symbolically execute: --
 ----------------------------------------
 
+-- This term type was inspired by our own SystF.Term from Pirouette
 data Term m
   = Lam String (Term m)
   | App (Var m) [Term m]
@@ -49,16 +50,21 @@ type Meta = String
 data TermSet
   = Union [TermSet]
   | Learn String TermSet
-  | Spine (Term TermSet)
+  | -- TODO: having the term structure is nice and all, but
+    -- we never have any Lam in here at all; Maybe a dedicated @WHNFTerm@ datatype
+    -- would be a little more interesting
+    Spine (Term TermSet)
   | Call ([TermSet] -> TermSet) [TermSet]
   | Dest ((CotrInfo, [TermSet]) -> TermSet) TermSet
-  | Inst Meta (Maybe TermSet)
+  | -- The maybe represent rigid versus flexible metavariables. Flexible metas
+    -- are those that we can continue expanding ad-infinitum, for instance, imagine
+    -- a meta @k@ of type @[Int]@, we can always expand @k = j : k'@, and continue
+    -- expanding @k'@, but we can't expand @j@ since it's of a builtin type
+    Inst Meta (Maybe TermSet)
 
+-- It is important that it is possible to construct a termset with a single term on it.
 tsSingleton :: Term Meta -> TermSet
 tsSingleton = Spine . fmap (`Inst` Nothing)
-
---   = Simple {unTermSet :: Tree (Spines TermSet)}
---   | Inst {unMeta :: Meta, unTermSet :: Tree (Spines TermSet)}
 
 instance Show TermSet where
   show (Inst m _) = "ts$" ++ show m
@@ -66,41 +72,6 @@ instance Show TermSet where
 
 data CotrInfo = CIZero | CISucc | CIBottom
   deriving (Eq)
-
-{-
--- Spine Layer
-data S r
-  = Call ([TermSet] -> TermSet) TermSet
-  | Dest ((CotrInfo, [TermSet]) -> TermSet) TermSet
-  | Cotr CotrInfo [r]
-  | Bot
-
-instance Functor S where
-  fmap f Bot = Bot
-  fmap f (Cotr ci rs) = Cotr ci $ fmap f rs
-  fmap f (Dest cs mot) = Dest cs mot
-  fmap f (Call func args) = Call func args
-
-data Spines r
-  = One (S (Spines r))
-  | None r
-  deriving (Functor)
-
-instance Show (Spines r) where
-  show _ = "<spine>"
-
-spinesJoin :: Spines (Spines r) -> Spines r
-spinesJoin (None r) = r
-spinesJoin (One s) = One $ fmap spinesJoin s
--}
-
-{-
-data Tree a
-  = Leaf a
-  | Learn String (Tree a)
-  | Branch [Tree a]
-  deriving (Show, Functor)
--}
 
 ------
 
@@ -155,6 +126,8 @@ symbolically defs = withSymVars
              in (if S.null vs then id else Learn ("decl " ++ show (S.toList vs) ++ "")) $
                   Learn (n ++ " == " ++ show cotr) $ eval choose (S.union s vs, cotr)
 
+    -- Two slightly different versions of lifted application:
+
     liftedApp' :: S.Set Meta -> Term TermSet -> [TermSet] -> TermSet
     liftedApp' s body args =
       eval snd (s, either id id <$> genericApp body args)
@@ -183,14 +156,6 @@ data CallConvention
   | CallByValue
 
 type State = [String]
-
--- cbv :: TermSet -> TermSet
--- cbv (Learn s ts) = Learn s (cbv ts)
--- cbv (Union tss) = Union (map cbv tss)
--- cbv (Inst n ts) = Inst n (cbv ts)
--- cbv (Dest w x) = Dest (cbv . w) (cbv x)
--- cbv (Spine s) = Spine (fmap cbv s)
--- cbv (Call f xs) = _
 
 cata :: CallConvention -> Integer -> TermSet -> [(State, Term Meta)]
 cata cc depth = go depth []
@@ -358,23 +323,6 @@ substVar :: String -> Term m -> Var m -> Term m
 substVar s t (Bound s')
   | s == s' = t
 substVar _ _ t = App t []
-
---
-
-{-
-instance Applicative Tree where
-  pure = Leaf
-  (<*>) = ap
-
-instance Monad Tree where
-  Leaf x >>= f = f x
-  Learn str t >>= f = Learn str (t >>= f)
-  Branch ts >>= f = Branch $ map (>>= f) ts
-
-distr :: [Tree a] -> Tree [a]
-distr [] = Leaf []
-distr (tx : txs) = (:) <$> tx <*> distr txs
--}
 
 -- Fresh names:
 
