@@ -376,8 +376,8 @@ parseTerm = P.label "Term" $ makeExprParser pAtom ops
     parseCase :: Parser (Expr lang)
     parseCase = do
       P.try (symbol "case")
-      ty <- symbol "@" >> parseTypeAtom
       tyRes <- symbol "@" >> parseTypeAtom
+      ty <- symbol "@" >> parseTypeAtom
       term <- parseTerm
       symbol "of"
       cases <-
@@ -385,7 +385,7 @@ parseTerm = P.label "Term" $ makeExprParser pAtom ops
           P.sepBy1
             ((,) <$> parsePattern <*> (symbol "->" >> parseTerm))
             (symbol ";")
-      return (ExprCase ty tyRes term cases)
+      return (ExprCase tyRes ty term cases)
 
     pAtom :: Parser (Expr lang)
     pAtom =

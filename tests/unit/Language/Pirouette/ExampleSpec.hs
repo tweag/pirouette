@@ -57,7 +57,7 @@ tests =
             [funDecl|
           rightToMaybe : forall a b . Either a b -> Maybe b
           rightToMaybe @a @b x =
-            case @(Either a b) @(Maybe b) x of {
+            case @(Maybe b) @(Either a b) x of {
               Left _ -> Nothing ;
               Right y -> Just y
             }
