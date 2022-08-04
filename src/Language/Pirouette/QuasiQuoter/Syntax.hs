@@ -267,7 +267,7 @@ parseKind :: Parser SystF.Kind
 parseKind =
   P.label "Kind" $
     makeExprParser
-      (parens parseKind <|> (SystF.KStar <$ symbol "*"))
+      (parens parseKind <|> (SystF.KStar <$ symbol "Type"))
       [[InfixR $ SystF.KTo <$ symbol "->"]]
 
 -- | Parse a type. The following features are supported:
@@ -346,7 +346,7 @@ parseTerm = P.label "Term" $ makeExprParser pAtom ops
       P.try (symbol "/\\")
       parseBinder
         ExprAbs
-        (parseBinderNames (ident @lang) (parseTyOf >> parseKind))
+        (some (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang))
         (symbol "." >> parseTerm)
 
     pLam :: Parser (Expr lang)

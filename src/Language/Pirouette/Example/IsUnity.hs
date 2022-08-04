@@ -77,7 +77,7 @@ contains @a eq x0 =
     False
     (\(x : a) (xs : List a) . or (eq x) (contains @a eq xs))
 
-data Pair (x : *) (y : *)
+data Pair x y
   = P : x -> y -> Pair x y
 
 pairEq :
