@@ -22,25 +22,29 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker
 import Pirouette.Transformations
 import Test.Tasty.HUnit
- 
+
 -- | Set of options to control the particular run of pirouette
-data Options = Options
+
+type DumpingStages lang = (Language lang, LanguageBuiltinTypes lang) => FilePath -> Stages (PrtUnorderedDefs lang) (PrtOrderedDefs lang)
+
+data RunOptions = RunOptions
   { optsPirouette :: P.Options,
-    optsDumpIntermediate :: Maybe ([String], FilePath)
+    optsDumpIntermediate :: Maybe ([String], FilePath),
+    optsStages :: forall lang. DumpingStages lang
   }
 
-instance Default Options where
-  def = Options def Nothing
+instance Default RunOptions where
+  def = RunOptions def Nothing pirouetteBoundedSymExecStages
 
-pirouetteCodeOpts ::
+runPirouette ::
   (Language lang, LanguagePrelude lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
-  Options ->
+  RunOptions ->
   PrtUnorderedDefs lang ->
   AssumeProve lang ->
   Term lang ->
   Decls lang ->
   IO ()
-pirouetteCodeOpts opts (PrtUnorderedDefs augments) (toAssume :==>: toProve) main0 preDecls = do
+runPirouette opts (PrtUnorderedDefs augments) (toAssume :==>: toProve) main0 preDecls = do
   let PrtUnorderedDefs decls0 = complementWithBuiltinPrelude $ PrtUnorderedDefs preDecls
 
   -- first we contextualize the user declarations, making sure they will refer to their right
@@ -87,7 +91,7 @@ pirouetteCodeOpts opts (PrtUnorderedDefs augments) (toAssume :==>: toProve) main
     Right _ -> do
       let fpath = maybe "" snd $ optsDumpIntermediate opts
       let dump = fst <$> optsDumpIntermediate opts
-      orderedDecls <- runStages dump (pirouetteBoundedSymExecStages fpath) (PrtUnorderedDefs decls)
+      orderedDecls <- runStages dump (optsStages opts fpath) (PrtUnorderedDefs decls)
       (res, stats) <- flip runReaderT orderedDecls $ do
         fn' <- prtTermDefOf mainName
         assume' <- prtTermDefOf assumeName
@@ -109,11 +113,7 @@ pirouetteCodeOpts opts (PrtUnorderedDefs augments) (toAssume :==>: toProve) main
 -- | Defines the stages a pirouette program goes through; the first stage is the identidy to enable us
 --  to easily print the set of definitions that come from translating a PlutusIR program into a
 --  pirouette one, before the set of definitions that happen in between.
-pirouetteBoundedSymExecStages ::
-  forall lang. (Language lang, LanguageBuiltinTypes lang) =>
-  -- | The filepath to dump stages to, if the user requires that when running
-  FilePath ->
-  Stages (PrtUnorderedDefs lang) (PrtOrderedDefs lang)
+pirouetteBoundedSymExecStages :: forall lang. DumpingStages lang
 pirouetteBoundedSymExecStages fpath =
   Comp "init" id dumpUDefs $
   Comp "rm-excessive-destr" removeExcessiveDestArgs' dumpUDefs $
