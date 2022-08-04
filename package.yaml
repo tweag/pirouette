@@ -15,6 +15,7 @@ dependencies:
   - interpolate
   - bytestring
   - containers
+  - extra
   - text
   - prettyprinter
   - megaparsec
