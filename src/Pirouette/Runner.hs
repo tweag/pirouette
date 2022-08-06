@@ -24,7 +24,6 @@ import Pirouette.Transformations
 import Test.Tasty.HUnit
 
 -- | Set of options to control the particular run of pirouette
-
 type DumpingStages lang = (Language lang, LanguageBuiltinTypes lang) => FilePath -> Stages (PrtUnorderedDefs lang) (PrtOrderedDefs lang)
 
 data RunOptions = RunOptions
