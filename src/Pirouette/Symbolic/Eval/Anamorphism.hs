@@ -124,12 +124,12 @@ symbolically defs = runST $ do
             SystF.Meta meta -> f s env meta
             SystF.Free (Builtin _bin) -> undefined
             SystF.Free (Constant _x) -> undefined
-            SystF.Free Bottom -> Spine (SystF.App (SystF.Free Bottom) [])
+            SystF.Free Bottom -> Spine WHNFBottom
             SystF.Free (TermSig n) ->
               case prtDefOf TermNamespace n `runReader` defs of
                 DTypeDef _ -> error "TypeDef has no spine"
-                DConstructor _ix _tyName ->
-                  Spine $ SystF.App (SystF.Free $ TermSig n) $ map (SystF.TermArg . termMeta) $ evalL args
+                DConstructor ix tyName ->
+                  Spine $ WHNFCotr (ConstructorInfo tyName n ix) $ evalL args
                 DDestructor _ ->
                   let UnDestMeta _ _tyName _tyParams motive _ cases excess = unsafeUnDest t0 `runReader` defs
                       s1 : s2 : _ = ss

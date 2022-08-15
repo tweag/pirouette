@@ -30,14 +30,14 @@ import qualified PureSMT
 -- the 'Pirouette.Symbolic.Eval.Anamorphism.symbolically' anamorphism and
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
 --
--- It denotes a set of pairs of @TermMeta lang SymVar@ and @Constraint lang@.
+-- It denotes a set of pairs of @TermMeta lang SymVar@ values and @Constraint lang@.
 data TermSet lang
   = Union [TermSet lang]
   | Learn (DeltaEnv lang) (TermSet lang)
   | -- TODO: having the term structure is nice and all, but
     -- we never have any Lam in here at all; Maybe a dedicated @WHNFTerm@ datatype
     -- would be a little more interesting.
-    Spine (TermMeta lang (TermSet lang))
+    Spine (WHNFTerm (TermSet lang))
   | Call ([TermSet lang] -> TermSet lang) [TermSet lang]
   | -- TODO: Why not merge 'Call' and 'Dest'? 'Call' is just the semantics of destructing
     -- a function type, and 'Lam' is its respective constructor. This would require some careful
@@ -52,12 +52,33 @@ data TermSet lang
 instance Show (TermSet lang) where
   show _ = "<termset>"
 
+data WHNFTerm x
+  = WHNFCotr ConstructorInfo [x]
+  | WHNFBottom
+  deriving (Show)
+
+instance Pretty x => Pretty (WHNFTerm x) where
+  pretty WHNFBottom = "bottom"
+  pretty (WHNFCotr ci args) = parens $ sep $ (pretty ci :) $ map pretty args
+
+data WHNF
+  = WHNFMeta SymVar
+  | WHNFLayer (WHNFTerm WHNF)
+  deriving (Show)
+
+instance Pretty WHNF where
+  pretty (WHNFMeta s) = pretty s
+  pretty (WHNFLayer t) = pretty t
+
 data ConstructorInfo = ConstructorInfo
   { ciTyName :: TyName,
     ciCtorName :: Name,
     ciCtorIx :: Int
   }
   deriving (Eq, Ord, Show)
+
+instance Pretty ConstructorInfo where
+  pretty = pretty . ciCtorName
 
 -- | A 'DeltaEnv' represents a small addition to the current environment; catamorphisms
 -- are free to process these however way they see fit.

@@ -7,7 +7,7 @@
 module Pirouette.Symbolic.Eval.Catamorphism where
 
 import Control.Applicative hiding (Const)
-import Control.Arrow ((***))
+import Control.Arrow (Arrow (first), (***))
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Identity
@@ -56,8 +56,8 @@ catamorphism ::
   PrtUnorderedDefs lang ->
   Options ->
   TermSet lang ->
-  [Path lang (TermMeta lang SymVar)]
-catamorphism defs opts = map (uncurry path) . concatMap inject . cataWHNF def
+  [Path lang WHNF]
+catamorphism defs opts = map (uncurry path) . go def
   where
     orderedDefs = elimEvenOddMutRec defs
 
@@ -72,103 +72,36 @@ catamorphism defs opts = map (uncurry path) . concatMap inject . cataWHNF def
     solve :: CheckPathProblem lang -> Bool
     solve = sharedSolve . CheckPath
 
-    inject :: (SymEvalSt lang, (WHNFTermHead lang, [TermSet lang])) -> [(SymEvalSt lang, TermMeta lang SymVar)]
-    inject (st, (hd, args)) =
-      let worlds = traverse (concatMap inject . cataWHNF st) args
-       in flip map worlds $ \xs ->
-            let (sts, args') = unzip xs
-             in (if null sts then st else mconcat sts, buildTerm hd args')
+    go :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, WHNF)]
+    go st ts = do
+      (st', res) <- goWHNF st ts
+      case res of
+        Left m -> return (st', WHNFMeta m)
+        Right WHNFBottom -> return (st', WHNFLayer WHNFBottom)
+        Right (WHNFCotr ci ts') -> do
+          (sts, args) <- combineArgs st' <$> traverse (go st') ts'
+          return (sts, WHNFLayer (WHNFCotr ci args))
 
-    buildTerm :: WHNFTermHead lang -> [TermMeta lang SymVar] -> TermMeta lang SymVar
-    buildTerm (WHNFCotr (ConstructorInfo _ n _)) args =
-      SystF.App (SystF.Free $ TermSig n) (map SystF.TermArg args)
-    buildTerm _ _ = error "not yet implemented"
-
-    cataWHNF ::
-      SymEvalSt lang ->
-      TermSet lang ->
-      [(SymEvalSt lang, (WHNFTermHead lang, [TermSet lang]))]
-    cataWHNF st (TermSet t) = concatMap (uncurry cataSpine) $ cataTree st t
-
-    cataTree ::
-      SymEvalSt lang ->
-      Tree (DeltaEnv lang) (Spine lang (TermSet lang)) ->
-      [(SymEvalSt lang, Spine lang (TermSet lang))]
-    cataTree st (Leaf spine) = return (st, spine)
-    cataTree st (Union worlds) = concatMap (cataTree st) worlds
-    cataTree st (Learn delta t) =
+    goWHNF :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, Either SymVar (WHNFTerm (TermSet lang)))]
+    goWHNF st (Union tss) = tss >>= goWHNF st
+    goWHNF st (Inst m Nothing) = return (st, Left m)
+    goWHNF st (Inst m (Just ts)) = goWHNF st ts
+    goWHNF st (Learn delta ts) =
       case learn delta st of
-        Just st'
-          | sestAssignments st' <= maxAssignments opts -> cataTree st' t
-        _ -> empty
+        Nothing -> empty
+        Just st' -> goWHNF st' ts
+    goWHNF st (Call f args) = goWHNF st (f args)
+    goWHNF st (Dest f x) = do
+      (st', res) <- goWHNF st x
+      case res of
+        Left _ -> empty -- can't match on meta
+        Right WHNFBottom -> return (st', Right WHNFBottom) -- matching on bottom is bottom
+        Right (WHNFCotr ci ts') -> goWHNF st' (f (ci, ts'))
+    goWHNF st (Spine t) = return (st, Right t)
 
-    cataSpine ::
-      SymEvalSt lang ->
-      Spine lang (TermSet lang) ->
-      [(SymEvalSt lang, (WHNFTermHead lang, [TermSet lang]))]
-    cataSpine s0 (Next x) =
-      concatMap (uncurry cataSpine) (cataTree s0 $ unTermSet x)
-    cataSpine s0 (Dest worlds motive) = do
-      (s1, (hd, args)) <- cataWHNF s0 motive
-      case hd of
-        WHNFCotr ci ->
-          let info = unlines ["Destructing: " ++ show (pretty hd), "With: " ++ renderSingleLineStr (pretty args)]
-           in trace info $ cataSpine s1 (worlds (ci, args))
-        _ -> error "Type error: destructing something that is not a constructor!"
-    -- TODO: add something to LanguageSymEval to do call by value. See
-    -- issues #137 and #138 for more
-    cataSpine s0 (Call _n f args) = cataSpine s0 (f args)
-    cataSpine s0 (Head hd args) = return (s0, (hd, map (TermSet . pure) args))
-
-{-
-    cataWHNF ::
-      SymEvalSt lang ->
-      Spine lang (TermMeta lang SymVar) ->
-      [(SymEvalSt lang, (WHNFTermHead lang, [Spine lang (TermMeta lang SymVar)]))]
-    cataWHNF s0 (Next x) =
-      concatMap (uncurry cataWHNF) (cataTree s0 x)
-    cataWHNF s0 (Dest worlds motive) = do
-      (s1, (hd, args)) <- cataWHNF s0 _
-      case hd of
-        WHNFCotr ci -> cataWHNF s1 (worlds (ci, args))
-        _ -> error "Type error: destructing something that is not a constructor!"
-    cataWHNF _ _ = undefined
--}
-
-{-
-
-    -- Cata WHNF will lazily search for the first WHNF of the tree
-    cataWHNF ::
-      SymEvalSt lang ->
-      SymTree lang SymVar (TermMeta lang SymVar) ->
-      [(SymEvalSt lang, WHNF lang (TermMeta lang SymVar))]
-    cataWHNF st (Leaf t) = return (st, WHNFOther t)
-    cataWHNF st (Call hd f xs) =
-      case hd of
-        CallSig _ -> cataWHNF st (f xs)
-        CallBuiltin _ -> undefined
-        CallCotr ci -> return (st, WHNFConstructor ci xs)
-    cataWHNF st (Union trees) = concatMap (cataWHNF st) trees
-    cataWHNF st (Dest cases motif) = do
-      (st', motif') <- cataWHNF st motif
-      case motif' of
-        WHNFConstructor ci args -> cataWHNF st' (cases (ci, args))
-        _ -> error "Type error!"
-    cataWHNF st (Learn delta t) =
-    -- Let's not worry about builtins at all right now. With plain inductive types
-    -- we can already do so much to check whether this monster is going to work before
-    -- refining the interface to evaluating builtins in LanguageSymEval
-
-    whnfToTerm :: SymEvalSt lang -> WHNF lang (TermMeta lang SymVar) -> [(SymEvalSt lang, TermMeta lang SymVar)]
-    whnfToTerm st (WHNFConstructor ci args) =
-      let args' = traverse (cata st) args
-       in flip map args' $ \xs ->
-            (if null xs then const st else mconcat) *** mkConsApp (ciCtorName ci) $
-              unzip xs
-    -- return $ mkConsApp (ciCtorName ci) args'
-    whnfToTerm st (WHNFOther t) = return (st, t)
--}
--- return $ fmap (mkConsApp (ciCtorName ci)) args'
+    combineArgs :: (Monoid s) => s -> [(s, a)] -> (s, [a])
+    combineArgs s0 [] = (s0, [])
+    combineArgs _ xs = first mconcat . unzip $ xs
 
 learn :: DeltaEnv lang -> SymEvalSt lang -> Maybe (SymEvalSt lang)
 learn (DeclSymVars vs) st = Just $ st {sestGamma = sestGamma st `union` M.mapKeys symVar vs}
