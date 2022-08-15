@@ -37,14 +37,14 @@ exec toDo (decls, tyRes, fn) (assume, toProve) = do
 add1 :: (PrtUnorderedDefs Ex, Type Ex, Term Ex)
 add1 =
   ( [prog|
-fun add1 : Integer -> Integer
-  = \(x : Integer) . x + 1
+add1 : Integer -> Integer
+add1 x = x + 1
 
-fun greaterThan0 : Integer -> Bool
-  = \(x : Integer) . 0 < x
+greaterThan0 : Integer -> Bool
+greaterThan0 x = 0 < x
 
-fun greaterThan1 : Integer -> Bool
-  = \(x : Integer) . 1 < x
+greaterThan1 : Integer -> Bool
+greaterThan1 x = 1 < x
   |],
     [ty|Integer|],
     [term| \(x : Integer) . add1 x |]
@@ -69,14 +69,14 @@ data MaybeInt
   = JustInt : Integer -> MaybeInt
   | NothingInt : MaybeInt
 
-fun isNothing : MaybeInt -> Bool
-  = \(m : MaybeInt) . match_MaybeInt m @Bool (\(n : Integer) . False) True
+isNothing : MaybeInt -> Bool
+isNothing m = match_MaybeInt m @Bool (\(n : Integer) . False) True
 
-fun isJust : MaybeInt -> Bool
-  = \(m : MaybeInt) . match_MaybeInt m @Bool (\(n : Integer) . True) False
+isJust : MaybeInt -> Bool
+isJust m = match_MaybeInt m @Bool (\(n : Integer) . True) False
 
-fun not : Bool -> Bool
-  = \(b : Bool) . if @Bool b then False else True
+not : Bool -> Bool
+not b = if @Bool b then False else True
 |]
 
 -- This is a small example taken from O'Hearn's paper; besides being interesting for
@@ -194,26 +194,26 @@ conditionals1 =
   ( [prog|
 data Delta = D : Integer -> Integer -> Delta
 
-fun fst : Delta -> Integer
-  = \(x : Delta) . match_Delta x @Integer (\(a : Integer) (b : Integer) . a)
+fst : Delta -> Integer
+fst x = match_Delta x @Integer (\(a : Integer) (b : Integer) . a)
 
-fun snd : Delta -> Integer
-  = \(x : Delta) . match_Delta x @Integer (\(a : Integer) (b : Integer) . b)
+snd : Delta -> Integer
+snd x = match_Delta x @Integer (\(a : Integer) (b : Integer) . b)
 
-fun even : Integer -> Bool
-  = \(x : Integer) . if @Bool x == 0 then True else odd (x - 1)
+even : Integer -> Bool
+even x = if @Bool x == 0 then True else odd (x - 1)
 
-fun odd : Integer -> Bool
-  = \(x : Integer) . if @Bool x == 0 then False else even (x - 1)
+odd : Integer -> Bool
+odd x = if @Bool x == 0 then False else even (x - 1)
 
-fun and : Bool -> Bool -> Bool
-  = \(x : Bool) (y : Bool) . if @Bool x then y else False
+and : Bool -> Bool -> Bool
+and x y = if @Bool x then y else False
 
-fun ohearn : Delta -> Delta
-  = \(xy : Delta)
-  . if @Delta even (fst xy)
-    then D (fst xy) 42
-    else xy
+ohearn : Delta -> Delta
+ohearn xy =
+  if @Delta even (fst xy)
+  then D (fst xy) 42
+  else xy
   |],
     [ty|Delta|],
     [term| \(x : Delta) . ohearn x |]
@@ -253,34 +253,34 @@ conditionals1Peano =
   ( [prog|
 data Nat = Z : Nat | S : Nat -> Nat
 
-fun eq : Nat -> Nat -> Bool
-  = \(x : Nat) (y : Nat)
-  . match_Nat x @Bool
-      (match_Nat y @Bool True (\(yy : Nat) . False))
-      (\(xx : Nat) . match_Nat y @Bool False (\(yy : Nat) . eq xx yy))
+eq : Nat -> Nat -> Bool
+eq x y =
+  match_Nat x @Bool
+    (match_Nat y @Bool True (\(yy : Nat) . False))
+    (\(xx : Nat) . match_Nat y @Bool False (\(yy : Nat) . eq xx yy))
 
-fun even : Nat -> Bool
-  = \(x : Nat) . match_Nat x @Bool True odd
+even : Nat -> Bool
+even x = match_Nat x @Bool True odd
 
-fun odd : Nat -> Bool
-  = \(x : Nat) . match_Nat x @Bool False even
+odd : Nat -> Bool
+odd x = match_Nat x @Bool False even
 
 data Delta = D : Nat -> Nat -> Delta
 
-fun fst : Delta -> Nat
-  = \(x : Delta) . match_Delta x @Nat (\(a : Nat) (b : Nat) . a)
+fst : Delta -> Nat
+fst x = match_Delta x @Nat (\(a : Nat) (b : Nat) . a)
 
-fun snd : Delta -> Nat
-  = \(x : Delta) . match_Delta x @Nat (\(a : Nat) (b : Nat) . b)
+snd : Delta -> Nat
+snd x = match_Delta x @Nat (\(a : Nat) (b : Nat) . b)
 
-fun and : Bool -> Bool -> Bool
-  = \(x : Bool) (y : Bool) . if @Bool x then y else False
+and : Bool -> Bool -> Bool
+and x y = if @Bool x then y else False
 
-fun ohearn : Delta -> Delta
-  = \(xy : Delta)
-  . if @Delta even (fst xy)
-    then D (fst xy) (S (S Z))
-    else xy
+ohearn : Delta -> Delta
+ohearn xy =
+  if @Delta even (fst xy)
+  then D (fst xy) (S (S Z))
+  else xy
   |],
     [ty|Delta|],
     [term| \(x : Delta) . ohearn x |]

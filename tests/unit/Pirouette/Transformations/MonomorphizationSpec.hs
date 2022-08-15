@@ -30,48 +30,49 @@ sampleUDefs =
 -- Here we're overloading the constructor name on purpose, to make
 -- sure monomorphization understands that it must monomorphize
 -- both the type and the constructor
-data Monoid (a : Type)
+data Monoid a
   = Monoid : a -> (a -> a -> a) -> Monoid a
 
-data List (a : Type)
+data List a
   = Cons : a -> List a -> List a
   | Nil : List a
 
 -- Here's a tricky one! It's an indirect need for monomorphizing:
 -- If we don't monomorphize @Ind@, defunctionalization will not
 -- be able to properly generate closures for the arguments.
-data Indirect (a : Type)
+data Indirect a
   = Ind : Maybe (a -> a) -> Indirect a
 
-data Maybe (a : Type)
+data Maybe a
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
-fun foldMon : all a : Type . Monoid a -> List (Maybe a) -> Maybe a
-      = /\ a : Type . \(m : Monoid a) (xs : List (Maybe a))
-      . match_Monoid @(Maybe a) (maybeMonoid @a m) @(Maybe a)
-          (\(zero : Maybe a) (mplus : Maybe a -> Maybe a -> Maybe a)
-            . match_List @(Maybe a) xs @(Maybe a)
-                (\(x : Maybe a) (xs2 : List (Maybe a)) . mplus x (foldMon @a m xs2))
-                zero
-          )
+foldMon : forall a . Monoid a -> List (Maybe a) -> Maybe a
+foldMon @a m xs =
+      match_Monoid @(Maybe a) (maybeMonoid @a m) @(Maybe a)
+        (\(zero : Maybe a) (mplus : Maybe a -> Maybe a -> Maybe a)
+          . match_List @(Maybe a) xs @(Maybe a)
+              (\(x : Maybe a) (xs2 : List (Maybe a)) . mplus x (foldMon @a m xs2))
+              zero
+        )
 
-fun maybeMonoid : all (a : Type) . Monoid a -> Monoid (Maybe a)
-     = /\(a : Type) . \(m : Monoid a)
-     . match_Monoid @a m @(Monoid (Maybe a))
-       (\(z : a) (f : a -> a -> a)
-       . Monoid @(Maybe a) (Nothing @a)
-          (\(ma : Maybe a) (mb : Maybe a)
-          . match_Maybe @a ma @(Maybe a)
-              (\(x : a) . match_Maybe @a mb @(Maybe a)
-                (\(y : a) . Just @a (f x y))
-                (Just @a x))
-              mb))
+maybeMonoid : forall a . Monoid a -> Monoid (Maybe a)
+maybeMonoid @a m =
+     match_Monoid @a m @(Monoid (Maybe a))
+     (\(z : a) (f : a -> a -> a)
+     . Monoid @(Maybe a) (Nothing @a)
+        (\(ma : Maybe a) (mb : Maybe a)
+        . match_Maybe @a ma @(Maybe a)
+            (\(x : a) . match_Maybe @a mb @(Maybe a)
+              (\(y : a) . Just @a (f x y))
+              (Just @a x))
+            mb))
 
-fun intMonoid : Monoid Integer
-     = Monoid @Integer 0 (\(x : Integer) (y : Integer) . x + y)
+intMonoid : Monoid Integer
+intMonoid = Monoid @Integer 0 (\(x : Integer) (y : Integer) . x + y)
 
-fun main : Maybe Integer = foldMon @Integer intMonoid (Nil @(Maybe Integer))
+main : Maybe Integer
+main = foldMon @Integer intMonoid (Nil @(Maybe Integer))
 |]
 
 castTy :: Type Ex -> Type Ex
@@ -167,14 +168,14 @@ tests =
 constDef :: FunOrTypeDef Ex
 constDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
-    funtype = [ty| all (a : Type) (b : Type) . a -> b -> a |]
-    funterm = [term| /\ (a : Type) (b : Type) . \ (x : a) (y : b) . x |]
+    funtype = [ty| forall a b . a -> b -> a |]
+    funterm = [term| /\ a b . \ (x : a) (y : b) . x |]
 
 idDef :: FunOrTypeDef Ex
 idDef = SystF.TermArg $ FunDef Rec funterm funtype
   where
-    funtype = [ty| all a : Type . a -> a |]
-    funterm = [term| /\ a : Type . \ x : a . x |]
+    funtype = [ty| forall a . a -> a |]
+    funterm = [term| /\ a . \ x : a . x |]
 
 either3Def :: FunOrTypeDef Ex
 either3Def =
@@ -184,9 +185,9 @@ either3Def =
         typeVariables = [("a", SystF.KStar), ("b", SystF.KStar), ("c", SystF.KStar)],
         destructor = "match_Either3",
         constructors =
-          [ ("Left", [ty| all (a : Type) (b : Type) (c : Type) . a -> Either3 a b c |]),
-            ("Mid", [ty| all (a : Type) (b : Type) (c : Type) . b -> Either3 a b c |]),
-            ("Right", [ty| all (a : Type) (b : Type) (c : Type) . c -> Either3 a b c |])
+          [ ("Left", [ty| forall a b c . a -> Either3 a b c |]),
+            ("Mid", [ty| forall a b c . b -> Either3 a b c |]),
+            ("Right", [ty| forall a b c . c -> Either3 a b c |])
           ]
       }
 
@@ -200,9 +201,9 @@ either3Def_Bool_Integer_decls =
               typeVariables = [("c", SystF.KStar)],
               destructor = "match_Either3<TyBool$TyInteger>",
               constructors =
-                [ ("Left<TyBool$TyInteger>", [ty| all (c : Type) . Bool -> Either3<TyBool$TyInteger> c |]),
-                  ("Mid<TyBool$TyInteger>", [ty| all (c : Type) . Integer -> Either3<TyBool$TyInteger> c |]),
-                  ("Right<TyBool$TyInteger>", [ty| all (c : Type) . c -> Either3<TyBool$TyInteger> c |])
+                [ ("Left<TyBool$TyInteger>", [ty| forall c . Bool -> Either3<TyBool$TyInteger> c |]),
+                  ("Mid<TyBool$TyInteger>", [ty| forall c . Integer -> Either3<TyBool$TyInteger> c |]),
+                  ("Right<TyBool$TyInteger>", [ty| forall c . c -> Either3<TyBool$TyInteger> c |])
                 ]
             }
       ),
