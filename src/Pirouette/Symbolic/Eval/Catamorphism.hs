@@ -88,8 +88,8 @@ catamorphism defs opts = map (uncurry path) . go def
     goWHNF st (Inst m (Just ts)) = goWHNF st ts
     goWHNF st (Learn delta ts) =
       case learn delta st of
-        Nothing -> empty
-        Just st' -> goWHNF st' ts
+        Just st' | sestAssignments st' < maxAssignments opts -> goWHNF st' ts
+        _ -> empty
     goWHNF st (Call f args) = goWHNF st (f args)
     goWHNF st (Dest f x) = do
       (st', res) <- goWHNF st x

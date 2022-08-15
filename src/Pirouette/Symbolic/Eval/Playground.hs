@@ -23,7 +23,7 @@ add n m = Nat_match n @Nat m (\sn : Nat . Suc (add sn m))
 |]
 
 opts :: Options
-opts = def {maxAssignments = 1}
+opts = def {maxAssignments = 5}
 
 x :: [Path Ex WHNF]
 x = catamorphism defs opts (symbolically defs [term| \(n : Nat) . add n (Suc n) |])
