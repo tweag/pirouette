@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -14,40 +15,52 @@
 -- definitions. One example program would be:
 --
 -- > -- Declares a datatype with a destructor named match_Maybe
--- > data Maybe (a : Type)
+-- > data Maybe (a : *)
 -- >   = Nothing : Maybe a
 -- >   | Just : a -> Maybe a
 -- >
--- > fun id : all k : Type . k -> k
--- >   = /\k : Type . \x : k . k
+-- > id : forall k . k -> k
+-- > id @k x = x
 -- >
--- > fun cons : all (a : Type) (b : Type) . a -> b -> a
--- >   = /\ (a : Type) (b : Type) . \(x : a) (y : b) . x
+-- > const : forall (a : *) (b : *) . a -> b -> a
+-- > const @a @b x y = x
 -- >
--- > fun val : Integer
+-- > val : Integer
 -- >   -- type applications are made just like Haskell, so are comments.
 -- >   -- The language has Integers and booleans
 -- >   = id @Integer (if True then 42 else 0)
 module Language.Pirouette.QuasiQuoter.Syntax where
 
+import Control.Applicative
 import Control.Arrow (second)
 import Control.Monad
 import Control.Monad.Combinators.Expr
+import Control.Monad.Reader
 import Data.Foldable
-import qualified Data.Map as M
-import qualified Data.Set as S
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set as Set (Set)
+import qualified Data.Set as Set
 import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Monomorphization (monoNameSep)
-import Text.Megaparsec
-import Text.Megaparsec.Char
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
 
 -- ** Class for parsing language builtins
 
-type Parser = Parsec Void String
+-- | State of line folding. There is basic support for line folding at the top
+-- level (data and function declarations). The parser is either outside a line
+-- folding block ("Nothing") or inside a line folding block which began at a
+-- given column "pos" ("Just pos"). There is no support yet for nested line
+-- folded sections.
+type LineFoldSt = Maybe P.Pos
+
+-- | The parser has an environment to make line folding possible.
+type Parser = P.ParsecT Void String (Reader LineFoldSt)
 
 -- | Auxiliary constraint for lifting terms of a given language.
 type LanguageLift lang =
@@ -68,10 +81,10 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
   parseConstant :: Parser (Constants lang)
 
   -- | Set of term names that are reserved; often include any builtin constructor names
-  reservedNames :: S.Set String
+  reservedTermNames :: Set String
 
   -- | Set of type names that are reserved; often include the builtin types
-  reservedTypeNames :: S.Set String
+  reservedTypeNames :: Set String
 
   -- This next 'ifThenElse' function is here due to a technicality in 'Language.Pirouette.QuasiQuoter.ToTerm.trTerm';
   -- because we have dedicated syntax for if-statements, we need a way of translating them into
@@ -83,16 +96,19 @@ class (LanguageLift lang, LanguageBuiltins lang) => LanguageParser lang where
 
 -- ** Syntactical Categories
 
+-- | Algebraic datatype declaration
 data DataDecl lang = DataDecl [(String, SystF.Kind)] [(String, Ty lang)] (Maybe String)
 
 deriving instance (Show (BuiltinTypes lang)) => Show (DataDecl lang)
 
+-- | Function declaration
 data FunDecl lang = FunDecl Rec (Ty lang) (Expr lang)
 
 deriving instance
   (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
   Show (FunDecl lang)
 
+-- | Type level
 data Ty lang
   = TyLam String SystF.Kind (Ty lang)
   | TyAll String SystF.Kind (Ty lang)
@@ -104,6 +120,7 @@ data Ty lang
 
 deriving instance (Show (BuiltinTypes lang)) => Show (Ty lang)
 
+-- | Term level
 data Expr lang
   = ExprApp (Expr lang) (Expr lang)
   | ExprTy (Ty lang)
@@ -113,7 +130,18 @@ data Expr lang
   | ExprLit (Constants lang)
   | ExprBase (BuiltinTerms lang)
   | ExprIf (Ty lang) (Expr lang) (Expr lang) (Expr lang)
+  | ExprCase (Ty lang) (Ty lang) (Expr lang) [(Pattern lang, Expr lang)]
   | ExprBottom (Ty lang)
+
+-- | Patterns for pattern-matching in case statements and function declaration
+data Pattern lang
+  = PatternConstr String [Pattern lang]
+  | PatternVar String
+  | PatternAll
+
+deriving instance
+  (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
+  Show (Pattern lang)
 
 deriving instance
   (Show (BuiltinTypes lang), Show (BuiltinTerms lang), Show (Constants lang)) =>
@@ -124,12 +152,15 @@ deriving instance
 -- | A program is some set of declarations
 parseProgram ::
   (LanguageParser lang) =>
-  Parser (M.Map String (Either (DataDecl lang) (FunDecl lang)))
-parseProgram = M.fromList <$> many parseDecl
+  Parser (Map String (Either (DataDecl lang) (FunDecl lang)))
+parseProgram = Map.fromList <$> P.many parseDecl
 
-parseDecl :: (LanguageParser lang) => Parser (String, Either (DataDecl lang) (FunDecl lang))
+-- | A declaration is either a datatype or a function
+parseDecl ::
+  (LanguageParser lang) =>
+  Parser (String, Either (DataDecl lang) (FunDecl lang))
 parseDecl =
-  (second Left <$> parseDataDecl)
+  (second Left <$> lineFold parseDataDecl)
     <|> (second Right <$> parseFunDecl)
 
 -- | Parses a simple datatype declaration:
@@ -138,42 +169,114 @@ parseDecl =
 --  >   = Nil : List a
 --  >   | Cons : a -> List a -> List a
 parseDataDecl :: forall lang. (LanguageParser lang) => Parser (String, DataDecl lang)
-parseDataDecl = label "Data declaration" $ do
-  try (symbol "data")
+parseDataDecl = P.label "Data declaration" $ do
+  P.try (symbol "data")
   i <- typeName @lang
-  vars <- many (parens $ (,) <$> ident @lang <*> (parseTyOf >> parseKind))
+  vars <- many (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang)
   cons <-
-    (try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `sepBy1` symbol "|")
+    (P.try (symbol "=") >> ((,) <$> typeName @lang <*> (parseTyOf >> parseType)) `P.sepBy1` symbol "|")
       <|> return []
-  dest <- optional (symbol "destructor" >> try (ident @lang) <|> typeName @lang)
+  dest <- optional (symbol "destructor" >> P.try (ident @lang) <|> typeName @lang)
   return (i, DataDecl vars cons dest)
 
--- | Parses functon declarations:
+-- | Function parameter: either term or type level
+--
+-- TODO "Ident String" is eventually intended to be replaced by "Pattern lang"
+-- to provide syntaxic sugar for pattern matching without using explicit case
+-- statements.
+-- For now, the lack of proper bug free line folding prevents us from allowing
+-- the required multi body functions
+data Param = Ident String | TyIdent String deriving (Eq, Show)
+
+-- | Check against duplicate identifiers among a list of parameters. A term and
+-- a type variable can share the same name without clash.
+noDuplicateParamName :: [Param] -> Bool
+noDuplicateParamName = aux Set.empty Set.empty
+  where
+    aux :: Set String -> Set String -> [Param] -> Bool
+    aux _ _ [] = True
+    aux termvars tyvars (Ident str : xs) =
+      not (Set.member str termvars) && aux (Set.insert str termvars) tyvars xs
+    aux termvars tyvars (TyIdent str : xs) =
+      not (Set.member str tyvars) && aux termvars (Set.insert str tyvars) xs
+
+-- | Parses functon declarations following the new syntax:
 --
 --  > fun suc : Integer -> Integer = \x : Integer -> x + 1
 parseFunDecl :: forall lang. (LanguageParser lang) => Parser (String, FunDecl lang)
-parseFunDecl = label "Function declaration" $ do
-  try (symbol "fun")
-  r <- NonRec <$ symbol "nonrec" <|> pure Rec
-  i <- ident @lang
-  parseTyOf
-  t <- parseType
-  symbol "="
-  x <- parseTerm
-  return (i, FunDecl r t x)
+parseFunDecl = P.label "Function declaration (new syntax)" $ do
+  (r, funIdent, funType) <- lineFold $ do
+    r <- NonRec <$ symbol "nonrec" <|> pure Rec
+    funIdent <- ident @lang
+    parseTyOf
+    funType <- parseType
+    return (r, funIdent, funType)
+  lineFold $ do
+    _ <- symbol funIdent
+    params <- many $ (TyIdent <$> (P.char '@' >> ident @lang)) <|> (Ident <$> ident @lang)
+    unless (noDuplicateParamName params) $ fail "duplicate parameter name"
+    symbol "="
+    body <- parseTerm
+    -- Uncomment the following for debug info
+    -- traceM $ "---- Function \"" <> funIdent <> "\" (" <> show r <> ") ----"
+    -- traceM $ "Type: " <> show funType
+    -- traceM $ "Parameters: " <> show params
+    -- traceM $ "Body: " <> show body
+    -- traceM $ "Processed term: " <> show (funTerm funType params body)
+    return (funIdent, FunDecl r funType (funTerm funType params body))
 
+-- | Term corresponding to the desugared body declaration using given parameter
+-- types and names.
+funTerm :: forall lang. Ty lang -> [Param] -> Expr lang -> Expr lang
+funTerm (TyAll i k t2) (TyIdent tp : ps) body =
+  ExprAbs tp k (funTerm (substTyVarType i tp t2) ps body)
+funTerm (TyFun t1 t2) (Ident p : ps) body =
+  ExprLam p t1 (funTerm t2 ps body)
+funTerm _ [] body = body
+funTerm _ _ _ = error "Unexpected parameters in function declaration"
+
+-- | Apply a type variable name substitution taking into account naming
+-- collisions by renaming the conficting name beforehand.
+-- E.g. In @/\ a : * . /\ b : * . a -> b -> b@, by applying the type to @b@,
+-- the result will be: @/\ b_ : * . b -> b_ -> b_@
+substTyVarType :: String -> String -> Ty lang -> Ty lang
+substTyVarType i i' (TyLam s ki ty)
+  | s == i' =
+    -- Naming conflict: append `_` before renaming to avoid conflict
+    TyLam
+      (s <> "_")
+      ki
+      (substTyVarType i i' . substTyVarType s (s <> "_") $ ty)
+  | otherwise = TyLam s ki (substTyVarType i i' ty)
+substTyVarType i i' (TyAll s ki ty)
+  | s == i' = TyAll (s <> "_") ki (substTyVarType i i' . substTyVarType s (s <> "_") $ ty)
+  | otherwise = TyAll s ki (substTyVarType i i' ty)
+substTyVarType i i' (TyFun ty ty') =
+  TyFun (substTyVarType i i' ty) (substTyVarType i i' ty')
+substTyVarType i i' (TyApp ty ty') =
+  TyApp (substTyVarType i i' ty) (substTyVarType i i' ty')
+substTyVarType i i' (TyVar s)
+  | s == i = TyVar i'
+  | otherwise = TyVar s
+substTyVarType _ _ ty = ty -- TyFree, TyBase
+
+-- | Parse kinds using the haskell `*` syntax.
+-- E.g. `(* -> *) -> (* -> * -> *)`
 parseKind :: Parser SystF.Kind
 parseKind =
-  label "Kind" $
+  P.label "Kind" $
     makeExprParser
       (parens parseKind <|> (SystF.KStar <$ symbol "Type"))
       [[InfixR $ SystF.KTo <$ symbol "->"]]
 
-parens :: Parser a -> Parser a
-parens a = try (symbol "(") *> a <* symbol ")"
-
+-- | Parse a type. The following features are supported:
+--
+-- - Application: @Either a b@
+-- - Function arrow: @b -> (a -> b) -> c@
+-- - Quantification: @forall (a : * -> *) (b : *) . @
+-- - Type lambdas: @\(a : * -> *) (b : *) . @
 parseType :: forall lang. (LanguageParser lang) => Parser (Ty lang)
-parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
+parseType = P.label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
   where
     pApp :: Parser (Ty lang -> Ty lang -> Ty lang)
     pApp = return TyApp
@@ -182,38 +285,56 @@ parseType = label "Type" $ makeExprParser pAtom [[InfixL pApp], [InfixR pFun]]
     pFun = TyFun <$ symbol "->"
 
     pAll :: Parser (Ty lang)
-    pAll = label "pAll" $ do
-      try (symbol "all")
-      parseBinder TyAll (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseType)
+    pAll = P.label "pAll" $ do
+      P.try (symbol "forall")
+      parseBinder
+        TyAll
+        (some (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang))
+        (symbol "." >> parseType)
 
     pLam :: Parser (Ty lang)
-    pLam = label "pLam" $ do
-      try (symbol "\\")
-      parseBinder TyLam (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseType)
+    pLam = P.label "pLam" $ do
+      P.try (symbol "\\")
+      parseBinder
+        TyLam
+        (some (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang))
+        (symbol "." >> parseType)
 
     pAtom =
-      try $
+      P.try $
         asum
           [ pLam,
             pAll,
             parseTypeAtom
           ]
 
+-- | Parse type atoms among type variables, builtins, and types declared in the
+-- environment
 parseTypeAtom :: forall lang. (LanguageParser lang) => Parser (Ty lang)
 parseTypeAtom =
-  label "Type atom" $
+  P.label "Type atom" $
     asum
-      [ TyVar <$> try (ident @lang),
-        TyBase <$> try (parseBuiltinType @lang),
-        TyFree <$> try (typeName @lang),
+      [ TyVar <$> P.try (ident @lang),
+        TyBase <$> P.try (parseBuiltinType @lang),
+        TyFree <$> P.try (typeName @lang),
         parens parseType
       ]
 
+-- TODO Keep in this module?
 exprBinApp :: BuiltinTerms lang -> Expr lang -> Expr lang -> Expr lang
 exprBinApp f x = ExprApp (ExprApp (ExprBase f) x)
 
+-- | Parse an expression. The following features are supported:
+--
+-- - Type abstraction: @/\ (a : * -> *) (b : *) .@
+-- - Lambdas: @\ (x : Maybe a) (y : a) . @
+-- - If/then/else: @if \@resultType (x == y) then expr1 else expr2@
+-- - Case statements:
+--   @case \@type \@resultType x of {pattern1 -> expr1 ; pattern2 -> expr2}@
+-- - Bottom: @bottom \@resultType@
+-- - Type and term application: @f \@a \@b x \@c y z@
 parseTerm :: forall lang. (LanguageParser lang) => Parser (Expr lang)
-parseTerm = label "Term" $ makeExprParser pAtom ops
+parseTerm = P.label "Term" $ makeExprParser pAtom ops
   where
     ops =
       [InfixL (return ExprApp)] :
@@ -221,17 +342,23 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
 
     pAbs :: Parser (Expr lang)
     pAbs = do
-      try (symbol "/\\")
-      parseBinder ExprAbs (parseBinderNames (ident @lang) (parseTyOf >> parseKind)) (symbol "." >> parseTerm)
+      P.try (symbol "/\\")
+      parseBinder
+        ExprAbs
+        (some (parens (parseTypeVarKind @lang) <|> parseTypeVarKind @lang))
+        (symbol "." >> parseTerm)
 
     pLam :: Parser (Expr lang)
     pLam = do
-      try (symbol "\\")
-      parseBinder ExprLam (parseBinderNames (ident @lang) (parseTyOf >> parseType)) (symbol "." >> parseTerm)
+      P.try (symbol "\\")
+      parseBinder
+        ExprLam
+        (parseBinderNames (ident @lang) (parseTyOf >> parseType))
+        (symbol "." >> parseTerm)
 
     parseIf :: Parser (Expr lang)
     parseIf = do
-      try (symbol "if")
+      P.try (symbol "if")
       ty <- symbol "@" >> parseTypeAtom
       c <- parseTerm
       symbol "then"
@@ -241,9 +368,23 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
 
     parseBottom :: Parser (Expr lang)
     parseBottom = do
-      try (symbol "bottom")
+      P.try (symbol "bottom")
       ty <- symbol "@" >> parseTypeAtom
       return (ExprBottom ty)
+
+    parseCase :: Parser (Expr lang)
+    parseCase = do
+      P.try (symbol "case")
+      tyRes <- symbol "@" >> parseTypeAtom
+      ty <- symbol "@" >> parseTypeAtom
+      term <- parseTerm
+      symbol "of"
+      cases <-
+        braces $
+          P.sepBy1
+            ((,) <$> parsePattern <*> (symbol "->" >> parseTerm))
+            (symbol ";")
+      return (ExprCase tyRes ty term cases)
 
     pAtom :: Parser (Expr lang)
     pAtom =
@@ -252,13 +393,27 @@ parseTerm = label "Term" $ makeExprParser pAtom ops
           pLam,
           parens parseTerm,
           parseIf,
+          parseCase,
           parseBottom,
-          ExprBase <$> try (parseBuiltinTerm @lang),
-          ExprTy <$> (try (symbol "@") >> parseTypeAtom),
-          ExprLit <$> try (parseConstant @lang),
-          ExprVar <$> try (ident @lang <|> typeName @lang)
+          ExprBase <$> P.try (parseBuiltinTerm @lang),
+          ExprTy <$> (P.try (symbol "@") >> parseTypeAtom),
+          ExprLit <$> P.try (parseConstant @lang),
+          ExprVar <$> P.try (ident @lang <|> typeName @lang)
         ]
 
+-- | Parse a pattern for use in case statements or function declarations.
+-- The catch-all pattern is `_`.
+parsePattern :: forall lang. LanguageParser lang => Parser (Pattern lang)
+parsePattern =
+  P.label "pattern" $
+    asum
+      [ parens parsePattern,
+        PatternAll <$ symbol "_",
+        PatternConstr <$> constructorName @lang <*> many parsePattern,
+        PatternVar <$> ident @lang
+      ]
+
+-- | "type of" and "kind of" symbol
 parseTyOf :: Parser ()
 parseTyOf = symbol ":"
 
@@ -276,35 +431,131 @@ parseBinder binder parseVars parseBody = do
   b <- parseBody
   return $ foldr (uncurry binder) b vars
 
+-- | Parse a declaration of a type variable and its kind. The kind is `*` by
+-- default if omitted.
+-- E.g. `(a : * -> * -> *)`
+-- E.g. `(a : *)` and `a` are equivalent
+parseTypeVarKind :: forall lang. LanguageParser lang => Parser (String, SystF.Kind)
+parseTypeVarKind =
+  (,)
+    <$> ident @lang
+    <*> (P.try (parseTyOf *> parseKind) <|> return SystF.KStar)
+
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
 
+skipEmptyLine :: Parser ()
+skipEmptyLine = P.try (hspaceComment <* P.newline)
+
+hspaceComment :: Parser ()
+hspaceComment = do
+  P.hspace
+  P.try (L.skipLineComment "--") <|> return ()
+
+-- | Parse content in a line-folded fashion. The initial column number serves
+-- as a reference. Every line that begins after that indentation level is
+-- considered to be part of the line-folded section. The first line that goes
+-- back to a lower indentation level marks the end of the line-folded section.
+--
+-- "lineFold" is expected to be applied to parsers that use "spaceConsumer"
+-- exclusively.
+--
+-- For now, only basic top-level line folding is supported. A runtime error is
+-- raised if line-folded sections are nested.
+--
+-- Note that, as long as lines begin after the reference column, they are
+-- considered part of the section. This means that a three line block whose
+-- lines start at columns 1, 4, then 2, is valid. Using the first indented line
+-- as a reference (4 in this example) would require "State" instead of "Reader"
+-- or cumbersome and ineffient look aheads.
+lineFold :: Parser a -> Parser a
+lineFold p = do
+  P.SourcePos _ _ currentCol <- P.getSourcePos
+  ask >>= \case
+    Nothing -> local (const (Just currentCol)) p <* spaceConsumer
+    Just _ -> error "nested line fold is unsupported"
+
+-- | Space consumer compatible with "lineFold"
 spaceConsumer :: Parser ()
-spaceConsumer = L.space space1 (L.skipLineComment "--") empty
+spaceConsumer =
+  ask >>= \case
+    Nothing -> spaceConsumerOld
+    Just startCol -> do
+      hspaceComment
+      asum
+        [ P.try $ do
+            _ <- P.newline
+            _ <- many skipEmptyLine
+            _ <- P.hspace
+            P.SourcePos _ _ currentCol <- P.getSourcePos
+            if P.unPos currentCol > P.unPos startCol
+              then return ()
+              else fail "not indented enough to line fold",
+          return ()
+        ]
+
+-- | Default megaparsec space consumer (incompatible with "lineFold")
+spaceConsumerOld :: Parser ()
+spaceConsumerOld = L.space P.space1 (L.skipLineComment "--") empty
 
 symbol :: String -> Parser ()
 symbol = void . L.symbol spaceConsumer
 
-ident :: forall lang. (LanguageParser lang) => Parser String
-ident = label "identifier" $ do
-  i <- lexeme ((:) <$> (lowerChar <|> char '_') <*> restOfName)
-  guard (i `S.notMember` reserved)
+keywords :: Set String
+keywords =
+  Set.fromList
+    [ "case",
+      "data",
+      "forall",
+      "destructor",
+      "nonrec",
+      "of",
+      "if",
+      "then",
+      "else",
+      "bottom"
+    ]
+
+-- | Parse an expression in parenthesis
+parens :: Parser a -> Parser a
+parens a = P.try (symbol "(") *> a <* symbol ")"
+
+-- | Parse an expression in curly brackets
+braces :: Parser a -> Parser a
+braces a = P.try (symbol "{") *> a <* symbol "}"
+
+-- | Parse identifiers starting with a lowercase letter or "_"
+lowercaseIdent :: forall lang. (LanguageParser lang) => Set String -> Parser String
+lowercaseIdent reserved = do
+  i <- lexeme ((:) <$> (P.lowerChar <|> P.char '_') <*> restOfName)
+  guard (i `Set.notMember` Set.union keywords reserved)
   return i
-  where
-    reserved :: S.Set String
-    reserved =
-      S.fromList ["abs", "all", "data", "destructor", "if", "then", "else", "fun", "bottom"]
-        `S.union` reservedNames @lang
 
-typeName :: forall lang. (LanguageParser lang) => Parser String
-typeName = label "type-identifier" $ do
-  t <- lexeme ((:) <$> upperChar <*> restOfName)
-  guard (t `S.notMember` reservedTypeNames @lang)
-  return t
+-- | Parse identifiers starting with a capitalized letter
+uppercaseIdent :: forall lang. (LanguageParser lang) => Set String -> Parser String
+uppercaseIdent reserved = do
+  i <- lexeme ((:) <$> P.upperChar <*> restOfName)
+  guard (i `Set.notMember` Set.union keywords reserved)
+  return i
 
--- where
---   reservedTypeNames :: S.Set String
---   reservedTypeNames =
-
+-- | Parse remaining allowed characters in identifiers (alphanumeric and "_")
 restOfName :: Parser String
-restOfName = many (alphaNumChar <|> oneOf ('_' : monoNameSep))
+restOfName = many (P.alphaNumChar <|> P.oneOf ('_' : monoNameSep))
+
+-- | Parse a declared or builtin type name (no type variable)
+typeName :: forall lang. (LanguageParser lang) => Parser String
+typeName =
+  P.label "type-identifier" $
+    uppercaseIdent @lang (reservedTypeNames @lang)
+
+-- | Parse the name of a data constructor
+constructorName :: forall lang. (LanguageParser lang) => Parser String
+constructorName =
+  P.label "constructor identifier" $
+    uppercaseIdent @lang (reservedTermNames @lang)
+
+-- | Parse the name of a function or variable identifier
+ident :: forall lang. (LanguageParser lang) => Parser String
+ident =
+  P.label "identifier" $
+    lowercaseIdent @lang (reservedTermNames @lang)

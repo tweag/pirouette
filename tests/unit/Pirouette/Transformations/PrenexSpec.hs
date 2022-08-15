@@ -23,36 +23,42 @@ import Test.Tasty.HUnit
 beforePrenex1, afterPrenex1 :: PrtUnorderedDefs Ex
 (beforePrenex1, afterPrenex1) =
   ( [prog|
-fun example : all a : Type . a -> all b : Type . b -> a
-  = /\ a : Type . \(x : a) . /\ b : Type . \(y : b) . x
+example : forall a . a -> forall b . b -> a
+example @a x @b y = x
 
-fun main : Integer = example @Integer 3 @Integer 4
+main : Integer
+main = example @Integer 3 @Integer 4
 |],
     [prog|
-fun example : all a : Type . all b : Type . a -> b -> a
-  = /\ a : Type . /\ b : Type . \(x : a) (y : b) . x
+example : forall a . forall b . a -> b -> a
+example @a @b x y = x
 
-fun main : Integer = example @Integer @Integer 3 4
+main : Integer
+main = example @Integer @Integer 3 4
 |]
   )
 
 beforePrenex2, afterPrenex2 :: PrtUnorderedDefs Ex
 (beforePrenex2, afterPrenex2) =
   ( [prog|
-fun f : all a : Type . a -> all b : Type . b -> a
-  = /\ a : Type . \(x : a) . /\ b : Type . \(y : b) . x
-fun g : all a : Type . all b : Type . a -> b -> all c : Type . c -> a
-  = /\ a : Type . /\ b : Type . \(x : a) (y : b) . /\ c : Type . \(z : c) . x
+f : forall a . a -> forall b . b -> a
+f @a x @b y = x
 
-fun main : Integer = f @Integer 3 @Integer (g @Integer @Integer 4 5 @Integer 6)
+g : forall a . forall b . a -> b -> forall c . c -> a
+g @a @b x y @c z = x
+
+main : Integer
+main = f @Integer 3 @Integer (g @Integer @Integer 4 5 @Integer 6)
 |],
     [prog|
-fun f : all a : Type . all b : Type . a -> b -> a
-  = /\ a : Type . /\ b : Type . \(x : a) . \(y : b) . x
-fun g : all a : Type . all b : Type . all c : Type . a -> b -> c -> a
-  = /\ a : Type . /\ b : Type . /\ c : Type . \(x : a) (y : b) . \(z : c) . x
+f : forall a . forall b . a -> b -> a
+f @a @b x y = x
 
-fun main : Integer = f @Integer @Integer 3 (g @Integer @Integer @Integer 4 5 6)
+g : forall a . forall b . forall c . a -> b -> c -> a
+g @a @b @c x y z = x
+
+main : Integer
+main = f @Integer @Integer 3 (g @Integer @Integer @Integer 4 5 6)
 |]
   )
 

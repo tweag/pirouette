@@ -27,20 +27,18 @@ withUnorderedDecls prog m =
 sampleProgram :: PrtUnorderedDefs Ex
 sampleProgram =
   [prog|
-data Maybe (a : Type)
+data Maybe a
   = Nothing : Maybe a
   | Just : a -> Maybe a
 
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
+add : Integer -> Integer -> Integer
+add x y = x + y
 
-fun f1 : Maybe Integer -> Integer
-    = \x : Maybe Integer .
-      add (match_Maybe @Integer x @Integer 42 (\n : Integer . n)) 1
+f1 : Maybe Integer -> Integer
+f1 x = add (match_Maybe @Integer x @Integer 42 (\n : Integer . n)) 1
 
-fun destrNF_f1 : Maybe Integer -> Integer
-    = \x : Maybe Integer .
-      match_Maybe @Integer x @Integer (add 42 1) (\n : Integer . add n 1)
+destrNF_f1 : Maybe Integer -> Integer
+destrNF_f1 x = match_Maybe @Integer x @Integer (add 42 1) (\n : Integer . add n 1)
 |]
 
 tests :: [TestTree]

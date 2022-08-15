@@ -62,54 +62,54 @@ defuncTestsMono =
 addAndApply, addAndApplyDefunc :: PrtUnorderedDefs Ex
 (addAndApply, addAndApplyDefunc) =
   ( [prog|
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
+add : Integer -> Integer -> Integer
+add x y = x + y
 
-fun apply : (Integer -> Integer) -> Integer -> Integer
-    = \(f : Integer -> Integer) (x : Integer) . f x
+apply : (Integer -> Integer) -> Integer -> Integer
+apply f x = f x
 
-fun two : Integer
-    = apply (add 1) 1
+two : Integer
+two = apply (add 1) 1
 |],
     [prog|
-fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
-    = \(cls : Closure!!TyInteger_TyInteger) .
+nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
+_Apply!!TyInteger_TyInteger = \(cls : Closure!!TyInteger_TyInteger) .
       match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer) (\(η : Integer) . add 1 η)
 
 data Closure!!TyInteger_TyInteger
   = Closure!!TyInteger_TyInteger_ctor_0 : Closure!!TyInteger_TyInteger
 
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
+add : Integer -> Integer -> Integer
+add x y = x + y
 
-fun apply : Closure!!TyInteger_TyInteger -> Integer -> Integer
-    = \(f : Closure!!TyInteger_TyInteger) (x : Integer) . _Apply!!TyInteger_TyInteger f x
+apply : Closure!!TyInteger_TyInteger -> Integer -> Integer
+apply f x = _Apply!!TyInteger_TyInteger f x
 
-fun two : Integer
-    = apply Closure!!TyInteger_TyInteger_ctor_0 1
+two : Integer
+two = apply Closure!!TyInteger_TyInteger_ctor_0 1
 |]
   )
 
 addConst, addConstDefunc :: PrtUnorderedDefs Ex
 (addConst, addConstDefunc) =
   ( [prog|
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
+add : Integer -> Integer -> Integer
+add x y = x + y
 
-fun const : Integer -> Integer -> Integer
-    = \ (x : Integer) (y : Integer) . x
+const : Integer -> Integer -> Integer
+const x y = x
 
-fun apply : (Integer -> Integer) -> Integer -> Integer
-    = \ (f : Integer -> Integer) (x : Integer) . f x
+apply : (Integer -> Integer) -> Integer -> Integer
+apply f x = f x
 
-fun two : Integer
-    = apply (add 1) 1
+two : Integer
+two = apply (add 1) 1
 
-fun three : Integer
-    = apply (const 3) 10
+three : Integer
+three = apply (const 3) 10
 
-fun four : Integer
-   = apply (apply (add 2)) 2
+four : Integer
+four = apply (apply (add 2)) 2
 |],
     [prog|
 data Closure!!TyInteger_TyInteger
@@ -118,31 +118,31 @@ data Closure!!TyInteger_TyInteger
   | Closure!!TyInteger_TyInteger_ctor_2 : Closure!!TyInteger_TyInteger
   | Closure!!TyInteger_TyInteger_ctor_3 : Closure!!TyInteger_TyInteger
 
-fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
-    = \(cls : Closure!!TyInteger_TyInteger) .
+nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
+_Apply!!TyInteger_TyInteger cls =
       match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer)
         (\(η : Integer) . add 2 η)
         (\(η : Integer) . apply Closure!!TyInteger_TyInteger_ctor_0 η)
         (\(η : Integer) . const 3 η)
         (\(η : Integer) . add 1 η)
 
-fun add : Integer -> Integer -> Integer
-    = \(x : Integer) (y : Integer) . x + y
+add : Integer -> Integer -> Integer
+add x y = x + y
 
-fun apply : Closure!!TyInteger_TyInteger -> Integer -> Integer
-    = \(f : Closure!!TyInteger_TyInteger) (x : Integer) . _Apply!!TyInteger_TyInteger f x
+apply : Closure!!TyInteger_TyInteger -> Integer -> Integer
+apply f x = _Apply!!TyInteger_TyInteger f x
 
-fun const : Integer -> Integer -> Integer
-    = \ (x : Integer) (y : Integer) . x
+const : Integer -> Integer -> Integer
+const x y = x
 
-fun four : Integer
-   = apply Closure!!TyInteger_TyInteger_ctor_1 2
+four : Integer
+four = apply Closure!!TyInteger_TyInteger_ctor_1 2
 
-fun three : Integer
-    = apply Closure!!TyInteger_TyInteger_ctor_2 10
+three : Integer
+three = apply Closure!!TyInteger_TyInteger_ctor_2 10
 
-fun two : Integer
-    = apply Closure!!TyInteger_TyInteger_ctor_3 1
+two : Integer
+two = apply Closure!!TyInteger_TyInteger_ctor_3 1
 |]
   )
 
@@ -152,10 +152,11 @@ dataType, dataTypeDefunc :: PrtUnorderedDefs Ex
 data IntHomo
   = IntHomoC : (Integer -> Integer) -> IntHomo
 
-fun applyIntHomoToOne : IntHomo -> Integer
-  = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Integer -> Integer) . f 1)
+applyIntHomoToOne : IntHomo -> Integer
+applyIntHomoToOne h = match_IntHomo h @Integer (\(f : Integer -> Integer) . f 1)
 
-fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (\(x : Integer) . x + k))
+main : Integer -> Integer
+main k = applyIntHomoToOne (IntHomoC (\(x : Integer) . x + k))
 |],
     [prog|
 data Closure!!TyInteger_TyInteger
@@ -164,14 +165,15 @@ data Closure!!TyInteger_TyInteger
 data IntHomo
   = IntHomoC : Closure!!TyInteger_TyInteger -> IntHomo
 
-fun nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
-    = \(cls : Closure!!TyInteger_TyInteger) .
+nonrec _Apply!!TyInteger_TyInteger : Closure!!TyInteger_TyInteger -> Integer -> Integer
+_Apply!!TyInteger_TyInteger cls =
       match_Closure!!TyInteger_TyInteger cls @(Integer -> Integer) (\(k : Integer) (η : Integer) . η + k)
 
-fun applyIntHomoToOne : IntHomo -> Integer
-  = \(h : IntHomo) . match_IntHomo h @Integer (\(f : Closure!!TyInteger_TyInteger) . _Apply!!TyInteger_TyInteger f 1)
+applyIntHomoToOne : IntHomo -> Integer
+applyIntHomoToOne h = match_IntHomo h @Integer (\(f : Closure!!TyInteger_TyInteger) . _Apply!!TyInteger_TyInteger f 1)
 
-fun main : Integer -> Integer = \(k : Integer) . applyIntHomoToOne (IntHomoC (Closure!!TyInteger_TyInteger_ctor_0 k))
+main : Integer -> Integer
+main k = applyIntHomoToOne (IntHomoC (Closure!!TyInteger_TyInteger_ctor_0 k))
 |]
   )
 
@@ -203,67 +205,67 @@ defuncTestsPoly =
 nested :: PrtUnorderedDefs Ex
 nested =
   [prog|
-data Monoid (a : Type)
+data Monoid a
   = Mon : (a -> a -> a) -> a -> Monoid a
 
-data AdditiveMonoid (a : Type)
+data AdditiveMonoid a
   = AdditiveMon : (a -> a -> a) -> a -> AdditiveMonoid a
 
-fun additiveToMonoid : all (a : Type) . AdditiveMonoid a -> Monoid a
-  = /\(a : Type) . \(x : AdditiveMonoid a)
-    . Mon @a (match_AdditiveMonoid @a x @(a -> a -> a) (\(f : a -> a -> a) (z : a) . f))
-             (match_AdditiveMonoid @a x @a (\(f : a -> a -> a) (z : a) . z))
+additiveToMonoid : forall a . AdditiveMonoid a -> Monoid a
+additiveToMonoid @a x = 
+    Mon @a (match_AdditiveMonoid @a x @(a -> a -> a) (\(f : a -> a -> a) (z : a) . f))
+           (match_AdditiveMonoid @a x @a (\(f : a -> a -> a) (z : a) . z))
 
-data List (a : Type)
+data List a
   = Nil : List a
   | Cons : a -> List a -> List a
 
-fun listMon : all (a : Type) . AdditiveMonoid (List a)
-  = /\(a : Type) . AdditiveMon @(List a) (\(k : List a) (l : List a)
+listMon : forall a . AdditiveMonoid (List a)
+listMon @a = AdditiveMon @(List a) (\(k : List a) (l : List a)
     . foldr @a @(List a) (Cons @a) l k) (Nil @a)
 
-fun foldr : all (a : Type) (b : Type) . (a -> b -> b) -> b -> List a -> b
-  = /\(a : Type) (b : Type) . \(f : a -> b -> b) (m : b) (xs : List a)
-   . match_List @a xs @b
-       m
-       (\(h : a) (tl : List a) . f h (foldr @a @b f m tl))
+foldr : forall a b . (a -> b -> b) -> b -> List a -> b
+foldr @a @b f m xs =
+   match_List @a xs @b
+     m
+     (\(h : a) (tl : List a) . f h (foldr @a @b f m tl))
 
-fun foldMap : all (a : Type) (b : Type) . (a -> b) -> Monoid b -> List a -> b
-  = /\(a : Type) (b : Type) . \(f : a -> b) (m : Monoid b) (xs : List a)
-  . match_Monoid @b m @b
-      (\ (mplus : b -> b -> b) (mzero : b)
-       . foldr @a @b (\(x : a) (rest : b) . mplus (f x) rest) mzero xs
-      )
+foldMap : forall a b . (a -> b) -> Monoid b -> List a -> b
+foldMap @a @b f m xs =
+  match_Monoid @b m @b
+    (\ (mplus : b -> b -> b) (mzero : b)
+     . foldr @a @b (\(x : a) (rest : b) . mplus (f x) rest) mzero xs
+    )
 
-fun id : all (a : Type) . a -> a
-  = /\(a : Type) . \(x : a) . x
+id : forall a . a -> a
+id @a x = x
 
-fun concat : all (a : Type) . List (List a) -> List a
-  = /\(a : Type) . foldMap @(List a) @(List a) (id @(List a)) (additiveToMonoid @(List a) (listMon @a))
+concat : forall a . List (List a) -> List a
+concat @a = foldMap @(List a) @(List a) (id @(List a)) (additiveToMonoid @(List a) (listMon @a))
 
-fun additiveIntegerMon : Monoid Integer
-  = Mon @Integer (\(x : Integer) (y : Integer) . x + y) 0
+additiveIntegerMon : Monoid Integer
+additiveIntegerMon = Mon @Integer (\(x : Integer) (y : Integer) . x + y) 0
 
-fun length : all (a : Type) . List a -> Integer
-  = /\(a : Type) . foldMap @a @Integer (\(x : a) . 1) additiveIntegerMon
+length : forall a . List a -> Integer
+length @a = foldMap @a @Integer (\(x : a) . 1) additiveIntegerMon
 
-fun main : Integer
-  = length @Integer (concat @Integer (Nil @(List Integer)))
+main : Integer
+main = length @Integer (concat @Integer (Nil @(List Integer)))
 
 |]
 
 destructors :: PrtUnorderedDefs Ex
 destructors =
   [prog|
-data Maybe (a : Type)
+data Maybe a
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
-fun val : Maybe (Integer -> Integer)
-  = Just @(Integer -> Integer) (\(x : Integer) . x + 1)
+val : Maybe (Integer -> Integer)
+val = Just @(Integer -> Integer) (\(x : Integer) . x + 1)
 
-fun main : Integer
-  = match_Maybe @(Integer -> Integer) val @Integer (\(f : Integer -> Integer) . f 42) 0
+main : Integer
+main = match_Maybe @(Integer -> Integer) val @Integer (\(f : Integer -> Integer) . f 42) 0
 |]
 
 -- Here's a tricky situation! We need the defunctionalizer to pick up that
@@ -272,26 +274,26 @@ fun main : Integer
 indirect :: PrtUnorderedDefs Ex
 indirect =
   [prog|
-data Predicate (a : Type)
+data Predicate a
   = Prob : Maybe (Integer -> a) -> Predicate a
 
-data Maybe (a : Type)
+data Maybe a
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
-fun run : all (a : Type) . Predicate a -> Integer -> Maybe a
-  = /\(a : Type) . \(p : Predicate a) (x : Integer)
-    . match_Predicate @a p @(Maybe a)
-        (\(mf : Maybe (Integer -> a))
-         . match_Maybe @(Integer -> a) mf @(Maybe a)
-             (\f : Integer -> a . Just @a (f x))
-             (Nothing @a))
+run : forall a . Predicate a -> Integer -> Maybe a
+run @a p x =
+    match_Predicate @a p @(Maybe a)
+      (\(mf : Maybe (Integer -> a))
+       . match_Maybe @(Integer -> a) mf @(Maybe a)
+           (\f : Integer -> a . Just @a (f x))
+           (Nothing @a))
 
-fun val : Predicate Bool
-  = Prob @Bool (Just @(Integer -> Bool) (\(x : Integer) . x < 1))
+val : Predicate Bool
+val = Prob @Bool (Just @(Integer -> Bool) (\(x : Integer) . x < 1))
 
-fun main : Bool
-  = match_Maybe @Bool (run @Bool val 42) @Bool (\x : Bool . x) False
+main : Bool
+main = match_Maybe @Bool (run @Bool val 42) @Bool (\x : Bool . x) False
 |]
 
 -- While we're at it, let's throw in a mixed definition that has both direct
@@ -299,28 +301,27 @@ fun main : Bool
 mixed :: PrtUnorderedDefs Ex
 mixed =
   [prog|
-data Mixed (a : Type)
+data Mixed a
   = Mix : a -> (a -> a) -> Mixed a
 
-fun run : all (a : Type) . Mixed a -> a
-  = /\(a : Type) . \(m : Mixed a) . match_Mixed @a m @a
-      (\(x : a) (f : a -> a) . f x)
+run : forall a . Mixed a -> a
+run @a m = match_Mixed @a m @a (\(x : a) (f : a -> a) . f x)
 
-data Maybe (a : Type)
+data Maybe a
   = Just : a -> Maybe a
   | Nothing : Maybe a
 
-fun or : Bool -> Bool -> Bool
-  = \(x : Bool) (y : Bool) . if @Bool x then True else y
+or : Bool -> Bool -> Bool
+or x y = if @Bool x then True else y
 
 -- The worst nightmare of the defunctionalizer! :)
-fun nasty : Mixed (Maybe (Bool -> Bool))
-  = Mix @(Maybe (Bool -> Bool))
+nasty : Mixed (Maybe (Bool -> Bool))
+nasty = Mix @(Maybe (Bool -> Bool))
         (Just @(Bool -> Bool) (or True))
         (\(x : Maybe (Bool -> Bool)) . Nothing @(Bool -> Bool))
 
-fun main : Bool
-  = match_Maybe @(Bool -> Bool) (run @(Maybe (Bool -> Bool)) nasty) @Bool
+main : Bool
+main = match_Maybe @(Bool -> Bool) (run @(Maybe (Bool -> Bool)) nasty) @Bool
       (\(f : Bool -> Bool) . f True)
       False
 |]

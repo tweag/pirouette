@@ -7,10 +7,10 @@ import Control.Arrow (first)
 import Control.Monad
 import Data.List (groupBy, transpose)
 import Language.Pirouette.Example
+import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF hiding (tyApp)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Pirouette.Term.Syntax.Base
 
 -- We need to help the typechecker with some explicit types
 sameTy :: Type Ex -> Type Ex -> Assertion
