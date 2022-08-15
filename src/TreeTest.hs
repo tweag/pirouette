@@ -47,6 +47,7 @@ type Meta = String
 -- Infinite trees, giving semantics to terms: --
 ------------------------------------------------
 
+-- Look up: Bohm Trees
 data TermSet
   = Union [TermSet]
   | Learn String TermSet
@@ -61,6 +62,9 @@ data TermSet
     -- a meta @k@ of type @[Int]@, we can always expand @k = j : k'@, and continue
     -- expanding @k'@, but we can't expand @j@ since it's of a builtin type
     Inst Meta (Maybe TermSet)
+
+-- Well, look... why not merge Call and Dest? Isn't 'Call' just the
+-- destructor for functions?
 
 -- It is important that it is possible to construct a termset with a single term on it.
 tsSingleton :: Term Meta -> TermSet
@@ -90,7 +94,8 @@ symbolically defs = withSymVars
     withSymVars :: Term Void -> TermSet
     withSymVars t =
       let vs = fst $ termVars t
-       in Learn ("decl " ++ show vs) $ evalChooseLoop (S.fromList vs, appN (termCast t) (map meta vs))
+       in Learn ("decl " ++ show vs) $
+            evalChooseLoop (S.fromList vs, appN (termCast t) (map meta vs))
 
     evalChooseLoop :: ScopedTerm -> TermSet
     evalChooseLoop t = trace inf $ eval choose t
@@ -144,8 +149,8 @@ symbolically defs = withSymVars
 
 mkSymbolicCotr :: CotrInfo -> (S.Set Meta, Term Meta)
 mkSymbolicCotr CIZero = (S.empty, App ConsZero [])
-mkSymbolicCotr CISucc =
-  let v = "$s" ++ show (unsafePerformIO fresh)
+mkSymbolicCotr t@CISucc =
+  let v = "$s" ++ show (giveMeFresh t)
    in (S.singleton v, App ConsSucc [meta v])
 mkSymbolicCotr _ = error "x"
 
@@ -224,6 +229,8 @@ cataIO cc n t = mapM_ (uncurry pretty) $ cata cc n t
 
 -----------------
 
+-- add Zero m = m
+-- add (Suc n) m = Suc (add (const n (error "blah")) m)
 add :: (String, Term m)
 add =
   ( "add",
@@ -233,7 +240,11 @@ add =
           NatCase
           [ bound "n",
             bound "m",
-            Lam "sn" $ App ConsSucc [appN (free "add") [appN (free "const") [bound "sn", App Bottom []], bound "m"]]
+            Lam "sn" $
+              App
+                ConsSucc
+                [ appN (free "add") [appN (free "const") [bound "sn", App Bottom []], bound "m"]
+                ]
           ]
   )
 
@@ -325,6 +336,10 @@ substVar s t (Bound s')
 substVar _ _ t = App t []
 
 -- Fresh names:
+
+{-# NOINLINE giveMeFresh #-}
+giveMeFresh :: a -> Integer
+giveMeFresh _ = unsafePerformIO fresh
 
 {-# NOINLINE fresh #-}
 fresh :: IO Integer
