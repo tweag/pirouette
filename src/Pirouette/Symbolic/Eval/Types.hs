@@ -31,155 +31,26 @@ import qualified PureSMT
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
 --
 -- It denotes a set of pairs of @TermMeta lang SymVar@ and @Constraint lang@.
-newtype TermSet lang = TermSet {unTermSet :: Tree (DeltaEnv lang) (Spine lang (TermSet lang))}
+data TermSet lang
+  = Union [TermSet lang]
+  | Learn (DeltaEnv lang) (TermSet lang)
+  | -- TODO: having the term structure is nice and all, but
+    -- we never have any Lam in here at all; Maybe a dedicated @WHNFTerm@ datatype
+    -- would be a little more interesting.
+    Spine (TermMeta lang (TermSet lang))
+  | Call ([TermSet lang] -> TermSet lang) [TermSet lang]
+  | -- TODO: Why not merge 'Call' and 'Dest'? 'Call' is just the semantics of destructing
+    -- a function type, and 'Lam' is its respective constructor. This would require some careful
+    -- thought, though: do we go into binary application? do we keep this n-ary representation?
+    Dest ((ConstructorInfo, [TermSet lang]) -> TermSet lang) (TermSet lang)
+  | -- The maybe represent rigid versus flexible metavariables. Flexible metas
+    -- are those that we can continue expanding ad-infinitum, for instance, imagine
+    -- a meta @k@ of type @[Int]@, we can always expand @k = j : k'@, and continue
+    -- expanding @k'@, but we can't expand @j@ since it's of a builtin type
+    Inst SymVar (Maybe (TermSet lang))
 
-instance (LanguagePretty lang) => Show (TermSet lang) where
-  show = show . pretty
-
-instance (LanguagePretty lang) => Pretty (TermSet lang) where
-  pretty (TermSet t) = pretty t
-
--- | A 'SpineTree' is a functor which represents a /set of/ 'Spine's with holes of
--- type @a@. The trick is that once we take the fixpoint of this functor, as in 'TermSet',
--- we now have an infinite structure that alternates between branching and some concrete spines.
-
--- instance Functor (SpineTree lang) where
---   fmap f = SpineTree . fmap (fmap f) . unSpineTree
---
--- instance Applicative (SpineTree lang) where
---   pure = SpineTree . pure . pure
---   SpineTree fs <*> SpineTree xs = SpineTree $ do
---     spineF <- fs
---     x <- xs
---     return $ spineF <*> x
-
--- | A @Spine lang meta x@ represents a value in @lang@ with holes of type @x@.
---  The slight trick to you usual representation of values is that we are also representing
---  function and destructor calls explicitely in the tree, leaving the consumer to
---  decide how these values should be computed, depending on the semantics of @lang@.
-data Spine lang x
-  = -- | A function call, in an untyped setting, can be seen as something
-    -- that takes a list of terms and returns a term (in fact, that's the type of
-    -- the partially applied 'SystF.App' constructor!).
-    --
-    -- > [Term lang] -> Term lang
-    --
-    -- The trick here consists in lifting those functions to trees:
-    --
-    -- > [Spine lang a] -> Spine lang a
-    --
-    -- Finally, because we want a monadic structure, we'll go polymorphic:
-    Call Name ([TermSet lang] -> Spine lang x) [TermSet lang]
-  | -- | Destructors are also a little tricky, because in reality, we need to
-    -- consume the motive until /at least/ the first constructor is found, that
-    -- is the only guaranteed way to make any progress.
-    Dest ((ConstructorInfo, [TermSet lang]) -> Spine lang x) (TermSet lang)
-  | Head (WHNFTermHead lang) [Spine lang x]
-  | Next x
-
-instance (LanguagePretty lang, Pretty x) => Show (Spine lang x) where
-  show = show . pretty
-
-instance (LanguagePretty lang, Pretty x) => Pretty (Spine lang x) where
-  pretty = prettySpine 2
-
-prettySpine :: (LanguagePretty lang, Pretty x) => Int -> Spine lang x -> Doc ann
-prettySpine d (Call n _ args) = "Call" <+> vsep [pretty n, nest 2 $ vcat (map pretty args)]
-prettySpine d (Dest _ mot) = vsep ["Dest", pretty mot]
-prettySpine d (Head hd args) = parens $ nest 2 $ sep $ pretty hd : map (prettySpine (d - 1)) args
-prettySpine _ (Next x) = "Next"
-
-data WHNFTermHead lang
-  = WHNFCotr ConstructorInfo
-  | WHNFBuiltin (BuiltinTerms lang)
-  | WHNFBottom
-  | WHNFConst (Constants lang)
-  | -- Rigid symvars are those symbolic variables of types weknow no inductive
-    -- definition of. For example, builtin integers.
-    WHNFSymVar SymVar
-
-instance LanguagePretty lang => Pretty (WHNFTermHead lang) where
-  pretty (WHNFCotr ci) = pretty $ ciCtorName ci
-  pretty (WHNFBuiltin b) = pretty b
-  pretty WHNFBottom = "bottom"
-  pretty (WHNFConst c) = pretty c
-  pretty (WHNFSymVar s) = pretty s
-
-instance Functor (Spine lang) where
-  fmap f (Call n body args) = Call n (fmap f . body) args
-  fmap f (Dest cs motive) = Dest (fmap f . cs) motive
-  fmap f (Head hd args) = Head hd (map (fmap f) args)
-  fmap f (Next x) = Next (f x)
-
-instance Applicative (Spine lang) where
-  pure = Next
-  (<*>) = ap
-
-instance Monad (Spine lang) where
-  (Next x) >>= h = h x
-  (Call n f xs) >>= h = Call n (f >=> h) xs
-  (Dest cs mot) >>= h = Dest (cs >=> h) mot
-  (Head hd xs) >>= h = Head hd (map (h =<<) xs)
-
--- instance Functor (TermTree lang meta) where
---   fmap f (TermTree x) = TermTree $ fmap (fmap f) x
---
--- instance Show (SymbTerm lang x) where
---   show _ = "<symbterm>"
-
--- THE ISSUE (WHICH IS NO LONGER RELEVANT, AND IS THE REASON FOR SPLITTING DATATYPES
--- INTO TWO FUNCTORS):
---
--- When liftedTermAppN takes the following term:
---
--- > λ (n : Nat) (m : Nat) . Nat_match 1#n @Nat 0#m (λ sn : Nat . Suc (add 0#sn 1#m))
---
--- Applied to the following trees:
---
--- > n == Union
--- >    [ Learn (s0 === Zero) (Call (Cotr Zero) []) -- (A)
--- >    , Learn (Fresh s1) (Learn (s0 == Suc s1) (Call (Cotr Suc) ${ ana s1 }))
--- >    ]
--- >
--- > m == Call (Cotr Suc) ${ ana s0 }
---
--- We wold expect to push "Nat_match" down the different combinations, yielding something like:
---
--- > Union
--- >   [ Learn (s0 === Zero) (Leaf $ Nat_match (Call (Ctor Zero) []) @Nat ... )
--- >   , ...
--- >   ]
---
--- And that's the issue! In the first branch of the union, (A) above, there is no 'Leaf' constructor
--- whatsoever, so any sort of distributive law will pull that @Call (Cotr Zero) []@ to the top level with it.
--- Indeed, that's what is happening:
---
--- > result = Union
--- >   [Learn (s0 === Zero) (Call (Cotr Zero) [])
--- >   ,Learn (Fresh s1) (Learn (s0 === Suc s1) (Call (Cotr Suc) #{ ana s1 } )))]
---
--- IDEA: split it up into two functors, which will be mutually recursive (or explicitely fixpointed)
--- This could show us all the /layers/ of the ana, giving us a chance to act productively PER LAYER!
-
--- deriving instance (LanguageBuiltins lang) => Show (CallHead lang)
-
--- TODO: Document how we CANNOT put constructors that mirror the term structure because
--- the distributive law would push the term "under evaluation" below constructors. For instance:
--- > Nat_match ${ HypotheticalConstructor X args } ...
--- Would become: @HypotheticalConstructor X { map Nat_match args ... }
--- Which is REALLY different! One is supposed to match on an argument, the other returns a value.
-
--- TODO: We also depend on terms explicitely on 'Call' and 'Dest' in order to let the
--- cata match on these constructors and have a little more information and freedom to
--- traverse the trees as it wishes. If we were to say something like:
--- > Call :: forall a . ([Tree a] -> Tree b) -> [Tree a] -> Tree b
--- Now, say the cata is looking at a call:
--- > cata (Call f args) = ...
--- We cannot know that args are actually sets of terms and the only things we can do are:
--- 1. evaluate args completely: @Tree [a]@, then apply. Which corresponds to full blown call-by-value and
--- would never terminate in our case.
--- 2. just apply, corresponding to call-by-name.
--- Yet, we might want to do more interesting things such as evaluate up to depth 3 then apply or whatever.
+instance Show (TermSet lang) where
+  show _ = "<termset>"
 
 data ConstructorInfo = ConstructorInfo
   { ciTyName :: TyName,
@@ -198,46 +69,6 @@ data DeltaEnv lang
 instance LanguagePretty lang => Pretty (DeltaEnv lang) where
   pretty (DeclSymVars ds) = hsep $ punctuate ";" (map (\(s, t) -> pretty s <+> ":" <+> pretty t) $ M.toList ds)
   pretty (Assign s t) = pretty s <+> ":=" <+> pretty t
-
--- | A 'Tree' which denotes a set of pairs of @(deltas, a)@
-data Tree deltas a
-  = Leaf a
-  | Learn deltas (Tree deltas a)
-  | Union [Tree deltas a]
-  deriving (Show)
-
-instance (Pretty deltas, Pretty a) => Pretty (Tree deltas a) where
-  pretty (Leaf a) = pretty a
-  pretty (Union ts) = "Union" <+> brackets (align $ vsep $ punctuate ";" (map pretty ts))
-  pretty (Learn d t) = "Learn" <+> braces (pretty d) <+> nest 2 (parens $ pretty t)
-
-instance Functor (Tree deltas) where
-  fmap f (Leaf x) = Leaf $ f x
-  fmap f (Union ts) = Union $ map (fmap f) ts
-  fmap f (Learn str t) = Learn str $ fmap f t
-
--- fmap f (Call hd ts as) = Call hd (fmap f . ts) as
--- fmap f (Dest worlds motive) = Dest (fmap f . worlds) motive
-
-instance Applicative (Tree deltas) where
-  pure = Leaf
-  (<*>) = ap
-
-instance Alternative (Tree deltas) where
-  empty = Union []
-
-  Union t <|> Union u = Union (t ++ u)
-  Union t <|> u = Union (u : t)
-  t <|> Union u = Union (t : u)
-  t <|> u = Union [t, u]
-
-instance Monad (Tree deltas) where
-  Leaf x >>= f = f x
-  Union ts >>= f = Union $ map (>>= f) ts
-  Learn str t >>= f = Learn str (t >>= f)
-
--- Call hd body args >>= f = Call hd (f <=< body) args
--- Dest worlds motive >>= f = Dest (f <=< worlds) motive
 
 -- * Older Types
 

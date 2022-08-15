@@ -276,6 +276,9 @@ termJoin (SystF.Abs ann k t) = SystF.Abs ann k (termJoin t)
 termToMeta :: Term lang -> TermMeta lang meta
 termToMeta = termMetaMap absurd
 
+termMeta :: meta -> TermMeta lang meta
+termMeta = SystF.termPure . SystF.Meta
+
 -- | Returns all the (free) names used by a term
 termNames :: TermMeta lang meta -> Set.Set (SystF.Arg Name Name)
 termNames = uncurry (<>) . (foldMap go &&& SystF.termTyFoldMap typeNames)
