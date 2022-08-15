@@ -168,33 +168,3 @@ runStages dump (Comp stageName f dbg rest) a = do
         Nothing -> False
         Just [] -> True
         Just prefs -> any (`L.isPrefixOf` stageName) prefs
-
-{-
--- was execIncorrectnessLogic, but I'm needing to dump the intermediate steps
-gogogo ::
-  (Language lang, LanguageBuiltinTypes lang, MonadIO m) =>
-  -- | Worker to run on the processed definitions
-  (Problem lang -> ReaderT (PrtOrderedDefs lang) m res) ->
-  PrtUnorderedDefs lang ->
-  IncorrectnessParams lang ->
-  m res
-gogogo toDo prog0 (IncorrectnessParams fn ty (assume :==>: toProve)) = do
-  -- First, we apply a series of transformations to our program that will enable
-  -- us to translate it to SMTLIB later on
-  liftIO (writeFile "prog0" $ show $ pretty $ prtUODecls prog0)
-  let prog1 = monomorphize prog0
-  case typeCheckDecls (prtUODecls prog1) of
-    Left tyerr -> liftIO $ assertFailure $ ("prog1: " ++) $ show $ pretty tyerr
-    Right _ -> liftIO (putStrLn "monomorphize type checks...")
-  liftIO (writeFile "prog1-mono" $ show $ pretty $ prtUODecls prog1)
-  let prog2 = defunctionalize prog1
-  case typeCheckDecls (prtUODecls prog1) of
-    Left tyerr -> liftIO $ assertFailure $ ("prog2: " ++) $ show $ pretty tyerr
-    Right _ -> liftIO (putStrLn "defunctionalizaton type checks...")
-  liftIO (writeFile "prog2-defun" $ show $ pretty $ prtUODecls prog2)
-  let prog3 = elimEvenOddMutRec prog2
-  liftIO (writeFile "prog3-ord" $ unlines $ map show $ prtDepOrder prog3)
-  liftIO (writeFile "prog3-nomr" $ show $ pretty $ prtDecls prog3)
-  let orderedDecls = prog3
-  -- Now we can contextualize the necessary terms and run the worker
--}
