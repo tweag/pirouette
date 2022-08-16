@@ -137,7 +137,7 @@ symbolically defs = runST $ do
                         let caseTerm = appExcess (length consArgs) (cases !! consIx) excess
                          in liftedTermAppN' s1 env (termMetaMapUnique (`f` env) s2 caseTerm) consArgs
                 DFunction _ body _ ->
-                  Call (liftedTermAppN s0 env (termToMeta body)) $ evalL args
+                  Call n (liftedTermAppN s0 env (termToMeta body)) $ evalL args
 
     choose :: Supply Int -> AnaEnv lang -> SymVar -> TermSet lang
     choose s env meta = Inst meta $ do

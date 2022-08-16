@@ -29,16 +29,16 @@ import qualified PureSMT
 -- | The intermediate datastructure of our symbolic engine, produced by
 -- the 'Pirouette.Symbolic.Eval.Anamorphism.symbolically' anamorphism and
 -- meant to be consumed by the functions in "Pirouette.Symbolic.Eval.Catamorphism".
---
--- It denotes a set of pairs of @TermMeta lang SymVar@ values and @Constraint lang@.
+-- It denotes a set of pairs of values of language @lang@ and the @Constraint lang@
+-- that lead to them.
 data TermSet lang
   = Union [TermSet lang]
   | Learn (DeltaEnv lang) (TermSet lang)
   | -- TODO: having the term structure is nice and all, but
-    -- we never have any Lam in here at all; Maybe a dedicated @WHNFTerm@ datatype
+    -- we never have any Lam in here at all; Maybe a dedicated @WHNFLayer@ datatype
     -- would be a little more interesting.
-    Spine (WHNFTerm (TermSet lang))
-  | Call ([TermSet lang] -> TermSet lang) [TermSet lang]
+    Spine (WHNFLayer (TermSet lang))
+  | Call Name ([TermSet lang] -> TermSet lang) [TermSet lang]
   | -- TODO: Why not merge 'Call' and 'Dest'? 'Call' is just the semantics of destructing
     -- a function type, and 'Lam' is its respective constructor. This would require some careful
     -- thought, though: do we go into binary application? do we keep this n-ary representation?
@@ -49,24 +49,37 @@ data TermSet lang
     -- expanding @k'@, but we can't expand @j@ since it's of a builtin type
     Inst SymVar (Maybe (TermSet lang))
 
+-- The show instance is here only to satisfy some class constraints,
+-- for inspection and debugging, make sure to rely on the pretty instance.
 instance Show (TermSet lang) where
   show _ = "<termset>"
 
-data WHNFTerm x
+instance LanguagePretty lang => Pretty (TermSet lang) where
+  pretty (Union tss) =
+    hang 1 $ vsep $ "Union" : map (("-" <+>) . pretty) tss
+  pretty (Learn d ts) =
+    hang 1 $ vsep ["Learn " <+> pretty d, pretty ts]
+  pretty (Spine l) = pretty l
+  pretty (Call f _ _) = "Call" <+> pretty f
+  pretty (Dest _ x) =
+    hang 1 $ vsep ["Match", pretty x]
+  pretty (Inst sv _) = "Inst" <+> pretty sv
+
+data WHNFLayer x
   = WHNFCotr ConstructorInfo [x]
   | WHNFBottom
   deriving (Show)
 
-instance Pretty x => Pretty (WHNFTerm x) where
+instance Pretty x => Pretty (WHNFLayer x) where
   pretty WHNFBottom = "bottom"
   pretty (WHNFCotr ci args) = parens $ sep $ (pretty ci :) $ map pretty args
 
-data WHNF
+data WHNFTerm
   = WHNFMeta SymVar
-  | WHNFLayer (WHNFTerm WHNF)
+  | WHNFLayer (WHNFLayer WHNFTerm)
   deriving (Show)
 
-instance Pretty WHNF where
+instance Pretty WHNFTerm where
   pretty (WHNFMeta s) = pretty s
   pretty (WHNFLayer t) = pretty t
 

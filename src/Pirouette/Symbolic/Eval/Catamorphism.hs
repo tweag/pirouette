@@ -56,7 +56,7 @@ catamorphism ::
   PrtUnorderedDefs lang ->
   Options ->
   TermSet lang ->
-  [Path lang WHNF]
+  [Path lang WHNFTerm]
 catamorphism defs opts = map (uncurry path) . go def
   where
     orderedDefs = elimEvenOddMutRec defs
@@ -72,7 +72,7 @@ catamorphism defs opts = map (uncurry path) . go def
     solve :: CheckPathProblem lang -> Bool
     solve = sharedSolve . CheckPath
 
-    go :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, WHNF)]
+    go :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, WHNFTerm)]
     go st ts = do
       (st', res) <- goWHNF st ts
       case res of
@@ -82,7 +82,7 @@ catamorphism defs opts = map (uncurry path) . go def
           (sts, args) <- combineArgs st' <$> traverse (go st') ts'
           return (sts, WHNFLayer (WHNFCotr ci args))
 
-    goWHNF :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, Either SymVar (WHNFTerm (TermSet lang)))]
+    goWHNF :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, Either SymVar (WHNFLayer (TermSet lang)))]
     goWHNF st (Union tss) = tss >>= goWHNF st
     goWHNF st (Inst m Nothing) = return (st, Left m)
     goWHNF st (Inst m (Just ts)) = goWHNF st ts
@@ -90,7 +90,7 @@ catamorphism defs opts = map (uncurry path) . go def
       case learn delta st of
         Just st' | sestAssignments st' < maxAssignments opts -> goWHNF st' ts
         _ -> empty
-    goWHNF st (Call f args) = goWHNF st (f args)
+    goWHNF st (Call _ f args) = goWHNF st (f args)
     goWHNF st (Dest f x) = do
       (st', res) <- goWHNF st x
       case res of
