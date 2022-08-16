@@ -23,6 +23,7 @@ module Pirouette.Term.Syntax.Base where
 import Control.Arrow ((&&&))
 import Control.Monad.Identity
 import Data.Data
+import qualified Data.Kind as Haskell
 import qualified Data.Map as M
 import Data.Monoid (Sum (..))
 import qualified Data.Set as Set
@@ -371,9 +372,9 @@ type LanguageConstrs lang =
 -- no idea what that is, defining an empty instance will use the default
 -- implementatino of @builtinPrelude = M.empty@, which is a fine definition.
 class (LanguageConstrs lang) => LanguageBuiltins lang where
-  type BuiltinTypes lang :: *
-  type BuiltinTerms lang :: *
-  type Constants lang :: *
+  type BuiltinTypes lang :: Haskell.Type
+  type BuiltinTerms lang :: Haskell.Type
+  type Constants lang :: Haskell.Type
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =
