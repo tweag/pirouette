@@ -7,28 +7,16 @@
 module Pirouette.Symbolic.Eval.Catamorphism where
 
 import Control.Applicative hiding (Const)
-import Control.Arrow (Arrow (first), (***))
-import Control.Monad
-import Control.Monad.Except
-import Control.Monad.Identity
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer
+import Control.Arrow (first)
 import Control.Parallel.Strategies
 import Data.Default
-import Data.Foldable hiding (toList)
-import Data.List (genericLength)
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import Debug.Trace
-import ListT.Weighted (WeightedList)
-import qualified ListT.Weighted as ListT
 import Pirouette.Monad hiding (WHNFResult (..))
-import Pirouette.Monad.Maybe
-import qualified Pirouette.SMT.Constraints as C
-import qualified Pirouette.SMT.FromTerm as Tr
 import qualified Pirouette.SMT.Monadic as SMT
+import Pirouette.Symbolic.Eval.Constraints
 import Pirouette.Symbolic.Eval.SMT
 import Pirouette.Symbolic.Eval.Types as X
 import Pirouette.Term.Syntax
@@ -64,7 +52,7 @@ catamorphism defs opts = map (uncurry path) . go def
     -- sharedSolve is here to hint to GHC not to create more than one pool
     -- of SMT solvers, which could happen if sharedSolve were inlined.
     -- TODO: Write a test to check that only one SMT pool is actually created over
-    --       multiple calls to runSymEvalWorker.
+    --       multiple calls to catamorphism.
     {-# NOINLINE sharedSolve #-}
     sharedSolve :: SolverProblem lang res -> res
     sharedSolve = PureSMT.solveOpts (optsPureSMT opts) (mkSolverCtx orderedDefs)
@@ -85,7 +73,7 @@ catamorphism defs opts = map (uncurry path) . go def
     goWHNF :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, Either SymVar (WHNFLayer (TermSet lang)))]
     goWHNF st (Union tss) = tss >>= goWHNF st
     goWHNF st (Inst m Nothing) = return (st, Left m)
-    goWHNF st (Inst m (Just ts)) = goWHNF st ts
+    goWHNF st (Inst _ (Just ts)) = goWHNF st ts
     goWHNF st (Learn delta ts) =
       case learn delta st of
         Just st' | sestAssignments st' < maxAssignments opts -> goWHNF st' ts
@@ -103,24 +91,19 @@ catamorphism defs opts = map (uncurry path) . go def
     combineArgs s0 [] = (s0, [])
     combineArgs _ xs = first mconcat . unzip $ xs
 
-learn :: DeltaEnv lang -> SymEvalSt lang -> Maybe (SymEvalSt lang)
+learn :: (Language lang) => DeltaEnv lang -> SymEvalSt lang -> Maybe (SymEvalSt lang)
 learn (DeclSymVars vs) st = Just $ st {sestGamma = sestGamma st `union` M.mapKeys symVar vs}
   where
     union = M.unionWithKey (\k _ _ -> error $ "Key already declared: " ++ show k)
 learn (Assign v t) st =
-  Just $
-    st
-      { sestConstraint = c <> sestConstraint st,
-        sestAssignments = sestAssignments st + 1
-      }
-  where
-    c = SMT.And [SMT.Assign v t]
-
-mkConsApp :: Name -> [TermMeta lang SymVar] -> TermMeta lang SymVar
-mkConsApp n args = SystF.App (SystF.Free (TermSig n)) $ map SystF.TermArg args
-
-mkConstant :: Constants lang -> TermMeta lang SymVar
-mkConstant c = SystF.App (SystF.Free (Constant c)) []
+  case unifyMetaWith (sestConstraint st) v t of
+    Nothing -> Nothing
+    Just cs' ->
+      Just $
+        st
+          { sestConstraint = cs',
+            sestAssignments = sestAssignments st + 1
+          }
 
 -- * Auxiliar Defs
 

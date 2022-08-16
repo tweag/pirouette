@@ -335,7 +335,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
       -- if successful, open all the branches
       Just branches -> asum $
         flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-          lift $ learn additionalInfo
+          lift $ learn undefined --additionalInfo
           consumeFuel
           signalEvaluation
           pure newTerm
@@ -359,23 +359,23 @@ symEvalOneStep t@(R.App hd args) = case hd of
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint
     case cstr of
-      C.And atomics -> do
-        let findAssignment v (C.Assign w _) = v == w
-            findAssignment _ _ = False
-            findEq v (C.VarEq w _) = v == w
-            findEq _ _ = False
-            -- we need to jump more than one equality,
-            -- hence the involved loop here
-            findLoop v
-              | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
-                Just tm
-              | Just (C.VarEq _ other) <- find (findEq v) atomics =
-                findLoop other
-              | otherwise =
-                Nothing
-        case findLoop vr of
-          Nothing -> justEvaluateArgs
-          Just lp -> signalEvaluation >> pure lp
+      -- C.And atomics -> do
+      --   let findAssignment v (C.Assign w _) = v == w
+      --       findAssignment _ _ = False
+      --       findEq v (C.VarEq w _) = v == w
+      --       findEq _ _ = False
+      --       -- we need to jump more than one equality,
+      --       -- hence the involved loop here
+      --       findLoop v
+      --         | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
+      --           Just tm
+      --         | Just (C.VarEq _ other) <- find (findEq v) atomics =
+      --           findLoop other
+      --         | otherwise =
+      --           Nothing
+      --   case findLoop vr of
+      --     Nothing -> justEvaluateArgs
+      --     Just lp -> signalEvaluation >> pure lp
       _ -> justEvaluateArgs
 
   -- in any other case don't try too hard
@@ -497,8 +497,9 @@ symEvalDestructor t@(R.App hd _args) tyName = do
           -- liftIO $ print mconstr
           case mconstr of
             Nothing -> empty
-            Just constr -> do
-              let countAssigns SMT.Bot = 0
+            Just _constr -> do
+              let constr = undefined
+                  countAssigns SMT.Bot = 0
                   countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
                   isAssign SMT.Assign {} = True
                   isAssign _ = False
@@ -535,6 +536,9 @@ moreConstructors n = undefined
 --  modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
 unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
+unify = undefined
+
+{-
 unify (R.App (R.Meta s) []) (R.App (R.Meta r) []) = Just (symVarEq s r)
 unify (R.App (R.Meta s) []) t = Just (s =:= t)
 unify u (R.App (R.Meta s) []) = Just (s =:= u)
@@ -554,6 +558,7 @@ unifyArg :: (LanguageBuiltins lang) => ArgMeta lang SymVar -> ArgMeta lang SymVa
 unifyArg (R.TermArg x) (R.TermArg y) = unify x y
 unifyArg (R.TyArg _) (R.TyArg _) = Just (SMT.And []) -- TODO: unify types too?
 unifyArg _ _ = Nothing
+-}
 
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs

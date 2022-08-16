@@ -157,74 +157,75 @@ worker ::
   -- | The consequent, also of type Bool in @lang@
   SymTerm lang ->
   SymEval lang (EvaluationWitness lang)
-worker resultVar bodyTerm assumeTerm proveTerm = do
-  -- debugPutStr "ONE STEP"
-  -- debugPrint (pretty bodyTerm)
-  -- debugPrint (pretty assumeTerm)
-  -- debugPrint (pretty proveTerm)
-  -- gets sestConstraint >>= debugPrint . pretty
-  -- _ <- liftIO getLine
+worker resultVar bodyTerm assumeTerm proveTerm = undefined {- do
+                                                             -- debugPutStr "ONE STEP"
+                                                             -- debugPrint (pretty bodyTerm)
+                                                             -- debugPrint (pretty assumeTerm)
+                                                             -- debugPrint (pretty proveTerm)
+                                                             -- gets sestConstraint >>= debugPrint . pretty
+                                                             -- _ <- liftIO getLine
 
-  -- terms are only useful if they are in WHNF or are stuck
-  -- (stuck-ness if defined per language)
-  knownNames <- gets sestKnownNames
-  let translate t = do
-        res <- runTranslator $ translateTerm knownNames t
-        isWHNF <- termIsWHNFOrMeta t
-        case res of
-          Left e -> pure $ Left e
-          Right (c, _)
-            | isStuckBuiltin t || isWHNF ->
-              pure $ Right c
-            | otherwise ->
-              pure $ Left "not stuck term"
-  -- ISSUE!! In PlutusIR, if we don't want to have builtin booleans because of the plutus
-  -- compiler being annoying with them, we can't just 'translate proveTerm', for instance,
-  -- since it might be @App (Free (TermSig "False")) []@, which will translate
-  -- to @(as pir_False pir_Bool)@ which is NOT a boolean. I think that maybe giving language
-  -- implementors the chance to translate that term to native SMT true and falses
-  -- through translateTerm might be nice!
-  -- step 1. try to prune the thing
-  mayBodyTerm <- translate bodyTerm
-  mayAssumeCond <- fmap (isTrue @lang) <$> translate assumeTerm
-  mayProveCond <- fmap (isTrue @lang) <$> translate proveTerm
-  -- introduce the assumption about the result, if useful
-  case mayBodyTerm of
-    Right _ -> learn $ And [Pirouette.SMT.Constraints.Assign resultVar bodyTerm]
-    _ -> pure ()
-  -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
-  -- now try to prune if we can translate the things
-  result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
-    -- if everything can be translated, try to prune with it
-    (Right _, Right assumeCond, Left _) -> do
-      -- debugPutStr "prunning with unknown prove..."
-      -- _ <- liftIO getLine
-      pruneAndValidate (And [Native assumeCond]) Nothing []
-    (Right _, Right assumeCond, Right proveCond) -> do
-      -- debugPutStr "prunning..."
-      -- _ <- liftIO getLine
-      pruneAndValidate (And [Native assumeCond]) (Just $ And [Native proveCond]) []
-    _ -> pure PruneUnknown
-  -- step 2. depending on the result, stop or keep going
-  case result of
-    PruneInconsistentAssumptions -> pure Discharged
-    PruneImplicationHolds -> pure Verified
-    PruneCounterFound model -> pure $ CounterExample bodyTerm model
-    _ -> do
-      -- one step of evaluation on each,
-      -- but going into matches first
-      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <-
-        prune $
-          symEvalParallel [bodyTerm, assumeTerm, proveTerm]
-      -- debugPutStr "ONE STEP"
-      -- debugPrint (pretty bodyTerm')
-      -- debugPrint (pretty assumeTerm')
-      -- debugPrint (pretty proveTerm')
-      -- debugPrint somethingWasEval
-      -- check the fuel
-      noMoreFuel <- asks (undefined . seeOptions) >>= \s -> s <$> currentStatistics
-      -- currentFuel >>= liftIO . print
-      if noMoreFuel || somethingWasEval == Any False
-        then pure $ CounterExample bodyTerm' (Model [])
-        else do
-          worker resultVar bodyTerm' assumeTerm' proveTerm'
+                                                             -- terms are only useful if they are in WHNF or are stuck
+                                                             -- (stuck-ness if defined per language)
+                                                             knownNames <- gets sestKnownNames
+                                                             let translate t = do
+                                                                   res <- runTranslator $ translateTerm knownNames t
+                                                                   isWHNF <- termIsWHNFOrMeta t
+                                                                   case res of
+                                                                     Left e -> pure $ Left e
+                                                                     Right (c, _)
+                                                                       | isStuckBuiltin t || isWHNF ->
+                                                                         pure $ Right c
+                                                                       | otherwise ->
+                                                                         pure $ Left "not stuck term"
+                                                             -- ISSUE!! In PlutusIR, if we don't want to have builtin booleans because of the plutus
+                                                             -- compiler being annoying with them, we can't just 'translate proveTerm', for instance,
+                                                             -- since it might be @App (Free (TermSig "False")) []@, which will translate
+                                                             -- to @(as pir_False pir_Bool)@ which is NOT a boolean. I think that maybe giving language
+                                                             -- implementors the chance to translate that term to native SMT true and falses
+                                                             -- through translateTerm might be nice!
+                                                             -- step 1. try to prune the thing
+                                                             mayBodyTerm <- translate bodyTerm
+                                                             mayAssumeCond <- fmap (isTrue @lang) <$> translate assumeTerm
+                                                             mayProveCond <- fmap (isTrue @lang) <$> translate proveTerm
+                                                             -- introduce the assumption about the result, if useful
+                                                             case mayBodyTerm of
+                                                               Right _ -> learn $ And [Pirouette.SMT.Constraints.Assign resultVar bodyTerm]
+                                                               _ -> pure ()
+                                                             -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
+                                                             -- now try to prune if we can translate the things
+                                                             result <- case (mayBodyTerm, mayAssumeCond, mayProveCond) of
+                                                               -- if everything can be translated, try to prune with it
+                                                               (Right _, Right assumeCond, Left _) -> do
+                                                                 -- debugPutStr "prunning with unknown prove..."
+                                                                 -- _ <- liftIO getLine
+                                                                 pruneAndValidate (And [Native assumeCond]) Nothing []
+                                                               (Right _, Right assumeCond, Right proveCond) -> do
+                                                                 -- debugPutStr "prunning..."
+                                                                 -- _ <- liftIO getLine
+                                                                 pruneAndValidate (And [Native assumeCond]) (Just $ And [Native proveCond]) []
+                                                               _ -> pure PruneUnknown
+                                                             -- step 2. depending on the result, stop or keep going
+                                                             case result of
+                                                               PruneInconsistentAssumptions -> pure Discharged
+                                                               PruneImplicationHolds -> pure Verified
+                                                               PruneCounterFound model -> pure $ CounterExample bodyTerm model
+                                                               _ -> do
+                                                                 -- one step of evaluation on each,
+                                                                 -- but going into matches first
+                                                                 ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <-
+                                                                   prune $
+                                                                     symEvalParallel [bodyTerm, assumeTerm, proveTerm]
+                                                                 -- debugPutStr "ONE STEP"
+                                                                 -- debugPrint (pretty bodyTerm')
+                                                                 -- debugPrint (pretty assumeTerm')
+                                                                 -- debugPrint (pretty proveTerm')
+                                                                 -- debugPrint somethingWasEval
+                                                                 -- check the fuel
+                                                                 noMoreFuel <- asks (undefined . seeOptions) >>= \s -> s <$> currentStatistics
+                                                                 -- currentFuel >>= liftIO . print
+                                                                 if noMoreFuel || somethingWasEval == Any False
+                                                                   then pure $ CounterExample bodyTerm' (Model [])
+                                                                   else do
+                                                                     worker resultVar bodyTerm' assumeTerm' proveTerm'
+                                                           -}

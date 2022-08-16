@@ -200,6 +200,10 @@ assertConstraint,
     S.Set Name ->
     Constraint lang ->
     SolverT m (Bool, UsedAnyUFs)
+assertConstraint = undefined
+assertNotConstraint = undefined
+
+{-
 assertConstraint knownNames c@Bot = do
   (done, usedAnyUFs, expr) <- constraintToSExpr knownNames c
   assert expr
@@ -220,6 +224,7 @@ assertNotConstraint knownNames c = do
   (done, usedAnyUFs, expr) <- constraintToSExpr knownNames c
   assertNot expr
   pure (done, usedAnyUFs)
+-}
 
 -- TODO: why is this needed, what needs to be done on the TODO below?
 instantiateAxiomWithVars ::

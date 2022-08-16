@@ -22,6 +22,7 @@ import qualified Data.Set as S
 import Data.String (IsString)
 import Pirouette.Monad
 import qualified Pirouette.SMT as SMT
+import qualified Pirouette.Symbolic.Eval.Constraints as Cs
 import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
@@ -103,8 +104,6 @@ data DeltaEnv lang
 instance LanguagePretty lang => Pretty (DeltaEnv lang) where
   pretty (DeclSymVars ds) = hsep $ punctuate ";" (map (\(s, t) -> pretty s <+> ":" <+> pretty t) $ M.toList ds)
   pretty (Assign s t) = pretty s <+> ":=" <+> pretty t
-
--- * Older Types
 
 -- | Options to run the symbolic engine with. This includes options for tunning the behavior
 -- of the SMT solver and internals of the symbolic execution engine.
@@ -196,8 +195,7 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   --  This function is meant to be used with @-XTypeApplications@
   isTrue :: PureSMT.SExpr -> PureSMT.SExpr
 
-data Flexibility = Flexible | Rigid
-  deriving (Show)
+-- * Older Types
 
 newtype SymVar = SymVar {symVar :: Name}
   deriving (Eq, Ord, Show, Data, Typeable, IsString)
@@ -208,13 +206,7 @@ instance Pretty SymVar where
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar
 
-type Constraint lang = SMT.Constraint lang SymVar
-
-symVarEq :: SymVar -> SymVar -> Constraint lang
-symVarEq a b = SMT.And [SMT.VarEq a b]
-
-(=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
-a =:= t = SMT.And [SMT.Assign a t]
+type Constraint lang = Cs.Constraints lang SymVar
 
 data PathStatus = Completed | OutOfFuel deriving (Eq, Show)
 
@@ -265,7 +257,7 @@ instance Monoid (SymEvalSt lang) where
   mempty = SymEvalSt mempty M.empty 0 S.empty
 
 instance Default (SymEvalSt lang) where
-  def = mempty
+  def = SymEvalSt def M.empty 0 S.empty
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt {..} =

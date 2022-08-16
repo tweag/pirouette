@@ -65,14 +65,14 @@ listEq :
   forall a .
   (a -> a -> Bool) ->
   List a -> List a -> Bool
-listEq @a eq x0 y0 = 
+listEq @a eq x0 y0 =
   match_List @a x0 @Bool
     (match_List @a y0 @Bool True (\(y : a) (ys : List a) . False))
     (\(x : a) (xs : List a) .
       match_List @a y0 @Bool False (\(y : a) (ys : List a) . and (eq x y) (listEq @a eq xs ys)))
 
 contains : forall a . (a -> Bool) -> List a -> Bool
-contains @a eq x0 = 
+contains @a eq x0 =
   match_List @a x0 @Bool
     False
     (\(x : a) (xs : List a) . or (eq x) (contains @a eq xs))
