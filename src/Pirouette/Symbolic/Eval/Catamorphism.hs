@@ -8,6 +8,7 @@ module Pirouette.Symbolic.Eval.Catamorphism where
 
 import Control.Applicative hiding (Const)
 import Control.Arrow (first)
+import Control.Monad.Reader
 import Control.Parallel.Strategies
 import Data.Default
 import qualified Data.Map.Strict as M
@@ -44,7 +45,7 @@ catamorphism ::
   PrtUnorderedDefs lang ->
   Options ->
   TermSet lang ->
-  [Path lang WHNFTerm]
+  [Path lang (WHNFTerm lang)]
 catamorphism defs opts = map (uncurry path) . go def
   where
     orderedDefs = elimEvenOddMutRec defs
@@ -60,18 +61,34 @@ catamorphism defs opts = map (uncurry path) . go def
     solve :: CheckPathProblem lang -> Bool
     solve = sharedSolve . CheckPath
 
-    go :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, WHNFTerm)]
+    go :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, WHNFTerm lang)]
     go st ts = do
       (st', res) <- goWHNF st ts
       case res of
         Left m -> return (st', WHNFMeta m)
         Right WHNFBottom -> return (st', WHNFLayer WHNFBottom)
+        Right (WHNFConst c) -> return (st', WHNFLayer $ WHNFConst c)
+        Right (WHNFBuiltin bin ts') -> do
+          (sts, args) <- combineArgs st' <$> traverse (go st') ts'
+          trace
+            ( "Branches bin term: " ++ show bin ++ "\n"
+                ++ unlines
+                  (map (renderSingleLineStr . pretty) args)
+            )
+            (return ())
+          case branchesBuiltinTerm bin args `runReader` defs of
+            Nothing -> []
+            Just res' -> do
+              (ds, t) <- res'
+              case learnN ds sts of
+                Nothing -> empty
+                Just sts' -> return (sts', t)
         Right (WHNFCotr ci ts') -> do
           (sts, args) <- combineArgs st' <$> traverse (go st') ts'
           return (sts, WHNFLayer (WHNFCotr ci args))
 
-    goWHNF :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, Either SymVar (WHNFLayer (TermSet lang)))]
-    goWHNF st (Union tss) = tss >>= goWHNF st
+    goWHNF :: SymEvalSt lang -> TermSet lang -> [(SymEvalSt lang, Either SymVar (WHNFLayer lang (TermSet lang)))]
+    goWHNF st (Union tss) = concatMap (goWHNF st) tss
     goWHNF st (Inst m Nothing) = return (st, Left m)
     goWHNF st (Inst _ (Just ts)) = goWHNF st ts
     goWHNF st (Learn delta ts) =
@@ -85,11 +102,17 @@ catamorphism defs opts = map (uncurry path) . go def
         Left _ -> empty -- can't match on meta
         Right WHNFBottom -> return (st', Right WHNFBottom) -- matching on bottom is bottom
         Right (WHNFCotr ci ts') -> goWHNF st' (f (ci, ts'))
+        Right (WHNFConst _) -> error "Type error: motive of match can't be const"
+        Right (WHNFBuiltin _ _) -> error "Type error: motive of match can't be builtin"
     goWHNF st (Spine t) = return (st, Right t)
 
     combineArgs :: (Monoid s) => s -> [(s, a)] -> (s, [a])
     combineArgs s0 [] = (s0, [])
     combineArgs _ xs = first mconcat . unzip $ xs
+
+learnN :: (Language lang) => [DeltaEnv lang] -> SymEvalSt lang -> Maybe (SymEvalSt lang)
+learnN [] s = return s
+learnN (d : ds) s = learn d s >>= learnN ds
 
 learn :: (Language lang) => DeltaEnv lang -> SymEvalSt lang -> Maybe (SymEvalSt lang)
 learn (DeclSymVars vs) st = Just $ st {sestGamma = sestGamma st `union` M.mapKeys symVar vs}

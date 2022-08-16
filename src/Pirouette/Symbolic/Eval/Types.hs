@@ -38,7 +38,7 @@ data TermSet lang
   | -- TODO: having the term structure is nice and all, but
     -- we never have any Lam in here at all; Maybe a dedicated @WHNFLayer@ datatype
     -- would be a little more interesting.
-    Spine (WHNFLayer (TermSet lang))
+    Spine (WHNFLayer lang (TermSet lang))
   | Call Name ([TermSet lang] -> TermSet lang) [TermSet lang]
   | -- TODO: Why not merge 'Call' and 'Dest'? 'Call' is just the semantics of destructing
     -- a function type, and 'Lam' is its respective constructor. This would require some careful
@@ -66,21 +66,23 @@ instance LanguagePretty lang => Pretty (TermSet lang) where
     hang 1 $ vsep ["Match", pretty x]
   pretty (Inst sv _) = "Inst" <+> pretty sv
 
-data WHNFLayer x
+data WHNFLayer lang x
   = WHNFCotr ConstructorInfo [x]
+  | WHNFBuiltin (BuiltinTerms lang) [x]
+  | WHNFConst (Constants lang)
   | WHNFBottom
-  deriving (Show)
 
-instance Pretty x => Pretty (WHNFLayer x) where
+instance (LanguagePretty lang, Pretty x) => Pretty (WHNFLayer lang x) where
   pretty WHNFBottom = "bottom"
   pretty (WHNFCotr ci args) = parens $ sep $ (pretty ci :) $ map pretty args
+  pretty (WHNFBuiltin ci args) = parens $ sep $ (pretty ci :) $ map pretty args
+  pretty (WHNFConst c) = pretty c
 
-data WHNFTerm
+data WHNFTerm lang
   = WHNFMeta SymVar
-  | WHNFLayer (WHNFLayer WHNFTerm)
-  deriving (Show)
+  | WHNFLayer (WHNFLayer lang (WHNFTerm lang))
 
-instance Pretty WHNFTerm where
+instance (LanguagePretty lang) => Pretty (WHNFTerm lang) where
   pretty (WHNFMeta s) = pretty s
   pretty (WHNFLayer t) = pretty t
 
@@ -173,18 +175,16 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   -- as @equalsInteger :: Integer -> Integer -> Bool@, where @Bool@
   -- might not be a builtin type.
   branchesBuiltinTerm ::
-    (SMT.ToSMT meta, PirouetteReadDefs lang m) =>
+    (PirouetteReadDefs lang m) =>
     -- | Head of the application to translate
     BuiltinTerms lang ->
-    -- | Translation function to SMT, in case you need to recursively translate an argument
-    (TermMeta lang meta -> m (Maybe PureSMT.SExpr)) ->
     -- | Arguments of the application to translate
-    [ArgMeta lang meta] ->
+    [WHNFTerm lang] ->
     -- | If 'Nothing', this means that this built-in term does not require anything special from the
     -- symbolic evaluator. For example, it might be that it's translated fine by 'LanguageSMT'.
     -- If 'Just', it provides information of what to assume in each branch and the term to
     -- symbolically evaluate further.
-    m (Maybe [SMT.Branch lang meta])
+    m (Maybe [([DeltaEnv lang], WHNFTerm lang)])
 
   -- | Casts a boolean in @lang@ to a boolean in SMT by checking whether it is true.
   --  Its argument is the translation of a term of type "Bool" in @lang@.

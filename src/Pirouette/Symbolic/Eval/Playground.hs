@@ -20,13 +20,16 @@ data Nat
 
 add : Nat -> Nat -> Nat
 add n m = Nat_match n @Nat m (\sn : Nat . Suc (add sn m))
+
+isEven : Integer -> Bool
+isEven n = if @Bool n == 0 then True else (if @Bool n == 1 then False else isEven (n - 2))
 |]
 
 opts :: Options
 opts = def {maxAssignments = 1}
 
-x :: [Path Ex WHNFTerm]
-x = catamorphism defs opts (symbolically defs [term| \(n : Nat) . add n (Suc n) |])
+x :: [Path Ex (WHNFTerm Ex)]
+x = catamorphism defs opts (symbolically defs [term| \(n : Integer) . isEven n |])
 
 xio :: IO ()
 xio = mapM_ (\p -> putStrLn "Path:" >> putStrLn (prettyIndent p)) x

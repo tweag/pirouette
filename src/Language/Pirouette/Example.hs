@@ -33,7 +33,7 @@ import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter as QQ
 import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Monad (termIsConstant, termIsMeta)
-import Pirouette.SMT
+import Pirouette.SMT hiding (Assign)
 import Pirouette.Symbolic.Eval.BranchingHelpers
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
@@ -240,6 +240,30 @@ instance LanguageSymEval Ex where
   -- translated to SMT's builtin Bool type, no casting needed whatsoever.
   isTrue = id
 
+  branchesBuiltinTerm op [WHNFLayer (WHNFConst (ConstInt x)), WHNFLayer (WHNFConst (ConstInt y))]
+    | exTermIsArithOp op =
+      pure $ Just [(mempty, WHNFLayer (WHNFConst $ apply op))]
+    where
+      apply TermAdd = ConstInt (x + y)
+      apply TermSub = ConstInt (x - y)
+      apply TermLt = ConstBool (x < y)
+      apply TermEq = ConstBool (x == y)
+      apply _ = error "this should never happen"
+  branchesBuiltinTerm TermStrEq [WHNFLayer (WHNFConst (ConstString x)), WHNFLayer (WHNFConst (ConstString y))] =
+    pure $ Just [(mempty, WHNFLayer (WHNFConst $ ConstBool $ x == y))]
+  branchesBuiltinTerm TermIte [cond, t, e] =
+    case cond of
+      WHNFLayer (WHNFConst (ConstBool c)) -> pure $ Just [(mempty, if c then t else e)]
+      WHNFMeta c ->
+        pure $
+          Just
+            [ ([Assign c BTrue], t),
+              ([Assign c BFalse], t)
+            ]
+      _ -> pure Nothing
+  branchesBuiltinTerm _ _ = pure Nothing
+
+{-
   -- translate arithmetic operations applied to constants
   branchesBuiltinTerm op _translator [SystF.TermArg (IConstant x), SystF.TermArg (IConstant y)]
     | exTermIsArithOp op =
@@ -267,6 +291,7 @@ instance LanguageSymEval Ex where
           isFalse _ = False
        in ifThenElseBranching isTrue0 BTrue isFalse BFalse isEq c t e excess
   branchesBuiltinTerm _ _ _ = pure Nothing
+-}
 
 -- * QuasiQuoters
 

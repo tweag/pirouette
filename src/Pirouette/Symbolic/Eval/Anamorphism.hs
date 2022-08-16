@@ -11,7 +11,6 @@ import Control.Monad.Reader
 import Control.Monad.ST
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
-import Debug.Trace
 import Pirouette.Monad hiding (WHNFConstant)
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
@@ -122,8 +121,8 @@ symbolically defs = runST $ do
        in case hd of
             SystF.Bound ann _ -> error $ "Bound has no spine" ++ show ann
             SystF.Meta meta -> f s env meta
-            SystF.Free (Builtin _bin) -> undefined
-            SystF.Free (Constant _x) -> undefined
+            SystF.Free (Builtin bin) -> Spine $ WHNFBuiltin bin $ evalL args
+            SystF.Free (Constant x) -> Spine $ WHNFConst x
             SystF.Free Bottom -> Spine WHNFBottom
             SystF.Free (TermSig n) ->
               case prtDefOf TermNamespace n `runReader` defs of

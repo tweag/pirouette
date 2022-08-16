@@ -330,7 +330,7 @@ symEvalOneStep t@(R.App hd args) = case hd of
           case c' of
             Left _ -> pure Nothing
             Right (d, _) -> pure $ Just d
-    mayBranches <- lift $ branchesBuiltinTerm @lang builtin translator args
+    mayBranches <- lift $ undefined -- branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
       Just branches -> asum $
