@@ -37,6 +37,7 @@ library
       Pirouette.Symbolic.Eval.Types
       Pirouette.Symbolic.Prover
       Pirouette.Symbolic.Prover.Runner
+      Pirouette.Term.IL
       Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
