@@ -358,7 +358,7 @@ parseTerm = P.label "Term" $ makeExprParser pAtom ops
 
     parseIf :: Parser (Expr lang)
     parseIf = do
-      P.try (symbol "if")
+      P.try (keyword "if")
       ty <- symbol "@" >> parseTypeAtom
       c <- parseTerm
       symbol "then"
@@ -368,13 +368,13 @@ parseTerm = P.label "Term" $ makeExprParser pAtom ops
 
     parseBottom :: Parser (Expr lang)
     parseBottom = do
-      P.try (symbol "bottom")
+      P.try (keyword "bottom")
       ty <- symbol "@" >> parseTypeAtom
       return (ExprBottom ty)
 
     parseCase :: Parser (Expr lang)
     parseCase = do
-      P.try (symbol "case")
+      P.try (keyword "case")
       tyRes <- symbol "@" >> parseTypeAtom
       ty <- symbol "@" >> parseTypeAtom
       term <- parseTerm
@@ -500,6 +500,13 @@ spaceConsumerOld = L.space P.space1 (L.skipLineComment "--") empty
 
 symbol :: String -> Parser ()
 symbol = void . L.symbol spaceConsumer
+
+keyword :: String -> Parser ()
+keyword target = do
+  str <- many P.alphaNumChar
+  guard (str == target)
+  spaceConsumer
+  return ()
 
 keywords :: Set String
 keywords =
