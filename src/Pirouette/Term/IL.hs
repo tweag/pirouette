@@ -34,7 +34,17 @@ instance LanguageBuiltins lang => LanguageBuiltins (IL lang) where
   type BuiltinTerms (IL lang) = ILTerm lang
 
 liftTypeIL :: forall lang. Type lang -> Type (IL lang)
-liftTypeIL = undefined
+liftTypeIL (TyApp var args) = TyApp var' (liftTypeIL <$> args)
+  where
+    var' :: TyVarMeta (IL lang) Void
+    var' = case var of
+                Bound a n -> Bound a n
+                Free (TySig n) -> Free (TySig n)
+                Free (TyBuiltin b) -> Free (TyBuiltin b)
+                Meta m -> Meta m
+liftTypeIL (TyFun t1 t2) = TyFun (liftTypeIL t1) (liftTypeIL t2)
+liftTypeIL (TyLam a k ty) = TyLam a k $ liftTypeIL ty
+liftTypeIL (TyAll a k ty) = TyAll a k $ liftTypeIL ty
 
 instance LanguageBuiltinTypes lang => LanguageBuiltinTypes (IL lang) where
   typeOfBottom = liftTypeIL typeOfBottom
