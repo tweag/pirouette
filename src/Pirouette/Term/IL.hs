@@ -3,17 +3,19 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Pirouette.Term.IL where
 
 import Data.Data
+import Data.Void
 import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter.Syntax as QQ
+import Pirouette.SMT
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.SystemF
-import Data.Void
 
 data ILTriple lang = ILTriple
   { iltBody :: Term lang
@@ -49,7 +51,18 @@ liftTypeIL (TyAll a k ty) = TyAll a k $ liftTypeIL ty
 instance LanguageBuiltinTypes lang => LanguageBuiltinTypes (IL lang) where
   typeOfBottom = liftTypeIL typeOfBottom
   typeOfConstant = liftTypeIL . typeOfConstant
-  typeOfBuiltin (Left triple) = typeOfBottom -- it's not, really
+  typeOfBuiltin (Left _triple) = typeOfBottom -- it's not, really
   typeOfBuiltin (Right base) = liftTypeIL $ typeOfBuiltin base
 
-instance QQ.LanguageParser lang => QQ.LanguageParser (IL lang) where
+instance LanguageSMT lang => LanguageSMT (IL lang) where
+  translateBuiltinType = translateBuiltinType @lang
+  translateConstant = translateConstant @lang
+
+  -- but how to parallelize evaluation if we were to translate this?
+  -- what'd be the benefit of having this as opposed to just having a (nested) if-then-else?
+  translateBuiltinTerm (Left triple) = undefined
+  translateBuiltinTerm (Right base) = translateBuiltinTerm @lang base
+
+  isStuckBuiltin b = _
+
+--instance (Lift (Term lang), QQ.LanguageParser lang) => QQ.LanguageParser (IL lang) where
