@@ -77,11 +77,11 @@ monomorphize defs0 = prune $ go mempty defs0
     prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
     prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` defsToMono) $ prtUODecls defs}
 
--- | Return a set of definitions that either satisfy 'shouldMono' or have one
---  of its transitive dependencies satisfy 'shouldMono'. In other words, picks
---  all definitions that should be monomorphized. It also picks up associated definitions
---  that should be monomorphized (constructors and destructors), but associates them
---  with no particular definition.
+-- | Picks all definitions that should be monomorphized.
+--  Right now, any polymorphic definition (be it a function or a type) is subject to monomorphization.
+--  This function also picks up associated definitions that should be monomorphized
+--  (constructors and destructors for types),
+--  but associates them with no particular definition.
 --
 --  Moreover, it is important to keep the 'Namespace' in the map, otherwise we might
 --  run into scenarios where a type that has a homonym constructor might not be
@@ -107,6 +107,8 @@ selectMonoDefs PrtUnorderedDefs {..} =
 type FunOrTypeDef lang = SystF.Arg (TypeDef lang) (FunDef lang)
 
 -- | Returns whether we should monomorphize this function or type.
+--
+-- Any polymorphic function and any type with type variables is subject to monomorphization.
 shouldMono :: FunOrTypeDef lang -> Bool
 shouldMono (SystF.TermArg FunDef {..}) = isPolyType funTy
 shouldMono (SystF.TyArg Datatype {..}) = not (null typeVariables)
