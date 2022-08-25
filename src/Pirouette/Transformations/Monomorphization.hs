@@ -30,19 +30,6 @@ import Pirouette.Utils
 
 -- * Monomorphization
 
-{-
-TODO: I can see how the name-fixing function that uses '!' and how the option of
-whether we should or should not monomorphize all polymorphic definitions could be made into
-options:
-
-data MonomorphizeOpts = MonomorphizeOpts
-  { -- | Monomorphizes only definitions that contain a polymorphic higher-order function.
-    -- Simple polymophic datatypes like @Maybe@ or functions like @id@ won't be monomorphized.
-    monoHOFOnly :: Bool,
-    fixName :: ... -> Name,
-  }
--}
-
 -- | Given a set of definitions in prenex form (i.e., all 'SystF.TyAll' appear in the front and
 -- you can rely on "Pirouette.Transformations.Prenex" to get there), will yield a new set
 -- of definitions that contains no 'SystF.TyAll' nor datatypes of kind other than *.
