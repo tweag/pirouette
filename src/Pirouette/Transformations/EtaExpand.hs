@@ -15,7 +15,7 @@ import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Transformations.Utils
 
--- | Eta-expands all definitions of all terms involved in a program
+-- | Eta-expands all usages of all terms involved in a program
 etaExpandAll ::
   forall lang.
   (LanguageBuiltinTypes lang, Language lang) =>
@@ -26,7 +26,7 @@ etaExpandAll PrtUnorderedDefs {..} =
   where
     go = etaExpandAux prtUODecls []
 
--- | Eta-expands a single term
+-- | Eta-expands everything within a single term
 etaExpandTerm ::
   forall lang m.
   (PirouetteReadDefs lang m, LanguageBuiltinTypes lang, Language lang) =>
