@@ -123,19 +123,14 @@ data SpecRequest lang = SpecRequest
 
 -- | Specializes a function application of the form:
 --
---  > hof @Integer @Bool x y z
+--  > f @Integer @Bool x y z
 --
--- at call site, where @hof@ has been identified as
--- 1. either a higher-order function itself,
--- 2. or invoking a polymorphic higher-order function, perhaps, transitively;
--- and its type argument contains no bound-variables: in other words,
--- we can substitute that call with @hof\@Integer\@Bool@ while creating a monomorphic
--- definition for @hof@.
+-- at call site.
 --
--- We only specialize type arguments that appear /before/ the first term-argument.
+-- The function assumes the program is in the prenex form (as all other parts of this transformation do).
 --
 -- This function only does the substitution _at call site_ and emits a 'SpecRequest' denoting that the corresponding
--- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
+-- _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp ::
   (MonadWriter [SpecRequest lang] m, Language lang) =>
   M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang)) ->
@@ -158,13 +153,6 @@ specFunApp _ x = pure x
 -- | Specializes a type application of the form
 --
 --  > HOFType @Integer
---
---  where @HOFType a@ has at least one constructor having a higher-order argument mentioning @a@,
---  perhaps, transitively.
---  For example, both these definitions would be specialized:
---
---  > data Semigroup a = MkSemigroup (a -> a -> a)
---  > data Monoid a = MkMonoid (Semigroup a) a
 --
 --  See the docs for 'specFunApp' for more details.
 specTyApp ::
