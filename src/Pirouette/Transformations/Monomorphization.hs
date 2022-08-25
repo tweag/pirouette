@@ -62,6 +62,9 @@ monomorphize defs0 = prune $ go mempty defs0
         newOrders = filter (`S.notMember` prevOrders) specOrders
         newDefs = foldMap executeSpecRequest newOrders
 
+    -- Remove the polymorphic definitions we've found earlier.
+    -- All calls to them have been replaced with the monomorphic versions,
+    -- so the poly ones are not used anymore.
     prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
     prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` defsToMono) $ prtUODecls defs}
 
@@ -73,7 +76,7 @@ monomorphize defs0 = prune $ go mempty defs0
 --
 --  Moreover, it is important to keep the 'Namespace' in the map, otherwise we might
 --  run into scenarios where a type that has a homonym constructor might not be
---  monomorphized becase one entry overriden the other in the map.
+--  monomorphized becase one entry overrides the other in the map.
 selectMonoDefs ::
   forall lang.
   (Language lang) =>
@@ -101,6 +104,8 @@ shouldMono :: FunOrTypeDef lang -> Bool
 shouldMono (SystF.TermArg FunDef {..}) = isPolyType funTy
 shouldMono (SystF.TyArg Datatype {..}) = not (null typeVariables)
 
+-- Since we require the definitions to be in the prenex form,
+-- it's sufficient to check just the first argument to see if it's a ∀.
 isPolyType :: SystF.AnnType ann ty -> Bool
 isPolyType SystF.TyAll {} = True
 isPolyType _ = False
@@ -116,9 +121,9 @@ isFunOrTypeDef _ = Nothing
 -- with the given type arguments list. The specialized definitions are generated
 -- through 'executeSpecRequest'
 data SpecRequest lang = SpecRequest
-  { srName :: Name,
-    srOrigDef :: FunOrTypeDef lang,
-    srArgs :: [Type lang]
+  { srName :: Name,                  -- ^ the name under which the specialized definition should be added
+    srOrigDef :: FunOrTypeDef lang,  -- ^ the original, polymorphic definition
+    srArgs :: [Type lang]            -- ^ the type arguments to specialize the srOrigDef with
   }
   deriving (Show, Eq, Ord)
 
@@ -191,6 +196,9 @@ executeSpecRequestTracing sr = str `trace` res
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
 -- and produces the specialized definitions.
+--
+-- Conceptually, it just applies the existing polymorphic definition to the
+-- specialization args.
 executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
 executeSpecRequest SpecRequest {..} = M.fromList $
   case srOrigDef of
@@ -266,7 +274,7 @@ monoNameSep = ['<', '>', '$', '_', '!'] -- TODO: get rid of '!'
 -- We can either choose to control the order in which specialization happens,
 -- alwasy specializing "smaller" types first or we make sure that that order
 -- doesn't matter by generating the same name regardless. Currently, we choose
--- the later.
+-- the latter.
 genSpecName :: forall lang. (Language lang) => [Type lang] -> Name -> Name
 genSpecName tys n0 = combine n0 (map specTypeNames tys)
   where
