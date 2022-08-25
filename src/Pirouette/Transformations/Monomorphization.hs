@@ -22,6 +22,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -174,20 +175,18 @@ specRequestPartialApp :: SpecRequest lang -> Term lang
 specRequestPartialApp SpecRequest {..} =
   SystF.App (SystF.Free $ TermSig srName) $ map SystF.TyArg srArgs
 
--- Below is an useful definition for debugging specialization requests, just rename
--- the original one to executeSpecRequest'
--- executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
--- executeSpecRequest sr =
---   let res = executeSpecRequest' sr
---       str =
---         unlines
---           [ "---------------------------------",
---             "executeSpecRequest: ",
---             "  " ++ show (pretty $ specRequestPartialApp sr),
---             "result:",
---             show (pretty res)
---           ]
---    in trace str res
+-- | A version of 'executeSpecRequest' that also debug-prints what's going on.
+executeSpecRequestTracing :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequestTracing sr = str `trace` res
+  where
+    res = executeSpecRequest sr
+    str = unlines
+           [ "---------------------------------",
+             "executeSpecRequest: ",
+             "  " ++ show (pretty $ specRequestPartialApp sr),
+             "result:",
+             show (pretty res)
+           ]
 
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
