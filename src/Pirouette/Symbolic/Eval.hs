@@ -478,9 +478,15 @@ symEvalDestructor t@(R.App hd _args) tyName = do
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
       let tyParams' = map typeFromMeta tyParams
       asum $
+        -- Here motive is $x and type is, for instance, List Integer.
+        -- The next @for2@ will generate all possibilities for $x:
+        -- 1. It can be Nil
+        -- 2. It can be Cons $y $ys, where $y and $ys are freshly generated symbolic vars
         for2 consList cases $ \(consName, consTy) caseTerm -> do
-          let instantiatedTy = R.tyInstantiateN consTy tyParams'
-          let (consArgs, _) = R.tyFunArgs instantiatedTy
+          -- For consName == "Cons" and consTy == "forall a . a -> List a -> List a", we have:
+          -- wlog, assume tyParams' = ["Integer"].
+          let instantiatedTy = R.tyInstantiateN consTy tyParams' -- instantiatedTy == "Integer -> List Integer -> List Integer"
+          let (consArgs, _) = R.tyFunArgs instantiatedTy -- consArgs == ["Integer", "List Integer"]
           svars <- lift $ freshSymVars consArgs
           let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
           let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
