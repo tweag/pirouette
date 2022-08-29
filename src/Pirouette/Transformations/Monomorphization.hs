@@ -121,9 +121,12 @@ isFunOrTypeDef _ = Nothing
 -- with the given type arguments list. The specialized definitions are generated
 -- through 'executeSpecRequest'
 data SpecRequest lang = SpecRequest
-  { srName :: Name,                  -- ^ the name under which the specialized definition should be added
-    srOrigDef :: FunOrTypeDef lang,  -- ^ the original, polymorphic definition
-    srArgs :: [Type lang]            -- ^ the type arguments to specialize the srOrigDef with
+  { -- | the name under which the specialized definition should be added
+    srName :: Name,
+    -- | the original, polymorphic definition
+    srOrigDef :: FunOrTypeDef lang,
+    -- | the type arguments to specialize the srOrigDef with
+    srArgs :: [Type lang]
   }
   deriving (Show, Eq, Ord)
 
@@ -185,13 +188,14 @@ executeSpecRequestTracing :: (Language lang) => SpecRequest lang -> Decls lang
 executeSpecRequestTracing sr = str `trace` res
   where
     res = executeSpecRequest sr
-    str = unlines
-           [ "---------------------------------",
-             "executeSpecRequest: ",
-             "  " ++ show (pretty $ specRequestPartialApp sr),
-             "result:",
-             show (pretty res)
-           ]
+    str =
+      unlines
+        [ "---------------------------------",
+          "executeSpecRequest: ",
+          "  " ++ show (pretty $ specRequestPartialApp sr),
+          "result:",
+          show (pretty res)
+        ]
 
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
