@@ -1,12 +1,16 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
+import Control.Applicative
+import Control.Monad
 import Data.Default
 import Data.Either
 import Data.List (intersperse)
@@ -17,6 +21,7 @@ import Pirouette.Monad
 import Pirouette.SMT.Base
 import Pirouette.SMT.FromTerm
 import Pirouette.Term.Syntax
+import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
@@ -32,54 +37,176 @@ data ConstraintSet lang meta = ConstraintSet
     csNative :: [PureSMT.SExpr]
   }
 
+instance (Ord meta) => Semigroup (ConstraintSet lang meta) where
+  s1 <> s2 =
+    ConstraintSet
+      (csAssignments s1 <> csAssignments s2)
+      (csMetaEq s1 <> csMetaEq s2)
+      (csNative s1 <> csNative s2)
+
+instance (Ord meta) => Monoid (ConstraintSet lang meta) where
+  mempty = def
+
 instance Default (ConstraintSet lang meta) where
-  def = undefined
+  def = ConstraintSet M.empty M.empty []
+
+instance (LanguagePretty lang, Pretty meta) => Show (ConstraintSet lang meta) where
+  show = show . pretty
 
 instance (LanguagePretty lang, Pretty meta) => Pretty (ConstraintSet lang meta) where
-  pretty _ = "<constraint-set>"
+  pretty ConstraintSet {..} =
+    vsep $
+      map (uncurry prettyAssignment) (M.toList csAssignments)
+        ++ map (uncurry prettyMetaEq) (M.toList csMetaEq)
+        ++ map prettyNative csNative
+    where
+      prettyAssignment v t = pretty v <+> ":=" <+> pretty t
+      prettyMetaEq v u = pretty v <+> "~~" <+> pretty u
+      prettyNative n = pretty (show n)
 
-conjunct :: Constraint lang meta -> ConstraintSet lang meta -> Maybe (ConstraintSet lang meta)
-conjunct = undefined
+-- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the
+--  constraint set @cs@ makes it provably UNSAT. If @conjunct c cs == Just cs'@, there
+--  is /no guarantee/ that @cs'@ is SAT, you must still validate it on a SMT solver.
+conjunct ::
+  forall lang meta.
+  (Language lang, Pretty meta, Ord meta) =>
+  Constraint lang meta ->
+  ConstraintSet lang meta ->
+  Maybe (ConstraintSet lang meta)
+conjunct c cs0 =
+  case c of
+    Assign v t -> unifyMetaWith cs0 v t
+    TermEq t u -> unifyWith cs0 t u
+    -- TODO: Actually... we could be calling the smt solver right here to check that this
+    -- sexpr is consistent with cs0, but let's leave that for later.
+    Native sexpr -> Just $ cs0 {csNative = sexpr : csNative cs0}
+  where
+    -- Attempts to unify two terms in an environment given by a current known set
+    -- of constraints. Returns @Nothing@ when the terms can't be unified.
+    unifyWith ::
+      ConstraintSet lang meta ->
+      TermMeta lang meta ->
+      TermMeta lang meta ->
+      Maybe (ConstraintSet lang meta)
+    unifyWith cs (SystF.App (SystF.Meta v) []) u = unifyMetaWith cs v u
+    unifyWith cs v (SystF.App (SystF.Meta u) []) = unifyMetaWith cs u v
+    unifyWith cs (SystF.App hdT argsT) (SystF.App hdU argsU) = do
+      guard (hdT == hdU)
+      iterateM cs $ zipWith (\x y cs' -> unifyArgWith cs' x y) argsT argsU
+      where
+        iterateM :: (Monad m) => a -> [a -> m a] -> m a
+        iterateM a [] = return a
+        iterateM a (f : fs) = f a >>= flip iterateM fs
+    unifyWith _ t u =
+      error $
+        "unifyWith:\n"
+          ++ unlines (map (renderSingleLineStr . pretty) [t, u])
 
-expandDefOf :: ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
-expandDefOf = undefined
+    -- Attempts to unify a metavariable with a term; will perform any potential lookup
+    -- that is needed. WARNING: no occurs-check is performed, if the variable occurs within
+    -- the term this function will loop. For our particular use case we don't need to occurs
+    -- check since we'll only ever attempt to unify terms that have generated metavariables.
+    unifyMetaWith ::
+      ConstraintSet lang meta ->
+      meta ->
+      TermMeta lang meta ->
+      Maybe (ConstraintSet lang meta)
+    unifyMetaWith cs v u
+      -- First we check whether @v@ is actually equal to anything else
+      | Just t <- M.lookup v (csAssignments cs) = unifyWith cs t u
+      -- If not, we check whether v is equivalent to some other smaller metavariable
+      | Just v' <- M.lookup v (csMetaEq cs) = unifyMetaWith cs v' u
+      | otherwise = Just $ unifyNewMetaWith cs v u
 
-data Constraint lang meta
-  = SymVarEq meta meta
-  | Assign meta (TermMeta lang meta)
-  | TermEq (TermMeta lang meta) (TermMeta lang meta)
-  | TermNotEq (TermMeta lang meta) (TermMeta lang meta)
-  | Native PureSMT.SExpr
+    -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
+    -- known by our current constraints.
+    unifyNewMetaWith ::
+      ConstraintSet lang meta ->
+      meta ->
+      TermMeta lang meta ->
+      ConstraintSet lang meta
+    unifyNewMetaWith cs@ConstraintSet {..} v (SystF.App (SystF.Meta u) [])
+      | v == u = cs
+      | Just t <- M.lookup u csAssignments = cs {csAssignments = M.insert v t csAssignments}
+      | Just u' <- M.lookup u csMetaEq = unifyNewMetaWith cs v (SystF.App (SystF.Meta u') [])
+      | otherwise = cs {csMetaEq = M.insert (max v u) (min v u) csMetaEq}
+    unifyNewMetaWith cs v u =
+      cs {csAssignments = M.insert v u (csAssignments cs)}
 
-instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
-  pretty _ = "<constraint>"
+    unifyArgWith ::
+      ConstraintSet lang meta ->
+      ArgMeta lang meta ->
+      ArgMeta lang meta ->
+      Maybe (ConstraintSet lang meta)
+    unifyArgWith cs (SystF.TermArg x) (SystF.TermArg y) = unifyWith cs x y
+    unifyArgWith cs (SystF.TyArg _) (SystF.TyArg _) = Just cs -- TODO: unify types too? I don't think so
+    unifyArgWith _ _ _ = Nothing
 
-symVarEq :: meta -> meta -> Constraint lang meta
-symVarEq a b = undefined -- SMT.And [SMT.VarEq a b]
+expandDefOf :: (Ord meta) => ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
+expandDefOf cs v =
+  M.lookup v (csAssignments cs)
+    <|> (M.lookup v (csMetaEq cs) >>= expandDefOf cs)
 
-termEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
-termEq = undefined
+-- | Since the translation of individual constraints can fail,
+-- the translation of constraints does not always carry all the information it could.
+-- So the boolean indicates if every atomic constraint have been translated.
+-- A 'False' indicates that some have been forgotten during the translation.
+constraintSetToSExpr ::
+  forall lang meta m.
+  (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
+  S.Set Name ->
+  ConstraintSet lang meta ->
+  m (Bool, UsedAnyUFs, PureSMT.SExpr)
+constraintSetToSExpr knownNames ConstraintSet {..} = do
+  eAssignments <- mapM (runTranslator . uncurry trAssignment) $ M.toList csAssignments
+  let (trs, usedUFs) = unzip (rights eAssignments)
+  let eEquivalences = map (uncurry trSymVarEq) $ M.toList csMetaEq
+  return (all isRight eAssignments, mconcat usedUFs, PureSMT.andMany (csNative ++ eEquivalences ++ trs))
+  where
+    trAssignment :: meta -> TermMeta lang meta -> TranslatorT m PureSMT.SExpr
+    trAssignment name term = do
+      let smtName = translate name
+      d <- translateTerm knownNames term
+      return $ smtName `PureSMT.eq` d
 
-termNotEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
-termNotEq = undefined
+    trSymVarEq :: meta -> meta -> PureSMT.SExpr
+    trSymVarEq a b =
+      let aName = translate a
+          bName = translate b
+       in aName `PureSMT.eq` bName
 
-native :: PureSMT.SExpr -> Constraint lang meta
-native = undefined
+-- * Single Constraint
 
-(=:=) :: meta -> TermMeta lang meta -> Constraint lang meta
-a =:= t = undefined -- SMT.And [SMT.Assign a t]
-
+-- | A 'Branch' is used to attach a number of atomic 'Constraint's to
+--  a new term.
 data Branch lang meta = Branch
   { additionalInfo :: [Constraint lang meta],
     newTerm :: TermMeta lang meta
   }
 
-constraintSetToSExpr ::
-  (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
-  S.Set Name ->
-  ConstraintSet lang meta ->
-  m (Bool, UsedAnyUFs, PureSMT.SExpr)
-constraintSetToSExpr = undefined
+data Constraint lang meta
+  = Assign meta (TermMeta lang meta)
+  | TermEq (TermMeta lang meta) (TermMeta lang meta)
+  | -- | TermNotEq (TermMeta lang meta) (TermMeta lang meta)
+    Native PureSMT.SExpr
+
+symVarEq :: meta -> meta -> Constraint lang meta
+symVarEq x y = Assign x (SystF.App (SystF.Meta y) [])
+
+termEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
+termEq = TermEq
+
+termNotEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
+termNotEq = error "Use native instead"
+
+native :: PureSMT.SExpr -> Constraint lang meta
+native = Native
+
+(=:=) :: meta -> TermMeta lang meta -> Constraint lang meta
+a =:= t = Assign a t
+
+instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
+  pretty _ = "<constraint>"
 
 {-
 
@@ -202,10 +329,6 @@ atomicConstraintToSExpr knownNames (OutOfFuelEq term1 term2) = do
 atomicConstraintToSExpr _knownNames (Native expr) =
   return expr
 
--- Since the translation of atomic constraints can fail,
--- the translation of constraints does not always carry all the information it could.
--- So the boolean indicates if every atomic constraint have been translated.
--- A 'False' indicates that some have been forgotten during the translation.
 constraintToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   S.Set Name ->

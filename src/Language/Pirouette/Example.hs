@@ -33,7 +33,7 @@ import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Pirouette.QuasiQuoter as QQ
 import Language.Pirouette.QuasiQuoter.Syntax
 import Pirouette.Monad (termIsConstant, termIsMeta)
-import Pirouette.SMT
+import Pirouette.SMT hiding (TermEq)
 import Pirouette.Symbolic.Eval.BranchingHelpers
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
