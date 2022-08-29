@@ -39,7 +39,7 @@ ifThenElseBranching isTrue trueTm isFalse falseTm isEq c t e excess =
                 [ -- either they are equal
                   Branch [symVarEq x1 y1] t',
                   -- or they are not
-                  Branch [termEq x y] e'
+                  Branch [termNotEq x y] e'
                 ]
           | isEq eq,
             Just x1 <- termIsMeta x,

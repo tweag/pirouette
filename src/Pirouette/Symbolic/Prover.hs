@@ -21,6 +21,7 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty, pretty)
 import PureSMT (SExpr (..))
+import System.IO.Unsafe
 
 -- | A problem represents a triple that should be checked.
 -- It should be the case that assuming 'problemAssume',
@@ -158,12 +159,14 @@ worker ::
   SymTerm lang ->
   SymEval lang (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  -- debugPutStr "ONE STEP"
-  -- debugPrint (pretty bodyTerm)
-  -- debugPrint (pretty assumeTerm)
-  -- debugPrint (pretty proveTerm)
-  -- gets sestConstraint >>= debugPrint . pretty
-  -- _ <- liftIO getLine
+  let x = unsafePerformIO $ do
+        putStrLn ("Body:   " ++ show (pretty bodyTerm))
+        putStrLn ("Assume: " ++ show (pretty assumeTerm))
+        putStrLn ("Prove:  " ++ show (pretty proveTerm))
+        getLine
+  debugPutStr "Constraint:"
+  gets sestConstraint >>= debugPrint . pretty
+  debugPutStr ("ONE STEP: " ++ x)
 
   -- terms are only useful if they are in WHNF or are stuck
   -- (stuck-ness if defined per language)

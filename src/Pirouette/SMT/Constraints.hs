@@ -60,11 +60,13 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (ConstraintSet lang meta) 
   pretty ConstraintSet {..} =
     vsep $
       map (uncurry prettyAssignment) (M.toList csAssignments)
+        ++ map (uncurry prettyNotEq) csNotEq
         ++ map (uncurry prettyMetaEq) (M.toList csMetaEq)
         ++ map prettyNative csNative
     where
       prettyAssignment v t = pretty v <+> ":=" <+> pretty t
       prettyMetaEq v u = pretty v <+> "~~" <+> pretty u
+      prettyNotEq v u = pretty v <+> "/=" <+> pretty u
       prettyNative n = pretty (show n)
 
 -- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the
