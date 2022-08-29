@@ -246,7 +246,7 @@ weightedParFilter f (ListT.Yield a w) =
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
 --  of whether or not we had already validated it before.
-learn :: (SymEvalConstr lang) => Constraint lang -> SymEval lang ()
+learn :: (SymEvalConstr lang) => SMT.Constraint lang SymVar -> SymEval lang ()
 learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
@@ -349,25 +349,30 @@ symEvalOneStep t@(R.App hd args) = case hd of
   R.Meta vr -> do
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint
-    case cstr of
-      C.And atomics -> do
-        let findAssignment v (C.Assign w _) = v == w
-            findAssignment _ _ = False
-            findEq v (C.VarEq w _) = v == w
-            findEq _ _ = False
-            -- we need to jump more than one equality,
-            -- hence the involved loop here
-            findLoop v
-              | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
-                Just tm
-              | Just (C.VarEq _ other) <- find (findEq v) atomics =
-                findLoop other
-              | otherwise =
-                Nothing
-        case findLoop vr of
-          Nothing -> justEvaluateArgs
-          Just lp -> signalEvaluation >> pure lp
-      _ -> justEvaluateArgs
+    case C.expandDefOf cstr vr of
+      Nothing -> justEvaluateArgs
+      Just valOfvr -> signalEvaluation >> pure valOfvr
+  {-
+      case cstr of
+        C.And atomics -> do
+          let findAssignment v (C.Assign w _) = v == w
+              findAssignment _ _ = False
+              findEq v (C.VarEq w _) = v == w
+              findEq _ _ = False
+              -- we need to jump more than one equality,
+              -- hence the involved loop here
+              findLoop v
+                | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
+                  Just tm
+                | Just (C.VarEq _ other) <- find (findEq v) atomics =
+                  findLoop other
+                | otherwise =
+                  Nothing
+          case findLoop vr of
+            Nothing -> justEvaluateArgs
+            Just lp -> signalEvaluation >> pure lp
+        _ -> justEvaluateArgs
+  -}
 
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
@@ -490,19 +495,15 @@ symEvalDestructor t@(R.App hd _args) tyName = do
           svars <- lift $ freshSymVars consArgs
           let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
           let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-          let mconstr = Just (s =:= symbCons)
+          let mconstr = Just (s C.=:= symbCons)
           -- liftIO $ print mconstr
           case mconstr of
             Nothing -> empty
             Just constr -> do
-              let countAssigns SMT.Bot = 0
-                  countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
-                  isAssign SMT.Assign {} = True
-                  isAssign _ = False
               -- add weight as many new assignments we get from unification
-              ListT.weight (countAssigns constr) $ do
+              ListT.weight (C.countAssigns constr) $ do
                 lift $ learn constr
-                moreConstructors (countAssigns constr)
+                moreConstructors (C.countAssigns constr)
                 signalEvaluation
                 pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
     (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
@@ -535,8 +536,8 @@ for2 as bs f = zipWith f as bs
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
   (SymEvalConstr lang) =>
-  Constraint lang ->
-  Maybe (Constraint lang) ->
+  SMT.Constraint lang SymVar ->
+  Maybe (SMT.Constraint lang SymVar) ->
   [UniversalAxiom lang] ->
   SymEval lang PruneResult
 pruneAndValidate cOut cIn axioms =

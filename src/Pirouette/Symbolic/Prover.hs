@@ -190,7 +190,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   mayProveCond <- fmap (isTrue @lang) <$> translate proveTerm
   -- introduce the assumption about the result, if useful
   case mayBodyTerm of
-    Right _ -> learn $ And [Assign resultVar bodyTerm]
+    Right _ -> learn $ resultVar =:= bodyTerm
     _ -> pure ()
   -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
@@ -199,11 +199,11 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     (Right _, Right assumeCond, Left _) -> do
       -- debugPutStr "prunning with unknown prove..."
       -- _ <- liftIO getLine
-      pruneAndValidate (And [Native assumeCond]) Nothing []
+      pruneAndValidate (native assumeCond) Nothing []
     (Right _, Right assumeCond, Right proveCond) -> do
       -- debugPutStr "prunning..."
       -- _ <- liftIO getLine
-      pruneAndValidate (And [Native assumeCond]) (Just $ And [Native proveCond]) []
+      pruneAndValidate (native assumeCond) (Just $ native proveCond) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
   case result of

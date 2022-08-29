@@ -124,14 +124,6 @@ instance Pretty SymVar where
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar
 
-type Constraint lang = SMT.Constraint lang SymVar
-
-symVarEq :: SymVar -> SymVar -> Constraint lang
-symVarEq a b = SMT.And [SMT.VarEq a b]
-
-(=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
-a =:= t = SMT.And [SMT.Assign a t]
-
 data PathStatus = Completed | OutOfFuel deriving (Eq, Show)
 
 instance Pretty PathStatus where
@@ -139,16 +131,16 @@ instance Pretty PathStatus where
   pretty OutOfFuel = "OutOfFuel"
 
 data Path lang res = Path
-  { pathConstraint :: Constraint lang,
+  { pathConstraint :: SMT.Constraint lang SymVar,
     pathGamma :: M.Map Name (Type lang),
     pathStatus :: PathStatus,
     pathResult :: res
   }
   deriving (Functor, Traversable, Foldable)
 
-deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lang res)
+deriving instance (Eq (SMT.Constraint lang SymVar), Eq (Type lang), Eq res) => Eq (Path lang res)
 
-deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
+deriving instance (Show (SMT.Constraint lang SymVar), Show (Type lang), Show res) => Show (Path lang res)
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds _gamma ps res) =
@@ -163,7 +155,7 @@ data AvailableFuel = Fuel Int | InfiniteFuel
   deriving (Eq, Show)
 
 data SymEvalSt lang = SymEvalSt
-  { sestConstraint :: Constraint lang,
+  { sestConstraint :: SMT.Constraint lang SymVar,
     sestGamma :: M.Map Name (Type lang),
     sestFreshCounter :: Int,
     sestStatistics :: SymEvalStatistics,

@@ -26,7 +26,7 @@ import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Pirouette.Monad
-import Pirouette.SMT hiding (Constraint)
+import Pirouette.SMT
 import Pirouette.Symbolic.Eval.Types
 import Pirouette.Term.Syntax
 import Prettyprinter (align, enclose, vsep, (<+>))
@@ -61,8 +61,8 @@ data SolverProblem lang :: K.Type -> K.Type where
   CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
 data CheckPropertyProblem lang = CheckPropertyProblem
-  { cpropOut :: Constraint lang,
-    cpropIn :: Maybe (Constraint lang),
+  { cpropOut :: Constraint lang SymVar,
+    cpropIn :: Maybe (Constraint lang SymVar),
     cpropAxioms :: [UniversalAxiom lang],
     cpropState :: SymEvalSt lang,
     cpropDefs :: PrtOrderedDefs lang
@@ -153,8 +153,8 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
       -- pathConstraints /\ cOut /\ (not cIn).
       checkProperty ::
         (LanguageSMT lang, LanguagePretty lang) =>
-        Constraint lang ->
-        Maybe (Constraint lang) ->
+        Constraint lang SymVar ->
+        Maybe (Constraint lang SymVar) ->
         [UniversalAxiom lang] ->
         SymEvalSt lang ->
         HackSolver lang PruneResult
@@ -200,8 +200,12 @@ assertConstraint,
   assertNotConstraint ::
     (PirouetteReadDefs lang m, LanguageSMT lang, MonadIO m) =>
     S.Set Name ->
-    Constraint lang ->
+    Constraint lang SymVar ->
     SolverT m (Bool, UsedAnyUFs)
+assertConstraint = undefined
+assertNotConstraint = undefined
+
+{-
 assertConstraint knownNames c@Bot = do
   (done, usedAnyUFs, expr) <- constraintToSExpr knownNames c
   assert expr
@@ -222,6 +226,7 @@ assertNotConstraint knownNames c = do
   (done, usedAnyUFs, expr) <- constraintToSExpr knownNames c
   assertNot expr
   pure (done, usedAnyUFs)
+-}
 
 -- TODO: why is this needed, what needs to be done on the TODO below?
 instantiateAxiomWithVars ::

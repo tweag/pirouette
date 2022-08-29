@@ -18,15 +18,58 @@ import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
+data Constraint lang meta = TODO
+
+symVarEq :: meta -> meta -> Constraint lang meta
+symVarEq a b = undefined -- SMT.And [SMT.VarEq a b]
+
+termEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
+termEq = undefined
+
+termNotEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
+termNotEq = undefined
+
+native :: PureSMT.SExpr -> Constraint lang meta
+native = undefined
+
+(=:=) :: meta -> TermMeta lang meta -> Constraint lang meta
+a =:= t = undefined -- SMT.And [SMT.Assign a t]
+
+instance Semigroup (Constraint lang meta) where
+  (<>) = undefined
+
+instance Monoid (Constraint lang meta) where
+  mempty = undefined
+
+instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
+  pretty _ = "<constraint>"
+
+expandDefOf :: Constraint lang meta -> meta -> Maybe (TermMeta lang meta)
+expandDefOf = undefined
+
+countAssigns :: (Num a) => Constraint lang meta -> a
+countAssigns = undefined
+
+data Branch lang meta = Branch
+  { additionalInfo :: Constraint lang meta,
+    newTerm :: TermMeta lang meta
+  }
+
+constraintToSExpr ::
+  (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
+  S.Set Name ->
+  Constraint lang meta ->
+  m (Bool, UsedAnyUFs, PureSMT.SExpr)
+constraintToSExpr = undefined
+
+{-
+
 -- TODO: this module should probably be refactored somewhere;
 -- I'm not entirely onboard with the 'translateData' funct as it is;
 --   a) maybe we should pass the env when translating arbitrary expressions
 --   b) maybe we should even keep the env in another reader layer on SolverT...
 --
 -- Its somthing to think about later, but for now this will do.
-
--- | Bindings from names to types (for the assign constraints)
-type Env lang = Map Name (Type lang)
 
 -- | Constraints of a path during symbolic execution
 -- We would like to have
@@ -49,17 +92,6 @@ data Constraint lang meta
   = And [AtomicConstraint lang meta]
   | Bot
   deriving (Eq, Show)
-
-instance Semigroup (Constraint lang meta) where
-  (<>) = andConstr
-
-instance Monoid (Constraint lang meta) where
-  mempty = And []
-
-data Branch lang meta = Branch
-  { additionalInfo :: Constraint lang meta,
-    newTerm :: TermMeta lang meta
-  }
 
 -- Essentially list concatenation, with the specificity that `Bot` is absorbing.
 andConstr :: Constraint lang meta -> Constraint lang meta -> Constraint lang meta
@@ -165,3 +197,5 @@ constraintToSExpr knownNames (And constraints) = do
   let (translations, usedUFs) = unzip (rights atomTrads)
   return (all isRight atomTrads, mconcat usedUFs, PureSMT.andMany translations)
 constraintToSExpr _ Bot = return (True, NotUsedAnyUFs, PureSMT.bool False)
+
+-}
