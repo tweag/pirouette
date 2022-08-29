@@ -33,8 +33,10 @@ data ConstraintSet lang meta = ConstraintSet
     -- | Represents the symbolic variable equivalences we know of. Satisfies the invariant
     -- that if @M.lookup v csmetaEq == Just v'@, then @v' < v@ (lexicographically)
     csMetaEq :: M.Map meta meta,
-    -- | And any potential native constraint we might need.
-    csNative :: [PureSMT.SExpr]
+    -- | Any potential native constraint we might need.
+    csNative :: [PureSMT.SExpr],
+    -- | And finally, pairs of terms we've discovered /not/ to be equal
+    csNotEq :: [(TermMeta lang meta, TermMeta lang meta)]
   }
 
 instance (Ord meta) => Semigroup (ConstraintSet lang meta) where
@@ -43,12 +45,13 @@ instance (Ord meta) => Semigroup (ConstraintSet lang meta) where
       (csAssignments s1 <> csAssignments s2)
       (csMetaEq s1 <> csMetaEq s2)
       (csNative s1 <> csNative s2)
+      (csNotEq s1 <> csNotEq s2)
 
 instance (Ord meta) => Monoid (ConstraintSet lang meta) where
   mempty = def
 
 instance Default (ConstraintSet lang meta) where
-  def = ConstraintSet M.empty M.empty []
+  def = ConstraintSet M.empty M.empty [] []
 
 instance (LanguagePretty lang, Pretty meta) => Show (ConstraintSet lang meta) where
   show = show . pretty
@@ -80,6 +83,7 @@ conjunct c cs0 =
     -- TODO: Actually... we could be calling the smt solver right here to check that this
     -- sexpr is consistent with cs0, but let's leave that for later.
     Native sexpr -> Just $ cs0 {csNative = sexpr : csNative cs0}
+    TermNotEq t u -> Just $ cs0 {csNotEq = (t, u) : csNotEq cs0}
   where
     -- Attempts to unify two terms in an environment given by a current known set
     -- of constraints. Returns @Nothing@ when the terms can't be unified.
@@ -159,10 +163,18 @@ constraintSetToSExpr ::
   m (Bool, UsedAnyUFs, PureSMT.SExpr)
 constraintSetToSExpr knownNames ConstraintSet {..} = do
   eAssignments <- mapM (runTranslator . uncurry trAssignment) $ M.toList csAssignments
-  let (trs, usedUFs) = unzip (rights eAssignments)
+  eNotEq <- mapM (runTranslator . uncurry trNotEq) csNotEq
+  let es = eAssignments ++ eNotEq
+  let (trs, usedUFs) = unzip (rights es)
   let eEquivalences = map (uncurry trSymVarEq) $ M.toList csMetaEq
-  return (all isRight eAssignments, mconcat usedUFs, PureSMT.andMany (csNative ++ eEquivalences ++ trs))
+  return (all isRight es, mconcat usedUFs, PureSMT.andMany (csNative ++ eEquivalences ++ trs))
   where
+    trNotEq :: TermMeta lang meta -> TermMeta lang meta -> TranslatorT m PureSMT.SExpr
+    trNotEq tx ty = do
+      tx' <- translateTerm knownNames tx
+      ty' <- translateTerm knownNames ty
+      return $ PureSMT.not (tx' `PureSMT.eq` ty')
+
     trAssignment :: meta -> TermMeta lang meta -> TranslatorT m PureSMT.SExpr
     trAssignment name term = do
       let smtName = translate name
@@ -187,8 +199,8 @@ data Branch lang meta = Branch
 data Constraint lang meta
   = Assign meta (TermMeta lang meta)
   | TermEq (TermMeta lang meta) (TermMeta lang meta)
-  | -- | TermNotEq (TermMeta lang meta) (TermMeta lang meta)
-    Native PureSMT.SExpr
+  | TermNotEq (TermMeta lang meta) (TermMeta lang meta)
+  | Native PureSMT.SExpr
 
 symVarEq :: meta -> meta -> Constraint lang meta
 symVarEq x y = Assign x (SystF.App (SystF.Meta y) [])
@@ -197,7 +209,7 @@ termEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
 termEq = TermEq
 
 termNotEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
-termNotEq = error "Use native instead"
+termNotEq = TermNotEq
 
 native :: PureSMT.SExpr -> Constraint lang meta
 native = Native
