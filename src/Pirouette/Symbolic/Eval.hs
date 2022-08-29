@@ -473,7 +473,7 @@ symEvalDestructor t@(R.App hd _args) tyName = do
     (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
     (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
     (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
-    (_, Just _, _) -> do
+    (_, Just s, _) -> do
       -- we have a meta, explore every possibility
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
       let tyParams' = map typeFromMeta tyParams
@@ -490,7 +490,7 @@ symEvalDestructor t@(R.App hd _args) tyName = do
           svars <- lift $ freshSymVars consArgs
           let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
           let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-          let mconstr = unify term' symbCons
+          let mconstr = Just (s =:= symbCons)
           -- liftIO $ print mconstr
           case mconstr of
             Nothing -> empty
@@ -529,37 +529,8 @@ moreConstructors :: (SymEvalConstr lang) => Int -> WriterT Any (SymEval lang) ()
 moreConstructors n = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
-unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
-unify (R.App (R.Meta s) []) (R.App (R.Meta r) []) = Just (symVarEq s r)
-unify (R.App (R.Meta s) []) t = Just (s =:= t)
-unify u (R.App (R.Meta s) []) = Just (s =:= u)
-unify (R.App hdT argsT) (R.App hdU argsU) = do
-  uTU <- unifyVar hdT hdU
-  uArgs <- zipWithMPlus unifyArg argsT argsU
-  return $ uTU <> mconcat uArgs
-unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq t u])
-
-unifyVar :: (LanguageBuiltins lang) => VarMeta lang SymVar -> VarMeta lang SymVar -> Maybe (Constraint lang)
-unifyVar (R.Meta s) (R.Meta r) = Just (symVarEq s r)
-unifyVar (R.Meta s) t = Just (s =:= R.App t [])
-unifyVar t (R.Meta s) = Just (s =:= R.App t [])
-unifyVar t u = guard (t == u) >> Just (SMT.And [])
-
-unifyArg :: (LanguageBuiltins lang) => ArgMeta lang SymVar -> ArgMeta lang SymVar -> Maybe (Constraint lang)
-unifyArg (R.TermArg x) (R.TermArg y) = unify x y
-unifyArg (R.TyArg _) (R.TyArg _) = Just (SMT.And []) -- TODO: unify types too?
-unifyArg _ _ = Nothing
-
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
-
--- | Variation on zipwith that forces arguments to be of the same length,
--- returning 'mzero' whenever that does not hold.
-zipWithMPlus :: (MonadPlus m) => (a -> b -> m c) -> [a] -> [b] -> m [c]
-zipWithMPlus _ [] [] = return []
-zipWithMPlus _ _ [] = mzero
-zipWithMPlus _ [] _ = mzero
-zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
