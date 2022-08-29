@@ -137,7 +137,7 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
         -- And if a partial translation is already unsat,
         -- so is the translation of the whole set of constraints.
         (_, _, pathConstraints) <- constraintSetToSExpr (sestKnownNames env) (sestConstraint env)
-        void $ assertConstraint (sestKnownNames env) pathConstraints
+        assert pathConstraints
         res <- checkSat
         solverPop
         return $ case res of
@@ -165,9 +165,9 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
         case decl of
           Right _ -> return ()
           Left err -> error err
-        (_, _, pathConstraints) <- constraintSetToSExpr (sestKnownNames env) (sestConstraint env)
-        (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) pathConstraints
-        (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
+        (cstrTotal, _, pathConstraints) <- constraintSetToSExpr (sestKnownNames env) (sestConstraint env)
+        assert pathConstraints
+        assert cOut
         inconsistent <- checkSat
         case (inconsistent, cIn) of
           (Unsat, _) -> do
@@ -177,8 +177,8 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
             solverPop
             return PruneUnknown
           (_, Just cIn') -> do
-            (inTotal, _inUsedAnyUFs) <- assertNotConstraint (sestKnownNames env) cIn'
-            let everythingWasTranslated = cstrTotal && outTotal && inTotal
+            assertNot cIn'
+            let everythingWasTranslated = cstrTotal
             -- Any usedAnyUFs = cstrUsedAnyUFs <> outUsedAnyUFs <> inUsedAnyUFs
             result <- checkSat
             -- liftIO $ print result
@@ -195,15 +195,6 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
               _ -> return PruneUnknown
             solverPop
             return finalResult
-
-assertConstraint,
-  assertNotConstraint ::
-    (PirouetteReadDefs lang m, LanguageSMT lang, MonadIO m) =>
-    S.Set Name ->
-    PureSMT.SExpr ->
-    SolverT m (Bool, UsedAnyUFs)
-assertConstraint = undefined
-assertNotConstraint = undefined
 
 {-
 assertConstraint knownNames c@Bot = do
