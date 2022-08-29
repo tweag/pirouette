@@ -7,9 +7,11 @@
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
+import Data.Default
 import Data.Either
 import Data.List (intersperse)
 import Data.Map (Map)
+import qualified Data.Map as M
 import qualified Data.Set as S
 import Pirouette.Monad
 import Pirouette.SMT.Base
@@ -18,7 +20,39 @@ import Pirouette.Term.Syntax
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
-data Constraint lang meta = TODO
+data ConstraintSet lang meta = ConstraintSet
+  { -- | Represents the set of productive symbolic variable assignments we know of.
+    -- Productive in the sense that we will always have at least one constructor
+    -- on the rhs.
+    csAssignments :: M.Map meta (TermMeta lang meta),
+    -- | Represents the symbolic variable equivalences we know of. Satisfies the invariant
+    -- that if @M.lookup v csmetaEq == Just v'@, then @v' < v@ (lexicographically)
+    csMetaEq :: M.Map meta meta,
+    -- | And any potential native constraint we might need.
+    csNative :: [PureSMT.SExpr]
+  }
+
+instance Default (ConstraintSet lang meta) where
+  def = undefined
+
+instance (LanguagePretty lang, Pretty meta) => Pretty (ConstraintSet lang meta) where
+  pretty _ = "<constraint-set>"
+
+conjunct :: Constraint lang meta -> ConstraintSet lang meta -> Maybe (ConstraintSet lang meta)
+conjunct = undefined
+
+expandDefOf :: ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
+expandDefOf = undefined
+
+data Constraint lang meta
+  = SymVarEq meta meta
+  | Assign meta (TermMeta lang meta)
+  | TermEq (TermMeta lang meta) (TermMeta lang meta)
+  | TermNotEq (TermMeta lang meta) (TermMeta lang meta)
+  | Native PureSMT.SExpr
+
+instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
+  pretty _ = "<constraint>"
 
 symVarEq :: meta -> meta -> Constraint lang meta
 symVarEq a b = undefined -- SMT.And [SMT.VarEq a b]
@@ -35,32 +69,17 @@ native = undefined
 (=:=) :: meta -> TermMeta lang meta -> Constraint lang meta
 a =:= t = undefined -- SMT.And [SMT.Assign a t]
 
-instance Semigroup (Constraint lang meta) where
-  (<>) = undefined
-
-instance Monoid (Constraint lang meta) where
-  mempty = undefined
-
-instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
-  pretty _ = "<constraint>"
-
-expandDefOf :: Constraint lang meta -> meta -> Maybe (TermMeta lang meta)
-expandDefOf = undefined
-
-countAssigns :: (Num a) => Constraint lang meta -> a
-countAssigns = undefined
-
 data Branch lang meta = Branch
-  { additionalInfo :: Constraint lang meta,
+  { additionalInfo :: [Constraint lang meta],
     newTerm :: TermMeta lang meta
   }
 
-constraintToSExpr ::
+constraintSetToSExpr ::
   (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   S.Set Name ->
-  Constraint lang meta ->
+  ConstraintSet lang meta ->
   m (Bool, UsedAnyUFs, PureSMT.SExpr)
-constraintToSExpr = undefined
+constraintSetToSExpr = undefined
 
 {-
 

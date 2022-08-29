@@ -64,6 +64,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Parallel.Strategies
+import Data.Default
 import Data.Foldable
 import Data.List (genericLength)
 import qualified Data.Map.Strict as M
@@ -132,9 +133,7 @@ symeval ::
   m [Path lang a]
 symeval opts prob = do
   defs <- getPrtOrderedDefs
-  return $ runSymEval opts defs st0 prob
-  where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
+  return $ runSymEval opts defs def prob
 
 symevalAnyPathAccum ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
@@ -146,9 +145,7 @@ symevalAnyPathAccum ::
   m (Maybe (Path lang a), st)
 symevalAnyPathAccum f s0 opts p prob = do
   defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs st0 prob
-  where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
+  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs def prob
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -246,8 +243,12 @@ weightedParFilter f (ListT.Yield a w) =
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
 --  of whether or not we had already validated it before.
-learn :: (SymEvalConstr lang) => SMT.Constraint lang SymVar -> SymEval lang ()
-learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
+learn :: (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
+learn cs = do
+  curr <- gets sestConstraint
+  case foldl' (\mc c -> mc >>= C.conjunct c) (Just curr) cs of
+    Just curr' -> modify (\st -> st {sestConstraint = curr'})
+    Nothing -> empty
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
@@ -495,17 +496,13 @@ symEvalDestructor t@(R.App hd _args) tyName = do
           svars <- lift $ freshSymVars consArgs
           let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
           let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-          let mconstr = Just (s C.=:= symbCons)
-          -- liftIO $ print mconstr
-          case mconstr of
-            Nothing -> empty
-            Just constr -> do
-              -- add weight as many new assignments we get from unification
-              ListT.weight (C.countAssigns constr) $ do
-                lift $ learn constr
-                moreConstructors (C.countAssigns constr)
-                signalEvaluation
-                pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+          -- We just assigned a value to the motive, hence, by definition, we add one
+          -- assignment.
+          ListT.weight 1 $ do
+            lift $ learn [s C.=:= symbCons]
+            moreConstructors 1
+            signalEvaluation
+            pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
     (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
       -- we have a particular constructor
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
@@ -536,8 +533,8 @@ for2 as bs f = zipWith f as bs
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
   (SymEvalConstr lang) =>
-  SMT.Constraint lang SymVar ->
-  Maybe (SMT.Constraint lang SymVar) ->
+  PureSMT.SExpr ->
+  Maybe PureSMT.SExpr ->
   [UniversalAxiom lang] ->
   SymEval lang PruneResult
 pruneAndValidate cOut cIn axioms =

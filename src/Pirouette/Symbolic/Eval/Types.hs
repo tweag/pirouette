@@ -131,16 +131,16 @@ instance Pretty PathStatus where
   pretty OutOfFuel = "OutOfFuel"
 
 data Path lang res = Path
-  { pathConstraint :: SMT.Constraint lang SymVar,
+  { pathConstraint :: SMT.ConstraintSet lang SymVar,
     pathGamma :: M.Map Name (Type lang),
     pathStatus :: PathStatus,
     pathResult :: res
   }
   deriving (Functor, Traversable, Foldable)
 
-deriving instance (Eq (SMT.Constraint lang SymVar), Eq (Type lang), Eq res) => Eq (Path lang res)
+deriving instance (Eq (SMT.ConstraintSet lang SymVar), Eq (Type lang), Eq res) => Eq (Path lang res)
 
-deriving instance (Show (SMT.Constraint lang SymVar), Show (Type lang), Show res) => Show (Path lang res)
+deriving instance (Show (SMT.ConstraintSet lang SymVar), Show (Type lang), Show res) => Show (Path lang res)
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds _gamma ps res) =
@@ -155,15 +155,16 @@ data AvailableFuel = Fuel Int | InfiniteFuel
   deriving (Eq, Show)
 
 data SymEvalSt lang = SymEvalSt
-  { sestConstraint :: SMT.Constraint lang SymVar,
+  { sestConstraint :: SMT.ConstraintSet lang SymVar,
     sestGamma :: M.Map Name (Type lang),
     sestFreshCounter :: Int,
     sestStatistics :: SymEvalStatistics,
-    -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
-    sestValidated :: Bool,
     -- | The set of names the SMT solver is aware of
     sestKnownNames :: S.Set Name
   }
+
+instance Default (SymEvalSt lang) where
+  def = SymEvalSt def M.empty 0 mempty S.empty
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt {..} =

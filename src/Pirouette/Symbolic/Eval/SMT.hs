@@ -61,8 +61,8 @@ data SolverProblem lang :: K.Type -> K.Type where
   CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
 
 data CheckPropertyProblem lang = CheckPropertyProblem
-  { cpropOut :: Constraint lang SymVar,
-    cpropIn :: Maybe (Constraint lang SymVar),
+  { cpropOut :: PureSMT.SExpr,
+    cpropIn :: Maybe PureSMT.SExpr,
     cpropAxioms :: [UniversalAxiom lang],
     cpropState :: SymEvalSt lang,
     cpropDefs :: PrtOrderedDefs lang
@@ -126,24 +126,23 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
         (LanguageSMT lang) =>
         SymEvalSt lang ->
         HackSolver lang Bool
-      pathIsPlausible env
-        | sestValidated env = return True -- We already validated this branch before; nothing new was learnt.
-        | otherwise = do
-          solverPush
-          decl <- runExceptT (declareVariables (sestGamma env))
-          case decl of
-            Right _ -> return ()
-            Left err -> error err
-          -- Here we do not care about the totality of the translation,
-          -- since we want to prune unsatisfiable path.
-          -- And if a partial translation is already unsat,
-          -- so is the translation of the whole set of constraints.
-          void $ assertConstraint (sestKnownNames env) (sestConstraint env)
-          res <- checkSat
-          solverPop
-          return $ case res of
-            Unsat -> False
-            _ -> True
+      pathIsPlausible env = do
+        solverPush
+        decl <- runExceptT (declareVariables (sestGamma env))
+        case decl of
+          Right _ -> return ()
+          Left err -> error err
+        -- Here we do not care about the totality of the translation,
+        -- since we want to prune unsatisfiable path.
+        -- And if a partial translation is already unsat,
+        -- so is the translation of the whole set of constraints.
+        (_, _, pathConstraints) <- constraintSetToSExpr (sestKnownNames env) (sestConstraint env)
+        void $ assertConstraint (sestKnownNames env) pathConstraints
+        res <- checkSat
+        solverPop
+        return $ case res of
+          Unsat -> False
+          _ -> True
   solveProblem (CheckProperty CheckPropertyProblem {..}) s =
     hackSolverPrt s cpropDefs $ checkProperty cpropOut cpropIn cpropAxioms cpropState
     where
@@ -153,8 +152,8 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
       -- pathConstraints /\ cOut /\ (not cIn).
       checkProperty ::
         (LanguageSMT lang, LanguagePretty lang) =>
-        Constraint lang SymVar ->
-        Maybe (Constraint lang SymVar) ->
+        PureSMT.SExpr ->
+        Maybe PureSMT.SExpr ->
         [UniversalAxiom lang] ->
         SymEvalSt lang ->
         HackSolver lang PruneResult
@@ -166,7 +165,8 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
         case decl of
           Right _ -> return ()
           Left err -> error err
-        (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) (sestConstraint env)
+        (_, _, pathConstraints) <- constraintSetToSExpr (sestKnownNames env) (sestConstraint env)
+        (cstrTotal, _cstrUsedAnyUFs) <- assertConstraint (sestKnownNames env) pathConstraints
         (outTotal, _outUsedAnyUFs) <- assertConstraint (sestKnownNames env) cOut
         inconsistent <- checkSat
         case (inconsistent, cIn) of
@@ -200,7 +200,7 @@ assertConstraint,
   assertNotConstraint ::
     (PirouetteReadDefs lang m, LanguageSMT lang, MonadIO m) =>
     S.Set Name ->
-    Constraint lang SymVar ->
+    PureSMT.SExpr ->
     SolverT m (Bool, UsedAnyUFs)
 assertConstraint = undefined
 assertNotConstraint = undefined

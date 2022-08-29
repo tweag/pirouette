@@ -37,9 +37,9 @@ ifThenElseBranching isTrue trueTm isFalse falseTm isEq c t e excess =
             pure $
               Just
                 [ -- either they are equal
-                  Branch (symVarEq x1 y1) t',
+                  Branch [symVarEq x1 y1] t',
                   -- or they are not
-                  Branch (termEq x y) e'
+                  Branch [termEq x y] e'
                 ]
           | isEq eq,
             Just x1 <- termIsMeta x,
@@ -47,9 +47,9 @@ ifThenElseBranching isTrue trueTm isFalse falseTm isEq c t e excess =
             pure $
               Just
                 [ -- either they are equal
-                  Branch (x1 =:= y) t',
+                  Branch [x1 =:= y] t',
                   -- or they are not
-                  Branch (termNotEq x y) e'
+                  Branch [termNotEq x y] e'
                 ]
           | isEq eq,
             isStuckBuiltin x,
@@ -57,9 +57,9 @@ ifThenElseBranching isTrue trueTm isFalse falseTm isEq c t e excess =
             pure $
               Just
                 [ -- either they are equal
-                  Branch (y1 =:= x) t',
+                  Branch [y1 =:= x] t',
                   -- or they are not
-                  Branch (termNotEq y x) e'
+                  Branch [termNotEq y x] e'
                 ]
           | isEq eq,
             isStuckBuiltin x,
@@ -67,17 +67,17 @@ ifThenElseBranching isTrue trueTm isFalse falseTm isEq c t e excess =
             pure $
               Just
                 [ -- either they are equal
-                  Branch (termEq x y) t',
+                  Branch [termEq x y] t',
                   -- or they are not
-                  Branch (termNotEq x y) e'
+                  Branch [termNotEq x y] e'
                 ]
         _
           | Just v <- termIsMeta c ->
             pure $
               Just
                 [ -- c is True => t is executed
-                  Branch (v =:= trueTm) t',
+                  Branch [v =:= trueTm] t',
                   -- c is False => e is executed
-                  Branch (v =:= falseTm) e'
+                  Branch [v =:= falseTm] e'
                 ]
         _ -> pure Nothing
