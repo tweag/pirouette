@@ -25,6 +25,9 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
+data TermRelation = TREqual | TRNotEqual
+  deriving (Eq, Show)
+
 data ConstraintSet lang meta = ConstraintSet
   { -- | Represents the set of productive symbolic variable assignments we know of.
     -- Productive in the sense that we will always have at least one constructor
@@ -36,7 +39,7 @@ data ConstraintSet lang meta = ConstraintSet
     -- | Any potential native constraint we might need.
     csNative :: [PureSMT.SExpr],
     -- | And finally, pairs of terms we've discovered /not/ to be equal
-    csNotEq :: [(TermMeta lang meta, TermMeta lang meta)]
+    csRelations :: [(TermRelation, TermMeta lang meta, TermMeta lang meta)]
   }
 
 instance (Ord meta) => Semigroup (ConstraintSet lang meta) where
@@ -45,7 +48,7 @@ instance (Ord meta) => Semigroup (ConstraintSet lang meta) where
       (csAssignments s1 <> csAssignments s2)
       (csMetaEq s1 <> csMetaEq s2)
       (csNative s1 <> csNative s2)
-      (csNotEq s1 <> csNotEq s2)
+      (csRelations s1 <> csRelations s2)
 
 instance (Ord meta) => Monoid (ConstraintSet lang meta) where
   mempty = def
@@ -60,14 +63,18 @@ instance (LanguagePretty lang, Pretty meta) => Pretty (ConstraintSet lang meta) 
   pretty ConstraintSet {..} =
     vsep $
       map (uncurry prettyAssignment) (M.toList csAssignments)
-        ++ map (uncurry prettyNotEq) csNotEq
+        ++ map prettyRelations csRelations
         ++ map (uncurry prettyMetaEq) (M.toList csMetaEq)
         ++ map prettyNative csNative
     where
       prettyAssignment v t = pretty v <+> ":=" <+> pretty t
       prettyMetaEq v u = pretty v <+> "~~" <+> pretty u
-      prettyNotEq v u = pretty v <+> "/=" <+> pretty u
+      prettyRelations (r, v, u) = pretty v <+> pretty r <+> pretty u
       prettyNative n = pretty (show n)
+
+instance Pretty TermRelation where
+  pretty TREqual = "=="
+  pretty TRNotEqual = "/="
 
 -- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the
 --  constraint set @cs@ makes it provably UNSAT. If @conjunct c cs == Just cs'@, there
@@ -81,11 +88,11 @@ conjunct ::
 conjunct c cs0 =
   case c of
     Assign v t -> unifyMetaWith cs0 v t
-    TermEq t u -> unifyWith cs0 t u
     -- TODO: Actually... we could be calling the smt solver right here to check that this
     -- sexpr is consistent with cs0, but let's leave that for later.
     Native sexpr -> Just $ cs0 {csNative = sexpr : csNative cs0}
-    TermNotEq t u -> Just $ cs0 {csNotEq = (t, u) : csNotEq cs0}
+    TermEq t u -> Just $ cs0 {csRelations = (TREqual, t, u) : csRelations cs0}
+    TermNotEq t u -> Just $ cs0 {csRelations = (TRNotEqual, t, u) : csRelations cs0}
   where
     -- Attempts to unify two terms in an environment given by a current known set
     -- of constraints. Returns @Nothing@ when the terms can't be unified.
@@ -165,17 +172,21 @@ constraintSetToSExpr ::
   m (Bool, UsedAnyUFs, PureSMT.SExpr)
 constraintSetToSExpr knownNames ConstraintSet {..} = do
   eAssignments <- mapM (runTranslator . uncurry trAssignment) $ M.toList csAssignments
-  eNotEq <- mapM (runTranslator . uncurry trNotEq) csNotEq
+  eNotEq <- mapM (runTranslator . trRelations) csRelations
   let es = eAssignments ++ eNotEq
   let (trs, usedUFs) = unzip (rights es)
   let eEquivalences = map (uncurry trSymVarEq) $ M.toList csMetaEq
   return (all isRight es, mconcat usedUFs, PureSMT.andMany (csNative ++ eEquivalences ++ trs))
   where
-    trNotEq :: TermMeta lang meta -> TermMeta lang meta -> TranslatorT m PureSMT.SExpr
-    trNotEq tx ty = do
+    trRelations :: (TermRelation, TermMeta lang meta, TermMeta lang meta) -> TranslatorT m PureSMT.SExpr
+    trRelations (r, tx, ty) = do
       tx' <- translateTerm knownNames tx
       ty' <- translateTerm knownNames ty
-      return $ PureSMT.not (tx' `PureSMT.eq` ty')
+      return $ trTermRelation r tx' ty'
+
+    trTermRelation :: TermRelation -> PureSMT.SExpr -> PureSMT.SExpr -> PureSMT.SExpr
+    trTermRelation TREqual a b = PureSMT.eq a b
+    trTermRelation TRNotEqual a b = PureSMT.not (PureSMT.eq a b)
 
     trAssignment :: meta -> TermMeta lang meta -> TranslatorT m PureSMT.SExpr
     trAssignment name term = do
