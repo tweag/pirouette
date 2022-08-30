@@ -103,6 +103,9 @@ conjunct c cs0 =
     -- nice test suite so we can rely on it. For now, this will do, but this
     -- is of utmost priority!
 
+    -- Looking up representatives of equivalence classes (in csMetaEq) should really
+    -- be a single map lookup. Great first issue for a new pirouette developer! :)
+
     -- Attempts to unify two terms in an environment given by a current known set
     -- of constraints. Returns @Nothing@ when the terms can't be unified.
     unifyWith ::
