@@ -5,6 +5,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Collapse lambdas" #-}
 
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
@@ -71,8 +74,12 @@ instance Pretty TermRelation where
   pretty TREqual = "=="
   pretty TRNotEqual = "/="
 
---  constraint set @cs@ makes it provably UNSAT. If @conjunct c cs == Just cs'@, there
---  is /no guarantee/ that @cs'@ is SAT, you must still validate it on a SMT solver.
+-- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the 'ConstraintSet'
+-- @cs@ makes it provably UNSAT. If @conjunct c cs == Just cs'@, there
+-- is /no guarantee/ that @cs'@ is SAT, you must still validate it on a SMT solver.
+--
+-- WARNING: Do not pass constraints involving 'SystF.Lam' and 'SystF.Abs', these are not implemented
+-- and we're not sure they even should be implemented.
 conjunct ::
   forall lang meta.
   (Language lang, Pretty meta, Ord meta) =>
@@ -91,6 +98,11 @@ conjunct c cs0 =
     -- we want to unify things: '=:=' or just register them as equal: 'termEq'
     Related tr t u -> Just $ cs0 {csRelations = (tr, t, u) : csRelations cs0}
   where
+    -- TODO: The functions below feel like a dangerous re-implementation of union find.
+    -- We should just rely on a library or implement this somewhere else and write a
+    -- nice test suite so we can rely on it. For now, this will do, but this
+    -- is of utmost priority!
+
     -- Attempts to unify two terms in an environment given by a current known set
     -- of constraints. Returns @Nothing@ when the terms can't be unified.
     unifyWith ::
@@ -102,14 +114,15 @@ conjunct c cs0 =
     unifyWith cs v (SystF.App (SystF.Meta u) []) = unifyMetaWith cs u v
     unifyWith cs (SystF.App hdT argsT) (SystF.App hdU argsU) = do
       guard (hdT == hdU)
-      iterateM cs $ zipWith (\x y cs' -> unifyArgWith cs' x y) argsT argsU
+      guard (length argsT == length argsU)
+      iterateM cs $ zipWith (\x y -> \cs' -> unifyArgWith cs' x y) argsT argsU
       where
         iterateM :: (Monad m) => a -> [a -> m a] -> m a
         iterateM a [] = return a
         iterateM a (f : fs) = f a >>= flip iterateM fs
     unifyWith _ t u =
       error $
-        "unifyWith:\n"
+        "unifyWith: Unimplemented for:\n"
           ++ unlines (map (renderSingleLineStr . pretty) [t, u])
 
     -- Attempts to unify a metavariable with a term; will perform any potential lookup
@@ -122,10 +135,12 @@ conjunct c cs0 =
       TermMeta lang meta ->
       Maybe (ConstraintSet lang meta)
     unifyMetaWith cs v u
-      -- First we check whether @v@ is actually equal to anything else
-      | Just t <- M.lookup v (csAssignments cs) = unifyWith cs t u
-      -- If not, we check whether v is equivalent to some other smaller metavariable
+      -- We check whether v is equivalent to some other smaller metavariable
       | Just v' <- M.lookup v (csMetaEq cs) = unifyMetaWith cs v' u
+      -- If not, check whether @v@ is actually defined to be a given term. If so, that
+      -- have to be unifiable with u:
+      | Just t <- M.lookup v (csAssignments cs) = unifyWith cs t u
+      -- Finally, we have a /new/ @v@
       | otherwise = Just $ unifyNewMetaWith cs v u
 
     -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
@@ -136,10 +151,20 @@ conjunct c cs0 =
       TermMeta lang meta ->
       ConstraintSet lang meta
     unifyNewMetaWith cs@ConstraintSet {..} v (SystF.App (SystF.Meta u) [])
+      -- Are v and u the same? Great, nothing to do
       | v == u = cs
-      | Just t <- M.lookup u csAssignments = cs {csAssignments = M.insert v t csAssignments}
+      -- Is u actually equivalent to anything smaller than u? Try that instead!
       | Just u' <- M.lookup u csMetaEq = unifyNewMetaWith cs v (SystF.App (SystF.Meta u') [])
-      | otherwise = cs {csMetaEq = M.insert (max v u) (min v u) csMetaEq}
+      -- None of the above? Register the equivalence of v and u while altering the
+      -- assignments (if any and if necessary)
+      | otherwise =
+        let newMetaEq = M.insert (max v u) (min v u) csMetaEq
+            -- If u already had a term assigned to it, and v is smaller, we need to
+            -- update the assignments too!
+            newAssignments = case M.lookup u csAssignments of
+              Just tu | v < u -> M.insert v tu (M.delete u csAssignments)
+              _ -> csAssignments
+         in cs {csMetaEq = newMetaEq, csAssignments = newAssignments}
     unifyNewMetaWith cs v u =
       cs {csAssignments = M.insert v u (csAssignments cs)}
 
@@ -220,8 +245,6 @@ data Branch lang meta = Branch
 data TermRelation = TREqual | TRNotEqual
   deriving (Eq, Show)
 
--- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the 'ConstraintSet' @cs@
--- is guaranteed to make it UNSAT. Check 'TermRelation' for nuances between 'Unifiable' and 'Related'
 data Constraint lang meta
   = Related TermRelation (TermMeta lang meta) (TermMeta lang meta)
   | Unifiable (TermMeta lang meta) (TermMeta lang meta)
