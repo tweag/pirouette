@@ -353,27 +353,6 @@ symEvalOneStep t@(R.App hd args) = case hd of
     case C.expandDefOf cstr vr of
       Nothing -> justEvaluateArgs
       Just valOfvr -> signalEvaluation >> pure valOfvr
-  {-
-      case cstr of
-        C.And atomics -> do
-          let findAssignment v (C.Assign w _) = v == w
-              findAssignment _ _ = False
-              findEq v (C.VarEq w _) = v == w
-              findEq _ _ = False
-              -- we need to jump more than one equality,
-              -- hence the involved loop here
-              findLoop v
-                | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
-                  Just tm
-                | Just (C.VarEq _ other) <- find (findEq v) atomics =
-                  findLoop other
-                | otherwise =
-                  Nothing
-          case findLoop vr of
-            Nothing -> justEvaluateArgs
-            Just lp -> signalEvaluation >> pure lp
-        _ -> justEvaluateArgs
-  -}
 
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
