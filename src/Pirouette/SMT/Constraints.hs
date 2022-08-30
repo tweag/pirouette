@@ -25,9 +25,6 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 
-data TermRelation = TREqual | TRNotEqual
-  deriving (Eq, Show)
-
 data ConstraintSet lang meta = ConstraintSet
   { -- | Represents the set of productive symbolic variable assignments we know of.
     -- Productive in the sense that we will always have at least one constructor
@@ -76,7 +73,6 @@ instance Pretty TermRelation where
   pretty TREqual = "=="
   pretty TRNotEqual = "/="
 
--- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the
 --  constraint set @cs@ makes it provably UNSAT. If @conjunct c cs == Just cs'@, there
 --  is /no guarantee/ that @cs'@ is SAT, you must still validate it on a SMT solver.
 conjunct ::
@@ -87,12 +83,15 @@ conjunct ::
   Maybe (ConstraintSet lang meta)
 conjunct c cs0 =
   case c of
-    Assign v t -> unifyMetaWith cs0 v t
     -- TODO: Actually... we could be calling the smt solver right here to check that this
     -- sexpr is consistent with cs0, but let's leave that for later.
     Native sexpr -> Just $ cs0 {csNative = sexpr : csNative cs0}
-    TermEq t u -> Just $ cs0 {csRelations = (TREqual, t, u) : csRelations cs0}
-    TermNotEq t u -> Just $ cs0 {csRelations = (TRNotEqual, t, u) : csRelations cs0}
+    Unifiable t u -> unifyWith cs0 t u
+    -- TODO: can we attempt to unify t and u below, when tr is TREqual, and, upon
+    -- succeeding, producing a richer set of concstraints? Would that make sense?
+    -- An argument against that is that on call sites, we should have information about whether
+    -- we want to unify things: '=:=' or just register them as equal: 'termEq'
+    Related tr t u -> Just $ cs0 {csRelations = (tr, t, u) : csRelations cs0}
   where
     -- Attempts to unify two terms in an environment given by a current known set
     -- of constraints. Returns @Nothing@ when the terms can't be unified.
@@ -209,26 +208,41 @@ data Branch lang meta = Branch
     newTerm :: TermMeta lang meta
   }
 
+-- | Which relations between terms we support. Note that @TRUnifiable@ is different from @TREqual@.
+-- Semantically, the 'Constraint' (in pseudo-syntax):
+--
+-- > Unifiable ($s1 - 1) 0
+--
+-- Will fail. That is, trying to 'conjunct' that constraint to a 'ConstraintSet' will return @Nothing@.
+-- On the other hand, saying:
+--
+-- > Related TREqual ($s1 - 1) 0
+--
+-- succeeds, and produces a constraint set that records a new definitional equality: @s1 - 1@ /IS/ @0@.
+data TermRelation = TREqual | TRNotEqual
+  deriving (Eq, Show)
+
+-- | Calling @conjunct c cs@ will return @Nothing@ if the addition of @c@ into the 'ConstraintSet' @cs@
+-- is guaranteed to make it UNSAT. Check 'TermRelation' for nuances between 'Unifiable' and 'Related'
 data Constraint lang meta
-  = Assign meta (TermMeta lang meta)
-  | TermEq (TermMeta lang meta) (TermMeta lang meta)
-  | TermNotEq (TermMeta lang meta) (TermMeta lang meta)
+  = Related TermRelation (TermMeta lang meta) (TermMeta lang meta)
+  | Unifiable (TermMeta lang meta) (TermMeta lang meta)
   | Native PureSMT.SExpr
 
-symVarEq :: meta -> meta -> Constraint lang meta
-symVarEq x y = Assign x (SystF.App (SystF.Meta y) [])
-
 termEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
-termEq = TermEq
+termEq = Related TREqual
 
 termNotEq :: TermMeta lang meta -> TermMeta lang meta -> Constraint lang meta
-termNotEq = TermNotEq
+termNotEq = Related TRNotEqual
 
 native :: PureSMT.SExpr -> Constraint lang meta
 native = Native
 
 (=:=) :: meta -> TermMeta lang meta -> Constraint lang meta
-a =:= t = Assign a t
+a =:= t = Unifiable (SystF.App (SystF.Meta a) []) t
+
+symVarEq :: meta -> meta -> Constraint lang meta
+symVarEq x y = x =:= SystF.App (SystF.Meta y) []
 
 instance (LanguagePretty lang, Pretty meta) => Pretty (Constraint lang meta) where
   pretty _ = "<constraint>"
