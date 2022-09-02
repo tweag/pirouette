@@ -16,6 +16,8 @@ import Pirouette.Term.TransitiveDeps
 import Pirouette.Transformations.Inline
 
 -- | Removes all Even-Odd mutually recursive functions from the program.
+-- When successful, it also computes the correct order of definitions according to dependencies between them,
+-- storing it in the 'prtDepOrder' field in the resulting 'PrtOrderedDefs'.
 elimEvenOddMutRec :: forall lang. (LanguageBuiltins lang) => PrtUnorderedDefs lang -> PrtOrderedDefs lang
 elimEvenOddMutRec udefs = runIdentity $ do
   ordWithCycles <- runReaderT sortAllDeps udefs
