@@ -2,8 +2,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | Implements whole-program transformations. If you're looking
---  for term transformations, check "Pirouette.Term.Transformations"
 module Pirouette.Transformations.Inline where
 
 import Data.Generics.Uniplate.Operations
