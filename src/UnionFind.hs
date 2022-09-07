@@ -170,12 +170,20 @@ trivialInsert :: Ord key =>
   UnionFind key value
 trivialInsert = insert (\_ _ -> error "insert was not trivial")
 
-toLists :: UnionFind key value -> ([(key, key)], [(key, value)])
+-- | It is guaranteed that the right-hand side of a pair in the list of
+-- equalities is the representant of an equivalence class, and therefore it
+-- occurs on the left-hand side in the list of bindings.
+--
+toLists :: Ord key => UnionFind key value -> (UnionFind key value, [(key, key)], [(key, value)])
 toLists unionFind =
-  unionFind
-  & getMap
-  & Map.toList
-  & map (\(key, binding) -> case binding of
-              ChildOf key' -> Left (key, key')
-              Ancestor value -> Right (key, value))
-  & partitionEithers
+  foldl
+    (\(unionFind, equalities, bindings) (key, binding) ->
+        case binding of
+          ChildOf _ ->
+            -- FIXME: this is dropping the optimised union-find.
+            let (unionFind', ancestor, _) = findAncestorAndValue unionFind key in
+              (unionFind', (key, ancestor) : equalities, bindings)
+          Ancestor value ->
+            (unionFind, equalities, (key, value) : bindings))
+    (unionFind, [], [])
+    (Map.toList $ getMap unionFind)
