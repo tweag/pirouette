@@ -1,6 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | This module implements a persistent union-find data structure. This
@@ -41,14 +39,16 @@ data UnionFindCell key value
 -- there is a path made of @ChildOf@ constructors from that key to an @Ancestor@
 -- constructor.
 --
-type UnionFind key value = Map key (UnionFindCell key value)
+newtype UnionFind key value = UnionFind {
+  getMap :: Map key (UnionFindCell key value)
+}
 
 instance Default (UnionFind key value) where
   def = empty
 
 instance (Pretty key, Pretty value) => Pretty (UnionFind key value) where
   pretty unionFind =
-    vsep $ map (uncurry prettyBinding) (Map.toList unionFind)
+    vsep $ map (uncurry prettyBinding) (Map.toList $ getMap unionFind)
     where
       prettyBinding key1 (ChildOf key2) = pretty key1 <+> "~~" <+> pretty key2
       prettyBinding key (Ancestor value) = pretty key <+> ":=" <+> pretty value
@@ -56,7 +56,7 @@ instance (Pretty key, Pretty value) => Pretty (UnionFind key value) where
 -- | The empty union-find that does not know of any equivalences or values.
 --
 empty :: UnionFind key value
-empty = Map.empty
+empty = UnionFind Map.empty
 
 -- | @findAncestorAndValue unionFind key@ finds the ancestor and value
 -- associated to @key@ in the @unionFind@ structure. It returns a new union-find
@@ -68,7 +68,7 @@ empty = Map.empty
 --
 findAncestorAndValue :: Ord key => UnionFind key value -> key -> (UnionFind key value, key, Maybe value)
 findAncestorAndValue unionFind key =
-  case Map.lookup key unionFind of
+  case Map.lookup key $ getMap unionFind of
     Nothing -> (unionFind, key, Nothing)
     Just (ChildOf key') -> findAncestorAndValue unionFind key' -- will be @Just@
     Just (Ancestor value) -> (unionFind, key, Just value)
@@ -114,23 +114,22 @@ union insert merge unionFind key1 key2 =
   let (unionFind2, ancestor2, maybeValue2) = findAncestorAndValue unionFind1 key2 in
   if ancestor1 == ancestor2 then
     Just unionFind2
-  else case (maybeValue1, maybeValue2) of
+  else
+    let onUnionFind2sMap update = Just $ UnionFind $ update $ getMap $ unionFind2 in
+    case (maybeValue1, maybeValue2) of
     (Nothing, Nothing) -> do
       value <- insert
-      Just $
-        unionFind2
-        & Map.insert key1 (ChildOf key2)
-        & Map.insert key2 (Ancestor value)
-    (Just _, Nothing) -> Just $ Map.insert key2 (ChildOf key1) unionFind2
-    (Nothing, Just _) -> Just $ Map.insert key1 (ChildOf key2) unionFind2
+      onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
+                       . Map.insert key2 (Ancestor value)
+    (Just _, Nothing) ->
+      onUnionFind2sMap $ Map.insert key2 (ChildOf key1)
+    (Nothing, Just _) ->
+      onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
     (Just value1, Just value2) ->
       -- FIXME: Implement the optimisation that choses which key should be the
       -- other's child by keeping track of the size of the equivalence classes.
-      let value = merge value1 value2 in
-      Just $
-        unionFind2
-        & Map.insert key1 (ChildOf key2)
-        & Map.insert key2 (Ancestor value)
+      onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
+                       . Map.insert key2 (Ancestor $ merge value1 value2)
 
 -- | Same as @union@ for trivial cases where one knows for sure that:
 --
@@ -159,7 +158,7 @@ insert :: Ord key =>
 insert merge unionFind key value =
   let (unionFind', ancestor, maybeValue) = findAncestorAndValue unionFind key in
   let newValue = maybe value (merge value) maybeValue in
-  Map.insert ancestor (Ancestor newValue) unionFind'
+  UnionFind $ Map.insert ancestor (Ancestor newValue) $ getMap unionFind'
 
 -- | Same as @insert@ for trivial cases where one knows for sure that the key is
 -- not already in the structure.
@@ -174,6 +173,7 @@ trivialInsert = insert (\_ _ -> error "insert was not trivial")
 toLists :: UnionFind key value -> ([(key, key)], [(key, value)])
 toLists unionFind =
   unionFind
+  & getMap
   & Map.toList
   & map (\(key, binding) -> case binding of
               ChildOf key' -> Left (key, key')
