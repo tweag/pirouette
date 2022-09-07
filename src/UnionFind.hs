@@ -63,12 +63,13 @@ find unionFind key =
   let (unionFind', _, maybeValue) = findAncestorAndValue unionFind key in
   (unionFind', maybeValue)
 
--- | @union merge unionFind key1 key2@ merges together the equivalence classes
--- of @key1@ and @key2@ in @unionFind@, thus adding the information that @key1@
--- and @key2@ are equivalent, and returns an updated union-find structure.
+-- | @union insert merge unionFind key1 key2@ merges together the equivalence
+-- classes of @key1@ and @key2@ in @unionFind@, thus adding the information that
+-- @key1@ and @key2@ are equivalent, and returns an updated union-find
+-- structure.
 --
--- - If neither @key1@ nor @key2@ exists in @unionFind@, @union@ returns
---   @Nothing@.
+-- - If neither @key1@ nor @key2@ exists in @unionFind@, @union@ uses @insert@
+--   to know whether to return @Nothing@ or to add a specific value.
 --
 -- - If either @key1@ or @key2@ exists in @unionFind@ but not the other, the
 --   other is added transparently to the existing one's equivalence class.
@@ -83,33 +84,32 @@ find unionFind key =
 --   associated to @key1@'s equivalence class as first argument and the value
 --   associated to @key2@'s equivalence class as second argument.
 --
--- FIXME: Implement the optimisation that choses which key should be the other's
--- child by keeping track of the size of the equivalence classes.
---
 union :: Ord key =>
-  (Maybe value -> Maybe value -> Maybe value) ->
+  Maybe value ->
+  (value -> value -> value) ->
   UnionFind key value ->
   key ->
   key ->
   Maybe (UnionFind key value)
-union merge unionFind key1 key2 =
+union insert merge unionFind key1 key2 =
   let (unionFind1, ancestor1, maybeValue1) = findAncestorAndValue unionFind  key1 in
   let (unionFind2, ancestor2, maybeValue2) = findAncestorAndValue unionFind1 key2 in
   if ancestor1 == ancestor2 then
     Just unionFind2
-  else do
-    value <- merge maybeValue1 maybeValue2
-    return $
-      unionFind2
-      & Map.insert key1 (ChildOf key2)
-      & Map.insert key2 (Ancestor value)
-
--- | @unionList@ is like @union@ for several pairs of keys at once.
---
-unionList :: Ord key =>
-  (Maybe value -> Maybe value -> Maybe value) ->
-  UnionFind key value ->
-  [(key, key)] ->
-  Maybe (UnionFind key value)
-unionList merge =
-  foldM (\unionFind (key1, key2) -> union merge unionFind key1 key2)
+  else case (maybeValue1, maybeValue2) of
+    (Nothing, Nothing) -> do
+      value <- insert
+      Just $
+        unionFind2
+        & Map.insert key1 (ChildOf key2)
+        & Map.insert key2 (Ancestor value)
+    (Just _, Nothing) -> Just $ Map.insert key2 (ChildOf key1) unionFind2
+    (Nothing, Just _) -> Just $ Map.insert key1 (ChildOf key2) unionFind2
+    (Just value1, Just value2) ->
+      -- FIXME: Implement the optimisation that choses which key should be the
+      -- other's child by keeping track of the size of the equivalence classes.
+      let value = merge value1 value2 in
+      Just $
+        unionFind2
+        & Map.insert key1 (ChildOf key2)
+        & Map.insert key2 (Ancestor value)
