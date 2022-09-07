@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -18,6 +19,7 @@
 module UnionFind where
 
 import Data.Default (Default, def)
+import Data.Either (partitionEithers)
 import Data.Function ((&))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -168,3 +170,12 @@ trivialInsert :: Ord key =>
   value ->
   UnionFind key value
 trivialInsert = insert (\_ _ -> error "insert was not trivial")
+
+toLists :: UnionFind key value -> ([(key, key)], [(key, value)])
+toLists unionFind =
+  unionFind
+  & Map.toList
+  & map (\(key, binding) -> case binding of
+              ChildOf key' -> Left (key, key')
+              Ancestor value -> Right (key, value))
+  & partitionEithers
