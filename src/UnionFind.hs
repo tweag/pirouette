@@ -17,6 +17,7 @@
 
 module UnionFind where
 
+import Data.Default (Default, def)
 import Data.Function ((&))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -38,6 +39,9 @@ data UnionFindCell key value
 -- constructor.
 --
 type UnionFind key value = Map key (UnionFindCell key value)
+
+instance Default (UnionFind key value) where
+  def = empty
 
 instance (Pretty key, Pretty value) => Pretty (UnionFind key value) where
   pretty unionFind =
