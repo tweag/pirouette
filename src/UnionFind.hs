@@ -21,6 +21,7 @@ import Data.Default (Default, def)
 import Data.Function ((&))
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromJust)
 import Prettyprinter
 
 data UnionFindCell key value
@@ -129,3 +130,15 @@ union insert merge unionFind key1 key2 =
         & Map.insert key1 (ChildOf key2)
         & Map.insert key2 (Ancestor value)
 
+-- | Same as @union@ for trivial cases where one knows for sure that:
+--
+-- - At least one of the keys is in the structure.
+-- - The keys are not in the same equivalence class (or one is absent).
+--
+trivialUnion :: Ord key =>
+  UnionFind key value ->
+  key ->
+  key ->
+  UnionFind key value
+trivialUnion uf k1 k2 =
+  fromJust $ union (error "union was too trivial") (error "union was not trivial") uf k1 k2
