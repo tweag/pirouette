@@ -142,3 +142,29 @@ trivialUnion :: Ord key =>
   UnionFind key value
 trivialUnion uf k1 k2 =
   fromJust $ union (error "union was too trivial") (error "union was not trivial") uf k1 k2
+
+-- | @insert merge unionFind key value@ adds a binding from @key@ to @value@ in
+-- the structure. If @key@ is already known in the structure, then @merge@ is
+-- called to reconcile the known value and the new one. @merge@ receives the new
+-- value as first argument.
+--
+insert :: Ord key =>
+  (value -> value -> value) ->
+  UnionFind key value ->
+  key ->
+  value ->
+  UnionFind key value
+insert merge unionFind key value =
+  let (unionFind', ancestor, maybeValue) = findAncestorAndValue unionFind key in
+  let newValue = maybe value (merge value) maybeValue in
+  Map.insert ancestor (Ancestor newValue) unionFind'
+
+-- | Same as @insert@ for trivial cases where one knows for sure that the key is
+-- not already in the structure.
+--
+trivialInsert :: Ord key =>
+  UnionFind key value ->
+  key ->
+  value ->
+  UnionFind key value
+trivialInsert = insert (\_ _ -> error "insert was not trivial")
