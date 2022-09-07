@@ -1,3 +1,7 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | This module implements a persistent union-find data structure. This
 -- structure reprensents a map from equivalence classes of keys to values. The
 -- equivalence relation is irrelevant. The structure primarily provides two
@@ -13,10 +17,10 @@
 
 module UnionFind where
 
-import Control.Monad (foldM)
 import Data.Function ((&))
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Prettyprinter
 
 data UnionFindCell key value
   = ChildOf key
@@ -34,6 +38,13 @@ data UnionFindCell key value
 -- constructor.
 --
 type UnionFind key value = Map key (UnionFindCell key value)
+
+instance (Pretty key, Pretty value) => Pretty (UnionFind key value) where
+  pretty unionFind =
+    vsep $ map (uncurry prettyBinding) (Map.toList unionFind)
+    where
+      prettyBinding key1 (ChildOf key2) = pretty key1 <+> "~~" <+> pretty key2
+      prettyBinding key (Ancestor value) = pretty key <+> ":=" <+> pretty value
 
 -- | The empty union-find that does not know of any equivalences or values.
 --
@@ -113,3 +124,4 @@ union insert merge unionFind key1 key2 =
         unionFind2
         & Map.insert key1 (ChildOf key2)
         & Map.insert key2 (Ancestor value)
+
