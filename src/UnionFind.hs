@@ -35,6 +35,11 @@ data UnionFindCell key value
 --
 type UnionFind key value = Map key (UnionFindCell key value)
 
+-- | The empty union-find that does not know of any equivalences or values.
+--
+empty :: UnionFind key value
+empty = Map.empty
+
 -- | @findAncestorAndValue unionFind key@ finds the ancestor and value
 -- associated to @key@ in the @unionFind@ structure. It returns a new union-find
 -- structure with the same semantics but optimised for future calls, the
