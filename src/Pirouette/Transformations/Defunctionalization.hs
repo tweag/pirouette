@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MonoLocalBinds #-}
@@ -10,7 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
-module Pirouette.Transformations.Defunctionalization (defunctionalize) where
+module Pirouette.Transformations.Defunctionalization (defunctionalize, defunctionalize', Defunctionalized) where
 
 import Control.Arrow (first, (***))
 import Control.Monad.RWS.Strict
@@ -27,8 +28,11 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Transformations.EtaExpand
-import Pirouette.Transformations.Monomorphization (argsToStr)
+import Pirouette.Transformations.EtaExpand (EtaExpanded)
+import Pirouette.Transformations.Monomorphization (Monomorphized, argsToStr)
+import Pirouette.Transformations.Tagged
+
+data Defunctionalized
 
 -- TODO: maybe eta expand should be a separate step altogether!
 
@@ -36,14 +40,13 @@ import Pirouette.Transformations.Monomorphization (argsToStr)
 -- at this stage. This helps keeping the defunctionalizer as simple as possible. Otherwise, we need to
 -- work much harder to understand whether to defunctionalize, say, a polymorphic constructor which may
 -- be applied to something like @Integer -> Integer@.
---
--- Requirements for the defunctionalizer:
---
---  1. No type-variables anywhere.
-defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-defunctionalize defs0 = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
+defunctionalize :: (Language lang, LanguageBuiltinTypes lang) => Xform '[EtaExpanded, Monomorphized] '[Defunctionalized] (PrtUnorderedDefs lang)
+defunctionalize = Xform defunctionalize'
+
+defunctionalize' :: (Language lang, LanguageBuiltinTypes lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+defunctionalize' defs0 = defs' {prtUODecls = prtUODecls defs' <> typeDecls <> applyFunDecls}
   where
-    (defs1, toDefun1) = defunTypes (etaExpandAll defs0)
+    (defs1, toDefun1) = defunTypes defs0
     defs2 = defunDtors defs1
     (defs3, toDefun2) = defunFuns defs2
     toDefun = toDefun1 `M.union` toDefun2

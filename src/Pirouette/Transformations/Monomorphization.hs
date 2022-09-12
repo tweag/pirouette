@@ -1,4 +1,4 @@
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
@@ -27,15 +27,22 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Transformations.Prenex (Prenex)
+import Pirouette.Transformations.Tagged
 import Pirouette.Utils
 
 -- * Monomorphization
 
+data Monomorphized
+
+monomorphize :: (Language lang) => Xform '[Prenex] '[Monomorphized] (PrtUnorderedDefs lang)
+monomorphize = Xform monomorphize'
+
 -- | Given a set of definitions in prenex form (i.e., all 'SystF.TyAll' appear in the front and
 -- you can rely on "Pirouette.Transformations.Prenex" to get there), will yield a new set
 -- of definitions that contains no 'SystF.TyAll' nor datatypes of kind other than *.
-monomorphize :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
-monomorphize defs0 = prune $ go mempty defs0
+monomorphize' :: forall lang. (Language lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+monomorphize' defs0 = prune $ go mempty defs0
   where
     defsToMono = selectMonoDefs defs0
 

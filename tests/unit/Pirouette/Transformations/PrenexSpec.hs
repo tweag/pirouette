@@ -65,11 +65,11 @@ main = f @Integer @Integer 3 (g @Integer @Integer @Integer 4 5 6)
 tests :: [TestTree]
 tests =
   [ testCase "prenex example #1" $
-      prenex beforePrenex1 @=? afterPrenex1,
+      prenex' beforePrenex1 @=? afterPrenex1,
     testCase "prenex example #1, unchanged" $
-      prenex afterPrenex1 @=? afterPrenex1,
+      prenex' afterPrenex1 @=? afterPrenex1,
     testCase "prenex example #1" $
-      prenex beforePrenex2 @=? afterPrenex2,
+      prenex' beforePrenex2 @=? afterPrenex2,
     testCase "prenex example #2, unchanged" $
-      prenex afterPrenex2 @=? afterPrenex2
+      prenex' afterPrenex2 @=? afterPrenex2
   ]
