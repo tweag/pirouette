@@ -25,50 +25,45 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
+import qualified UnionFind as UF
 
 data ConstraintSet lang meta = ConstraintSet
-  { -- | Represents the set of productive symbolic variable assignments we know of.
-    -- Productive in the sense that we will always have at least one constructor
-    -- on the rhs.
-    csAssignments :: M.Map meta (TermMeta lang meta),
-    -- | Represents the symbolic variable equivalences we know of. Satisfies the invariant
-    -- that if @M.lookup v csmetaEq == Just v'@, then @v' < v@ (lexicographically)
-    csMetaEq :: M.Map meta meta,
+  { -- | Represents the set of productive symbolic variable assignments we know
+    -- of. Productive in the sense that we will always have at least one
+    -- constructor on the rhs. The assignments are stored from /equivalence
+    -- classes of symbolic variables/ to @TermMeta@.
+    csAssignments :: UF.UnionFind meta (TermMeta lang meta),
     -- | Any potential native constraint we might need.
     csNative :: [PureSMT.SExpr],
     -- | And finally, pairs of terms we've discovered /not/ to be equal
     csRelations :: [(TermRelation, TermMeta lang meta, TermMeta lang meta)]
   }
 
-instance (Ord meta) => Semigroup (ConstraintSet lang meta) where
-  s1 <> s2 =
-    ConstraintSet
-      (csAssignments s1 <> csAssignments s2)
-      (csMetaEq s1 <> csMetaEq s2)
-      (csNative s1 <> csNative s2)
-      (csRelations s1 <> csRelations s2)
+-- instance (Ord meta, Semigroup meta) => Semigroup (ConstraintSet lang meta) where
+--   s1 <> s2 =
+--     ConstraintSet
+--       (csAssignments s1 <> csAssignments s2)
+--       (csNative s1 <> csNative s2)
+--       (csRelations s1 <> csRelations s2)
 
-instance (Ord meta) => Monoid (ConstraintSet lang meta) where
-  mempty = def
+-- instance (Ord meta) => Monoid (ConstraintSet lang meta) where
+--   mempty = def
 
 instance Default (ConstraintSet lang meta) where
-  def = ConstraintSet M.empty M.empty [] []
+  def = ConstraintSet UF.empty [] []
 
 instance (LanguagePretty lang, Pretty meta) => Show (ConstraintSet lang meta) where
   show = show . pretty
 
-instance (LanguagePretty lang, Pretty meta) => Pretty (ConstraintSet lang meta) where
-  pretty ConstraintSet {..} =
-    vsep $
-      map (uncurry prettyAssignment) (M.toList csAssignments)
-        ++ map prettyRelations csRelations
-        ++ map (uncurry prettyMetaEq) (M.toList csMetaEq)
-        ++ map prettyNative csNative
-    where
-      prettyAssignment v t = pretty v <+> ":=" <+> pretty t
-      prettyMetaEq v u = pretty v <+> "~~" <+> pretty u
-      prettyRelations (r, v, u) = pretty v <+> pretty r <+> pretty u
-      prettyNative n = pretty (show n)
+instance (Pretty meta, Pretty (TermMeta lang meta)) => Pretty (ConstraintSet lang meta) where
+  pretty ConstraintSet {..} = undefined
+    -- vsep $
+    --   [pretty csAssignments]
+    --     ++ map prettyRelations csRelations
+    --     ++ map prettyNative csNative
+    -- where
+    --   prettyRelations (r, v, u) = pretty v <+> pretty r <+> pretty u
+    --   prettyNative n = pretty (show n)
 
 instance Pretty TermRelation where
   pretty TREqual = "=="
@@ -137,14 +132,16 @@ conjunct c cs0 =
       meta ->
       TermMeta lang meta ->
       Maybe (ConstraintSet lang meta)
-    unifyMetaWith cs v u
-      -- We check whether v is equivalent to some other smaller metavariable
-      | Just v' <- M.lookup v (csMetaEq cs) = unifyMetaWith cs v' u
-      -- If not, check whether @v@ is actually defined to be a given term. If so, that
-      -- have to be unifiable with u:
-      | Just t <- M.lookup v (csAssignments cs) = unifyWith cs t u
-      -- Finally, we have a /new/ @v@
-      | otherwise = Just $ unifyNewMetaWith cs v u
+    unifyMetaWith cs v u =
+      -- FIXME: We are dropping the optimised union-find here, by using @snd@.
+      case snd $ UF.lookup v (csAssignments cs) of
+        -- @v@ is known to be a given term that has to be unfifiable with @u@
+        Just (Just t) -> unifyWith cs t u
+        -- @v@ is known but does not link to any value. FIXME: Therefore, it
+        -- looks like we are violating an invariant of `unifyNewMetaWith`.
+        Just Nothing -> Just $ unifyNewMetaWith cs v u
+        -- @v@ is unknown, aka. /new/
+        Nothing -> Just $ unifyNewMetaWith cs v u
 
     -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
     -- known by our current constraints.
@@ -153,23 +150,10 @@ conjunct c cs0 =
       meta ->
       TermMeta lang meta ->
       ConstraintSet lang meta
-    unifyNewMetaWith cs@ConstraintSet {..} v (SystF.App (SystF.Meta u) [])
-      -- Are v and u the same? Great, nothing to do
-      | v == u = cs
-      -- Is u actually equivalent to anything smaller than u? Try that instead!
-      | Just u' <- M.lookup u csMetaEq = unifyNewMetaWith cs v (SystF.App (SystF.Meta u') [])
-      -- None of the above? Register the equivalence of v and u while altering the
-      -- assignments (if any and if necessary)
-      | otherwise =
-        let newMetaEq = M.insert (max v u) (min v u) csMetaEq
-            -- If u already had a term assigned to it, and v is smaller, we need to
-            -- update the assignments too!
-            newAssignments = case M.lookup u csAssignments of
-              Just tu | v < u -> M.insert v tu (M.delete u csAssignments)
-              _ -> csAssignments
-         in cs {csMetaEq = newMetaEq, csAssignments = newAssignments}
+    unifyNewMetaWith cs v (SystF.App (SystF.Meta u) []) =
+      cs { csAssignments = UF.trivialUnion v u (csAssignments cs) }
     unifyNewMetaWith cs v u =
-      cs {csAssignments = M.insert v u (csAssignments cs)}
+      cs { csAssignments = UF.trivialInsert v u (csAssignments cs) }
 
     unifyArgWith ::
       ConstraintSet lang meta ->
@@ -182,8 +166,8 @@ conjunct c cs0 =
 
 expandDefOf :: (Ord meta) => ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
 expandDefOf cs v =
-  M.lookup v (csAssignments cs)
-    <|> (M.lookup v (csMetaEq cs) >>= expandDefOf cs)
+  -- FIXME: with @snd@, we forget the optimised version of the union-find structure.
+  UF.join $ snd $ UF.lookup v (csAssignments cs)
 
 -- | Since the translation of individual constraints can fail,
 -- the translation of constraints does not always carry all the information it could.
@@ -191,16 +175,18 @@ expandDefOf cs v =
 -- A 'False' indicates that some have been forgotten during the translation.
 constraintSetToSExpr ::
   forall lang meta m.
-  (LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
+  (Ord meta, LanguageSMT lang, ToSMT meta, PirouetteReadDefs lang m) =>
   S.Set Name ->
   ConstraintSet lang meta ->
   m (Bool, UsedAnyUFs, PureSMT.SExpr)
 constraintSetToSExpr knownNames ConstraintSet {..} = do
-  eAssignments <- mapM (runTranslator . uncurry trAssignment) $ M.toList csAssignments
+  -- FIXME: this is dropping the optimised version of the union-find structure.
+  let (_, metaEqList, assignmentsList) = UF.toLists csAssignments
+  eAssignments <- mapM (runTranslator . uncurry trAssignment) assignmentsList
   eNotEq <- mapM (runTranslator . trRelations) csRelations
   let es = eAssignments ++ eNotEq
   let (trs, usedUFs) = unzip (rights es)
-  let eEquivalences = map (uncurry trSymVarEq) $ M.toList csMetaEq
+  let eEquivalences = map (uncurry trSymVarEq) metaEqList
   return (all isRight es, mconcat usedUFs, PureSMT.andMany (csNative ++ eEquivalences ++ trs))
   where
     trRelations :: (TermRelation, TermMeta lang meta, TermMeta lang meta) -> TranslatorT m PureSMT.SExpr
