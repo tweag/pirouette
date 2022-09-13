@@ -39,16 +39,6 @@ data ConstraintSet lang meta = ConstraintSet
     csRelations :: [(TermRelation, TermMeta lang meta, TermMeta lang meta)]
   }
 
--- instance (Ord meta, Semigroup meta) => Semigroup (ConstraintSet lang meta) where
---   s1 <> s2 =
---     ConstraintSet
---       (csAssignments s1 <> csAssignments s2)
---       (csNative s1 <> csNative s2)
---       (csRelations s1 <> csRelations s2)
-
--- instance (Ord meta) => Monoid (ConstraintSet lang meta) where
---   mempty = def
-
 instance Default (ConstraintSet lang meta) where
   def = ConstraintSet UF.empty [] []
 
@@ -57,13 +47,6 @@ instance (LanguagePretty lang, Pretty meta) => Show (ConstraintSet lang meta) wh
 
 instance (Pretty meta, Pretty (TermMeta lang meta)) => Pretty (ConstraintSet lang meta) where
   pretty ConstraintSet {..} = undefined
-    -- vsep $
-    --   [pretty csAssignments]
-    --     ++ map prettyRelations csRelations
-    --     ++ map prettyNative csNative
-    -- where
-    --   prettyRelations (r, v, u) = pretty v <+> pretty r <+> pretty u
-    --   prettyNative n = pretty (show n)
 
 instance Pretty TermRelation where
   pretty TREqual = "=="
@@ -151,9 +134,9 @@ conjunct c cs0 =
       TermMeta lang meta ->
       ConstraintSet lang meta
     unifyNewMetaWith cs v (SystF.App (SystF.Meta u) []) =
-      cs { csAssignments = UF.trivialUnion v u (csAssignments cs) }
+      cs {csAssignments = UF.trivialUnion v u (csAssignments cs)}
     unifyNewMetaWith cs v u =
-      cs { csAssignments = UF.trivialInsert v u (csAssignments cs) }
+      cs {csAssignments = UF.trivialInsert v u (csAssignments cs)}
     -- FIXME: The fact that we are only using trivial unions and insert probably
     -- means that we are still doing the job of the union-find. At least, we
     -- have it to back us up and check that these insertions and unions are
