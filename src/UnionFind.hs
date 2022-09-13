@@ -26,7 +26,8 @@ import Prettyprinter
 
 data UnionFindCell key value
   = ChildOf key
-  | Ancestor value
+  | Ancestor
+  | AncestorWith value
 
 -- | A persistent union-find data structure.
 --
@@ -37,7 +38,7 @@ data UnionFindCell key value
 --
 -- The points (i) and (ii) imply that, if a key is present in the map, then
 -- there is a path made of @ChildOf@ constructors from that key to an @Ancestor@
--- constructor.
+-- or @AncestorWith@ constructor.
 --
 newtype UnionFind key value = UnionFind {
   getMap :: Map key (UnionFindCell key value)
@@ -51,43 +52,52 @@ instance (Pretty key, Pretty value) => Pretty (UnionFind key value) where
     vsep $ map (uncurry prettyBinding) (Map.toList $ getMap unionFind)
     where
       prettyBinding key1 (ChildOf key2) = pretty key1 <+> "~~" <+> pretty key2
-      prettyBinding key (Ancestor value) = pretty key <+> ":=" <+> pretty value
+      prettyBinding key (AncestorWith value) = pretty key <+> ":=" <+> pretty value
 
 -- | The empty union-find that does not know of any equivalences or values.
 --
 empty :: UnionFind key value
 empty = UnionFind Map.empty
 
--- | @findAncestorAndValue unionFind key@ finds the ancestor and value
--- associated to @key@ in the @unionFind@ structure. It returns a new union-find
--- structure with the same semantics but optimised for future calls, the
--- ancestor for @key@ and the found value, or @Nothing@ if @key@ is not in the
--- structure.
+-- | @find key unionFind@ finds the ancestor and value associated to @key@ in
+-- the @unionFind@ structure. It returns a new union-find structure with the
+-- same semantics but optimised for future calls, the ancestor for @key@ and the
+-- found value, @Just Nothing@ if the @key@ is in the structure but without
+-- binding, or @Nothing@ if @key@ is not in the structure.
 --
+-- Prefer using @lookup@.
+--
+-- FIXME: Maybe we prefer a custom type instead of `Maybe (Maybe value)`?
 -- FIXME: Implement the optimisation for future calls
 --
-findAncestorAndValue :: Ord key => UnionFind key value -> key -> (UnionFind key value, key, Maybe value)
-findAncestorAndValue unionFind key =
+find :: Ord key =>
+  key ->
+  UnionFind key value ->
+  (UnionFind key value, key, Maybe (Maybe value))
+find key unionFind =
   case Map.lookup key $ getMap unionFind of
     Nothing -> (unionFind, key, Nothing)
-    Just (ChildOf key') -> findAncestorAndValue unionFind key' -- will be @Just@
-    Just (Ancestor value) -> (unionFind, key, Just value)
+    Just (ChildOf key') -> find key' unionFind -- will be @Just@
+    Just Ancestor -> (unionFind, key, Just Nothing)
+    Just (AncestorWith value) -> (unionFind, key, Just $ Just value)
 
--- | @find unionFind key@ is the same as @findAncestorAndValue@ but it does not
--- return the ancestor.
+-- | @lookup key unionFind@ is the same as @find@ but it does not return the
+-- ancestor.
 --
-find :: Ord key => UnionFind key value -> key -> (UnionFind key value, Maybe value)
-find unionFind key =
-  let (unionFind', _, maybeValue) = findAncestorAndValue unionFind key in
+lookup :: Ord key =>
+  key ->
+  UnionFind key value ->
+  (UnionFind key value, Maybe (Maybe value))
+lookup key unionFind =
+  let (unionFind', _, maybeValue) = find key unionFind in
   (unionFind', maybeValue)
 
--- | @union insert merge unionFind key1 key2@ merges together the equivalence
--- classes of @key1@ and @key2@ in @unionFind@, thus adding the information that
--- @key1@ and @key2@ are equivalent, and returns an updated union-find
--- structure.
+-- | @union merge unionFind key1 key2@ merges together the equivalence classes
+-- of @key1@ and @key2@ in @unionFind@, thus adding the information that @key1@
+-- and @key2@ are equivalent, and returns an updated union-find structure.
 --
--- - If neither @key1@ nor @key2@ exists in @unionFind@, @union@ uses @insert@
---   to know whether to return @Nothing@ or to add a specific value.
+-- - If neither @key1@ nor @key2@ exists in @unionFind@, they are inserted as
+--   equivalent and without value.
 --
 -- - If either @key1@ or @key2@ exists in @unionFind@ but not the other, the
 --   other is added transparently to the existing one's equivalence class.
@@ -103,24 +113,22 @@ find unionFind key =
 --   associated to @key2@'s equivalence class as second argument.
 --
 union :: Ord key =>
-  Maybe value ->
   (value -> value -> value) ->
+  key ->
+  key ->
   UnionFind key value ->
-  key ->
-  key ->
-  Maybe (UnionFind key value)
-union insert merge unionFind key1 key2 =
-  let (unionFind1, ancestor1, maybeValue1) = findAncestorAndValue unionFind  key1 in
-  let (unionFind2, ancestor2, maybeValue2) = findAncestorAndValue unionFind1 key2 in
+  UnionFind key value
+union merge key1 key2 unionFind =
+  let (unionFind1, ancestor1, maybeValue1) = find key1 unionFind  in
+  let (unionFind2, ancestor2, maybeValue2) = find key2 unionFind1 in
   if ancestor1 == ancestor2 then
-    Just unionFind2
+    unionFind2
   else
-    let onUnionFind2sMap update = Just $ UnionFind $ update $ getMap $ unionFind2 in
-    case (maybeValue1, maybeValue2) of
-    (Nothing, Nothing) -> do
-      value <- insert
+    let onUnionFind2sMap update = UnionFind $ update $ getMap $ unionFind2 in
+    case (join maybeValue1, join maybeValue2) of
+    (Nothing, Nothing) ->
       onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
-                       . Map.insert key2 (Ancestor value)
+                       . Map.insert key2  Ancestor
     (Just _, Nothing) ->
       onUnionFind2sMap $ Map.insert key2 (ChildOf key1)
     (Nothing, Just _) ->
@@ -129,20 +137,17 @@ union insert merge unionFind key1 key2 =
       -- FIXME: Implement the optimisation that choses which key should be the
       -- other's child by keeping track of the size of the equivalence classes.
       onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
-                       . Map.insert key2 (Ancestor $ merge value1 value2)
+                       . Map.insert key2 (AncestorWith $ merge value1 value2)
 
--- | Same as @union@ for trivial cases where one knows for sure that:
---
--- - At least one of the keys is in the structure.
--- - The keys are not in the same equivalence class (or one is absent).
+-- | Same as @union@ for trivial cases where one knows for sure that the keys
+-- are not in the same equivalence class (or one is absent).
 --
 trivialUnion :: Ord key =>
+  key ->
+  key ->
   UnionFind key value ->
-  key ->
-  key ->
   UnionFind key value
-trivialUnion uf k1 k2 =
-  fromJust $ union (error "union was too trivial") (error "union was not trivial") uf k1 k2
+trivialUnion = union (\_ _ -> error "union was not trivial")
 
 -- | @insert merge unionFind key value@ adds a binding from @key@ to @value@ in
 -- the structure. If @key@ is already known in the structure, then @merge@ is
@@ -151,22 +156,22 @@ trivialUnion uf k1 k2 =
 --
 insert :: Ord key =>
   (value -> value -> value) ->
-  UnionFind key value ->
   key ->
   value ->
+  UnionFind key value ->
   UnionFind key value
-insert merge unionFind key value =
-  let (unionFind', ancestor, maybeValue) = findAncestorAndValue unionFind key in
-  let newValue = maybe value (merge value) maybeValue in
-  UnionFind $ Map.insert ancestor (Ancestor newValue) $ getMap unionFind'
+insert merge key value unionFind =
+  let (unionFind', ancestor, maybeValue) = find key unionFind in
+  let newValue = maybe value (merge value) (join maybeValue) in
+  UnionFind $ Map.insert ancestor (AncestorWith newValue) $ getMap unionFind'
 
 -- | Same as @insert@ for trivial cases where one knows for sure that the key is
 -- not already in the structure.
 --
 trivialInsert :: Ord key =>
-  UnionFind key value ->
   key ->
   value ->
+  UnionFind key value ->
   UnionFind key value
 trivialInsert = insert (\_ _ -> error "insert was not trivial")
 
@@ -181,9 +186,16 @@ toLists unionFind =
         case binding of
           ChildOf _ ->
             -- FIXME: this is dropping the optimised union-find.
-            let (unionFind', ancestor, _) = findAncestorAndValue unionFind key in
+            let (unionFind', ancestor, _) = find key unionFind in
               (unionFind', (key, ancestor) : equalities, bindings)
-          Ancestor value ->
+          Ancestor ->
+            (unionFind, equalities, bindings)
+          AncestorWith value ->
             (unionFind, equalities, (key, value) : bindings))
     (unionFind, [], [])
     (Map.toList $ getMap unionFind)
+
+join :: Maybe (Maybe value) -> Maybe value
+join Nothing = Nothing
+join (Just Nothing) = Nothing
+join (Just (Just value)) = Just value
