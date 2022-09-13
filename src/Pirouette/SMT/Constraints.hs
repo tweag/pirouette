@@ -154,6 +154,12 @@ conjunct c cs0 =
       cs { csAssignments = UF.trivialUnion v u (csAssignments cs) }
     unifyNewMetaWith cs v u =
       cs { csAssignments = UF.trivialInsert v u (csAssignments cs) }
+    -- FIXME: The fact that we are only using trivial unions and insert probably
+    -- means that we are still doing the job of the union-find. At least, we
+    -- have it to back us up and check that these insertions and unions are
+    -- indeed trivial. We should instead define what needs to happen when unions
+    -- are non-trivial, and then we could get rid of the difference between
+    -- `unifyMetaWith` and `unifyNewMetaWith`.
 
     unifyArgWith ::
       ConstraintSet lang meta ->
