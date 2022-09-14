@@ -127,7 +127,7 @@ conjunct c cs0 =
         Nothing -> Just $ unifyNewMetaWith cs v u
 
     -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
-    -- known by our current constraints.
+    -- currently assigned in our current constraints.
     unifyNewMetaWith ::
       ConstraintSet lang meta ->
       meta ->
