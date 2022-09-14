@@ -195,17 +195,14 @@ toLists ::
   UnionFind key value ->
   (UnionFind key value, [(key, key)], [(key, value)])
 toLists unionFind =
-  foldl
-    gobbleEqualitiesAndBindings
-    (unionFind, [], [])
-    (Map.toList $ getMap unionFind)
+  foldl gobble (unionFind, [], []) (Map.toList $ getMap unionFind)
   where
-    gobbleEqualitiesAndBindings ::
+    gobble ::
       Ord key =>
       (UnionFind key value, [(key, key)], [(key, value)]) ->
       (key, UnionFindCell key value) ->
       (UnionFind key value, [(key, key)], [(key, value)])
-    gobbleEqualitiesAndBindings
+    gobble
       (unionFind, equalities, bindings)
       (key, binding) =
         case binding of
