@@ -129,31 +129,26 @@ conjunct c cs0 =
     unifyMetaWith cs v u =
       let (cs', lookupResult) = lookupAssignment v cs
        in case lookupResult of
-            -- @v@ is known to be a given term that has to be unifiable with @u@
+            -- @v@ is known to be a given term; it has to be unifiable with @u@.
+            -- Note that we forget here the assignment of @v@ to @u@. It will
+            -- only be contained in the assignment of @v@ to @t@ and the result
+            -- of the unification of @t@ and @u@.
             Just t -> unifyWith cs' t u
-            -- One of the two possibilities:
-            -- 1. @v@ is known but does not link to any value. FIXME: Therefore, it
-            --    looks like we are violating an invariant of `unifyNewMetaWith`.
-            -- 2. @v@ is unknown, aka. /new/
-            Nothing -> Just $ unifyNewMetaWith cs' v u
-
-    -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
-    -- currently assigned in our current constraints.
-    unifyNewMetaWith ::
-      ConstraintSet lang meta ->
-      meta ->
-      TermMeta lang meta ->
-      ConstraintSet lang meta
-    unifyNewMetaWith cs v (SystF.App (SystF.Meta u) []) =
-      cs {csAssignments = UF.trivialUnion v u (csAssignments cs)}
-    unifyNewMetaWith cs v u =
-      cs {csAssignments = UF.trivialInsert v u (csAssignments cs)}
-    -- FIXME: The fact that we are only using trivial unions and insert probably
-    -- means that we are still doing the job of the union-find. At least, we
-    -- have it to back us up and check that these insertions and unions are
-    -- indeed trivial. We should instead define what needs to happen when unions
-    -- are non-trivial, and then we could get rid of the difference between
-    -- `unifyMetaWith` and `unifyNewMetaWith`.
+            -- @v@ is either unknown, or known to be bound to any assignment. We
+            -- distinguish two cases.
+            Nothing ->
+              let csAssignments' = case u of
+                    -- If @u@ itself is just a meta-variable, then we declare
+                    -- @v@ and @u@ as equal in the @csAssignments@ union-find;
+                    -- this is a trivial union that might (or not) bring an
+                    -- assignment to @v@.
+                    SystF.App (SystF.Meta u') [] ->
+                      UF.trivialUnion v u' (csAssignments cs')
+                    -- Otherwise, @u@ is a complex term and we register the
+                    -- assignment from @v@ to @u@. This is trivial as @v@ does
+                    -- not have any assignment at this point.
+                    _ -> UF.trivialInsert v u (csAssignments cs')
+               in Just cs {csAssignments = csAssignments'}
 
     unifyArgWith ::
       ConstraintSet lang meta ->
