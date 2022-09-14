@@ -156,7 +156,7 @@ conjunct c cs0 =
 expandDefOf :: (Ord meta) => ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
 expandDefOf cs v =
   -- FIXME: with @snd@, we forget the optimised version of the union-find structure.
-  UF.join $ snd $ UF.lookup v (csAssignments cs)
+  join $ snd $ UF.lookup v (csAssignments cs)
 
 -- | Since the translation of individual constraints can fail,
 -- the translation of constraints does not always carry all the information it could.

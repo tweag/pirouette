@@ -15,6 +15,7 @@
 --   also optimises it for future calls and therefore returns a new structure.
 module UnionFind where
 
+import Control.Monad (join)
 import Data.Default (Default, def)
 import Data.Either (partitionEithers)
 import Data.Function ((&))
@@ -193,8 +194,3 @@ toLists unionFind =
     )
     (unionFind, [], [])
     (Map.toList $ getMap unionFind)
-
-join :: Maybe (Maybe value) -> Maybe value
-join Nothing = Nothing
-join (Just Nothing) = Nothing
-join (Just (Just value)) = Just value
