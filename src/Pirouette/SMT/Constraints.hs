@@ -119,11 +119,11 @@ conjunct c cs0 =
       -- FIXME: We are dropping the optimised union-find here, by using @snd@.
       case snd $ UF.lookup v (csAssignments cs) of
         -- @v@ is known to be a given term that has to be unfifiable with @u@
-        Just (Just t) -> unifyWith cs t u
-        -- @v@ is known but does not link to any value. FIXME: Therefore, it
-        -- looks like we are violating an invariant of `unifyNewMetaWith`.
-        Just Nothing -> Just $ unifyNewMetaWith cs v u
-        -- @v@ is unknown, aka. /new/
+        Just t -> unifyWith cs t u
+        -- One of the two possibilities:
+        -- 1. @v@ is known but does not link to any value. FIXME: Therefore, it
+        --    looks like we are violating an invariant of `unifyNewMetaWith`.
+        -- 2. @v@ is unknown, aka. /new/
         Nothing -> Just $ unifyNewMetaWith cs v u
 
     -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
@@ -156,7 +156,7 @@ conjunct c cs0 =
 expandDefOf :: (Ord meta) => ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
 expandDefOf cs v =
   -- FIXME: with @snd@, we forget the optimised version of the union-find structure.
-  join $ snd $ UF.lookup v (csAssignments cs)
+  snd $ UF.lookup v (csAssignments cs)
 
 -- | Since the translation of individual constraints can fail,
 -- the translation of constraints does not always carry all the information it could.
