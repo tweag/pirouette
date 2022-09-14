@@ -192,16 +192,23 @@ toLists ::
   (UnionFind key value, [(key, key)], [(key, value)])
 toLists unionFind =
   foldl
-    ( \(unionFind, equalities, bindings) (key, binding) ->
+    gobbleEqualitiesAndBindings
+    (unionFind, [], [])
+    (Map.toList $ getMap unionFind)
+  where
+    gobbleEqualitiesAndBindings ::
+      Ord key =>
+      (UnionFind key value, [(key, key)], [(key, value)]) ->
+      (key, UnionFindCell key value) ->
+      (UnionFind key value, [(key, key)], [(key, value)])
+    gobbleEqualitiesAndBindings
+      (unionFind, equalities, bindings)
+      (key, binding) =
         case binding of
           ChildOf _ ->
-            -- FIXME: this is dropping the optimised union-find.
             let (unionFind', ancestor, _) = find key unionFind
              in (unionFind', (key, ancestor) : equalities, bindings)
           Ancestor ->
             (unionFind, equalities, bindings)
           AncestorWith value ->
             (unionFind, equalities, (key, value) : bindings)
-    )
-    (unionFind, [], [])
-    (Map.toList $ getMap unionFind)
