@@ -127,15 +127,15 @@ conjunct c cs0 =
       TermMeta lang meta ->
       Maybe (ConstraintSet lang meta)
     unifyMetaWith cs v u =
-      -- FIXME: We are dropping the optimised union-find here, by using @snd@.
-      case snd $ lookupAssignment v cs of
-        -- @v@ is known to be a given term that has to be unfifiable with @u@
-        Just t -> unifyWith cs t u
-        -- One of the two possibilities:
-        -- 1. @v@ is known but does not link to any value. FIXME: Therefore, it
-        --    looks like we are violating an invariant of `unifyNewMetaWith`.
-        -- 2. @v@ is unknown, aka. /new/
-        Nothing -> Just $ unifyNewMetaWith cs v u
+      let (cs', lookupResult) = lookupAssignment v cs
+       in case lookupResult of
+            -- @v@ is known to be a given term that has to be unifiable with @u@
+            Just t -> unifyWith cs' t u
+            -- One of the two possibilities:
+            -- 1. @v@ is known but does not link to any value. FIXME: Therefore, it
+            --    looks like we are violating an invariant of `unifyNewMetaWith`.
+            -- 2. @v@ is unknown, aka. /new/
+            Nothing -> Just $ unifyNewMetaWith cs' v u
 
     -- Like 'unifyMetaWith', but assumes that the 'meta' in question is not
     -- currently assigned in our current constraints.
