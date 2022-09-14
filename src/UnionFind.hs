@@ -188,6 +188,8 @@ trivialInsert = insert (\_ _ -> error "insert was not trivial")
 -- - The second list contains bindings from representative of an equivalence
 --   class to the associated value. In case of an equivalence class without
 --   binding, nothing appears in this list.
+--
+-- Unless you really want this low-level interface, prefer @toList@.
 toLists ::
   Ord key =>
   UnionFind key value ->
