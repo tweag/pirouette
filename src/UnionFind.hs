@@ -212,3 +212,82 @@ toLists unionFind =
             (unionFind, equalities, bindings)
           AncestorWith value ->
             (unionFind, equalities, (key, value) : bindings)
+
+-- | @toList unionFind@ returns a list representing the mappings in @unionFind@
+-- as well as a new union-find structure optimised for future calls. The
+-- mappings are pairs, the left-hand side being a list of all the @key@s in an
+-- equivalence class and the right-hand side being the value associated with
+-- this equivalence class, or @Nothing@ if there is no such value.
+--
+-- In particular, @([key], Just value)@ represents the equivalence class
+-- containing only @key@ and bound to @value@ while @(keys, Nothing)@ represents
+-- the equivalence class containing all @keys@ but not bound to any value.
+--
+-- There are no occurrences of @[]@ of the left-hand side and there are no
+-- occurrences of a pair @([key], Nothing)@. Additionally, all the left-hand
+-- side lists are disjoint. The order of keys in those lists is not specified.
+toList ::
+  Ord key =>
+  UnionFind key value ->
+  (UnionFind key value, [([key], Maybe value)])
+toList unionFind =
+  let (unionFind, bindings) =
+        foldl gobble (unionFind, Map.empty) (Map.toList $ getMap unionFind)
+   in ( unionFind,
+        Map.toList bindings
+          & map
+            ( \(ancestor, (otherKeys, maybeValue)) ->
+                (ancestor : otherKeys, maybeValue)
+            )
+      )
+  where
+    gobble ::
+      Ord key =>
+      (UnionFind key value, Map key ([key], Maybe value)) ->
+      (key, UnionFindCell key value) ->
+      (UnionFind key value, Map key ([key], Maybe value))
+    gobble (unionFind, bindings) (key, binding) =
+      case binding of
+        ChildOf _ ->
+          let (unionFind', ancestor, _) = find key unionFind
+           in (unionFind', addKeyToBindings ancestor key bindings)
+        Ancestor ->
+          (unionFind, bindings)
+        AncestorWith value ->
+          (unionFind, addValueToBindings key value bindings)
+
+    -- @addKeyToBindings ancestor key bindings@ adds @key@ to the equivalence
+    -- class of @ancestor@ in @bindings@, creating this equivalence class if
+    -- necessary.
+    addKeyToBindings ::
+      Ord key =>
+      key ->
+      key ->
+      Map key ([key], Maybe value) ->
+      Map key ([key], Maybe value)
+    addKeyToBindings ancestor key bindings =
+      Map.alter
+        ( \case
+            Nothing -> Just ([key], Nothing)
+            Just (keys, mValue) -> Just (key : keys, mValue)
+        )
+        ancestor
+        bindings
+
+    -- @addValueToBindings ancestor value bindings@ binds @value@ to
+    -- @ancestor@ in @bindings@, creating the binding if necessary.
+    addValueToBindings ::
+      Ord key =>
+      key ->
+      value ->
+      Map key ([key], Maybe value) ->
+      Map key ([key], Maybe value)
+    addValueToBindings ancestor value bindings =
+      Map.alter
+        ( \case
+            Nothing -> Just ([], Just value)
+            Just (keys, Nothing) -> Just (keys, Just value)
+            _ -> error "two bindings for the same ancestor"
+        )
+        ancestor
+        bindings
