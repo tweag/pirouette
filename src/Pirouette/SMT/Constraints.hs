@@ -16,7 +16,6 @@ import Control.Applicative
 import Control.Monad
 import Data.Default
 import Data.Either
-import qualified Data.Map as M
 import qualified Data.Set as S
 import Pirouette.Monad
 import Pirouette.SMT.Base
