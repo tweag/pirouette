@@ -47,12 +47,20 @@ newtype UnionFind key value = UnionFind
 instance Default (UnionFind key value) where
   def = empty
 
-instance (Pretty key, Pretty value) => Pretty (UnionFind key value) where
+instance (Ord key, Pretty key, Pretty value) => Pretty (UnionFind key value) where
   pretty unionFind =
-    vsep $ map (uncurry prettyBinding) (Map.toList $ getMap unionFind)
+    let (_, unionFindL) = toList unionFind
+     in vsep $ map (uncurry prettyEqClassAndValue) unionFindL
     where
-      prettyBinding key1 (ChildOf key2) = pretty key1 <+> "~~" <+> pretty key2
-      prettyBinding key (Ancestor value) = pretty key <+> ":=" <+> pretty value
+      prettyEqClassAndValue eqClass Nothing =
+        prettyEqClass eqClass
+      prettyEqClassAndValue eqClass (Just value) =
+        prettyEqClass eqClass <+> ":=" <+> pretty value
+      prettyEqClass eqClass =
+        foldl
+          (\p key -> p <+> "~~" <+> pretty key)
+          (pretty (NonEmpty.head eqClass))
+          (NonEmpty.tail eqClass)
 
 -- | The empty union-find that does not know of any equivalences or values.
 empty :: UnionFind key value
