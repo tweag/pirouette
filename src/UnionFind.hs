@@ -175,10 +175,21 @@ trivialInsert ::
   UnionFind key value
 trivialInsert = insert (\_ _ -> error "insert was not trivial")
 
--- | It is guaranteed that the right-hand side of a pair in the list of
--- equalities is the representant of an equivalence class, and therefore it
--- occurs on the left-hand side in the list of bindings.
-toLists :: Ord key => UnionFind key value -> (UnionFind key value, [(key, key)], [(key, value)])
+-- | @toLists unionFind@ returns a pair of of lists as well as a new union-find
+-- structure optimised for future calls.
+--
+-- - The first list contains pairs of keys, where the right-hand side is the
+--   representative of an equivalence class and the left-hand side is an element
+--   of the class. In case of singleton equivalence class, no binding appears in
+--   this list.
+--
+-- - The second list contains bindings from representative of an equivalence
+--   class to the associated value. In case of an equivalence class without
+--   binding, nothing appears in this list.
+toLists ::
+  Ord key =>
+  UnionFind key value ->
+  (UnionFind key value, [(key, key)], [(key, value)])
 toLists unionFind =
   foldl
     ( \(unionFind, equalities, bindings) (key, binding) ->
