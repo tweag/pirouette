@@ -19,6 +19,8 @@ import Control.Monad (join)
 import Data.Default (Default, def)
 import Data.Either (partitionEithers)
 import Data.Function ((&))
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
@@ -215,9 +217,10 @@ toLists unionFind =
 
 -- | @toList unionFind@ returns a list representing the mappings in @unionFind@
 -- as well as a new union-find structure optimised for future calls. The
--- mappings are pairs, the left-hand side being a list of all the @key@s in an
--- equivalence class and the right-hand side being the value associated with
--- this equivalence class, or @Nothing@ if there is no such value.
+-- mappings are pairs, the left-hand side being a non-empty list of all the
+-- @key@s in an equivalence class and the right-hand side being the value
+-- associated with this equivalence class, or @Nothing@ if there is no such
+-- value.
 --
 -- In particular, @([key], Just value)@ represents the equivalence class
 -- containing only @key@ and bound to @value@ while @(keys, Nothing)@ represents
@@ -229,7 +232,7 @@ toLists unionFind =
 toList ::
   Ord key =>
   UnionFind key value ->
-  (UnionFind key value, [([key], Maybe value)])
+  (UnionFind key value, [(NonEmpty key, Maybe value)])
 toList unionFind =
   let (unionFind, bindings) =
         foldl gobble (unionFind, Map.empty) (Map.toList $ getMap unionFind)
@@ -237,7 +240,7 @@ toList unionFind =
         Map.toList bindings
           & map
             ( \(ancestor, (otherKeys, maybeValue)) ->
-                (ancestor : otherKeys, maybeValue)
+                (NonEmpty.insert ancestor otherKeys, maybeValue)
             )
       )
   where
@@ -255,7 +258,6 @@ toList unionFind =
           (unionFind, bindings)
         AncestorWith value ->
           (unionFind, addValueToBindings key value bindings)
-
     -- @addKeyToBindings ancestor key bindings@ adds @key@ to the equivalence
     -- class of @ancestor@ in @bindings@, creating this equivalence class if
     -- necessary.
@@ -273,7 +275,6 @@ toList unionFind =
         )
         ancestor
         bindings
-
     -- @addValueToBindings ancestor value bindings@ binds @value@ to
     -- @ancestor@ in @bindings@, creating the binding if necessary.
     addValueToBindings ::
