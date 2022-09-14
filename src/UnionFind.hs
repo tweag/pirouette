@@ -19,6 +19,7 @@ import Control.Monad (join)
 import Data.Default (Default, def)
 import Data.Either (partitionEithers)
 import Data.Function ((&))
+import Data.Functor.Identity (runIdentity)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
@@ -124,12 +125,28 @@ union ::
   UnionFind key value ->
   UnionFind key value
 union merge key1 key2 unionFind =
+  runIdentity $
+    unionM
+      (\value1 value2 -> return $ merge value1 value2)
+      key1
+      key2
+      unionFind
+
+-- | @unionM@ is the same as @union@ but for a monadic merge function.
+unionM ::
+  (Ord key, Monad m) =>
+  (value -> value -> m value) ->
+  key ->
+  key ->
+  UnionFind key value ->
+  m (UnionFind key value)
+unionM merge key1 key2 unionFind =
   let (unionFind1, ancestor1, maybeValue1) = find key1 unionFind
       (unionFind2, ancestor2, maybeValue2) = find key2 unionFind1
    in if ancestor1 == ancestor2
-        then unionFind2
+        then return unionFind2
         else
-          let onUnionFind2sMap update = UnionFind $ update $ getMap $ unionFind2
+          let onUnionFind2sMap update = return $ UnionFind $ update $ getMap $ unionFind2
            in case (maybeValue1, maybeValue2) of
                 (Nothing, Nothing) ->
                   onUnionFind2sMap $
@@ -139,13 +156,14 @@ union merge key1 key2 unionFind =
                   onUnionFind2sMap $ Map.insert key2 (ChildOf key1)
                 (Nothing, Just _) ->
                   onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
-                (Just value1, Just value2) ->
+                (Just value1, Just value2) -> do
                   -- FIXME: Implement the optimisation that choses which key should
                   -- be the other's child by keeping track of the size of the
                   -- equivalence classes.
+                  value <- merge value1 value2
                   onUnionFind2sMap $
                     Map.insert key1 (ChildOf key2)
-                      . Map.insert key2 (Ancestor $ Just $ merge value1 value2)
+                      . Map.insert key2 (Ancestor $ Just value)
 
 -- | Same as @union@ for trivial cases where one knows for sure that the keys
 -- are not in the same equivalence class (or one is absent).
