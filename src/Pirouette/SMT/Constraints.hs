@@ -16,6 +16,7 @@ import Control.Applicative
 import Control.Monad
 import Data.Default
 import Data.Either
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as S
 import Pirouette.Monad
 import Pirouette.SMT.Base
@@ -53,11 +54,28 @@ lookupAssignment u cs =
 instance Default (ConstraintSet lang meta) where
   def = ConstraintSet UF.empty [] []
 
-instance (LanguagePretty lang, Pretty meta) => Show (ConstraintSet lang meta) where
+instance (Ord meta, LanguagePretty lang, Pretty meta) => Show (ConstraintSet lang meta) where
   show = show . pretty
 
-instance (Pretty meta, Pretty (TermMeta lang meta)) => Pretty (ConstraintSet lang meta) where
-  pretty ConstraintSet {..} = undefined
+instance (Ord meta, Pretty meta, Pretty (TermMeta lang meta)) => Pretty (ConstraintSet lang meta) where
+  pretty ConstraintSet {..} =
+    let (_, unionFindL) = UF.toList csAssignments
+     in vsep $
+          map (uncurry prettyEqClassAndValue) unionFindL
+            ++ map prettyRelations csRelations
+            ++ map prettyNative csNative
+    where
+      prettyEqClassAndValue eqClass Nothing =
+        prettyEqClass eqClass
+      prettyEqClassAndValue eqClass (Just value) =
+        prettyEqClass eqClass <+> ":=" <+> pretty value
+      prettyEqClass eqClass =
+        foldl
+          (\p key -> p <+> "~~" <+> pretty key)
+          (pretty (NonEmpty.head eqClass))
+          (NonEmpty.tail eqClass)
+      prettyRelations (r, v, u) = pretty v <+> pretty r <+> pretty u
+      prettyNative n = pretty (show n)
 
 instance Pretty TermRelation where
   pretty TREqual = "=="
