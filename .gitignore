@@ -6,4 +6,3 @@ dist*
 temporary.cfg
 states/
 *.vscode
-stamps/
