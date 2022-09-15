@@ -47,9 +47,13 @@ launchSolverWithFinalizer cmd dbg = do
 send :: Solver -> SExpr -> IO ()
 send solver cmd = do
   let cmdTxt = showsSExpr cmd ""
-  when (debugMode solver) $ do
-    pid <- unsafeSolverPid solver
+  pid <- unsafeSolverPid solver
+  when (debugMode solver) $
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
+  withFile
+    ("stamps/" ++ show pid ++ ".smt")
+    AppendMode
+    (\h -> do hPutStrLn h cmdTxt)
   hPutStrLn (getStdin $ process solver) cmdTxt
   hFlush (getStdin $ process solver)
 
