@@ -47,7 +47,7 @@ launchSolverWithFinalizer cmd dbg = do
 send :: Solver -> SExpr -> IO ()
 send solver cmd = do
   let cmdTxt = showsSExpr cmd ""
-  pid <- unsafeSolverPid sotlver
+  pid <- unsafeSolverPid solver
   when (debugMode solver) $
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
   withFile
