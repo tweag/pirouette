@@ -1,2 +1,5 @@
 results
 *.smt
+*.o
+*.hi
+with-shell-cmd-from-haskell
