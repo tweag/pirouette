@@ -1,17 +1,23 @@
 import System.Environment
-import System.IO
 import Z3.Monad
 
-run :: String -> IO String
-run file = evalZ3 (script file)
+send :: String -> Z3 AST
+send cmd = parseSMTLib2String cmd [] [] [] []
 
-script :: String -> Z3 String
-script file = do
-  ast <- parseSMTLib2File file [] [] [] []
-  astToString ast
+sendLines :: [String] -> Z3 AST
+sendLines [] = send "\n"
+sendLines (l : rest) = do
+  send l
+  sendLines rest
+
+transmit :: String -> IO (Z3 AST)
+transmit file = do
+  sendLines <$> lines <$> readFile file
 
 main = do
   args <- getArgs
   case args of
-    [file] -> run file >>= putStrLn
+    [file] -> do
+      output <- (>>= astToString) <$> transmit file >>= evalZ3
+      putStrLn output
     _ -> putStrLn "usage: ./with-bindings-from-haskell <file>"
