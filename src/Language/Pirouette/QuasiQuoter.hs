@@ -31,14 +31,14 @@ import Text.Megaparsec
 
 prog :: forall lang. (LanguageParser lang, LanguageBuiltinTypes lang, LanguagePretty lang) => QuasiQuoter
 prog = quoter $ \str -> do
-  p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
+  p0 <- parseQ (parseProgram @lang) str
   decls <- trQ (trProgram p0)
   _ <- maybeQ (typeCheckDecls decls)
   [e|(PrtUnorderedDefs decls)|]
 
 progNoTC :: forall lang. (LanguageParser lang, LanguagePretty lang) => QuasiQuoter
 progNoTC = quoter $ \str -> do
-  p0 <- parseQ (spaceConsumer *> lexeme (parseProgram @lang) <* eof) str
+  p0 <- parseQ (parseProgram @lang) str
   decls <- trQ (trProgram p0)
   [e|(PrtUnorderedDefs decls)|]
 

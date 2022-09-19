@@ -153,7 +153,7 @@ deriving instance
 parseProgram ::
   (LanguageParser lang) =>
   Parser (Map String (Either (DataDecl lang) (FunDecl lang)))
-parseProgram = Map.fromList <$> P.many parseDecl
+parseProgram = spaceConsumer *> lexeme (Map.fromList <$> P.many parseDecl) <* P.eof
 
 -- | A declaration is either a datatype or a function
 parseDecl ::
