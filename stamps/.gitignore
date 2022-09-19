@@ -1,5 +1,5 @@
-results.md
 *.smt
 *.o
 *.hi
-with-shell-cmd-from-haskell
+*.bin
+*.md

@@ -1,8 +1,15 @@
-with-shell-cmd-from-haskell: with-shell-cmd-from-haskell.hs
-	ghc $<
+hs_files = $(shell ls *.hs)
+bin_files = $(hs_files:.hs=.bin)
 
-with-bindings-from-haskell: with-bindings-from-haskell.hs
-	ghc $<
+all: $(bin_files)
+	echo $(bin_files)
 
-results: with-shell-cmd-from-haskell time.sh
+%.bin: %.hs
+	ghc $< -o $@
+
+results: with-shell-cmd-from-haskell.bin time.sh
 	./time.sh
+
+clean:
+	rm *.hi
+	rm *.o
