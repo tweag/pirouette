@@ -2,6 +2,7 @@ import qualified Language.Pirouette.ExampleSpec as Ex
 import qualified Pirouette.Symbolic.EvalSpec as SymbolicEval
 import qualified Pirouette.Symbolic.ProveSpec as SymbolicProve
 import qualified Pirouette.Term.Syntax.BaseSpec as Base
+import qualified Pirouette.Term.Syntax.PrettySpec as PrettySpec
 import qualified Pirouette.Term.Syntax.SystemFSpec as SF
 import qualified Pirouette.Transformations.DefunctionalizationSpec as Defunc
 import qualified Pirouette.Transformations.EtaExpandSpec as Eta
@@ -36,5 +37,6 @@ tests =
         ],
       testGroup
         "Language"
-        [testGroup "Example" Ex.tests]
+        [testGroup "Example" Ex.tests],
+      testGroup "Pretty printing" PrettySpec.tests
     ]
