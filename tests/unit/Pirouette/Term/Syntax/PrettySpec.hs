@@ -27,8 +27,15 @@ example1 =
     data Maybe a = Nothing : Maybe a | Just : a -> Maybe a
   |]
 
+example2 :: PrtUnorderedDefs Ex
+example2 =
+  [prog|
+    toMaybe : Integer -> Integer
+    toMaybe n = n + 1
+  |]
+
 showProgram :: PrtUnorderedDefs Ex -> String
-showProgram = renderSingleLineStr . pretty . Map.assocs . prtUODecls
+showProgram = Text.unpack . renderSmart . pretty . Map.assocs . prtUODecls
 
 readProgram :: String -> Either String (Map String (Either (DataDecl Ex) (FunDecl Ex)))
 readProgram str =
@@ -43,6 +50,6 @@ assertRight (Right _) = return ()
 tests :: [Test.TestTree]
 tests =
   [ Test.testCase
-      "Pretty-printed program is parsable"
+      "Pretty-printed datatype declaration is parsable"
       (assertRight (readProgram . showProgram $ example1))
   ]

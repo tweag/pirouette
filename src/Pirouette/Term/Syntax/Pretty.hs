@@ -16,11 +16,12 @@ import Prettyprinter hiding (Pretty, pretty)
 -- * SystemF Instances
 
 instance Pretty SystF.Kind where
-  prettyPrec _ SystF.KStar = "*"
-  prettyPrec d (SystF.KTo t u) = parensIf (d > 10) (pp 11 t <+> "=>" <+> pp 10 u)
+  prettyPrec _ SystF.KStar = "Type"
+  prettyPrec d (SystF.KTo t u) = parensIf (d > 10) (pp 11 t <+> "->" <+> pp 10 u)
 
 instance (Pretty meta, Pretty ann, Pretty f) => Pretty (SystF.VarMeta meta ann f) where
-  pretty (SystF.Bound ann i) = pretty i <> "#" <> pretty ann
+  -- pretty (SystF.Bound ann i) = pretty i <> "#" <> pretty ann
+  pretty (SystF.Bound ann i) = pretty ann
   pretty (SystF.Free f) = pretty f
   pretty (SystF.Meta m) = "$" <> pretty m
 
@@ -31,7 +32,7 @@ instance (Pretty ann, Pretty f) => Pretty (SystF.AnnType ann f) where
     where
       isTyLam (SystF.TyLam ann tx body) = Just (ann, tx, body)
       isTyLam _ = Nothing
-  prettyPrec d t@SystF.TyAll {} = parensIf (d > 10) $ assoclBinder "∀" isTyLam d t
+  prettyPrec d t@SystF.TyAll {} = parensIf (d > 10) $ assoclBinder "forall" isTyLam d t
     where
       isTyLam (SystF.TyAll ann tx body) = Just (ann, tx, body)
       isTyLam _ = Nothing
@@ -93,8 +94,23 @@ instance Pretty Namespace where
 instance (LanguagePretty lang) => Pretty (Decls lang) where
   pretty = pretty . Map.toList
 
+comment :: Doc ann -> Doc ann
+comment x = "-- " <> x
+
 instance (LanguagePretty lang) => Pretty [((Namespace, Name), Definition lang)] where
   pretty = align . vsep . map prettyDef
     where
+      prettyDef ((TypeNamespace, name), DTypeDef (Datatype _k vars _dest cs)) =
+        let pvars = sep (map (\(n, k) -> pretty n <> ":" <> pretty k) vars)
+         in "data" <+> pretty name <+> pvars
+              <+> align
+                ( encloseSep
+                    "= "
+                    mempty
+                    "| "
+                    (map (\(n, ty) -> pretty n <+> ":" <+> pretty ty) cs)
+                )
       prettyDef ((namespace, name), def) =
-        vsep [pretty namespace <+> pretty name <+> "|->", indent 2 (pretty def)]
+        vsep $
+          comment
+            <$> [pretty namespace <+> pretty name <+> "|->", indent 2 (pretty def)]
