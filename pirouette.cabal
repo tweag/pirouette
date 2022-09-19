@@ -65,7 +65,7 @@ library
       Paths_pirouette
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wno-orphans
+  ghc-options: -Wall -Wno-orphans -ticky
   build-depends:
       QuickCheck
     , ansi-terminal
