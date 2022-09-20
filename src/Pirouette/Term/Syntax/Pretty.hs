@@ -21,14 +21,14 @@ instance Pretty SystF.Kind where
 
 instance (Pretty meta, Pretty ann, Pretty f) => Pretty (SystF.VarMeta meta ann f) where
   -- pretty (SystF.Bound ann i) = pretty i <> "#" <> pretty ann
-  pretty (SystF.Bound ann i) = pretty ann
+  pretty (SystF.Bound ann _) = pretty ann
   pretty (SystF.Free f) = pretty f
   pretty (SystF.Meta m) = "$" <> pretty m
 
 instance (Pretty ann, Pretty f) => Pretty (SystF.AnnType ann f) where
   prettyPrec d (SystF.TyApp n args) = prettyPrecApp d n args align
   prettyPrec d (SystF.TyFun t u) = parensIf (d > 11) (pp 12 t <+> "->" <+> pp 11 u)
-  prettyPrec d t@SystF.TyLam {} = parensIf (d > 10) $ assoclBinder "λ" isTyLam d t
+  prettyPrec d t@SystF.TyLam {} = parensIf (d > 10) $ assoclBinder "\\" isTyLam d t
     where
       isTyLam (SystF.TyLam ann tx body) = Just (ann, tx, body)
       isTyLam _ = Nothing
@@ -46,11 +46,11 @@ instance (Pretty ty, Pretty f) => Pretty (SystF.Arg ty f) where
 
 instance (Pretty ty, Pretty ann, Pretty f) => Pretty (SystF.AnnTerm ann ty f) where
   prettyPrec d (SystF.App n args) = prettyPrecApp d n args (nest 4)
-  prettyPrec d t@SystF.Lam {} = parensIf (d > 11) $ assoclBinder "λ" isTyLam d t
+  prettyPrec d t@SystF.Lam {} = parensIf (d > 11) $ assoclBinder "\\" isTyLam d t
     where
       isTyLam (SystF.Lam ann tx body) = Just (ann, tx, body)
       isTyLam _ = Nothing
-  prettyPrec d t@SystF.Abs {} = parensIf (d > 10) $ assoclBinder "Λ" isTyLam d t
+  prettyPrec d t@SystF.Abs {} = parensIf (d > 10) $ assoclBinder "/\\" isTyLam d t
     where
       isTyLam (SystF.Abs ann tx body) = Just (ann, tx, body)
       isTyLam _ = Nothing
@@ -73,9 +73,9 @@ instance
   Pretty (TermBase lang)
   where
   pretty (Constant x) = pretty x
-  pretty (Builtin x) = "b/" <> pretty x
+  pretty (Builtin x) = pretty x
   pretty (TermSig x) = pretty x
-  pretty Bottom = "ERROR"
+  pretty Bottom = "bottom"
 
 instance (Pretty (BuiltinTypes lang)) => Pretty (TypeDef lang) where
   pretty (Datatype _k vars dest cs) =
@@ -110,6 +110,15 @@ instance (LanguagePretty lang) => Pretty [((Namespace, Name), Definition lang)] 
                     "| "
                     (map (\(n, ty) -> pretty n <+> ":" <+> pretty ty) cs)
                 )
+      prettyDef ((TermNamespace, name), DFunDef (FunDef isRec body ty)) =
+        vsep
+          [ ( case isRec of
+                NonRec -> "nonrec" <> space
+                Rec -> mempty
+            )
+              <> pretty name <+> colon <+> pretty ty,
+            pretty name <+> equals <+> pretty body
+          ]
       prettyDef ((namespace, name), def) =
         vsep $
           comment

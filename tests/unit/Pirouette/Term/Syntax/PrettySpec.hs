@@ -10,6 +10,7 @@ import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Language.Pirouette.Example (Ex, prog)
+import Language.Pirouette.Example.IsUnity (definitions)
 import Language.Pirouette.QuasiQuoter.Syntax (DataDecl, FunDecl, parseProgram)
 import Pirouette.Monad (PrtUnorderedDefs (..))
 import Pirouette.Term.Syntax.Pretty
@@ -23,19 +24,27 @@ import qualified Text.Megaparsec.Char.Lexer as L
 example1 :: PrtUnorderedDefs Ex
 example1 =
   [prog|
-    data Either a b = Left : a -> Either a b | Right : b -> Either a b
-    data Maybe a = Nothing : Maybe a | Just : a -> Maybe a
+    data Maybe x
+      = Just : x -> Maybe x
+      | Nothing : Maybe x
+
+    isJust : forall x . Maybe x -> Bool
+    isJust @x mx =
+      match_Maybe @x mx @Bool (\(jx : x) . True) False
   |]
 
 example2 :: PrtUnorderedDefs Ex
 example2 =
   [prog|
-    toMaybe : Integer -> Integer
-    toMaybe n = n + 1
+    eqInt : Integer -> Integer -> Bool
+    eqInt x y = x == y
   |]
 
+exampleIsUnity :: PrtUnorderedDefs Ex
+exampleIsUnity = definitions
+
 showProgram :: PrtUnorderedDefs Ex -> String
-showProgram = Text.unpack . renderSmart . pretty . Map.assocs . prtUODecls
+showProgram = renderSingleLineStr . pretty . Map.assocs . prtUODecls
 
 readProgram :: String -> Either String (Map String (Either (DataDecl Ex) (FunDecl Ex)))
 readProgram str =
@@ -50,6 +59,12 @@ assertRight (Right _) = return ()
 tests :: [Test.TestTree]
 tests =
   [ Test.testCase
-      "Pretty-printed datatype declaration is parsable"
-      (assertRight (readProgram . showProgram $ example1))
+      "Pretty-printed datatype and function declaration is parsable"
+      (assertRight (readProgram . showProgram $ example1)),
+    Test.testCase
+      "Pretty-printed function declaration with infix operator is parsable"
+      (assertRight (readProgram . showProgram $ example2)),
+    Test.testCase
+      "Pretty-printed \"IsUnity\" program is parsable"
+      (assertRight (readProgram . showProgram $ exampleIsUnity))
   ]
