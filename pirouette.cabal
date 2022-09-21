@@ -59,6 +59,7 @@ library
       PureSMT.Process
       PureSMT.SExpr
       UnionFind
+      UnionFind.Internal
   other-modules:
       Paths_pirouette
   autogen-modules:
