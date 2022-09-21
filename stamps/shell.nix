@@ -1,13 +1,32 @@
-{ pkgs ? import (builtins.fetchTarball {
-  url =
-    # https://lazamar.co.uk/nix-versions/?package=z3&version=4.8.12&fullName=z3-4.8.12&keyName=python38Packages.z3&revision=05ae8b52071ff158a4d3c7036e13a2e932b2549b&channel=nixos-21.11#instructions
-    "https://github.com/NixOS/nixpkgs/archive/05ae8b52071ff158a4d3c7036e13a2e932b2549b.tar.gz";
-}) { } }:
+{ pkgs ? import <nixpkgs> { } }:
 
-pkgs.mkShell {
+let
+  haskell-z3 = hp:
+    hp.callPackage ({ mkDerivation, base, containers, hspec, lib, QuickCheck
+      , transformers, fetchzip }:
+      mkDerivation {
+        pname = "z3";
+        version = "master";
+        src = fetchzip {
+          url =
+            "https://github.com/IagoAbal/haskell-z3/archive/df0773a6012a57df5a0a3d2f0cf83c518c9a925f.tar.gz";
+          sha256 = "sha256:gLz7xYx8i4d70R+yYySOaLcYB0/qSInlwOnsNt3eZjY=";
+        };
+        sha256 = "1fjf9pfj3fhhcd0ak8rm6m5im2il8n5d21z8yv5c32xnsgj7z89a";
+        isLibrary = true;
+        isExecutable = true;
+        libraryHaskellDepends = [ base containers transformers ];
+        librarySystemDepends = with pkgs; [ gomp z3 ];
+        testHaskellDepends = [ base hspec QuickCheck ];
+        homepage = "https://github.com/IagoAbal/haskell-z3";
+        description = "Bindings for the Z3 Theorem Prover";
+        license = lib.licenses.bsd3;
+      }) { };
+in pkgs.mkShell {
   packages = with pkgs; [
     hyperfine
     z3
-    (haskellPackages.ghcWithPackages (hp: with hp; [ typed-process (z3.override { z3 = pkgs.z3; }) ]))
+    (haskellPackages.ghcWithHoogle
+      (hp: with hp; [ typed-process (haskell-z3 hp) haskell-language-server ]))
   ];
 }
