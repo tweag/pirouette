@@ -60,6 +60,7 @@ library
       PureSMT.SExpr
       UnionFind
       UnionFind.Internal
+      UnionFind.Monad
   other-modules:
       Paths_pirouette
   autogen-modules:
@@ -91,6 +92,7 @@ library
     , tasty-quickcheck
     , template-haskell
     , text
+    , transformers
     , typed-process
     , uniplate
   default-language: Haskell2010

@@ -4,17 +4,19 @@ import Data.Function ((&))
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified UnionFind as UF
+import UnionFind.Monad
 
 uf1 :: UF.UnionFind Int Int
 uf1 =
-  UF.empty
-    & UF.trivialInsert 2 2
-    & UF.trivialInsert 3 3
-    & UF.trivialInsert 4 4
-    & UF.trivialInsert 5 5
-    & UF.union (+) 3 4
-    & UF.trivialUnion 5 6
-    & UF.trivialUnion 7 8
+  snd $
+    runWithUnionFind $ do
+      trivialInsert 2 2
+      trivialInsert 3 3
+      trivialInsert 4 4
+      trivialInsert 5 5
+      union (+) 3 4
+      trivialUnion 5 6
+      trivialUnion 7 8
 
 tests :: [TestTree]
 tests =
