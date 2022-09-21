@@ -83,22 +83,23 @@ find key unionFind =
     Just (ChildOf key') ->
       -- We use @findExn@ because invariant (ii) guarantees that it will
       -- succeed. If it ever raises an exception, then we found a bug.
-      let (unionFind', ancestor, value) = findExn key' unionFind
-       in (unionFind', ancestor, Just value)
+      findExn key' unionFind
     Just (Ancestor maybeValue) -> (unionFind, key, maybeValue)
 
 -- | Same as @find@ but fails where there is no value associated to the given
 -- key. Prefer using @find@ or @lookup@.
+--
+-- FIXME: Implement the optimisation for future calls
 findExn ::
   Ord key =>
   key ->
   UnionFind key value ->
-  (UnionFind key value, key, value)
+  (UnionFind key value, key, Maybe value)
 findExn key unionFind =
-  let (unionFind', ancestor, maybeValue) = find key unionFind
-   in case maybeValue of
-        Nothing -> error "findExn: no value associated with key"
-        Just value -> (unionFind', ancestor, value)
+  case Map.lookup key $ getMap unionFind of
+    Nothing -> error "findExn: no value associated with key"
+    Just (ChildOf key') -> findExn key' unionFind
+    Just (Ancestor maybeValue) -> (unionFind, key, maybeValue)
 
 -- | @lookup key unionFind@ returns the value associated to @key@ in the
 -- @unionFind@ structure, or @Nothing@ if there is no such binding. It also
