@@ -144,6 +144,7 @@ test-suite spec
     , tasty-quickcheck
     , template-haskell
     , text
+    , transformers
     , typed-process
     , uniplate
   default-language: Haskell2010
