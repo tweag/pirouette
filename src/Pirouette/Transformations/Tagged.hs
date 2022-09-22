@@ -42,11 +42,9 @@ Xform f1 >:> Xform f2 = Xform $ f2 . f1
 trivialXform :: (a -> b) -> Xform' '[] '[] a b
 trivialXform = Xform
 
-type family CheckReqs (reqs :: [tag]) :: Type where
-  CheckReqs '[] = ()
-  CheckReqs (h ': t) = TypeError ('Text "Unsatisfied transformation pipeline dependencies: " ':<>: 'ShowType (h ': t))
-
-type ReqsSatisfied requires = CheckReqs requires ~ ()
+type family ReqsSatisfied (reqs :: [tag]) :: Constraint where
+  ReqsSatisfied '[] = () ~ ()
+  ReqsSatisfied (h ': t) = TypeError ('Text "Unsatisfied transformation pipeline dependencies: " ':<>: 'ShowType (h ': t))
 
 xform :: (ReqsSatisfied requires) => Xform' requires provides a b -> a -> b
 xform (Xform f) = f
