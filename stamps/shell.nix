@@ -26,7 +26,9 @@ in pkgs.mkShell {
   packages = with pkgs; [
     hyperfine
     z3
+    gcc z3.lib
     (haskellPackages.ghcWithHoogle
       (hp: with hp; [ typed-process (haskell-z3 hp) haskell-language-server ]))
+    cmake
   ];
 }
