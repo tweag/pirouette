@@ -13,10 +13,6 @@ module Pirouette.Transformations.Tagged where
 import Data.Kind
 import GHC.TypeLits
 
-data Foo
-data Bar
-data Baz
-
 type Tags = [ Type ]
 
 type Xform' :: Tags -> Tags -> Type -> Type -> Type
