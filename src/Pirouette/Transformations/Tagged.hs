@@ -1,25 +1,24 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Pirouette.Transformations.Tagged where
 
 import Data.Kind
 import GHC.TypeLits
 
-type Tags = [ Type ]
+type Tags = [Type]
 
 type Xform' :: Tags -> Tags -> Type -> Type -> Type
 newtype Xform' requires provides a b = Xform (a -> b)
 
 type Xform requires provides a = Xform' requires provides a a
-
 
 type family (∪) (xs :: [a]) (ys :: [a]) :: [a] where
   '[] ∪ ys = ys
@@ -34,9 +33,10 @@ type family (\\) (xs :: [a]) (ys :: [a]) :: [a] where
   xs \\ '[] = xs
   xs \\ (y ': ys) = Del xs y \\ ys
 
-(>:>) :: Xform' r1 p1 a b
-      -> Xform' r2 p2 b c
-      -> Xform' (r1 ∪ (r2 \\ p1)) (p1 ∪ p2) a c
+(>:>) ::
+  Xform' r1 p1 a b ->
+  Xform' r2 p2 b c ->
+  Xform' (r1 ∪ (r2 \\ p1)) (p1 ∪ p2) a c
 Xform f1 >:> Xform f2 = Xform $ f2 . f1
 
 trivialXform :: (a -> b) -> Xform' '[] '[] a b
