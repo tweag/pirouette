@@ -10,9 +10,10 @@ do
     echo "# $stamp" >> results.md
     hyperfine --runs 250 --warmup 5 -shell=none --ignore-failure \
               "z3 $stamp > /dev/null" \
+              "./with-bindings-oneshot-from-c.bin $stamp > /dev/null" \
               "./with-bindings-from-c.bin $stamp > /dev/null" \
+              "./with-shell-cmd-bytestring-from-haskell.bin $stamp > /dev/null" \
               "./with-shell-cmd-from-haskell.bin $stamp > /dev/null" \
-              "./with-shell-cmd-from-haskell-bytestring.bin $stamp > /dev/null" \
               --export-markdown tmp.md
     cat tmp.md >> results.md
     echo >> results.md
