@@ -1,4 +1,3 @@
-import qualified Data.ByteString as BS
 import System.Environment
 import System.IO
 import System.Process.Typed
@@ -16,20 +15,20 @@ main = do
 
 transmit :: String -> Handle -> Handle -> IO ()
 transmit file hIn hOut = do
-  BS.split 10 <$> BS.readFile file >>= sendLines hIn hOut
+  lines <$> readFile file >>= sendLines hIn hOut
 
-sendLines :: Handle -> Handle -> [BS.ByteString] -> IO ()
+sendLines :: Handle -> Handle -> [String] -> IO ()
 sendLines hIn hOut [] = hClose hIn
 sendLines hIn hOut (l : rest) = do
   send hIn l >> recv hOut
   sendLines hIn hOut rest
 
-send :: Handle -> BS.ByteString -> IO ()
+send :: Handle -> String -> IO ()
 send h cmd = do
-  BS.hPutStrLn h $ BS.snoc cmd 10
+  hPutStrLn h cmd
   hFlush h
 
 recv :: Handle -> IO ()
 recv h = do
-  resp <- BS.hGetLine h
-  BS.putStrLn resp
+  resp <- hGetLine h
+  putStrLn resp
