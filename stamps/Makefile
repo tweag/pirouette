@@ -8,7 +8,7 @@ all: $(bin_files)
 	ghc $< -o $@
 
 %c.bin: %c.c
-	gcc -lz3 -lstdc++ $< -o $@
+	gcc -lz3 -lstdc++ -O3 $< -o $@
 
 results: with-shell-cmd-from-haskell.bin time.sh
 	./time.sh
