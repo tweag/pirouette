@@ -90,6 +90,7 @@ library
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
+    , timestats
     , text
     , typed-process
     , uniplate
@@ -141,6 +142,7 @@ test-suite spec
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
+    , timestats
     , text
     , typed-process
     , uniplate
@@ -224,6 +226,7 @@ executable example
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
+    , timestats
     , text
     , typed-process
     , uniplate
