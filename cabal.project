@@ -7,8 +7,6 @@ packages:
 -- We never, ever, want this.
 write-ghc-environment-files: never
 
-library-profiling: True
-
 -- Always build tests and benchmarks.
 tests: true
 benchmarks: true

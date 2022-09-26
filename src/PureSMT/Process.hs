@@ -3,6 +3,7 @@ module PureSMT.Process where
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
+import qualified Debug.TimeStats as TimeStats
 import PureSMT.SExpr
 import System.IO
 import System.Mem.Weak
@@ -45,26 +46,29 @@ launchSolverWithFinalizer cmd dbg = do
     config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
 
 send :: Solver -> SExpr -> IO ()
-send solver cmd = do
-  let cmdTxt = showsSExpr cmd ""
-  when (debugMode solver) $ do
-    pid <- unsafeSolverPid solver
-    putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
-  hPutStrLn (getStdin $ process solver) cmdTxt
-  hFlush (getStdin $ process solver)
+send solver cmd =
+  TimeStats.measureM "send" $ do
+    cmdTxt <- TimeStats.measureM "showsSExpr" $ return $ showsSExpr cmd ""
+    when (debugMode solver) $ do
+      pid <- unsafeSolverPid solver
+      putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
+    hPutStrLn (getStdin $ process solver) cmdTxt
+    hFlush (getStdin $ process solver)
 
 recv :: Solver -> IO SExpr
-recv solver = do
-  resp <- hGetLine (getStdout $ process solver)
-  case readSExpr resp of
-    Nothing -> do
-      rest <- hGetContents (getStdout $ process solver)
-      fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
-    Just (sexpr, _) -> do
-      pid <- unsafeSolverPid solver
-      when (debugMode solver && sexpr /= Atom "success") $ do
-        putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
-      return sexpr
+recv solver =
+  TimeStats.measureM "recv" $ do
+    resp <- hGetLine (getStdout $ process solver)
+    TimeStats.measureM "parseSExpr" $
+      case readSExpr resp of
+        Nothing -> do
+          rest <- hGetContents (getStdout $ process solver)
+          fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
+        Just (sexpr, _) -> do
+          when (debugMode solver && sexpr /= Atom "success") $ do
+            pid <- unsafeSolverPid solver
+            putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
+          return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = send solver cmd >> recv solver

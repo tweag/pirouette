@@ -10,11 +10,12 @@
 import Control.Monad.Reader
 import Data.Default
 import Data.Maybe (isJust)
+-- import Pirouette.Symbolic.EvalUtils
+
+import qualified Debug.TimeStats as TimeStats
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity
 import Pirouette.Monad
--- import Pirouette.Symbolic.EvalUtils
-
 -------------------- Utils --------------------
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
@@ -123,12 +124,13 @@ execFull toDo (prog0, tyRes, fn) (assume, toProve) = do
 
 main :: IO ()
 main =
-  -- defaultMain $
-  let test =
-        isCounterWith $ \(Model p) ->
-          case (lookup (PureSMT.Atom "pir_x") p) of
-            Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", PureSMT.Atom fstX, _])) ->
-              odd (read fstX)
-            _ -> False
-   in -- testCase "test" $
-      execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
+  do
+    let test =
+          isCounterWith $ \(Model p) ->
+            case (lookup (PureSMT.Atom "pir_x") p) of
+              Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", PureSMT.Atom fstX, _])) ->
+                odd (read fstX)
+              _ -> False
+     in TimeStats.measureM "main" $
+          execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
+    TimeStats.printTimeStats

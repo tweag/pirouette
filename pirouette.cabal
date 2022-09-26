@@ -200,7 +200,6 @@ executable example
       Paths_pirouette
   hs-source-dirs:
     src/
-  ghc-options: -threaded -prof -fprof-auto -rtsopts
   build-depends:
       QuickCheck
     , ansi-terminal
