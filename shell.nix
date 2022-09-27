@@ -9,6 +9,7 @@ let
       ourpkgs.nixPkgsProxy.haskellPackages.graphmod
     ];
 in pkgs.mkShell {
+    nativeBuildInputs = with pkgs; [ z3.lib z3.dev ];
     buildInputs = ourpkgs.build-deps ++ ourpkgs.dev-deps ++ runtime-deps;
 
     # This shell hook was taken from: https://github.com/input-output-hk/ouroboros-network/pull/3649/files
