@@ -17,17 +17,9 @@ import Prelude hiding (const)
 type SolverProcess = Process Handle Handle Handle
 
 data Solver = Solver
-  { -- process :: SolverProcess,
-    debugMode :: Bool,
-    -- state :: IORef (Z3 ())
+  { debugMode :: Bool,
     state :: Context
   }
-
--- solverPid :: Solver -> IO (Maybe P.Pid)
--- solverPid = P.getPid . unsafeProcessHandle . process
-
--- unsafeSolverPid :: Solver -> IO P.Pid
--- unsafeSolverPid = fmap (fromMaybe $ error "ProcessHandle was already closed") . solverPid
 
 launchSolverWithFinalizer ::
   -- | Command to call the solver, will be made into a 'ProcessConfig' with 'fromString'
@@ -36,74 +28,25 @@ launchSolverWithFinalizer ::
   Bool ->
   IO Solver
 launchSolverWithFinalizer cmd dbg = do
-  -- p <- startProcess config
-  -- putStrLn $ "creating solver ..."
-  -- solverState <- newIORef $ return ()
   solverConfig <- mkConfig
   solverState <- mkContext solverConfig
   let s =
         Solver
-          -- p
           dbg
           solverState
   setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
 
-  -- Registers a finalizer to send an "exit" command to the solver, in case it
-  -- hasn't terminated yet. If it has terminated, we do nothing.
-  -- addFinalizer p (getExitCode p >>= maybe (send s (List [Atom "exit"])) (\_ -> return ()))
   return s
 
--- where
---   config :: ProcessConfig Handle Handle Handle
---   config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
-
--- send :: Solver -> SExpr -> IO ()
--- send solver cmd = do
---   let cmdTxt = showsSExpr cmd ""
---   pid <- unsafeSolverPid solver
---   when (debugMode solver) $
---     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
---   withFile
---     ("stamps/" ++ show pid ++ ".smt")
---     AppendMode
---     (\h -> hPutStrLn h cmdTxt)
---   hPutStrLn (getStdin $ process solver) cmdTxt
---   hFlush (getStdin $ process solver)
-
--- recv :: Solver -> IO SExpr
--- recv solver = do
---   resp <- hGetLine (getStdout $ process solver)
---   case readSExpr resp of
---     Nothing -> do
---       rest <- hGetContents (getStdout $ process solver)
---       fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
---     Just (sexpr, _) -> do
---       pid <- unsafeSolverPid solver
---       when (debugMode solver && sexpr /= Atom "success") $ do
---         putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
---       return sexpr
-
 command :: Solver -> SExpr -> IO SExpr
--- command solver cmd = send solver cmd >> recv solver
 command solver cmd = do
-  -- putStrLn $ "new command !"
-  -- solverState <- readIORef $ state solver
   let cmdTxt = showsSExpr cmd ""
-  -- putStrLn $ cmdTxt
-  -- let respZ3 = solverState $> cmdTxt >>= evalSMTLib2String
-  -- writeIORef (state solver) (respZ3 $> ())
-  -- resp <- evalZ3 respZ3
   resp <- evalSMTLib2String (state solver) cmdTxt
-  -- putStrLn $ "received '" ++ resp ++ "'"
   case readSExpr resp of
     Nothing -> do
-      -- rest <- hGetContents (getStdout $ process solver)
       fail $ "solver replied with:\n" ++ resp -- ++ "\n" ++ rest
     Just (sexpr, _) -> do
-      -- when (debugMode solver && sexpr /= Atom "success") $ do
-      -- pid <- unsafeSolverPid solver
-      -- putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
       return sexpr
 
 -- | A command with no interesting result.
