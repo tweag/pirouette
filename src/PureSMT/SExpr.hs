@@ -188,6 +188,10 @@ ppSExpr = go 0
 
 -- | Parse an s-expression.
 readSExpr :: String -> Maybe (SExpr, String)
+readSExpr "" = Just (Atom "success", "")
+readSExpr "success\n" = Just (Atom "success", "")
+readSExpr "sat\n" = Just (Atom "sat", "")
+readSExpr "unsat\n" = Just (Atom "unsat", "")
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
 readSExpr ('|' : more) = do
