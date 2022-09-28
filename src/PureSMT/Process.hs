@@ -55,11 +55,12 @@ send solver cmd = do
 
 recv :: Solver -> IO SExpr
 recv solver = do
-  resp <- hGetLine (getStdout $ process solver)
-  case readSExpr resp of
+  resp <- readSExpr (getStdout $ process solver) ""
+  case resp of
     Nothing -> do
-      rest <- hGetContents (getStdout $ process solver)
-      fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
+      fail "fail"
+    -- rest <- hGetContents (getStdout $ process solver)
+    -- fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
     Just (sexpr, _) -> do
       pid <- unsafeSolverPid solver
       when (debugMode solver && sexpr /= Atom "success") $ do

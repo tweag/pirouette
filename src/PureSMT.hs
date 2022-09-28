@@ -56,7 +56,7 @@ data Options = Options
 instance Default Options where
   def =
     Options
-      { solverCommand = "cvc4 --lang=smt2 --incremental --fmf-fun",
+      { solverCommand = "z3 pp.single_line=true -in",
         debug = False,
         numWorkers = Nothing
       }

@@ -7,6 +7,7 @@ import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
 import Numeric (readHex, showFFloat, showHex)
+import System.IO
 import Text.Read (readMaybe)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
 import qualified Prelude as P
@@ -186,24 +187,47 @@ ppSExpr = go 0
             . showString ")"
         List es -> showString "(" . many (map (new (n + 2)) es) . showString ")"
 
+delta :: Maybe (IO a) -> IO (Maybe a)
+delta Nothing = return Nothing
+delta (Just something) = do
+  thing <- something
+  return (Just thing)
+
+bindIOMaybe :: IO (Maybe a) -> (a -> IO (Maybe b)) -> IO (Maybe b)
+bindIOMaybe x f = do
+  y <- x
+  z <- delta $ f <$> y
+  return $ do
+    z' <- z
+    z'
+
+mapIOMaybe :: (a -> b) -> IO (Maybe a) -> IO (Maybe b)
+mapIOMaybe f x = fmap (fmap f) x
+
 -- | Parse an s-expression.
-readSExpr :: String -> Maybe (SExpr, String)
-readSExpr (c : more) | isSpace c = readSExpr more
-readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
-readSExpr ('|' : more) = do
+readSExpr :: Handle -> String -> IO (Maybe (SExpr, String))
+readSExpr h (c : more) | isSpace c = readSExpr h more
+readSExpr h (';' : more) = readSExpr h $ drop 1 $ dropWhile (/= '\n') more
+readSExpr _ ('|' : more) = return $ do
   (sym, '|' : rest) <- pure (span ('|' /=) more)
   Just (Atom ('|' : sym ++ ['|']), rest)
-readSExpr ('(' : more) = do
-  (xs, more1) <- list more
-  return (List xs, more1)
+readSExpr h ('(' : more) =
+  mapIOMaybe (\(xs, more1) -> (List xs, more1)) (list h more)
   where
-    list (c : txt) | isSpace c = list txt
-    list (')' : txt) = return ([], txt)
-    list txt = do
-      (v, txt1) <- readSExpr txt
-      (vs, txt2) <- list txt1
-      return (v : vs, txt2)
-readSExpr txt = case break end txt of
+    list h (c : txt) | isSpace c = list h txt
+    list _ (')' : txt) = return $ return ([], txt)
+    list h txt =
+      bindIOMaybe
+        (readSExpr h txt)
+        ( \(v, txt1) ->
+            mapIOMaybe
+              (\(vs, txt2) -> (v : vs, txt2))
+              (list h txt1)
+        )
+readSExpr h "" = do
+  more <- hGetLine h
+  readSExpr h more
+readSExpr _ txt = return $ case break end txt of
   (atom, rest) | P.not (null atom) -> Just (Atom atom, rest)
   _ -> Nothing
   where
