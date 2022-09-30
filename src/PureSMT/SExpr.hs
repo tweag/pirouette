@@ -58,10 +58,7 @@ showsSExpr ex =
     Atom x -> showString x
     List es ->
       showChar '('
-        . foldr
-          (\e m -> showsSExpr e . showChar ' ' . m)
-          (showChar ')')
-          es
+        . foldr (\e m -> showsSExpr e . showChar ' ' . m) (showChar ')') es
 
 -- | Show an s-expression without intermediate 'as'.
 showsSExprWithoutAs :: SExpr -> ShowS

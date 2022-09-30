@@ -6,6 +6,7 @@ import Data.Functor (($>))
 import Data.IORef
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
+import qualified Debug.TimeStats as TimeStats
 import PureSMT.SExpr
 import System.IO
 import System.Mem.Weak
@@ -40,7 +41,7 @@ launchSolverWithFinalizer cmd dbg = do
   return s
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = do
+command solver cmd = TimeStats.measureM "command" $ do
   let cmdTxt = showsSExpr cmd ""
   resp <- evalSMTLib2String (state solver) cmdTxt
   case readSExpr resp of
