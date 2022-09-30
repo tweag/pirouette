@@ -8,7 +8,7 @@ rm results.md
 for stamp in $(ls *.smt)
 do
     echo "# $stamp" >> results.md
-    hyperfine --runs 250 --warmup 5 -shell=none --ignore-failure \
+    hyperfine --runs 250 --warmup 5 --ignore-failure \
               "z3 $stamp > /dev/null" \
               "./with-bindings-oneshot-from-c.bin $stamp > /dev/null" \
               "./with-bindings-from-c.bin $stamp > /dev/null" \
