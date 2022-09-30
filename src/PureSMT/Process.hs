@@ -60,16 +60,16 @@ recv :: Solver -> IO SExpr
 recv solver =
   TimeStats.measureM "recv" $ do
     resp <- hGetLine (getStdout $ process solver)
-    TimeStats.measureM "parseSExpr" $
-      case readSExpr resp of
-        Nothing -> do
-          rest <- hGetContents (getStdout $ process solver)
-          fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
-        Just (sexpr, _) -> do
-          when (debugMode solver && sexpr /= Atom "success") $ do
-            pid <- unsafeSolverPid solver
-            putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
-          return sexpr
+    let respParsed = TimeStats.measurePure "parseSExpr" $ Control.DeepSeq.force $ readSExpr resp
+    case respParsed of
+      Nothing -> do
+        rest <- hGetContents (getStdout $ process solver)
+        fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
+      Just (sexpr, _) -> do
+        when (debugMode solver && sexpr /= Atom "success") $ do
+          pid <- unsafeSolverPid solver
+          putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
+        return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = send solver cmd >> recv solver
