@@ -3,6 +3,7 @@ module PureSMT.Process where
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
+import qualified Debug.TimeStats as TimeStats
 import PureSMT.SExpr
 import System.IO
 import System.Mem.Weak
@@ -46,7 +47,7 @@ launchSolverWithFinalizer cmd dbg = do
 
 send :: Solver -> SExpr -> IO ()
 send solver cmd = do
-  let cmdTxt = showsSExpr cmd ""
+  cmdTxt <- return $ showsSExpr cmd ""
   when (debugMode solver) $ do
     pid <- unsafeSolverPid solver
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
@@ -68,7 +69,7 @@ recv solver = do
       return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = send solver cmd >> recv solver
+command solver cmd = TimeStats.measureM "command" $ send solver cmd >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
