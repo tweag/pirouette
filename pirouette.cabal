@@ -90,10 +90,13 @@ library
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
-    , timestats
     , text
     , typed-process
     , uniplate
+
+
+    , timestats
+    , deepseq >= 1.4
   default-language: Haskell2010
 
 test-suite spec
@@ -142,10 +145,12 @@ test-suite spec
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
-    , timestats
     , text
     , typed-process
     , uniplate
+
+    , timestats
+    , deepseq >= 1.4
   default-language: Haskell2010
 
 executable example 
@@ -225,8 +230,10 @@ executable example
     , tasty-hunit
     , tasty-quickcheck
     , template-haskell
-    , timestats
     , text
     , typed-process
     , uniplate
+
+    , timestats
+    , deepseq >= 1.4
   default-language: Haskell2010

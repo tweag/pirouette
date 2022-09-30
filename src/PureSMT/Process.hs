@@ -1,5 +1,6 @@
 module PureSMT.Process where
 
+import Control.DeepSeq
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
@@ -48,7 +49,7 @@ launchSolverWithFinalizer cmd dbg = do
 send :: Solver -> SExpr -> IO ()
 send solver cmd =
   TimeStats.measureM "send" $ do
-    cmdTxt <- TimeStats.measureM "showsSExpr" $ return $ showsSExpr cmd ""
+    let cmdTxt = TimeStats.measurePure "showsSExpr" $ Control.DeepSeq.force $ showsSExpr cmd ""
     when (debugMode solver) $ do
       pid <- unsafeSolverPid solver
       putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
