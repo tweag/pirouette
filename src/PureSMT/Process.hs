@@ -28,7 +28,7 @@ launchSolverWithFinalizer ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = do
+launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
   solverConfig <- mkConfig
   solverState <- mkContext solverConfig
   let s =
