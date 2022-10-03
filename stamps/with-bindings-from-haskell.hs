@@ -15,13 +15,7 @@ main = do
 transmit :: String -> Context -> IO ()
 transmit file ctx = do
   cmds <- lines <$> readFile file
-  sendLines ctx cmds
-
-sendLines :: Context -> [String] -> IO ()
-sendLines ctx [] = return ()
-sendLines ctx (l : rest) = do
-  command ctx l
-  sendLines ctx rest
+  mapM_ (command ctx) cmds
 
 command :: Context -> String -> IO ()
 command ctx cmd = do
