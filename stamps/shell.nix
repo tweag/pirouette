@@ -23,12 +23,12 @@ let
         license = lib.licenses.bsd3;
       }) { };
 in pkgs.mkShell {
-  propagatedBuildInputs = [ pkgs.z3.lib ];
+  propagatedBuildInputs = with pkgs; [ z3.lib z3.dev ];
   packages = with pkgs; [
     hyperfine
     z3
     gcc
-    (haskellPackages.ghcWithHoogle
+    (haskellPackages.ghcWithPackages
       (hp: with hp; [ typed-process (haskell-z3 hp) haskell-language-server ]))
     cmake
   ];
