@@ -154,14 +154,15 @@ executable with-shell-cmd-from-haskell.bin
   default-language: Haskell2010
 
 executable with-shell-cmd-bytestring-from-haskell.bin
-  main-is: with-shell-cmd-from-haskell.hs
+  main-is: with-shell-cmd-bytestring-from-haskell.hs
   hs-source-dirs:      stamps
   build-depends:       base >= 4.15
+                     , bytestring >= 0.10
                      , typed-process
   default-language: Haskell2010
 
 executable with-bindings-from-haskell.bin
-  main-is: with-shell-cmd-from-haskell.hs
+  main-is: with-bindings-from-haskell.hs
   hs-source-dirs:      stamps
   build-depends:       base >= 4.15
                      , typed-process
