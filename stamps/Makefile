@@ -5,7 +5,7 @@ all: $(bin_files)
 	echo $(bin_files)
 
 %haskell.bin: %haskell.hs
-	ghc $< -o $@
+	cabal install $@ --overwrite-policy=always
 
 %c.bin: %c.c
 	gcc -lz3 -lstdc++ -O3 $< -o $@

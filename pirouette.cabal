@@ -145,3 +145,25 @@ test-suite spec
     , typed-process
     , uniplate
   default-language: Haskell2010
+
+executable with-shell-cmd-from-haskell.bin
+  main-is: with-shell-cmd-from-haskell.hs
+  hs-source-dirs:      stamps
+  build-depends:       base >= 4.15
+                     , typed-process
+  default-language: Haskell2010
+
+executable with-shell-cmd-bytestring-from-haskell.bin
+  main-is: with-shell-cmd-from-haskell.hs
+  hs-source-dirs:      stamps
+  build-depends:       base >= 4.15
+                     , typed-process
+  default-language: Haskell2010
+
+executable with-bindings-from-haskell.bin
+  main-is: with-shell-cmd-from-haskell.hs
+  hs-source-dirs:      stamps
+  build-depends:       base >= 4.15
+                     , typed-process
+                     , z3
+  default-language: Haskell2010
