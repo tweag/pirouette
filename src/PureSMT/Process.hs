@@ -2,24 +2,23 @@ module PureSMT.Process where
 
 import Control.Monad
 -- import Data.Function ((&))
+
+import qualified Data.ByteString as BS
 import Data.Functor (($>))
-import Data.IORef
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import qualified Debug.TimeStats as TimeStats
+import Foregin.Ptr
 import PureSMT.SExpr
 import System.IO
-import System.Mem.Weak
-import qualified System.Process as P
-import System.Process.Typed
-import Z3.Base (Context, evalSMTLib2String, mkConfig, mkContext)
+import Z3.Base.C (Z3_context, mk_config, mk_context, z3_eval_smtlib2_string)
 import Prelude hiding (const)
 
 type SolverProcess = Process Handle Handle Handle
 
 data Solver = Solver
   { debugMode :: Bool,
-    state :: Context
+    state :: Ptr Z3_context
   }
 
 launchSolverWithFinalizer ::
@@ -29,8 +28,8 @@ launchSolverWithFinalizer ::
   Bool ->
   IO Solver
 launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
-  solverConfig <- mkConfig
-  solverState <- mkContext solverConfig
+  solverConfig <- mk_config
+  solverState <- mk_context solverConfig
   let s =
         Solver
           dbg
@@ -43,7 +42,7 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
   let cmdTxt = showsSExpr cmd ""
-  resp <- evalSMTLib2String (state solver) cmdTxt
+  resp <- BS.useAsCString cmdTxt $ z3_eval_smtlib2_string (state solver)
   case readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ resp -- ++ "\n" ++ rest
