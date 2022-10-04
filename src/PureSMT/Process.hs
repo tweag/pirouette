@@ -1,5 +1,6 @@
 module PureSMT.Process where
 
+import Control.DeepSeq
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
@@ -30,24 +31,35 @@ launchSolverWithFinalizer ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
-  p <- startProcess config
-
-  let s = Solver p dbg
-  setOption s ":print-success" "true"
-  setOption s ":produce-models" "true"
-
-  -- Registers a finalizer to send an "exit" command to the solver, in case it
-  -- hasn't terminated yet. If it has terminated, we do nothing.
-  addFinalizer p (getExitCode p >>= maybe (send s (List [Atom "exit"])) (\_ -> return ()))
-  return s
+launchSolverWithFinalizer cmd dbg =
+  TimeStats.measureM "launchSolver" $ do
+    p <- startProcess config
+    let s = Solver p dbg
+    setOption s ":print-success" "true"
+    setOption s ":produce-models" "true"
+    -- Registers a finalizer to send an "exit" command to the solver, in case it
+    -- hasn't terminated yet. If it has terminated, we do nothing.
+    addFinalizer
+      p
+      ( getExitCode p
+          >>= maybe
+            ( send
+                s
+                ( TimeStats.measurePure "showsSExpr" $
+                    force $ showsSExpr (List [Atom "exit"]) ""
+                )
+            )
+            (\_ -> return ())
+      )
+    return s
   where
     config :: ProcessConfig Handle Handle Handle
-    config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
+    config =
+      setStdin createPipe $
+        setStdout createPipe $ setStderr createPipe $ fromString cmd
 
-send :: Solver -> SExpr -> IO ()
-send solver cmd = TimeStats.measureM "recv" $ do
-  cmdTxt <- return $ showsSExpr cmd ""
+send :: Solver -> String -> IO ()
+send solver cmdTxt = TimeStats.measureM "recv" $ do
   when (debugMode solver) $ do
     pid <- unsafeSolverPid solver
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
@@ -69,7 +81,10 @@ recv solver = TimeStats.measureM "send" $ do
       return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = TimeStats.measureM "command" $ send solver cmd >> recv solver
+command solver cmd = TimeStats.measureM "command" $ do
+  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
+  putStrLn cmdTxt -- force eval of cmdTxt
+  TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()

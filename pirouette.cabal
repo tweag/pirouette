@@ -95,7 +95,7 @@ library
     , typed-process
     , uniplate
 
-    , z3
+    , deepseq >= 1.4
   default-language: Haskell2010
 
 test-suite spec
@@ -149,7 +149,7 @@ test-suite spec
     , typed-process
     , uniplate
 
-    , z3
+    , deepseq >= 1.4
   default-language: Haskell2010
 
 executable example 
@@ -233,4 +233,6 @@ executable example
     , text
     , typed-process
     , uniplate
+
+    , deepseq >= 1.4
   default-language: Haskell2010
