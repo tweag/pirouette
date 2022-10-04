@@ -165,6 +165,13 @@ executable with-bindings-from-haskell.bin
   main-is: with-bindings-from-haskell.hs
   hs-source-dirs:      stamps
   build-depends:       base >= 4.15
-                     , typed-process
+                     , z3
+  default-language: Haskell2010
+
+executable with-bindings-bytestring-from-haskell.bin
+  main-is: with-bindings-bytestring-from-haskell.hs
+  hs-source-dirs:      stamps
+  build-depends:       base >= 4.15
+                     , bytestring >= 0.10
                      , z3
   default-language: Haskell2010
