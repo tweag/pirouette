@@ -1,7 +1,9 @@
 module PureSMT.Process where
 
-import Control.Monad
 -- import Data.Function ((&))
+
+import Control.DeepSeq
+import Control.Monad
 import Data.Functor (($>))
 import Data.IORef
 import Data.Maybe (fromMaybe)
@@ -42,9 +44,10 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
-  let cmdTxt = showsSExpr cmd ""
-  resp <- evalSMTLib2String (state solver) cmdTxt
-  case readSExpr resp of
+  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
+  putStrLn cmdTxt --force cmdTxt to be evaluated
+  resp <- TimeStats.measureM "Z3" $ evalSMTLib2String (state solver) cmdTxt
+  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ resp -- ++ "\n" ++ rest
     Just (sexpr, _) -> do

@@ -1,11 +1,17 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 -- This was copied from SimpleSMT
 module PureSMT.SExpr where
 
+import Control.DeepSeq
 import Data.Bits (testBit)
 import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
+import qualified Debug.TimeStats as TimeStats
+import GHC.Generics (Generic)
 import Numeric (readHex, showFFloat, showHex)
 import Text.Read (readMaybe)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
@@ -39,7 +45,7 @@ data Value
 data SExpr
   = Atom String
   | List [SExpr]
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 -- | Apply a function over all atom in a Value.
 overAtomV :: (String -> String) -> Value -> Value
