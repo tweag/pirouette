@@ -1,6 +1,5 @@
 import System.Environment
 import System.IO
-import System.Process.Typed
 import Z3.Base
 
 main = do

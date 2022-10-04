@@ -2,7 +2,6 @@ hs_files = $(shell ls *.hs *.c)
 bin_files = $(patsubst %.c,%.bin,$(hs_files:.hs=.bin))
 
 all: $(bin_files)
-	echo $(bin_files)
 
 %haskell.bin: %haskell.hs
 	cabal install $@ --overwrite-policy=always
