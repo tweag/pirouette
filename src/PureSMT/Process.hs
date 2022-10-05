@@ -1,10 +1,9 @@
 module PureSMT.Process where
 
--- import Data.Function ((&))
-
 import Control.DeepSeq
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
+import Data.Function ((&))
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
@@ -39,15 +38,20 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
   return s
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = TimeStats.measureM "command" $ do
-  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ serializeSExpr cmd
-  BS.putStrLn cmdTxt -- force eval of cmdTxt
-  resp <- TimeStats.measureM "Z3" $ BS.packCString =<< BS.useAsCString cmdTxt $ z3_eval_smtlib2_string (state solver)
-  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
-    Nothing -> do
-      fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
-    Just (sexpr, _) -> do
-      return sexpr
+command solver cmd =
+  TimeStats.measureM "command" $ do
+    let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ serializeSExpr cmd
+    BS.putStrLn cmdTxt -- force eval of cmdTxt
+    resp <-
+      z3_eval_smtlib2_string (state solver)
+        & BS.useAsCString cmdTxt
+        >>= BS.packCString
+        & TimeStats.measureM "Z3"
+    case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
+      Nothing -> do
+        fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
+      Just (sexpr, _) -> do
+        return sexpr
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
