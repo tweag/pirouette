@@ -1,8 +1,9 @@
 module PureSMT.Process where
 
-import Control.Monad
 -- import Data.Function ((&))
 
+import Control.DeepSeq
+import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
@@ -39,13 +40,12 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
-  let cmdTxt = serializeSExpr cmd
-  -- BS.putStrLn cmdTxt
-  resp <- BS.useAsCString cmdTxt $ z3_eval_smtlib2_string (state solver)
-  respByteString <- BS.packCString resp
-  case readSExpr respByteString of
+  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ serializeSExpr cmd
+  BS.putStrLn cmdTxt -- force eval of cmdTxt
+  resp <- TimeStats.measureM "Z3" $ BS.packCString =<< BS.useAsCString cmdTxt $ z3_eval_smtlib2_string (state solver)
+  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
     Nothing -> do
-      fail $ "solver replied with:\n" ++ BS.unpack respByteString -- ++ "\n" ++ rest
+      fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
     Just (sexpr, _) -> do
       return sexpr
 
