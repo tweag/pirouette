@@ -6,6 +6,7 @@
 -- This was copied from SimpleSMT
 module PureSMT.SExpr where
 
+import Control.DeepSeq
 import Data.Bits (testBit)
 import Data.ByteString.Builder (Builder, charUtf8, stringUtf8, toLazyByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -15,6 +16,7 @@ import Data.Function ((&))
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
+import GHC.Generics (Generic)
 import Numeric (readHex, showFFloat, showHex)
 import Text.Read (readMaybe)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
