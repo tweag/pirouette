@@ -1,8 +1,15 @@
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+
 -- This was copied from SimpleSMT
 module PureSMT.SExpr where
 
 import Data.Bits (testBit)
+import Data.ByteString.Builder (Builder, charUtf8, stringUtf8, toLazyByteString)
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BSLazy
 import Data.Char (isDigit, isSpace)
+import Data.Function ((&))
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
@@ -51,6 +58,14 @@ overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
 
+serializeSExpr :: SExpr -> BS.ByteString
+serializeSExpr = BSLazy.toStrict . toLazyByteString . renderSExpr
+  where
+    renderSExpr :: SExpr -> Builder
+    renderSExpr (Atom x) = stringUtf8 x
+    renderSExpr (List es) =
+      charUtf8 '(' <> mconcat [renderSExpr e <> charUtf8 ' ' | e <- es] <> charUtf8 ')'
+
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
 showsSExpr ex =
@@ -62,8 +77,7 @@ showsSExpr ex =
 
 -- | Show an s-expression without intermediate 'as'.
 showsSExprWithoutAs :: SExpr -> ShowS
-showsSExprWithoutAs (List [Atom "as", x, _]) =
-  showsSExprWithoutAs x
+showsSExprWithoutAs (List [Atom "as", x, _]) = showsSExprWithoutAs x
 showsSExprWithoutAs (List (List [Atom "as", x, _] : args)) =
   showsSExprWithoutAs $ List (x : args)
 showsSExprWithoutAs ex =
@@ -113,12 +127,10 @@ showsSExprHaskellish = fst . go
                     args,
                 True
               )
-
     list :: SExpr -> Maybe [SExpr]
     list (Atom "[]") = Just []
     list (List [Atom "as", Atom "[]", _]) = Just []
-    list (List [Atom ":", oneArg, restArgs]) =
-      (oneArg :) <$> list restArgs
+    list (List [Atom ":", oneArg, restArgs]) = (oneArg :) <$> list restArgs
     list (List [List [Atom "as", Atom ":", _], oneArg, restArgs]) =
       (oneArg :) <$> list restArgs
     list _ = Nothing
@@ -157,19 +169,17 @@ ppSExpr = go 0
   where
     tab n = showString (replicate n ' ')
     many = foldr (.) id
-
     new n e = showChar '\n' . tab n . go n e
-
     small :: Int -> [SExpr] -> Maybe [ShowS]
     small n es =
       case es of
         [] -> Just []
         e : more
           | n <= 0 -> Nothing
-          | otherwise -> case e of
-            Atom x -> (showString x :) <$> small (n - 1) more
-            _ -> Nothing
-
+          | otherwise ->
+            case e of
+              Atom x -> (showString x :) <$> small (n - 1) more
+              _ -> Nothing
     go :: Int -> SExpr -> ShowS
     go n ex =
       case ex of
@@ -178,35 +188,41 @@ ppSExpr = go 0
           | Just fs <- small 5 es ->
             showChar '(' . many (intersperse (showChar ' ') fs) . showChar ')'
         List (Atom x : es) ->
-          showString "(" . showString x
+          showString "("
+            . showString x
             . many (map (new (n + 3)) es)
             . showString ")"
         List es -> showString "(" . many (map (new (n + 2)) es) . showString ")"
 
--- | Parse an s-expression.
-readSExpr :: String -> Maybe (SExpr, String)
-readSExpr "" = Just (Atom "success", "")
-readSExpr "success\n" = Just (Atom "success", "")
-readSExpr "sat\n" = Just (Atom "sat", "")
-readSExpr "unsat\n" = Just (Atom "unsat", "")
-readSExpr (c : more) | isSpace c = readSExpr more
-readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
-readSExpr ('|' : more) = do
-  (sym, '|' : rest) <- pure (span ('|' /=) more)
-  Just (Atom ('|' : sym ++ ['|']), rest)
-readSExpr ('(' : more) = do
-  (xs, more1) <- list more
-  return (List xs, more1)
+infixr 5 :<
+
+pattern c :< rest <- (BS.uncons -> Just (c, rest))
+
+readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+readSExpr (c :< rest)
+  | isSpace c = readSExpr rest
+readSExpr (';' :< rest) = BS.dropWhile (/= '\n') rest & BS.drop 1 & readSExpr
+readSExpr ('|' :< rest) = do
+  let (sym, more1) = BS.break (== '|') rest
+  (_, more2) <- BS.uncons more1
+  Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', more2)
+readSExpr ('(' :< rest) = do
+  (es, more) <- list rest
+  return (List es, more)
   where
-    list (c : txt) | isSpace c = list txt
-    list (')' : txt) = return ([], txt)
-    list txt = do
-      (v, txt1) <- readSExpr txt
-      (vs, txt2) <- list txt1
-      return (v : vs, txt2)
-readSExpr txt = case break end txt of
-  (atom, rest) | P.not (null atom) -> Just (Atom atom, rest)
-  _ -> Nothing
+    list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
+    list (c :< rest)
+      | isSpace c = list rest
+    list (')' :< rest) = return ([], rest)
+    list rest = do
+      (e, more1) <- readSExpr rest
+      (es, more2) <- list more1
+      return (e : es, more2)
+readSExpr txt =
+  case BS.break end txt of
+    (atom, rest)
+      | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
+    _ -> Nothing
   where
     end x = x == ')' || isSpace x
 

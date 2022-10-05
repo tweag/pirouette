@@ -3,18 +3,16 @@ module PureSMT.Process where
 import Control.Monad
 -- import Data.Function ((&))
 
-import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import qualified Debug.TimeStats as TimeStats
-import Foregin.Ptr
+import Foreign.Ptr
 import PureSMT.SExpr
 import System.IO
-import Z3.Base.C (Z3_context, mk_config, mk_context, z3_eval_smtlib2_string)
+import Z3.Base.C (Z3_context, z3_eval_smtlib2_string, z3_mk_config, z3_mk_context)
 import Prelude hiding (const)
-
-type SolverProcess = Process Handle Handle Handle
 
 data Solver = Solver
   { debugMode :: Bool,
@@ -28,8 +26,8 @@ launchSolverWithFinalizer ::
   Bool ->
   IO Solver
 launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
-  solverConfig <- mk_config
-  solverState <- mk_context solverConfig
+  solverConfig <- z3_mk_config
+  solverState <- z3_mk_context solverConfig
   let s =
         Solver
           dbg
@@ -41,11 +39,13 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
-  let cmdTxt = showsSExpr cmd ""
+  let cmdTxt = serializeSExpr cmd
+  -- BS.putStrLn cmdTxt
   resp <- BS.useAsCString cmdTxt $ z3_eval_smtlib2_string (state solver)
-  case readSExpr resp of
+  respByteString <- BS.packCString resp
+  case readSExpr respByteString of
     Nothing -> do
-      fail $ "solver replied with:\n" ++ resp -- ++ "\n" ++ rest
+      fail $ "solver replied with:\n" ++ BS.unpack respByteString -- ++ "\n" ++ rest
     Just (sexpr, _) -> do
       return sexpr
 
