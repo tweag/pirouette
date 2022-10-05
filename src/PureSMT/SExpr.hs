@@ -46,7 +46,7 @@ data Value
 data SExpr
   = Atom String
   | List [SExpr]
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 -- | Apply a function over all atom in a Value.
 overAtomV :: (String -> String) -> Value -> Value
