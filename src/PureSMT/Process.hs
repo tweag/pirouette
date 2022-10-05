@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module PureSMT.Process where
 
 -- import Data.Function ((&))
@@ -44,8 +46,7 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
-  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
-  putStrLn cmdTxt --force cmdTxt to be evaluated
+  let !cmdTxt = TimeStats.measurePure "showsSExpr" $ showsSExpr cmd ""
   resp <- TimeStats.measureM "Z3" $ evalSMTLib2String (state solver) cmdTxt
   case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
     Nothing -> do
