@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module PureSMT.Process where
 
 import Control.DeepSeq
@@ -40,8 +42,7 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd =
   TimeStats.measureM "command" $ do
-    let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ serializeSExpr cmd
-    BS.putStrLn cmdTxt -- force eval of cmdTxt
+    let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd
     resp <-
       z3_eval_smtlib2_string (state solver)
         & BS.useAsCString cmdTxt
