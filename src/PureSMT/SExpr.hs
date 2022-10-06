@@ -1,8 +1,21 @@
--- This was copied from SimpleSMT
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+
+-- This was mostly copied from SimpleSMT
 module PureSMT.SExpr where
 
 import Data.Bits (testBit)
+import Data.ByteString.Builder
+  ( Builder,
+    charUtf8,
+    stringUtf8,
+    toLazyByteString,
+  )
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (isDigit, isSpace)
+import Data.Function ((&))
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
@@ -50,6 +63,17 @@ overAtomV _ rest = rest
 overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
+
+-- | Convert an s-expression to a (strict) bytestring.
+serializeSExpr :: SExpr -> BS.ByteString
+serializeSExpr = LBS.toStrict . toLazyByteString . renderSExpr
+  where
+    renderSExpr :: SExpr -> Builder
+    renderSExpr (Atom x) = stringUtf8 x
+    renderSExpr (List es) =
+      charUtf8 '('
+        <> mconcat (intersperse (charUtf8 ' ') [renderSExpr e | e <- es])
+        <> charUtf8 ')'
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
@@ -186,26 +210,33 @@ ppSExpr = go 0
             . showString ")"
         List es -> showString "(" . many (map (new (n + 2)) es) . showString ")"
 
+infixr 5 :<
+
+pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
+pattern c :< rest <- (BS.uncons -> Just (c, rest))
+
 -- | Parse an s-expression.
-readSExpr :: String -> Maybe (SExpr, String)
-readSExpr (c : more) | isSpace c = readSExpr more
-readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
-readSExpr ('|' : more) = do
-  (sym, '|' : rest) <- pure (span ('|' /=) more)
-  Just (Atom ('|' : sym ++ ['|']), rest)
-readSExpr ('(' : more) = do
-  (xs, more1) <- list more
-  return (List xs, more1)
+readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+readSExpr (c :< more) | isSpace c = readSExpr more
+readSExpr (';' :< more) = BS.dropWhile (/= '\n') more & BS.drop 1 & readSExpr
+readSExpr ('|' :< more) = do
+  let (sym, '|' :< rest) = BS.break (== '|') more
+  Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', rest)
+readSExpr ('(' :< more) = do
+  (es, rest) <- list more
+  return (List es, rest)
   where
-    list (c : txt) | isSpace c = list txt
-    list (')' : txt) = return ([], txt)
-    list txt = do
-      (v, txt1) <- readSExpr txt
-      (vs, txt2) <- list txt1
-      return (v : vs, txt2)
-readSExpr txt = case break end txt of
-  (atom, rest) | P.not (null atom) -> Just (Atom atom, rest)
-  _ -> Nothing
+    list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
+    list (c :< more) | isSpace c = list more
+    list (')' :< more) = return ([], more)
+    list more = do
+      (e, rest) <- readSExpr more
+      (es, rest') <- list rest
+      return (e : es, rest')
+readSExpr txt =
+  case BS.break end txt of
+    (atom, rest) | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
+    _ -> Nothing
   where
     end x = x == ')' || isSpace x
 

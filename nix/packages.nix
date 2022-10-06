@@ -23,7 +23,7 @@
         haskellPackages.cabal-install
         haskellPackages.happy
         haskell.compiler.ghc902
-        cvc4 # required to run pirouette once its built
+        z3 # required to run pirouette once its built
      ] ++ lib.optional (stdenv.isLinux) systemd.dev;
 
   dev-deps = with rawpkgs; [

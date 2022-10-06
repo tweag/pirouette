@@ -1,73 +1,64 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module PureSMT.Process where
 
 import Control.Monad
-import Data.Maybe (fromMaybe)
-import Data.String (fromString)
+import qualified Data.ByteString.Char8 as BS
+import Data.Function ((&))
+import Foreign.Ptr (Ptr)
 import PureSMT.SExpr
 import System.IO
-import System.Mem.Weak
-import qualified System.Process as P
-import System.Process.Typed
+-- We use the low-level C API so that we can directly feed bytestrings to Z3
+-- TODO: add high-level functions using bytestrings to haskell-z3
+import Z3.Base.C
+  ( Z3_context,
+    z3_eval_smtlib2_string,
+    z3_mk_config,
+    z3_mk_context,
+  )
 import Prelude hiding (const)
 
-type SolverProcess = Process Handle Handle Handle
-
 data Solver = Solver
-  { process :: SolverProcess,
+  { context :: Ptr Z3_context,
     debugMode :: Bool
   }
 
-solverPid :: Solver -> IO (Maybe P.Pid)
-solverPid = P.getPid . unsafeProcessHandle . process
+-- TODO: rename this function and change its type
 
-unsafeSolverPid :: Solver -> IO P.Pid
-unsafeSolverPid = fmap (fromMaybe $ error "ProcessHandle was already closed") . solverPid
-
+-- | Create a brand-new context for Z3 to work in.
 launchSolverWithFinalizer ::
-  -- | Command to call the solver, will be made into a 'ProcessConfig' with 'fromString'
+  -- | Unused argument existing to match the old interface
   String ->
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = do
-  p <- startProcess config
+launchSolverWithFinalizer _ dbg = do
+  solverCfg <- z3_mk_config
+  solverCtx <- z3_mk_context solverCfg
 
-  let s = Solver p dbg
+  let s = Solver solverCtx dbg
   setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
 
-  -- Registers a finalizer to send an "exit" command to the solver, in case it
-  -- hasn't terminated yet. If it has terminated, we do nothing.
-  addFinalizer p (getExitCode p >>= maybe (send s (List [Atom "exit"])) (\_ -> return ()))
   return s
-  where
-    config :: ProcessConfig Handle Handle Handle
-    config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
 
-send :: Solver -> SExpr -> IO ()
-send solver cmd = do
-  let cmdTxt = showsSExpr cmd ""
+-- | Have Z3 evaluate a command in SExpr format.
+command :: Solver -> SExpr -> IO SExpr
+command solver cmd = do
+  let cmdTxt = serializeSExpr cmd
   when (debugMode solver) $ do
-    pid <- unsafeSolverPid solver
-    putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
-  hPutStrLn (getStdin $ process solver) cmdTxt
-  hFlush (getStdin $ process solver)
-
-recv :: Solver -> IO SExpr
-recv solver = do
-  resp <- hGetLine (getStdout $ process solver)
+    BS.putStrLn $ "[send] " `BS.append` cmdTxt
+  resp <-
+    z3_eval_smtlib2_string (context solver)
+      & BS.useAsCString cmdTxt
+      >>= BS.packCString
   case readSExpr resp of
     Nothing -> do
-      rest <- hGetContents (getStdout $ process solver)
-      fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
+      fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
     Just (sexpr, _) -> do
-      pid <- unsafeSolverPid solver
       when (debugMode solver && sexpr /= Atom "success") $ do
-        putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
+        putStrLn $ "[recv] " ++ showsSExpr sexpr ""
       return sexpr
-
-command :: Solver -> SExpr -> IO SExpr
-command solver cmd = send solver cmd >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
