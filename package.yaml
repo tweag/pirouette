@@ -35,6 +35,7 @@ dependencies:
   # PureSMT deps
   - process
   - typed-process
+  - z3
 
 library:
   source-dirs: src
