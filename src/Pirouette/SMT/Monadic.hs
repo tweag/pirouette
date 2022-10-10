@@ -117,7 +117,6 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
       constr'
   return $ typeName : map fst cstrs
 
-
 -- | Declare a set of datatypes (all at once) in the current solver session.
 declareDatatypes ::
   (LanguageSMT lang, MonadIO m) => [(Name, TypeDef lang)] -> ExceptT String (SolverT m) [Name]

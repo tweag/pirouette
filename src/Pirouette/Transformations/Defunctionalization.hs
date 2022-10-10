@@ -351,7 +351,6 @@ rewriteHofType = go 0
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
 
-
 -- Assumes the body is normalized enough so that all the binders are at the front.
 -- Dis-assuming this is merely about recursing on `App` ctor as well.
 rewriteHofBody ::
