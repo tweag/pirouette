@@ -16,6 +16,7 @@ import Data.Data
 import Data.Foldable
 import Data.Generics.Uniplate.Data ()
 import Data.Generics.Uniplate.Operations (transform)
+import qualified Data.Kind as Kind
 import Data.Maybe (mapMaybe)
 import Data.String
 import Data.Void
@@ -427,7 +428,7 @@ mapNameScoped f = go 0
 -- ** N-ary Reducing Applications
 
 class (HasSubst term) => HasApp term where
-  type AppArg term :: *
+  type AppArg term :: Kind.Type
   appN :: (IsVar (SubstVar term), HasCallStack) => term -> [AppArg term] -> term
 
 app :: (HasApp term, HasCallStack) => term -> AppArg term -> term
