@@ -1,6 +1,6 @@
 module UnionFind.Monad where
 
-import qualified Control.Monad.Trans.State.Lazy as S
+import qualified Control.Monad.Trans.State.Strict as S
 import Data.Functor.Identity (Identity)
 import qualified UnionFind.Internal as UF
 
@@ -36,7 +36,7 @@ union ::
   key ->
   WithUnionFindT key value m ()
 union merge key1 key2 =
-  S.modify $ UF.union merge key1 key2
+  S.modify' $ UF.union merge key1 key2
 
 trivialUnion ::
   (Ord key, Monad m) =>
@@ -52,7 +52,7 @@ insert ::
   value ->
   WithUnionFindT key value m ()
 insert merge key value =
-  S.modify $ UF.insert merge key value
+  S.modify' $ UF.insert merge key value
 
 trivialInsert ::
   (Ord key, Monad m) =>
