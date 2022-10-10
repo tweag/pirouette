@@ -26,13 +26,11 @@ data Solver = Solver
 -- TODO: rename this function and change its type
 
 -- | Create a brand-new context for Z3 to work in.
-launchSolverWithFinalizer ::
-  -- | Unused argument existing to match the old interface
-  String ->
+initZ3instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer _ dbg = do
+initZ3instance dbg = do
   solverCfg <- z3_mk_config
   solverCtx <- z3_mk_context solverCfg
 

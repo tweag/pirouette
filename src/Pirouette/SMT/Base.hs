@@ -2,7 +2,6 @@
 
 module Pirouette.SMT.Base where
 
-import Control.Monad.IO.Class
 import Data.Void
 import Pirouette.Term.Syntax
 import qualified PureSMT
@@ -33,13 +32,3 @@ instance ToSMT Name where
   translate = PureSMT.symbol . toSmtName
 
 type WithDebugMessages = Bool
-
--- | Prepare a CVC4 solver with all supported theories, which is necessary
--- to handle datatypes. The boolean parameter controls debug messages.
--- The "fmf-fun" options is much better at finding sat by constructing finite model of recursive functions,
--- whereas "full-saturate-quant" makes a much better use of the universally quantified hints to find unsat.
-cvc4_ALL_SUPPORTED :: (MonadIO m) => WithDebugMessages -> m PureSMT.Solver
-cvc4_ALL_SUPPORTED dbg = do
-  s <- liftIO $ PureSMT.launchSolverWithFinalizer "cvc4 --lang=smt2 --incremental --fmf-fun" dbg
-  liftIO $ PureSMT.setLogic s "ALL"
-  return s

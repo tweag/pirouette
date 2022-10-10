@@ -43,9 +43,7 @@ class Solve domain where
 
 -- | Set of options used for controlling the behavior of the solver.
 data Options = Options
-  { -- | Which command to use to run the solver
-    solverCommand :: String,
-    -- | Whether to echo the interaction with solver to stdout
+  { -- | Whether to echo the interaction with solver to stdout
     debug :: Bool,
     -- | Whether to force a specific number of workers. If set to 'Nothing', will
     --  rely on 'numCapabilities'.
@@ -56,8 +54,7 @@ data Options = Options
 instance Default Options where
   def =
     Options
-      { solverCommand = "cvc4 --lang=smt2 --incremental --fmf-fun",
-        debug = False,
+      { debug = False,
         numWorkers = Nothing
       }
 
@@ -74,9 +71,8 @@ solve = solveOpts @domain @res def
 {-# NOINLINE solveOpts #-}
 solveOpts :: forall domain res. Options -> Solve domain => Ctx domain -> Problem domain res -> res
 solveOpts opts ctx = unsafePerformIO $ do
-  -- Launch all our worker processes similar to how we did it in TypedProcess2.hs; but now
   -- we end up with a list of MVars, which we will protect in another MVar.
-  allProcs <- launchAll @domain opts ctx >>= newMStack
+  allProcs <- initAll @domain opts ctx >>= newMStack
 
   -- Finally, we return the actual closure, the internals make sure
   -- to use 'withMVar' to not mess up the command/response pairs.
@@ -86,15 +82,13 @@ solveOpts opts ctx = unsafePerformIO $ do
       -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
-      --pid <- unsafeSolverPid solver
-      --print pid
       solveProblem @domain problem solver
     pushMStack ms allProcs
     return r
 
-launchAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
-launchAll opts ctx = replicateM nWorkers $ do
-  s <- X.launchSolverWithFinalizer (solverCommand opts) (debug opts)
+initAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
+initAll opts ctx = replicateM nWorkers $ do
+  s <- X.initZ3instance (debug opts)
   initSolver @domain ctx s
   newMVar s
   where
