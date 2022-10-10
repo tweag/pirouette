@@ -117,10 +117,10 @@ declareDatatype typeName (Datatype _ typeVariables _ cstrs) = do
       constr'
   return $ typeName : map fst cstrs
 
--- | Returns @Right ()@ when this datatype can be declared as a SMTLIB datatype
-supportedDatatype :: (LanguageSMT lang) => TypeDef lang -> Except String ()
-supportedDatatype (Datatype _ typeVariables _ cstrs) =
-  void $ runWriterT $ mapM (constructorFromPIR typeVariables) cstrs
+-- -- | Returns @Right ()@ when this datatype can be declared as a SMTLIB datatype
+-- supportedDatatype :: (LanguageSMT lang) => TypeDef lang -> Except String ()
+-- supportedDatatype (Datatype _ typeVariables _ cstrs) =
+--   void $ runWriterT $ mapM (constructorFromPIR typeVariables) cstrs
 
 -- | Declare a set of datatypes (all at once) in the current solver session.
 declareDatatypes ::
