@@ -1,29 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module PureSMT.Process where
 
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
-import Data.Function ((&))
 import Foreign.Ptr (Ptr)
+import qualified Language.C.Inline as C
 import PureSMT.SExpr
+import qualified PureSMT.Z3 as Z3
 import System.IO
--- We use the low-level C API so that we can directly feed bytestrings to Z3
--- TODO: add high-level functions using bytestrings to haskell-z3
-import Z3.Base.C
-  ( Z3_context,
-    z3_eval_smtlib2_string,
-    z3_mk_config,
-    z3_mk_context,
-  )
 import Prelude hiding (const)
 
+C.context (C.baseCtx <> C.bsCtx <> Z3.cContext)
+C.include "z3.h"
+
 data Solver = Solver
-  { context :: Ptr Z3_context,
+  { context :: Ptr Z3.LogicalContext,
     debugMode :: Bool
   }
-
--- TODO: rename this function and change its type
 
 -- | Create a brand-new context for Z3 to work in.
 initZ3instance ::
@@ -31,8 +27,13 @@ initZ3instance ::
   Bool ->
   IO Solver
 initZ3instance dbg = do
-  solverCfg <- z3_mk_config
-  solverCtx <- z3_mk_context solverCfg
+  solverCtx <-
+    [C.block| Z3_context {
+                     Z3_config cfg = Z3_mk_config();
+                     Z3_context ctx = Z3_mk_context(cfg);
+                     Z3_del_config(cfg);
+                     return ctx;
+                     } |]
 
   let s = Solver solverCtx dbg
   setOption s ":print-success" "true"
@@ -46,9 +47,11 @@ command solver cmd = do
   let cmdTxt = serializeSExpr cmd
   when (debugMode solver) $ do
     BS.putStrLn $ "[send] " `BS.append` cmdTxt
+  let ctx = context solver
   resp <-
-    z3_eval_smtlib2_string (context solver)
-      & BS.useAsCString cmdTxt
+    [C.exp| const char* {
+                  Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
+                  } |]
       >>= BS.packCString
   case readSExpr resp of
     Nothing -> do

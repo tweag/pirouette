@@ -33,8 +33,7 @@ dependencies:
   - optics-core
   - optics-th
   # PureSMT deps
-  - process
-  - typed-process
+  - inline-c
   - z3
 
 library:
