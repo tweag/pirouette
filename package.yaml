@@ -34,6 +34,7 @@ dependencies:
   # PureSMT deps
   - process
   - typed-process
+  - transformers
 
 library:
   source-dirs: src
