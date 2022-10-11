@@ -6,12 +6,11 @@
 module Pirouette.Term.Syntax.Subst where
 
 import Control.Monad.Identity
-import qualified Data.Kind as Kind
 import Data.Maybe (fromMaybe)
 import GHC.Stack (HasCallStack)
 
 class IsVar v where
-  type VarAnn v :: Kind.Type
+  type VarAnn v
 
   isBound :: v -> Maybe Integer
 
@@ -54,7 +53,7 @@ singleSub t = Just t :< Inc 0
 
 -- | General class for terms that support substitution
 class (IsVar (SubstVar term)) => HasSubst term where
-  type SubstVar term :: Kind.Type
+  type SubstVar term
 
   -- | How to construct an annotatd bound variable
   var :: HasCallStack => SubstVar term -> term
