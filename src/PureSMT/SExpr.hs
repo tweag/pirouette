@@ -227,10 +227,10 @@ readSExpr ('(' :< more) = do
   return (List es, rest)
   where
     list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
-    list (c :< more) | isSpace c = list more
-    list (')' :< more) = return ([], more)
-    list more = do
-      (e, rest) <- readSExpr more
+    list (c :< more') | isSpace c = list more'
+    list (')' :< more') = return ([], more')
+    list more' = do
+      (e, rest) <- readSExpr more'
       (es, rest') <- list rest
       return (e : es, rest')
 readSExpr txt =
