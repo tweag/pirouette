@@ -88,6 +88,10 @@ solveOpts opts ctx = unsafePerformIO $ do
 
 initAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
 initAll opts ctx = replicateM nWorkers $ do
+  -- TODO: each init creates its own config but they could be shared
+  -- this would be especially useful if the solver options are passed
+  -- when creating the configuration instead of inside the initSolver
+  -- function
   s <- X.initZ3instance (debug opts)
   initSolver @domain ctx s
   newMVar s
