@@ -20,14 +20,10 @@ import Pirouette.Monad
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax
-import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.Pretty
 import Pirouette.Transformations (elimEvenOddMutRec)
 import Pirouette.Transformations.Defunctionalization
 import Pirouette.Transformations.Monomorphization
 import Prettyprinter (vsep)
-import qualified PureSMT
-import Test.Tasty
 import Test.Tasty.HUnit
 
 (*=*) :: (Eq a, Show a) => IO (Either String a) -> a -> Assertion
@@ -78,7 +74,7 @@ ranOutOfFuel _ = False
 
 isCounterWith :: (Model -> Bool) -> Path lang (EvaluationWitness lang) -> Bool
 isCounterWith f Path {pathResult = CounterExample _ m} = f m
-isCounterWith f _ = False
+isCounterWith _f _ = False
 
 isNoCounter = not . isCounter
 
@@ -113,11 +109,8 @@ execFull ::
   (Term Ex, Term Ex) ->
   IO a
 execFull toDo (prog0, tyRes, fn) (assume, toProve) = do
-  -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
   let prog1 = monomorphize prog0
-  -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
   let decls = defunctionalize prog1
-  -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
   let orderedDecls = elimEvenOddMutRec decls
   flip runReaderT orderedDecls $
     toDo (Problem tyRes fn assume toProve)
@@ -125,13 +118,8 @@ execFull toDo (prog0, tyRes, fn) (assume, toProve) = do
 main :: IO ()
 main =
   do
-    let test =
-          isCounterWith $ \(Model p) ->
-            case (lookup (PureSMT.Atom "pir_x") p) of
-              Just (PureSMT.Other (PureSMT.List [PureSMT.Atom "pir_D", PureSMT.Atom fstX, _])) ->
-                odd (read fstX)
-              _ -> False
-     in TimeStats.measureM "main" $
-          replicateM 100 $
-            execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
+    _ <-
+      TimeStats.measureM "main" $
+        replicateM 100 $
+          execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
     TimeStats.printTimeStats
