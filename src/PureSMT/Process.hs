@@ -6,20 +6,11 @@ module PureSMT.Process where
 
 import Control.DeepSeq
 import Control.Monad
-import Data.Functor (($>))
-import Data.IORef
-import Data.Maybe (fromMaybe)
-import Data.String (fromString)
 import qualified Debug.TimeStats as TimeStats
 import PureSMT.SExpr
 import System.IO
-import System.Mem.Weak
-import qualified System.Process as P
-import System.Process.Typed
 import Z3.Base (Context, evalSMTLib2String, mkConfig, mkContext)
 import Prelude hiding (const)
-
-type SolverProcess = Process Handle Handle Handle
 
 data Solver = Solver
   { debugMode :: Bool,
@@ -32,7 +23,7 @@ launchSolverWithFinalizer ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
+launchSolverWithFinalizer _cmd dbg = TimeStats.measureM "launchSolver" $ do
   solverConfig <- mkConfig
   solverState <- mkContext solverConfig
   let s =

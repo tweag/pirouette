@@ -5,13 +5,13 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 
+module Main where
+
 -- I don't know which of these are actually useful, I just copied them from the
 -- test suite
 import Control.Monad.Reader
 import Data.Default
 import Data.Maybe (isJust)
--- import Pirouette.Symbolic.EvalUtils
-
 import qualified Debug.TimeStats as TimeStats
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity

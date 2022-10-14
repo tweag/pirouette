@@ -10,7 +10,6 @@ import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
-import qualified Debug.TimeStats as TimeStats
 import GHC.Generics (Generic)
 import Numeric (readHex, showFFloat, showHex)
 import Text.Read (readMaybe)

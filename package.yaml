@@ -33,8 +33,9 @@ dependencies:
   - optics-core
   - optics-th
   # PureSMT deps
-  - process
-  - typed-process
+  - deepseq
+  - timestats
+  - z3
 
 library:
   source-dirs: src
@@ -51,6 +52,16 @@ tests:
       - pirouette
     ghc-options:
       -threaded
+
+executables:
+  example:
+    main: Main.hs
+    source-dirs:
+      - src/
+    dependencies:
+      - pirouette
+    ghc-options:
+      -O3
 
 ## executables:
 ##   spec-prof:
