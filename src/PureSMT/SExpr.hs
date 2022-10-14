@@ -15,7 +15,6 @@ import Data.ByteString.Builder
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (isDigit, isSpace)
-import Data.Function ((&))
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
@@ -218,7 +217,7 @@ pattern c :< rest <- (BS.uncons -> Just (c, rest))
 -- | Parse an s-expression.
 readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
 readSExpr (c :< more) | isSpace c = readSExpr more
-readSExpr (';' :< more) = BS.dropWhile (/= '\n') more & BS.drop 1 & readSExpr
+readSExpr (';' :< more) = readSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
 readSExpr ('|' :< more) = do
   let (sym, '|' :< rest) = BS.break (== '|') more
   Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', rest)
