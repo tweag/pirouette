@@ -11,6 +11,7 @@ let
 in pkgs.mkShell {
     nativeBuildInputs = ourpkgs.native-deps;
     buildInputs = ourpkgs.build-deps ++ ourpkgs.dev-deps ++ runtime-deps;
+    LD_LIBRARY_PATH = "${pkgs.z3.lib}/lib";
 
     # This shell hook was taken from: https://github.com/input-output-hk/ouroboros-network/pull/3649/files
     # and is necessary to set the right locale so tools such as ormolu and graphmod can work

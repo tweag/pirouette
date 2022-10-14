@@ -93,8 +93,15 @@ library
     , template-haskell
     , text
     , uniplate
-    , z3
   default-language: Haskell2010
+  -- Copied from https://hackage.haskell.org/package/z3-408.2/src/z3.cabal
+  --
+  -- In OS X libz3 is linked statically against libgomp.
+  -- In Windows Z3 is compiled using MS C++.
+  if os(darwin) || os(windows)
+      extra-libraries:     z3
+  else
+      extra-libraries:     gomp z3 gomp
 
 test-suite spec
   type: exitcode-stdio-1.0
@@ -144,5 +151,4 @@ test-suite spec
     , template-haskell
     , text
     , uniplate
-    , z3
   default-language: Haskell2010

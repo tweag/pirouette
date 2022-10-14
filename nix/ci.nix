@@ -6,4 +6,5 @@ let
 in pkgs.mkShell {
     nativeBuildInputs = ourpkgs.native-deps;
     buildInputs = ourpkgs.build-deps;
+    LD_LIBRARY_PATH = "${pkgs.z3.lib}/lib";
 }
