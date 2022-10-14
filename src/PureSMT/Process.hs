@@ -59,7 +59,7 @@ launchSolverWithFinalizer cmd dbg =
         setStdout createPipe $ setStderr createPipe $ fromString cmd
 
 send :: Solver -> String -> IO ()
-send solver cmdTxt = TimeStats.measureM "recv" $ do
+send solver cmdTxt = do
   when (debugMode solver) $ do
     pid <- unsafeSolverPid solver
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
@@ -67,7 +67,7 @@ send solver cmdTxt = TimeStats.measureM "recv" $ do
   hFlush (getStdin $ process solver)
 
 recv :: Solver -> IO SExpr
-recv solver = TimeStats.measureM "send" $ do
+recv solver = do
   resp <- readSExpr (getStdout $ process solver) ""
   case resp of
     Nothing -> do
