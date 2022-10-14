@@ -8,16 +8,11 @@
 
 module Pirouette.Transformations.Utils where
 
-import Control.Arrow (first, second)
-import Data.Data
-import qualified Data.Map as M
-import qualified Data.Text as T
+import Control.Arrow (first)
 import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.SystemF hiding (Arg)
-import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Prettyprinter hiding (Pretty, pretty)
 
 traceDefsId :: (LanguagePretty lang) => PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 traceDefsId defs = renderSingleLineStr (pretty $ prtUODecls defs) `trace` defs
