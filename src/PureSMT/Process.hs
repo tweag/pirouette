@@ -55,7 +55,7 @@ command solver cmd = do
       >>= BS.packCString
   case readSExpr resp of
     Nothing -> do
-      fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
+      fail $ "solver replied with:\n" ++ BS.unpack resp
     Just (sexpr, _) -> do
       when (debugMode solver && sexpr /= Atom "success") $ do
         putStrLn $ "[recv] " ++ showsSExpr sexpr ""
