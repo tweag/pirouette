@@ -6,9 +6,6 @@ import Control.DeepSeq
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import Data.Function ((&))
-import Data.Functor (($>))
-import Data.Maybe (fromMaybe)
-import Data.String (fromString)
 import qualified Debug.TimeStats as TimeStats
 import Foreign.Ptr
 import PureSMT.SExpr
@@ -27,7 +24,7 @@ launchSolverWithFinalizer ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
+launchSolverWithFinalizer _cmd dbg = TimeStats.measureM "launchSolver" $ do
   solverConfig <- z3_mk_config
   solverState <- z3_mk_context solverConfig
   let s =

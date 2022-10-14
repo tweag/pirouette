@@ -200,6 +200,7 @@ ppSExpr = go 0
 
 infixr 5 :<
 
+pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
 pattern c :< rest <- (BS.uncons -> Just (c, rest))
 
 readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
@@ -215,11 +216,11 @@ readSExpr ('(' :< rest) = do
   return (List es, more)
   where
     list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
-    list (c :< rest)
-      | isSpace c = list rest
-    list (')' :< rest) = return ([], rest)
-    list rest = do
-      (e, more1) <- readSExpr rest
+    list (c :< rest')
+      | isSpace c = list rest'
+    list (')' :< rest') = return ([], rest')
+    list rest' = do
+      (e, more1) <- readSExpr rest'
       (es, more2) <- list more1
       return (e : es, more2)
 readSExpr txt =
