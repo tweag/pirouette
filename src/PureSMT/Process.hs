@@ -47,12 +47,12 @@ launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
     config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
 
 send :: Solver -> String -> IO ()
-send solver cmdTxt = TimeStats.measureM "send" $ do
+send solver cmdTxt = do
   hPutStrLn (getStdin $ process solver) cmdTxt
   hFlush (getStdin $ process solver)
 
 recv :: Solver -> IO SExpr
-recv solver = TimeStats.measureM "recv" $ do
+recv solver = do
   resp <- hGetLine (getStdout $ process solver)
   let respParsed = TimeStats.measurePure "parseSExpr" $ Control.DeepSeq.force $ readSExpr resp
   case respParsed of
