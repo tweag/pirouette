@@ -7,7 +7,8 @@ module PureSMT.Process where
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import Foreign.Ptr (Ptr)
-import qualified Language.C.Inline as C
+import qualified Language.C.Inline as C hiding (block, exp)
+import qualified Language.C.Inline.Unsafe as C
 import PureSMT.SExpr
 import qualified PureSMT.Z3 as Z3
 import System.IO
