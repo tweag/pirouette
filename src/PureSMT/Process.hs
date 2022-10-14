@@ -31,7 +31,7 @@ launchSolverWithFinalizer ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = do
+launchSolverWithFinalizer cmd dbg = TimeStats.measureM "launchSolver" $ do
   p <- startProcess config
 
   let s = Solver p dbg
@@ -40,39 +40,38 @@ launchSolverWithFinalizer cmd dbg = do
 
   -- Registers a finalizer to send an "exit" command to the solver, in case it
   -- hasn't terminated yet. If it has terminated, we do nothing.
-  addFinalizer p (getExitCode p >>= maybe (send s (List [Atom "exit"])) (\_ -> return ()))
+  addFinalizer p (getExitCode p >>= maybe (send s "(exit)") (\_ -> return ()))
   return s
   where
     config :: ProcessConfig Handle Handle Handle
     config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
 
-send :: Solver -> SExpr -> IO ()
-send solver cmd =
-  TimeStats.measureM "send" $ do
-    let cmdTxt = TimeStats.measurePure "showsSExpr" $ Control.DeepSeq.force $ showsSExpr cmd ""
-    when (debugMode solver) $ do
-      pid <- unsafeSolverPid solver
-      putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
-    hPutStrLn (getStdin $ process solver) cmdTxt
-    hFlush (getStdin $ process solver)
+send :: Solver -> String -> IO ()
+send solver cmdTxt = TimeStats.measureM "send" $ do
+  hPutStrLn (getStdin $ process solver) cmdTxt
+  hFlush (getStdin $ process solver)
 
 recv :: Solver -> IO SExpr
-recv solver =
-  TimeStats.measureM "recv" $ do
-    resp <- hGetLine (getStdout $ process solver)
-    let respParsed = TimeStats.measurePure "parseSExpr" $ Control.DeepSeq.force $ readSExpr resp
-    case respParsed of
-      Nothing -> do
-        rest <- hGetContents (getStdout $ process solver)
-        fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
-      Just (sexpr, _) -> do
-        when (debugMode solver && sexpr /= Atom "success") $ do
-          pid <- unsafeSolverPid solver
-          putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
-        return sexpr
+recv solver = TimeStats.measureM "recv" $ do
+  resp <- hGetLine (getStdout $ process solver)
+  let respParsed = TimeStats.measurePure "parseSExpr" $ Control.DeepSeq.force $ readSExpr resp
+  case respParsed of
+    Nothing -> do
+      rest <- hGetContents (getStdout $ process solver)
+      fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
+    Just (sexpr, _) -> do
+      when (debugMode solver && sexpr /= Atom "success") $ do
+        pid <- unsafeSolverPid solver
+        putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
+      return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = send solver cmd >> recv solver
+command solver cmd = do
+  let cmdTxt = TimeStats.measurePure "showsSExpr" $ Control.DeepSeq.force $ showsSExpr cmd ""
+  when (debugMode solver) $ do
+    pid <- unsafeSolverPid solver
+    putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
+  TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()

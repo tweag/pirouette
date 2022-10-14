@@ -132,5 +132,6 @@ main =
                 odd (read fstX)
               _ -> False
      in TimeStats.measureM "main" $
-          execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
+          replicateM 100 $
+            execFull (proveAny def isCounter) isUnity condIsUnity `satisfies` isJust
     TimeStats.printTimeStats

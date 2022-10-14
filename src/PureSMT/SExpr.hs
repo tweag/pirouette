@@ -10,7 +10,7 @@ import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
-import GHC.Generics (Generic, Generic1)
+import GHC.Generics (Generic)
 import Numeric (readHex, showFFloat, showHex)
 import Text.Read (readMaybe)
 import Prelude hiding (abs, and, concat, const, div, mod, not, or)
