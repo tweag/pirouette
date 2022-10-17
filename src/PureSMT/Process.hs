@@ -55,7 +55,7 @@ command solver cmd = do
   let ctx = context solver
   resp <-
     [CU.exp| const char* {
-                  Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
+                  Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
                   } |]
       >>= BS.unsafePackCString
   case readSExpr resp of
