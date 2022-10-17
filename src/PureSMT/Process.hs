@@ -43,6 +43,9 @@ initZ3instance dbg = do
 
   return s
 
+freeZ3Instance :: Solver -> IO ()
+freeZ3Instance s = void $ command s $ List [Atom "exit"]
+
 -- | Have Z3 evaluate a command in SExpr format.
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = do

@@ -82,7 +82,9 @@ solveOpts opts ctx = unsafePerformIO $ do
       -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
-      solveProblem @domain problem solver
+      r <- solveProblem @domain problem solver
+      void $ command solver $ List [Atom "exit"]
+      return r
     pushMStack ms allProcs
     return r
 
