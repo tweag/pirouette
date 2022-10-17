@@ -82,9 +82,9 @@ props =
               result2 = snd $ runWithUnionFind $ mapM applyAction insertsFirst
               result3 = snd $ runWithUnionFind $ mapM applyAction unionsFirst
               -- Normalise outputs
-              sorted1 = sort $ map (first (sort . NE.toList)) $ snd $ UFI.toList result1
-              sorted2 = sort $ map (first (sort . NE.toList)) $ snd $ UFI.toList result2
-              sorted3 = sort $ map (first (sort . NE.toList)) $ snd $ UFI.toList result3
+              sorted1 = unionFindToNormalisedList result1
+              sorted2 = unionFindToNormalisedList result2
+              sorted3 = unionFindToNormalisedList result3
            in sorted1 QC.=== sorted2
                 QC..&&. sorted1 QC.=== sorted3
     ]
