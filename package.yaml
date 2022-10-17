@@ -34,6 +34,8 @@ dependencies:
   - optics-th
   # PureSMT deps
   - inline-c
+  - deepseq
+  - timestats
 
 
 library:
@@ -63,15 +65,12 @@ tests:
     ghc-options:
       -threaded
 
-## executables:
-##   spec-prof:
-##     main: Spec.hs
-##     source-dirs:
-##       - tests/unit
-##     dependencies:
-##       - pirouette
-##     ghc-options:
-##       -threaded
-##       -fprof-auto
-##       -fexternal-interpreter
-##       "-with-rtsopts=-N -p -s -h"
+executables:
+  example:
+    main: Main.hs
+    source-dirs:
+      - src/
+    dependencies:
+      - pirouette
+    ghc-options:
+      -O3

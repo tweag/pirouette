@@ -1,12 +1,15 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module PureSMT.Process where
 
+import Control.DeepSeq (force)
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Unsafe as BS
+import qualified Debug.TimeStats as TimeStats
 import Foreign.Ptr (Ptr)
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
@@ -28,7 +31,7 @@ initZ3instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-initZ3instance dbg = do
+initZ3instance dbg = TimeStats.measureM "launchSolver" $ do
   solverCtx <-
     [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
@@ -48,17 +51,18 @@ freeZ3Instance s = void $ command s $ List [Atom "exit"]
 
 -- | Have Z3 evaluate a command in SExpr format.
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = do
-  let cmdTxt = serializeSExpr cmd
+command solver cmd = TimeStats.measureM "command" $ do
+  let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd
   when (debugMode solver) $ do
     BS.putStrLn $ "[send] " `BS.append` cmdTxt
   let ctx = context solver
   resp <-
-    [CU.exp| const char* {
-                  Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
-                  } |]
-      >>= BS.unsafePackCString
-  case readSExpr resp of
+    TimeStats.measureM "Z3" $
+      [CU.exp| const char* {
+                         Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
+                         } |]
+        >>= BS.unsafePackCString
+  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ BS.unpack resp
     Just (sexpr, _) -> do
