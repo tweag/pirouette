@@ -24,7 +24,16 @@ import qualified Data.Text
 import GHC.Generics (Generic)
 import Numeric (readHex, showFFloat, showHex)
 import Text.Read (readMaybe)
-import Prelude hiding (abs, and, concat, const, div, mod, not, or)
+import Prelude hiding
+  ( abs,
+    and,
+    concat,
+    const,
+    div,
+    mod,
+    not,
+    or,
+  )
 import qualified Prelude as P
 
 -- | Results of checking for satisfiability.
