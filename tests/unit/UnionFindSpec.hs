@@ -15,6 +15,9 @@ import qualified UnionFind as UF
 import qualified UnionFind.Internal as UFI
 import UnionFind.Monad
 
+unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
+unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList
+
 uf1 :: UF.UnionFind Int Int
 uf1 =
   snd $
@@ -86,8 +89,20 @@ props =
                 QC..&&. sorted1 QC.=== sorted3
     ]
 
+moreSmoke =
+  testGroup
+    "More smoke tests, found by QuickCheck"
+    [ testCase "reordering 1" $
+        let uf1 = UFI.union (+) 10 2 $ UFI.union (+) 11 10 $ UFI.insert (+) 2 0 UF.empty
+            uf2 = UFI.insert (+) 2 0 $ UFI.union (+) 11 10 $ UFI.union (+) 10 2 UF.empty
+            nuf1 = unionFindToNormalisedList uf1
+            nuf2 = unionFindToNormalisedList uf2
+         in nuf1 @?= nuf2
+    ]
+
 tests :: [TestTree]
 tests =
   [ basicSmoke,
-    props
+    props,
+    moreSmoke
   ]
