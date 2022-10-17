@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module PureSMT.Process where
 
 import Control.DeepSeq
@@ -82,8 +84,7 @@ recv solver = do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
-  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
-  putStrLn cmdTxt -- force eval of cmdTxt
+  let !cmdTxt = TimeStats.measurePure "showsSExpr" $ showsSExpr cmd ""
   TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
 
 -- | A command with no interesting result.
