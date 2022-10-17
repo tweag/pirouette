@@ -7,8 +7,8 @@ module PureSMT.Process where
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import Foreign.Ptr (Ptr)
-import qualified Language.C.Inline as C hiding (block, exp)
-import qualified Language.C.Inline.Unsafe as C
+import qualified Language.C.Inline as C
+import qualified Language.C.Inline.Unsafe as CU
 import PureSMT.SExpr
 import qualified PureSMT.Z3 as Z3
 import System.IO
@@ -29,7 +29,7 @@ initZ3instance ::
   IO Solver
 initZ3instance dbg = do
   solverCtx <-
-    [C.block| Z3_context {
+    [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
                      Z3_context ctx = Z3_mk_context(cfg);
                      Z3_del_config(cfg);
@@ -50,7 +50,7 @@ command solver cmd = do
     BS.putStrLn $ "[send] " `BS.append` cmdTxt
   let ctx = context solver
   resp <-
-    [C.exp| const char* {
+    [CU.exp| const char* {
                   Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
                   } |]
       >>= BS.packCString
