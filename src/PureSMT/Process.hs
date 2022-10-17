@@ -6,6 +6,7 @@ module PureSMT.Process where
 
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Unsafe as BS
 import Foreign.Ptr (Ptr)
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
@@ -53,7 +54,7 @@ command solver cmd = do
     [CU.exp| const char* {
                   Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
                   } |]
-      >>= BS.packCString
+      >>= BS.unsafePackCString
   case readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ BS.unpack resp
