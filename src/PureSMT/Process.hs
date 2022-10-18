@@ -36,14 +36,16 @@ launchSolverWithFinalizer _cmd dbg = TimeStats.measureM "launchSolver" $ do
   return s
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = TimeStats.measureM "command" $ do
-  let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
-  resp <- TimeStats.measureM "Z3" $ evalSMTLib2String (state solver) cmdTxt
-  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
-    Nothing -> do
-      fail $ "solver replied with:\n" ++ resp -- ++ "\n" ++ rest
-    Just (sexpr, _) -> do
-      return sexpr
+command solver cmd =
+  let cmd' = force cmd
+   in TimeStats.measureM "command" $ do
+        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd' ""
+        resp <- TimeStats.measureM "Z3" $ evalSMTLib2String (state solver) cmdTxt
+        case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
+          Nothing -> do
+            fail $ "solver replied with:\n" ++ resp -- ++ "\n" ++ rest
+          Just (sexpr, _) -> do
+            return sexpr
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
