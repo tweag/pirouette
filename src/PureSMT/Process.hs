@@ -6,7 +6,6 @@ module PureSMT.Process where
 
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Unsafe as BS
 import Foreign.Ptr (Ptr)
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
@@ -45,10 +44,6 @@ initZ3Instance dbg = do
 
   return s
 
--- | Garbage-collect a Z3 logical context.
-freeZ3Instance :: Solver -> IO ()
-freeZ3Instance s = void $ command s $ List [Atom "exit"]
-
 -- | Have Z3 evaluate a command in SExpr format.
 -- This function is thread-safe as long as concurrent instances do not share the
 -- same logical context.
@@ -62,9 +57,7 @@ command solver cmd = do
     [CU.exp| const char* {
                   Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
                   } |]
-      -- this is safe here because the output bytestring is parsed and consumed
-      -- by readSExpr on the next line
-      >>= BS.unsafePackCString
+      >>= BS.packCString
   case readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ BS.unpack resp

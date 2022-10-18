@@ -83,7 +83,6 @@ solveOpts opts ctx = unsafePerformIO $ do
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
       r <- solveProblem @domain problem solver
-      X.freeZ3Instance solver
       return r
     pushMStack ms allProcs
     return r
