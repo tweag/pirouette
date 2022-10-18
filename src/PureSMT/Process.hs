@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module PureSMT.Process where
 
 import Control.DeepSeq (force)
@@ -66,12 +68,14 @@ recv solver = do
       return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = do
-  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
-  when (debugMode solver) $ do
-    pid <- unsafeSolverPid solver
-    putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
-  TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
+command solver cmd =
+  let cmd = force cmd
+   in TimeStats.measureM "command" $ do
+        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
+        when (debugMode solver) $ do
+          pid <- unsafeSolverPid solver
+          putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
+        TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
