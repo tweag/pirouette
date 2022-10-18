@@ -35,6 +35,8 @@ dependencies:
   # PureSMT deps
   - process
   - typed-process
+  - deepseq
+  - timestats
 
 library:
   source-dirs: src
