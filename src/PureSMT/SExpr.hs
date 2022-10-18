@@ -8,7 +8,6 @@ module PureSMT.SExpr where
 import Data.Bits (testBit)
 import Data.ByteString.Builder
   ( Builder,
-    charUtf8,
     stringUtf8,
     toLazyByteString,
   )
@@ -70,9 +69,7 @@ serializeSExpr = LBS.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
     renderSExpr :: SExpr -> Builder
     renderSExpr (Atom x) = stringUtf8 x
     renderSExpr (List es) =
-      charUtf8 '('
-        <> mconcat (intersperse (charUtf8 ' ') [renderSExpr e | e <- es])
-        <> charUtf8 ')'
+      "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
