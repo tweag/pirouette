@@ -24,11 +24,11 @@ data Solver = Solver
   }
 
 -- | Create a brand-new context for Z3 to work in.
-initZ3instance ::
+initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-initZ3instance dbg = do
+initZ3Instance dbg = do
   solverCtx <-
     [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
