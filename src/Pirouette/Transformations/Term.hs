@@ -179,7 +179,7 @@ chooseHeadCase t ty args fstArg =
                in case nameOf tyInput of
                     Nothing -> prtError $ PEOther "The input is not of a pattern-matchable type"
                     Just tyName -> do
-                      dest <- blindDest tyOut <$> prtTypeDefOf tyName
+                      dest' <- blindDest tyOut <$> prtTypeDefOf tyName
                       let transiAbsInput =
                             SystF.Lam (SystF.Ann $ fromString "DUMMY_ARG") tyInput $
                               SystF.appN t (zipWith transitionArgs args [argLength, argLength - 1 .. 1])
@@ -189,7 +189,7 @@ chooseHeadCase t ty args fstArg =
                                   :< Just (SystF.termPure (SystF.Bound (fromString fstArg) (toInteger $ argLength - 1 - index)))
                                   :< Inc 0
                               )
-                              dest
+                              dest'
                       constrDestrId body
   where
     nameOf :: Type lang -> Maybe Name
@@ -202,8 +202,8 @@ chooseHeadCase t ty args fstArg =
     --   C2 x0 x1 -> f#0 (C2 x0 x1)
     -- where `i` is of type `ty` and `f : ty -> out`
     blindDest :: Type lang -> TypeDef lang -> Term lang
-    blindDest tyOut (Datatype _ _ dest cons) =
-      SystF.App (SystF.Free (TermSig dest)) $
+    blindDest tyOut (Datatype _ _ dest' cons) =
+      SystF.App (SystF.Free (TermSig dest')) $
         SystF.TermArg (SystF.termPure (SystF.Bound (fromString "i") 1)) :
         SystF.TyArg tyOut :
         map (SystF.TermArg . consCase) cons
@@ -274,23 +274,23 @@ destrNF = rewriteM (runMaybeT . go)
       -- Try to see if there's at least one destructor in the arguments.
       -- If we find a destructor within the arguments, we can make sure it
       -- is an `App` and has at least one argument (the value being destructed).
-      (dest, fargsZ) <- splitDest fargs
+      (dest', fargsZ) <- splitDest fargs
       MaybeT $
         case prtIsDest fn of
           MaybeT isDestFn -> do
             mIsDestFn <- isDestFn
             case mIsDestFn of
-              Nothing -> runMaybeT $ continue dest fargsZ
+              Nothing -> runMaybeT $ continue dest' fargsZ
               Just _ ->
                 if any isTermArg (fst (unListZipper fargsZ))
                   then return Nothing
-                  else runMaybeT $ continue dest fargsZ
+                  else runMaybeT $ continue dest' fargsZ
       where
         isTermArg (SystF.TermArg _) = True
         isTermArg (SystF.TyArg _) = False
 
-        continue dest fargsZ = do
-          UnDestMeta dn _ tyArgs x ret cases _ <- unDest dest
+        continue dest' fargsZ = do
+          UnDestMeta dn _ tyArgs x ret cases _ <- unDest dest'
           -- Now, we need to push `fn` down the arguments of the destructor, but in doing
           -- so, we need to shift the bound variables depending on how many arguments each
           -- constructor has. Finally, there might be more destructors in fargsZ, which we need to handle,
