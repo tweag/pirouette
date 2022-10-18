@@ -27,11 +27,13 @@ data Solver = Solver
   }
 
 -- | Create a brand-new context for Z3 to work in.
-initZ3instance ::
+-- The resulting Solver object is expected to be manually garbage-collected
+-- using freeZ3Instance.
+initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-initZ3instance dbg = TimeStats.measureM "launchSolver" $ do
+initZ3Instance dbg = do
   solverCtx <-
     [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
@@ -46,10 +48,13 @@ initZ3instance dbg = TimeStats.measureM "launchSolver" $ do
 
   return s
 
+-- | Garbage-collect a Z3 logical context.
 freeZ3Instance :: Solver -> IO ()
 freeZ3Instance s = void $ command s $ List [Atom "exit"]
 
 -- | Have Z3 evaluate a command in SExpr format.
+-- This function is thread-safe as long as concurrent instances do not share the
+-- same logical context.
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = TimeStats.measureM "command" $ do
   let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd

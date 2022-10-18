@@ -11,7 +11,6 @@ import Control.DeepSeq
 import Data.Bits (testBit)
 import Data.ByteString.Builder
   ( Builder,
-    charUtf8,
     stringUtf8,
     toLazyByteString,
   )
@@ -76,16 +75,14 @@ overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
 
--- | Convert an s-expression to a (strict) bytestring.
+-- | Convert an s-expression to a (strict) null terminated bytestring.
 serializeSExpr :: SExpr -> BS.ByteString
-serializeSExpr = LBS.toStrict . toLazyByteString . renderSExpr
+serializeSExpr = LBS.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
   where
     renderSExpr :: SExpr -> Builder
     renderSExpr (Atom x) = stringUtf8 x
     renderSExpr (List es) =
-      charUtf8 '('
-        <> mconcat (intersperse (charUtf8 ' ') [renderSExpr e | e <- es])
-        <> charUtf8 ')'
+      "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS

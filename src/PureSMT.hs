@@ -83,7 +83,7 @@ solveOpts opts ctx = unsafePerformIO $ do
       -- add it to the pool of workers and just retry the problem. In a future implementation
       -- we could try launching it again
       r <- solveProblem @domain problem solver
-      void $ command solver $ List [Atom "exit"]
+      X.freeZ3Instance solver
       return r
     pushMStack ms allProcs
     return r
@@ -94,7 +94,7 @@ initAll opts ctx = replicateM nWorkers $ do
   -- this would be especially useful if the solver options are passed
   -- when creating the configuration instead of inside the initSolver
   -- function
-  s <- X.initZ3instance (debug opts)
+  s <- X.initZ3Instance (debug opts)
   initSolver @domain ctx s
   newMVar s
   where
