@@ -1,6 +1,6 @@
 module PureSMT.Process where
 
-import Control.DeepSeq
+import Control.DeepSeq (force)
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
@@ -67,7 +67,7 @@ recv solver = do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = do
-  let cmdTxt = TimeStats.measurePure "showsSExpr" $ Control.DeepSeq.force $ showsSExpr cmd ""
+  let cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
   when (debugMode solver) $ do
     pid <- unsafeSolverPid solver
     putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
