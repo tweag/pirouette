@@ -2,7 +2,7 @@
 
 module PureSMT.Process where
 
-import Control.DeepSeq
+import Control.DeepSeq (force)
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import Data.Function ((&))
@@ -10,7 +10,12 @@ import qualified Debug.TimeStats as TimeStats
 import Foreign.Ptr
 import PureSMT.SExpr
 import System.IO
-import Z3.Base.C (Z3_context, z3_eval_smtlib2_string, z3_mk_config, z3_mk_context)
+import Z3.Base.C
+  ( Z3_context,
+    z3_eval_smtlib2_string,
+    z3_mk_config,
+    z3_mk_context,
+  )
 import Prelude hiding (const)
 
 data Solver = Solver
@@ -38,18 +43,19 @@ launchSolverWithFinalizer _cmd dbg = TimeStats.measureM "launchSolver" $ do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd =
-  TimeStats.measureM "command" $ do
-    let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd
-    resp <-
-      z3_eval_smtlib2_string (state solver)
-        & BS.useAsCString cmdTxt
-        >>= BS.packCString
-        & TimeStats.measureM "Z3"
-    case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
-      Nothing -> do
-        fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
-      Just (sexpr, _) -> do
-        return sexpr
+  let cmd' = force cmd
+   in TimeStats.measureM "command" $ do
+        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd'
+        resp <-
+          z3_eval_smtlib2_string (state solver)
+            & BS.useAsCString cmdTxt
+            >>= BS.packCString
+            & TimeStats.measureM "Z3"
+        case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
+          Nothing -> do
+            fail $ "solver replied with:\n" ++ BS.unpack resp -- ++ "\n" ++ rest
+          Just (sexpr, _) -> do
+            return sexpr
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
