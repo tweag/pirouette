@@ -56,24 +56,26 @@ freeZ3Instance s = void $ command s $ List [Atom "exit"]
 -- This function is thread-safe as long as concurrent instances do not share the
 -- same logical context.
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = TimeStats.measureM "command" $ do
-  let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd
-  when (debugMode solver) $ do
-    BS.putStrLn $ "[send] " `BS.append` cmdTxt
-  let ctx = context solver
-  resp <-
-    TimeStats.measureM "Z3" $
-      [CU.exp| const char* {
+command solver cmd =
+  let cmd' = force cmd
+   in TimeStats.measureM "command" $ do
+        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd'
+        when (debugMode solver) $ do
+          BS.putStrLn $ "[send] " `BS.append` cmdTxt
+        let ctx = context solver
+        resp <-
+          TimeStats.measureM "Z3" $
+            [CU.exp| const char* {
                          Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
                          } |]
-        >>= BS.unsafePackCString
-  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
-    Nothing -> do
-      fail $ "solver replied with:\n" ++ BS.unpack resp
-    Just (sexpr, _) -> do
-      when (debugMode solver && sexpr /= Atom "success") $ do
-        putStrLn $ "[recv] " ++ showsSExpr sexpr ""
-      return sexpr
+              >>= BS.unsafePackCString
+        case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
+          Nothing -> do
+            fail $ "solver replied with:\n" ++ BS.unpack resp
+          Just (sexpr, _) -> do
+            when (debugMode solver && sexpr /= Atom "success") $ do
+              putStrLn $ "[recv] " ++ showsSExpr sexpr ""
+            return sexpr
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
