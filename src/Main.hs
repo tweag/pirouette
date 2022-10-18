@@ -5,6 +5,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 
+module Main where
+
 -- I don't know which of these are actually useful, I just copied them from the
 -- test suite
 import Control.Monad.Reader
