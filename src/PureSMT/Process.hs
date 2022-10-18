@@ -24,6 +24,8 @@ data Solver = Solver
   }
 
 -- | Create a brand-new context for Z3 to work in.
+-- The resulting Solver object is expected to be manually garbage-collected
+-- using freeZ3Instance.
 initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
@@ -43,10 +45,13 @@ initZ3Instance dbg = do
 
   return s
 
+-- | Garbage-collect a Z3 logical context.
 freeZ3Instance :: Solver -> IO ()
 freeZ3Instance s = void $ command s $ List [Atom "exit"]
 
 -- | Have Z3 evaluate a command in SExpr format.
+-- This function is thread-safe as long as concurrent instances do not share the
+-- same logical context.
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd = do
   let cmdTxt = serializeSExpr cmd
@@ -57,6 +62,8 @@ command solver cmd = do
     [CU.exp| const char* {
                   Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
                   } |]
+      -- this is safe here because the output bytestring is parsed and consumed
+      -- by readSExpr on the next line
       >>= BS.unsafePackCString
   case readSExpr resp of
     Nothing -> do
