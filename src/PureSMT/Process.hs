@@ -2,7 +2,7 @@
 
 module PureSMT.Process where
 
-import Control.DeepSeq
+import Control.DeepSeq (force)
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
@@ -83,9 +83,11 @@ recv solver = do
       return sexpr
 
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd = TimeStats.measureM "command" $ do
-  let !cmdTxt = TimeStats.measurePure "showsSExpr" $ showsSExpr cmd ""
-  TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
+command solver cmd =
+  let cmd' = force cmd
+   in TimeStats.measureM "command" $ do
+        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd' ""
+        TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
