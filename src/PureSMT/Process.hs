@@ -5,6 +5,7 @@ module PureSMT.Process where
 import Control.DeepSeq (force)
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Unsafe as BS
 import Data.Function ((&))
 import qualified Debug.TimeStats as TimeStats
 import Foreign.Ptr
@@ -47,8 +48,7 @@ command solver cmd =
    in TimeStats.measureM "command" $ do
         let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd'
         resp <-
-          z3_eval_smtlib2_string (state solver)
-            & BS.useAsCString cmdTxt
+          z3_eval_smtlib2_string (state solver) & BS.unsafeUseAsCString cmdTxt
             >>= BS.packCString
             & TimeStats.measureM "Z3"
         case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of

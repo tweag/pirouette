@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -8,7 +9,11 @@ module PureSMT.SExpr where
 
 import Control.DeepSeq
 import Data.Bits (testBit)
-import Data.ByteString.Builder (Builder, charUtf8, stringUtf8, toLazyByteString)
+import Data.ByteString.Builder
+  ( Builder,
+    stringUtf8,
+    toLazyByteString,
+  )
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSLazy
 import Data.Char (isDigit, isSpace)
@@ -19,7 +24,16 @@ import qualified Data.Text
 import GHC.Generics (Generic)
 import Numeric (readHex, showFFloat, showHex)
 import Text.Read (readMaybe)
-import Prelude hiding (abs, and, concat, const, div, mod, not, or)
+import Prelude hiding
+  ( abs,
+    and,
+    concat,
+    const,
+    div,
+    mod,
+    not,
+    or,
+  )
 import qualified Prelude as P
 
 -- | Results of checking for satisfiability.
@@ -63,12 +77,12 @@ overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
 
 serializeSExpr :: SExpr -> BS.ByteString
-serializeSExpr = BSLazy.toStrict . toLazyByteString . renderSExpr
+serializeSExpr = BSLazy.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
   where
     renderSExpr :: SExpr -> Builder
     renderSExpr (Atom x) = stringUtf8 x
     renderSExpr (List es) =
-      charUtf8 '(' <> mconcat [renderSExpr e <> charUtf8 ' ' | e <- es] <> charUtf8 ')'
+      "(" <> mconcat [renderSExpr e <> " " | e <- es] <> ")"
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
