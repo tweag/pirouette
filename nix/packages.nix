@@ -23,12 +23,13 @@
         haskellPackages.cabal-install
         haskellPackages.happy
         haskell.compiler.ghc902
-        cvc4 # required to run pirouette once its built
      ] ++ lib.optional (stdenv.isLinux) systemd.dev;
 
   dev-deps = with rawpkgs; [
         haskellPackages.haskell-language-server
       ];
+
+  native-deps = with rawpkgs; [ z3.dev ];
 
   # Export the raw nixpkgs to be accessible to whoever imports this.
   nixPkgsProxy = rawpkgs;

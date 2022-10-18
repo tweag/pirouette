@@ -1,73 +1,70 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module PureSMT.Process where
 
 import Control.Monad
-import Data.Maybe (fromMaybe)
-import Data.String (fromString)
+import qualified Data.ByteString.Char8 as BS
+import Foreign.Ptr (Ptr)
+import qualified Language.C.Inline as C
+import qualified Language.C.Inline.Unsafe as CU
 import PureSMT.SExpr
+import qualified PureSMT.Z3 as Z3
 import System.IO
-import System.Mem.Weak
-import qualified System.Process as P
-import System.Process.Typed
 import Prelude hiding (const)
 
-type SolverProcess = Process Handle Handle Handle
+C.context (C.baseCtx <> C.bsCtx <> Z3.cContext)
+C.include "z3.h"
 
 data Solver = Solver
-  { process :: SolverProcess,
+  { context :: Ptr Z3.LogicalContext,
     debugMode :: Bool
   }
 
-solverPid :: Solver -> IO (Maybe P.Pid)
-solverPid = P.getPid . unsafeProcessHandle . process
-
-unsafeSolverPid :: Solver -> IO P.Pid
-unsafeSolverPid = fmap (fromMaybe $ error "ProcessHandle was already closed") . solverPid
-
-launchSolverWithFinalizer ::
-  -- | Command to call the solver, will be made into a 'ProcessConfig' with 'fromString'
-  String ->
+-- | Create a brand-new context for Z3 to work in.
+-- The resulting Solver object is expected to be manually garbage-collected
+-- using freeZ3Instance.
+initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-launchSolverWithFinalizer cmd dbg = do
-  p <- startProcess config
+initZ3Instance dbg = do
+  solverCtx <-
+    [CU.block| Z3_context {
+                     Z3_config cfg = Z3_mk_config();
+                     Z3_context ctx = Z3_mk_context(cfg);
+                     Z3_del_config(cfg);
+                     return ctx;
+                     } |]
 
-  let s = Solver p dbg
+  let s = Solver solverCtx dbg
   setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
 
-  -- Registers a finalizer to send an "exit" command to the solver, in case it
-  -- hasn't terminated yet. If it has terminated, we do nothing.
-  addFinalizer p (getExitCode p >>= maybe (send s (List [Atom "exit"])) (\_ -> return ()))
   return s
-  where
-    config :: ProcessConfig Handle Handle Handle
-    config = setStdin createPipe $ setStdout createPipe $ setStderr createPipe $ fromString cmd
 
-send :: Solver -> SExpr -> IO ()
-send solver cmd = do
-  let cmdTxt = showsSExpr cmd ""
+-- | Have Z3 evaluate a command in SExpr format.
+-- This function is thread-safe as long as concurrent instances do not share the
+-- same logical context.
+command :: Solver -> SExpr -> IO SExpr
+command solver cmd = do
+  let cmdTxt = serializeSExpr cmd
   when (debugMode solver) $ do
-    pid <- unsafeSolverPid solver
-    putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
-  hPutStrLn (getStdin $ process solver) cmdTxt
-  hFlush (getStdin $ process solver)
-
-recv :: Solver -> IO SExpr
-recv solver = do
-  resp <- hGetLine (getStdout $ process solver)
+    BS.putStrLn $ "[send] " `BS.append` cmdTxt
+  let ctx = context solver
+  resp <-
+    [CU.exp| const char* {
+                  Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
+                  } |]
+      >>= BS.packCString
   case readSExpr resp of
     Nothing -> do
-      rest <- hGetContents (getStdout $ process solver)
-      fail $ "solver replied with:\n" ++ resp ++ "\n" ++ rest
+      fail $ "solver replied with:\n" ++ BS.unpack resp
     Just (sexpr, _) -> do
-      pid <- unsafeSolverPid solver
       when (debugMode solver && sexpr /= Atom "success") $ do
-        putStrLn ("[recv: " ++ show pid ++ "] " ++ showsSExpr sexpr "")
+        putStrLn $ "[recv] " ++ showsSExpr sexpr ""
       return sexpr
-
-command :: Solver -> SExpr -> IO SExpr
-command solver cmd = send solver cmd >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
