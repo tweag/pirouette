@@ -98,6 +98,91 @@ library
     , uniplate
   default-language: Haskell2010
 
+executable example
+  main-is: Main.hs
+  other-modules:
+      Language.Pirouette.Example
+      Language.Pirouette.Example.IsUnity
+      Language.Pirouette.QuasiQuoter
+      Language.Pirouette.QuasiQuoter.Syntax
+      Language.Pirouette.QuasiQuoter.ToTerm
+      ListT.Weighted
+      ListT.Weighted.Examples
+      Pirouette
+      Pirouette.Monad
+      Pirouette.Monad.Maybe
+      Pirouette.Runner
+      Pirouette.SMT
+      Pirouette.SMT.Base
+      Pirouette.SMT.Constraints
+      Pirouette.SMT.FromTerm
+      Pirouette.SMT.Monadic
+      Pirouette.Symbolic.Eval
+      Pirouette.Symbolic.Eval.BranchingHelpers
+      Pirouette.Symbolic.Eval.SMT
+      Pirouette.Symbolic.Eval.Types
+      Pirouette.Symbolic.Prover
+      Pirouette.Symbolic.Prover.Runner
+      Pirouette.Term.Syntax
+      Pirouette.Term.Syntax.Base
+      Pirouette.Term.Syntax.Pretty
+      Pirouette.Term.Syntax.Pretty.Class
+      Pirouette.Term.Syntax.Subst
+      Pirouette.Term.Syntax.SystemF
+      Pirouette.Term.TransitiveDeps
+      Pirouette.Term.TypeChecker
+      Pirouette.Transformations
+      Pirouette.Transformations.Contextualize
+      Pirouette.Transformations.Defunctionalization
+      Pirouette.Transformations.ElimEvenOddMutRec
+      Pirouette.Transformations.EtaExpand
+      Pirouette.Transformations.Inline
+      Pirouette.Transformations.Monomorphization
+      Pirouette.Transformations.Prenex
+      Pirouette.Transformations.Term
+      Pirouette.Transformations.Utils
+      Pirouette.Utils
+      PureSMT
+      PureSMT.Process
+      PureSMT.SExpr
+      Paths_pirouette
+  autogen-modules:
+      Paths_pirouette
+  hs-source-dirs:
+      src/
+  ghc-options: -O3
+  build-depends:
+      QuickCheck
+    , ansi-terminal
+    , base >=4.9 && <5
+    , bytestring
+    , containers
+    , data-default
+    , deepseq
+    , deriving-compat
+    , extra
+    , haskell-stack-trace-plugin
+    , interpolate
+    , megaparsec
+    , mtl >=2.2.2
+    , optics-core
+    , optics-th
+    , parallel
+    , parser-combinators
+    , pirouette
+    , prettyprinter
+    , process
+    , tasty
+    , tasty-expected-failure
+    , tasty-hunit
+    , tasty-quickcheck
+    , template-haskell
+    , text
+    , timestats
+    , typed-process
+    , uniplate
+  default-language: Haskell2010
+
 test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
