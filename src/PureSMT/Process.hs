@@ -87,7 +87,7 @@ command solver cmd =
   let cmd' = force cmd
    in TimeStats.measureM "command" $ do
         let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd' ""
-        TimeStats.measureM "Z3" $ send solver cmdTxt >> recv solver
+        TimeStats.measureM "Z3+readSExpr" $ send solver cmdTxt >> recv solver
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
