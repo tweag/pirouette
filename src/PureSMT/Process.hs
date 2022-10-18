@@ -69,9 +69,9 @@ recv solver = do
 
 command :: Solver -> SExpr -> IO SExpr
 command solver cmd =
-  let cmd = force cmd
+  let cmd' = force cmd
    in TimeStats.measureM "command" $ do
-        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd ""
+        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ force $ showsSExpr cmd' ""
         when (debugMode solver) $ do
           pid <- unsafeSolverPid solver
           putStrLn ("[send: " ++ show pid ++ "] " ++ cmdTxt)
