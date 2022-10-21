@@ -11,7 +11,6 @@ import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
 import PureSMT.SExpr
 import qualified PureSMT.Z3 as Z3
-import System.IO
 import Prelude hiding (const)
 
 C.context (C.baseCtx <> C.fptrCtx <> C.bsCtx <> Z3.cContext)
