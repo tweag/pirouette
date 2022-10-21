@@ -14,10 +14,14 @@ import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
 import qualified UnionFind.Internal as UFI
 import UnionFind.Monad
-import UnionFind.Action
+import UnionFind.Action ( Action, isInsert, applyAction, applyActionToDummy )
+import qualified UnionFind.Dummy as DUF
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
 unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList
+
+dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
+dummyUnionFindToNormalisedList = sort . map (first sort)
 
 uf1 :: UF.UnionFind Int Int
 uf1 =
@@ -68,7 +72,14 @@ props =
               sorted2 = unionFindToNormalisedList result2
               sorted3 = unionFindToNormalisedList result3
            in sorted1 QC.=== sorted2
-                QC..&&. sorted1 QC.=== sorted3
+                QC..&&. sorted1 QC.=== sorted3,
+      testProperty  "behaves like dummy" $
+        \(actions :: [Action Int Int]) ->
+          let result = snd $ runWithUnionFind $ mapM applyAction actions
+              sorted = unionFindToNormalisedList result
+              result' = foldl (flip applyActionToDummy) [] actions
+              sorted' = dummyUnionFindToNormalisedList result'
+           in sorted QC.=== sorted'
     ]
 
 moreSmoke =
