@@ -165,20 +165,20 @@ unionM merge key1 key2 unionFind =
            in case (maybeValue1, maybeValue2) of
                 (Nothing, Nothing) ->
                   onUnionFind2sMap $
-                    Map.insert key1 (ChildOf key2)
-                      . Map.insert key2 (Ancestor Nothing)
+                    Map.insert ancestor1 (ChildOf ancestor2)
+                      . Map.insert ancestor2 (Ancestor Nothing)
                 (Just _, Nothing) ->
-                  onUnionFind2sMap $ Map.insert key2 (ChildOf key1)
+                  onUnionFind2sMap $ Map.insert ancestor2 (ChildOf ancestor1)
                 (Nothing, Just _) ->
-                  onUnionFind2sMap $ Map.insert key1 (ChildOf key2)
+                  onUnionFind2sMap $ Map.insert ancestor1 (ChildOf ancestor2)
                 (Just value1, Just value2) -> do
                   -- FIXME: Implement the optimisation that choses which key should
                   -- be the other's child by keeping track of the size of the
                   -- equivalence classes.
                   value <- merge value1 value2
                   onUnionFind2sMap $
-                    Map.insert key1 (ChildOf key2)
-                      . Map.insert key2 (Ancestor $ Just value)
+                    Map.insert ancestor1 (ChildOf ancestor2)
+                      . Map.insert ancestor2 (Ancestor $ Just value)
 
 -- | Same as @union@ for trivial cases where one knows for sure that the keys
 -- are not in the same equivalence class (or one is absent).
