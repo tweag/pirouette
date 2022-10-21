@@ -112,7 +112,7 @@ test-suite spec
       Pirouette.Transformations.MonomorphizationSpec
       Pirouette.Transformations.PrenexSpec
       Pirouette.Transformations.TermSpec
-      UnionFindSpec
+      UnionFind.Spec
       Paths_pirouette
   autogen-modules:
       Paths_pirouette

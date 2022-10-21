@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module UnionFindSpec (tests) where
+module UnionFind.Spec (tests) where
 
 import Data.Bifunctor (first)
 import Data.Function ((&))

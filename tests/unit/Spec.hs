@@ -9,7 +9,7 @@ import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
 import qualified Pirouette.Transformations.PrenexSpec as Prenex
 import qualified Pirouette.Transformations.TermSpec as Tr
 import Test.Tasty
-import qualified UnionFindSpec as UF
+import qualified UnionFind.Spec as UF
 
 main :: IO ()
 main = defaultMain tests
