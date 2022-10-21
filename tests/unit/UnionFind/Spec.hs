@@ -14,6 +14,7 @@ import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
 import qualified UnionFind.Internal as UFI
 import UnionFind.Monad
+import UnionFind.Action
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
 unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList
@@ -44,25 +45,6 @@ basicSmoke =
       testCase "Lookup 8 in uf1" $ snd (UF.lookup 8 uf1) @?= Nothing,
       testCase "Lookup 9 in uf1" $ snd (UF.lookup 9 uf1) @?= Nothing
     ]
-
-data Action key value
-  = Insert key value
-  | Union key key
-  deriving (Show)
-
-instance (QC.Arbitrary key, QC.Arbitrary value) => QC.Arbitrary (Action key value) where
-  arbitrary =
-    QC.arbitrary >>= \case
-      True -> Insert <$> QC.arbitrary <*> QC.arbitrary
-      False -> Union <$> QC.arbitrary <*> QC.arbitrary
-
-isInsert :: Action key value -> Bool
-isInsert (Insert _ _) = True
-isInsert _ = False
-
-applyAction :: (Ord key, Num value) => Action key value -> WithUnionFind key value ()
-applyAction (Insert k v) = insert (+) k v
-applyAction (Union k1 k2) = union (+) k1 k2
 
 props :: TestTree
 props =
