@@ -23,37 +23,10 @@ unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.to
 dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
 dummyUnionFindToNormalisedList = sort . map (first sort)
 
-uf1 :: UF.UnionFind Int Int
-uf1 =
-  snd $
-    runWithUnionFind $ do
-      trivialInsert 2 2
-      trivialInsert 3 3
-      trivialInsert 4 4
-      trivialInsert 5 5
-      union (+) 3 4
-      trivialUnion 5 6
-      trivialUnion 7 8
-
-basicSmoke :: TestTree
-basicSmoke =
-  testGroup
-    "Basic smoke tests"
-    [ testCase "Lookup 1 in uf1" $ snd (UF.lookup 1 uf1) @?= Nothing,
-      testCase "Lookup 2 in uf1" $ snd (UF.lookup 2 uf1) @?= Just 2,
-      testCase "Lookup 3 in uf1" $ snd (UF.lookup 3 uf1) @?= Just 7,
-      testCase "Lookup 4 in uf1" $ snd (UF.lookup 4 uf1) @?= Just 7,
-      testCase "Lookup 5 in uf1" $ snd (UF.lookup 5 uf1) @?= Just 5,
-      testCase "Lookup 6 in uf1" $ snd (UF.lookup 6 uf1) @?= Just 5,
-      testCase "Lookup 7 in uf1" $ snd (UF.lookup 7 uf1) @?= Nothing,
-      testCase "Lookup 8 in uf1" $ snd (UF.lookup 8 uf1) @?= Nothing,
-      testCase "Lookup 9 in uf1" $ snd (UF.lookup 9 uf1) @?= Nothing
-    ]
-
 props :: TestTree
 props =
   testGroup
-    "Some properties"
+    "QuickCheck Properties"
     [ testProperty "trivially inserting and finding the value succeeds" $
         \(k :: Int) (v :: Int) -> snd (UFI.lookup k $ UFI.trivialInsert k v UFI.empty) == Just v,
       testProperty "inserting combines" $
@@ -82,16 +55,33 @@ props =
            in sorted QC.=== sorted'
     ]
 
-moreSmoke =
+smoke :: TestTree
+smoke =
   testGroup
-    "More smoke tests, found by QuickCheck"
-    [ testCase "reordering 1" $
+    "Smoke Tests"
+    [
+      testCase "Manual run" $
+        let nuf =
+              unionFindToNormalisedList $
+              snd $
+                runWithUnionFind $ do
+                  trivialInsert 2 2
+                  trivialInsert 3 3
+                  trivialInsert 4 4
+                  trivialInsert 5 5
+                  union (+) 3 4
+                  trivialUnion 5 6
+                  trivialUnion 7 8
+         in nuf @?= [ ([2], Just 2), ([3, 4], Just 7), ([5, 6], Just 5), ([7, 8], Nothing) ]
+    ,
+      testCase "QuickCheck's “reordering actions works”" $
         let uf1 = UFI.union (+) 10 2 $ UFI.union (+) 11 10 $ UFI.insert (+) 2 0 UF.empty
             uf2 = UFI.insert (+) 2 0 $ UFI.union (+) 11 10 $ UFI.union (+) 10 2 UF.empty
             nuf1 = unionFindToNormalisedList uf1
             nuf2 = unionFindToNormalisedList uf2
-         in nuf1 @?= nuf2,
-      testCase "likeDummy 1" $
+         in nuf1 @?= nuf2
+    ,
+      testCase "QuickCheck's “behaves like dummy”" $
         let uf = UFI.union (+) 8 8 UF.empty
             duf = DUF.union (+) 8 8 []
             nuf = unionFindToNormalisedList uf
@@ -100,8 +90,4 @@ moreSmoke =
     ]
 
 tests :: [TestTree]
-tests =
-  [ basicSmoke,
-    props,
-    moreSmoke
-  ]
+tests = [ props, smoke ]
