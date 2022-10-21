@@ -90,7 +90,13 @@ moreSmoke =
             uf2 = UFI.insert (+) 2 0 $ UFI.union (+) 11 10 $ UFI.union (+) 10 2 UF.empty
             nuf1 = unionFindToNormalisedList uf1
             nuf2 = unionFindToNormalisedList uf2
-         in nuf1 @?= nuf2
+         in nuf1 @?= nuf2,
+      testCase "likeDummy 1" $
+        let uf = UFI.union (+) 8 8 UF.empty
+            duf = DUF.union (+) 8 8 []
+            nuf = unionFindToNormalisedList uf
+            nduf = dummyUnionFindToNormalisedList duf
+         in nuf @?= nduf
     ]
 
 tests :: [TestTree]
