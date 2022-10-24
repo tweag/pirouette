@@ -61,7 +61,7 @@ command solver cmd =
         resp <-
           TimeStats.measureM "Z3" $
             [CU.exp| const char* {
-                         Z3_eval_smtlib2_string($(Z3_context ctx), $bs-cstr:cmdTxt)
+                         Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
                          } |]
               >>= BS.packCString
         case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
