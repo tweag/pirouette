@@ -22,8 +22,6 @@ data Solver = Solver
   }
 
 -- | Create a brand-new context for Z3 to work in.
--- The resulting Solver object is expected to be manually garbage-collected
--- using freeZ3Instance.
 initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
