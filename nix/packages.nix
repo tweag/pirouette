@@ -2,7 +2,9 @@
   sources ? import ./sources.nix {},
   rawpkgs ? import sources.nixpkgs {},
 }:
-{ 
+
+let my-z3 = rawpkgs.callPackage ./z3.nix {}; 
+in { 
   # We will split our dependencies into those deps that are needed for
   # building and testing; and those that are needed for development
   # the purpose is to keep CI happier and make it as fast as possible.
@@ -29,7 +31,7 @@
         haskellPackages.haskell-language-server
       ];
 
-  native-deps = with rawpkgs; [ z3.dev ];
+  native-deps = with rawpkgs; [ my-z3.dev ];
 
   # Export the raw nixpkgs to be accessible to whoever imports this.
   nixPkgsProxy = rawpkgs;
