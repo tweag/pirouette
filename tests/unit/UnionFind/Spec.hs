@@ -14,7 +14,7 @@ import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
 import qualified UnionFind.Internal as UFI
 import UnionFind.Monad
-import UnionFind.Action ( Action, isInsert, applyAction, applyActionToDummy )
+import UnionFind.Action ( Action, isInsert, applyActionToDummy, mkWithActions )
 import qualified UnionFind.Dummy as DUF
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
@@ -63,9 +63,9 @@ tests = [
               insertsFirst = inserts ++ unions
               unionsFirst = unions ++ inserts
               -- Run the same actions in different orders
-              result1 = snd $ runWithUnionFind $ mapM applyAction actions
-              result2 = snd $ runWithUnionFind $ mapM applyAction insertsFirst
-              result3 = snd $ runWithUnionFind $ mapM applyAction unionsFirst
+              result1 = mkWithActions actions
+              result2 = mkWithActions insertsFirst
+              result3 = mkWithActions unionsFirst
               -- Normalise outputs
               sorted1 = unionFindToNormalisedList result1
               sorted2 = unionFindToNormalisedList result2
@@ -85,7 +85,7 @@ tests = [
     testGroup "behaves like dummy" [
       testProperty "QuickCheck" $
         \(actions :: [Action Int Int]) ->
-          let result = snd $ runWithUnionFind $ mapM applyAction actions
+          let result = mkWithActions actions
               sorted = unionFindToNormalisedList result
               result' = foldl (flip applyActionToDummy) [] actions
               sorted' = dummyUnionFindToNormalisedList result'

@@ -4,7 +4,8 @@
 module UnionFind.Action where
 
 import Test.QuickCheck ( Arbitrary, arbitrary )
-import UnionFind.Monad ( insert, union, WithUnionFind )
+import UnionFind.Internal (UnionFind)
+import UnionFind.Monad ( insert, union, runWithUnionFind, WithUnionFind )
 import qualified UnionFind.Dummy as DUF
 
 data Action key value
@@ -26,9 +27,12 @@ isUnion :: Action key value -> Bool
 isUnion (Union _ _) = True
 isUnion _ = False
 
-applyAction :: (Ord key, Num value) => Action key value -> WithUnionFind key value ()
-applyAction (Insert k v) = insert (+) k v
-applyAction (Union k1 k2) = union (+) k1 k2
+mkWithActions :: (Ord key, Num value) => [Action key value] -> UnionFind key value
+mkWithActions = snd . runWithUnionFind . mapM applyAction
+  where
+    applyAction :: (Ord key, Num value) => Action key value -> WithUnionFind key value ()
+    applyAction (Insert k v) = insert (+) k v
+    applyAction (Union k1 k2) = union (+) k1 k2
 
 applyActionToDummy :: (Ord key, Num value) => Action key value -> DUF.DummyUnionFind key value -> DUF.DummyUnionFind key value
 applyActionToDummy (Insert k v) = DUF.insert (+) k v
