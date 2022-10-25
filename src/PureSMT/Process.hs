@@ -32,7 +32,7 @@ initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
-initZ3Instance dbg = do
+initZ3Instance dbg = TimeStats.measureM "launchSolver" $ do
   solverCtx <-
     [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
