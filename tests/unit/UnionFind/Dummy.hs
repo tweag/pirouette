@@ -78,6 +78,8 @@ unionWith merge key1 key2 duf =
               (keys1 `List.union` [key2], mValue1) : duf2
             (Just (keys1, mValue1), Just (keys2, mValue2)) ->
               let newValue =
+                    -- NOTE: this is actually @mValue1 <> mValue2@ when the
+                    -- @merge@ function is the monoid's @(<>)@.
                     case (mValue1, mValue2) of
                       (Nothing, Nothing) -> Nothing
                       (Just value1, Nothing) -> Just value1
