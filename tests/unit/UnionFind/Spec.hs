@@ -92,5 +92,9 @@ tests = [
         let uf = mkNormalWithActions [Union 8 8]
             duf = mkDummyNormalWithActions [Union 8 8]
          in uf @?= duf
+      ,
+      testCase "#2" $
+      let actions = [Insert 7 4, Union 13 8, Union 7 13]
+       in mkNormalWithActions actions @?= mkDummyNormalWithActions actions
       ]
   ]
