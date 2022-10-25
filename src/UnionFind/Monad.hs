@@ -45,6 +45,13 @@ trivialUnion ::
   WithUnionFindT key value m ()
 trivialUnion = unionWith (\_ _ -> error "union was not trivial")
 
+union ::
+  (Ord key, Semigroup value, Monad m) =>
+  key ->
+  key ->
+  WithUnionFindT key value m ()
+union = unionWith (<>)
+
 insertWith ::
   (Ord key, Monad m) =>
   (value -> value -> value) ->
@@ -60,3 +67,10 @@ trivialInsert ::
   value ->
   WithUnionFindT key value m ()
 trivialInsert = insertWith (\_ _ -> error "insert was not trivial")
+
+insert ::
+  (Ord key, Semigroup value, Monad m) =>
+  key ->
+  value ->
+  WithUnionFindT key value m ()
+insert = insertWith (<>)

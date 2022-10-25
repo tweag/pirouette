@@ -191,6 +191,15 @@ trivialUnion ::
   UnionFind key value
 trivialUnion = unionWith (\_ _ -> error "union was not trivial")
 
+-- | Same as @unionWith@ but uses @(<>)@ to merge values.
+union ::
+  (Ord key, Semigroup value) =>
+  key ->
+  key ->
+  UnionFind key value ->
+  UnionFind key value
+union = unionWith (<>)
+
 -- | @insertWith merge unionFind key value@ adds a binding from @key@ to @value@
 -- in the structure. If @key@ is already known in the structure, then @merge@ is
 -- called to reconcile the known value and the new one. @merge@ receives the new
@@ -216,6 +225,15 @@ trivialInsert ::
   UnionFind key value ->
   UnionFind key value
 trivialInsert = insertWith (\_ _ -> error "insert was not trivial")
+
+-- | Same as @insertWith@ but uses @(<>)@ to merge values.
+insert ::
+  (Ord key, Semigroup value) =>
+  key ->
+  value ->
+  UnionFind key value ->
+  UnionFind key value
+insert = insertWith (<>)
 
 -- | @toLists unionFind@ returns a pair of of lists as well as a new union-find
 -- structure optimised for future calls.
