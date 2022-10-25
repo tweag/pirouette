@@ -62,16 +62,12 @@ tests = [
           let (inserts, unions) = partition isInsert actions
               insertsFirst = inserts ++ unions
               unionsFirst = unions ++ inserts
-              -- Run the same actions in different orders
-              result1 = mkWithActions actions
-              result2 = mkWithActions insertsFirst
-              result3 = mkWithActions unionsFirst
-              -- Normalise outputs
-              sorted1 = unionFindToNormalisedList result1
-              sorted2 = unionFindToNormalisedList result2
-              sorted3 = unionFindToNormalisedList result3
-           in sorted1 QC.=== sorted2
-                QC..&&. sorted1 QC.=== sorted3
+              -- Run the same actions in different orders, normalise.
+              result1 = unionFindToNormalisedList $ mkWithActions actions
+              result2 = unionFindToNormalisedList $ mkWithActions insertsFirst
+              result3 = unionFindToNormalisedList $ mkWithActions unionsFirst
+           in result1 QC.=== result2
+                QC..&&. result1 QC.=== result3
       ,
       testCase "#1" $
         let uf1 = UFI.union (+) 10 2 $ UFI.union (+) 11 10 $ UFI.insert (+) 2 0 UF.empty
@@ -85,11 +81,10 @@ tests = [
     testGroup "behaves like dummy" [
       testProperty "QuickCheck" $
         \(actions :: [Action Int Int]) ->
-          let result = mkWithActions actions
-              sorted = unionFindToNormalisedList result
+          let result = unionFindToNormalisedList $ mkWithActions actions
               result' = foldl (flip applyActionToDummy) [] actions
               sorted' = dummyUnionFindToNormalisedList result'
-           in sorted QC.=== sorted'
+           in result QC.=== sorted'
       ,
       testCase "#1" $
         let uf = UFI.union (+) 8 8 UF.empty
