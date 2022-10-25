@@ -70,4 +70,10 @@ union merge key1 key2 duf =
         (Just (keys1, mValue1), Nothing) ->
           (keys1 `List.union` [key2], mValue1) : duf2
         (Just (keys1, mValue1), Just (keys2, mValue2)) ->
-          (keys1 `List.union` keys2, merge <$> mValue1 <*> mValue2) : duf2
+          let newValue =
+                case (mValue1, mValue2) of
+                  (Nothing, Nothing) -> Nothing
+                  (Just value1, Nothing) -> Just value1
+                  (Nothing, Just value2) -> Just value2
+                  (Just value1, Just value2) -> Just $ merge value1 value2
+           in (keys1 `List.union` keys2, newValue) : duf2
