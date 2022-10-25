@@ -15,7 +15,11 @@ let
       src = fetchFromGitHub {
         owner = "Z3Prover";
         repo = pname;
+<<<<<<< Updated upstream
         rev = "64c4103c4a96cfe5f6fc76076c259fbbafcbc792";
+=======
+        rev = "c181b7b8d691d3646caad18c5749484979e81127";
+>>>>>>> Stashed changes
         sha256 = sha256;
       };
 
@@ -70,6 +74,6 @@ let
       };
     };
 in common {
-  version = "4.12.0";
-  sha256 = "sha256-Xkj9Ra44VvrzBp170qp+3PZ6c35nlEVso4sj1ZXzZ6c=";
+  version = "4.8.15-faster-eval";
+  sha256 = "sha256:eR5caC5teynLpxpbpWZsjcpBXHU/L4OWp0k5jC7p92g=";
 }
