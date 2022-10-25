@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module UnionFind.Spec (tests) where
@@ -14,11 +13,14 @@ import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
 import qualified UnionFind.Internal as UFI
 import UnionFind.Monad
-import UnionFind.Action ( Action, isInsert, applyActionToDummy, mkWithActions )
+import UnionFind.Action ( Action, isInsert, applyActionToDummy, applyActionM )
 import qualified UnionFind.Dummy as DUF
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
 unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList
+
+mkNormalWithActions :: (Ord key, Ord value, Num value) => [Action key value] -> [([key], Maybe value)]
+mkNormalWithActions = unionFindToNormalisedList . snd . runWithUnionFind . mapM applyActionM
 
 dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
 dummyUnionFindToNormalisedList = sort . map (first sort)
@@ -63,9 +65,9 @@ tests = [
               insertsFirst = inserts ++ unions
               unionsFirst = unions ++ inserts
               -- Run the same actions in different orders, normalise.
-              result1 = unionFindToNormalisedList $ mkWithActions actions
-              result2 = unionFindToNormalisedList $ mkWithActions insertsFirst
-              result3 = unionFindToNormalisedList $ mkWithActions unionsFirst
+              result1 = mkNormalWithActions actions
+              result2 = mkNormalWithActions insertsFirst
+              result3 = mkNormalWithActions unionsFirst
            in result1 QC.=== result2
                 QC..&&. result1 QC.=== result3
       ,
@@ -81,7 +83,7 @@ tests = [
     testGroup "behaves like dummy" [
       testProperty "QuickCheck" $
         \(actions :: [Action Int Int]) ->
-          let result = unionFindToNormalisedList $ mkWithActions actions
+          let result = mkNormalWithActions actions
               result' = foldl (flip applyActionToDummy) [] actions
               sorted' = dummyUnionFindToNormalisedList result'
            in result QC.=== sorted'

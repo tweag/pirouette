@@ -27,12 +27,9 @@ isUnion :: Action key value -> Bool
 isUnion (Union _ _) = True
 isUnion _ = False
 
-mkWithActions :: (Ord key, Num value) => [Action key value] -> UnionFind key value
-mkWithActions = snd . runWithUnionFind . mapM applyAction
-  where
-    applyAction :: (Ord key, Num value) => Action key value -> WithUnionFind key value ()
-    applyAction (Insert k v) = insert (+) k v
-    applyAction (Union k1 k2) = union (+) k1 k2
+applyActionM :: (Ord key, Num value) => Action key value -> WithUnionFind key value ()
+applyActionM (Insert k v) = insert (+) k v
+applyActionM (Union k1 k2) = union (+) k1 k2
 
 applyActionToDummy :: (Ord key, Num value) => Action key value -> DUF.DummyUnionFind key value -> DUF.DummyUnionFind key value
 applyActionToDummy (Insert k v) = DUF.insert (+) k v
