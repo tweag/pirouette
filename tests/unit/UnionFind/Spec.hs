@@ -19,11 +19,14 @@ import qualified UnionFind.Dummy as DUF
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
 unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList
 
+dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
+dummyUnionFindToNormalisedList = sort . map (first sort)
+
 mkNormalWithActions :: (Ord key, Ord value, Num value) => [Action key value] -> [([key], Maybe value)]
 mkNormalWithActions = unionFindToNormalisedList . snd . runWithUnionFind . mapM applyActionM
 
-dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
-dummyUnionFindToNormalisedList = sort . map (first sort)
+mkDummyNormalWithActions :: (Ord key, Ord value, Num value) => [Action key value] -> [([key], Maybe value)]
+mkDummyNormalWithActions = dummyUnionFindToNormalisedList . foldl (flip applyActionToDummy) []
 
 tests :: [TestTree]
 tests = [
@@ -82,14 +85,12 @@ tests = [
       testProperty "QuickCheck" $
         \(actions :: [Action Int Int]) ->
           let result = mkNormalWithActions actions
-              result' = foldl (flip applyActionToDummy) [] actions
-              sorted' = dummyUnionFindToNormalisedList result'
-           in result QC.=== sorted'
+              result' = mkDummyNormalWithActions actions
+           in result QC.=== result'
       ,
       testCase "#1" $
         let uf = mkNormalWithActions [Union 8 8]
-            duf = DUF.union (+) 8 8 []
-            nduf = dummyUnionFindToNormalisedList duf
-         in uf @?= nduf
+            duf = mkDummyNormalWithActions [Union 8 8]
+         in uf @?= duf
       ]
   ]
