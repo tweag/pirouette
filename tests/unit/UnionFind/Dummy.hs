@@ -55,11 +55,14 @@ union ::
   DummyUnionFind key value ->
   DummyUnionFind key value
 union merge key1 key2 duf =
-  let (mBinding1, duf1) = extractBinding key1 duf
-      -- NOTE: if @key1@ and @key@ belong to the same equivalence class in
-      -- @duf@, then @mBinding2@ is @Nothing@. The cases take that into account.
-      (mBinding2, duf2) = extractBinding key2 duf1
-   in case (mBinding1, mBinding2) of
+  if key1 == key2
+  then duf
+  else
+    let (mBinding1, duf1) = extractBinding key1 duf
+        -- NOTE: if @key1@ and @key@ belong to the same equivalence class in
+        -- @duf@, then @mBinding2@ is @Nothing@. The cases take that into account.
+        (mBinding2, duf2) = extractBinding key2 duf1
+    in case (mBinding1, mBinding2) of
         (Nothing, Nothing) ->
           ([key1] `List.union` [key2], Nothing) : duf2
         (Nothing, Just (keys2, mValue2)) ->
