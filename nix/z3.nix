@@ -15,11 +15,7 @@ let
       src = fetchFromGitHub {
         owner = "Z3Prover";
         repo = pname;
-<<<<<<< Updated upstream
-        rev = "64c4103c4a96cfe5f6fc76076c259fbbafcbc792";
-=======
         rev = "c181b7b8d691d3646caad18c5749484979e81127";
->>>>>>> Stashed changes
         sha256 = sha256;
       };
 
