@@ -3,7 +3,7 @@
 module UnionFind.Dummy where
 
 import qualified Data.List as List
-import Test.QuickCheck ( Arbitrary, arbitrary )
+import Test.QuickCheck (Arbitrary, arbitrary)
 
 -- | Binding in a dummy union-find structure: this is just the pair of a list of
 -- keys (with uniqueness) and a possible value.
@@ -39,10 +39,10 @@ insertWith ::
 insertWith merge key value duf =
   let (mBinding, duf') = extractBinding key duf
    in case mBinding of
-    Nothing -> ([key], Just value) : duf'
-    Just (keys, maybeValue) ->
-      let newValue = maybe value (merge value) maybeValue
-       in (keys, Just newValue) : duf'
+        Nothing -> ([key], Just value) : duf'
+        Just (keys, maybeValue) ->
+          let newValue = maybe value (merge value) maybeValue
+           in (keys, Just newValue) : duf'
 
 -- | Same as @insertWith@ for @(<>)@.
 insert ::
@@ -63,27 +63,27 @@ unionWith ::
   DummyUnionFind key value
 unionWith merge key1 key2 duf =
   if key1 == key2
-  then duf
-  else
-    let (mBinding1, duf1) = extractBinding key1 duf
-        -- NOTE: if @key1@ and @key@ belong to the same equivalence class in
-        -- @duf@, then @mBinding2@ is @Nothing@. The cases take that into account.
-        (mBinding2, duf2) = extractBinding key2 duf1
-    in case (mBinding1, mBinding2) of
-        (Nothing, Nothing) ->
-          ([key1] `List.union` [key2], Nothing) : duf2
-        (Nothing, Just (keys2, mValue2)) ->
-          (keys2 `List.union` [key1], mValue2) : duf2
-        (Just (keys1, mValue1), Nothing) ->
-          (keys1 `List.union` [key2], mValue1) : duf2
-        (Just (keys1, mValue1), Just (keys2, mValue2)) ->
-          let newValue =
-                case (mValue1, mValue2) of
-                  (Nothing, Nothing) -> Nothing
-                  (Just value1, Nothing) -> Just value1
-                  (Nothing, Just value2) -> Just value2
-                  (Just value1, Just value2) -> Just $ merge value1 value2
-           in (keys1 `List.union` keys2, newValue) : duf2
+    then duf
+    else
+      let (mBinding1, duf1) = extractBinding key1 duf
+          -- NOTE: if @key1@ and @key@ belong to the same equivalence class in
+          -- @duf@, then @mBinding2@ is @Nothing@. The cases take that into account.
+          (mBinding2, duf2) = extractBinding key2 duf1
+       in case (mBinding1, mBinding2) of
+            (Nothing, Nothing) ->
+              ([key1] `List.union` [key2], Nothing) : duf2
+            (Nothing, Just (keys2, mValue2)) ->
+              (keys2 `List.union` [key1], mValue2) : duf2
+            (Just (keys1, mValue1), Nothing) ->
+              (keys1 `List.union` [key2], mValue1) : duf2
+            (Just (keys1, mValue1), Just (keys2, mValue2)) ->
+              let newValue =
+                    case (mValue1, mValue2) of
+                      (Nothing, Nothing) -> Nothing
+                      (Just value1, Nothing) -> Just value1
+                      (Nothing, Just value2) -> Just value2
+                      (Just value1, Just value2) -> Just $ merge value1 value2
+               in (keys1 `List.union` keys2, newValue) : duf2
 
 union ::
   (Eq key, Semigroup value) =>

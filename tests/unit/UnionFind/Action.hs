@@ -3,10 +3,10 @@
 
 module UnionFind.Action where
 
-import Test.QuickCheck ( Arbitrary, arbitrary )
-import UnionFind.Internal (UnionFind)
-import UnionFind.Monad ( insert, union, runWithUnionFind, WithUnionFind )
+import Test.QuickCheck (Arbitrary, arbitrary)
 import qualified UnionFind.Dummy as DUF
+import UnionFind.Internal (UnionFind)
+import UnionFind.Monad (WithUnionFind, insert, runWithUnionFind, union)
 
 data Action key value
   = Insert key value

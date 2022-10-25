@@ -12,13 +12,14 @@ module UnionFind
 where
 
 import UnionFind.Internal
-    ( toLists,
-      lookup,
-      toList,
-      empty,
-      UnionFind,
-      unionWith,
-      trivialUnion,
-      insertWith,
-      trivialInsert )
+  ( UnionFind,
+    empty,
+    insertWith,
+    lookup,
+    toList,
+    toLists,
+    trivialInsert,
+    trivialUnion,
+    unionWith,
+  )
 import Prelude ()
