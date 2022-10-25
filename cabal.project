@@ -7,7 +7,13 @@ packages:
 -- We never, ever, want this.
 write-ghc-environment-files: never
 
-library-profiling: True
+-- Commented out because there is no ghc with profiling in the caches.
+-- library-profiling: True
+
+-- It seems `hakell.nix` reads that parameter for profiling
+-- https://input-output-hk.github.io/haskell.nix/troubleshooting.html#nix-only-configuration-options
+--
+-- profiling: True
 
 -- Always build tests and benchmarks.
 tests: true
