@@ -5,6 +5,7 @@ module UnionFind.Spec (tests) where
 import Data.Bifunctor (first)
 import Data.Function ((&))
 import Data.List (partition, sort)
+import Data.Monoid (Sum(..))
 import qualified Data.List.NonEmpty as NE
 import qualified Test.QuickCheck as QC
 import Test.Tasty
@@ -22,10 +23,16 @@ unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.to
 dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
 dummyUnionFindToNormalisedList = sort . map (first sort)
 
-mkNormalWithActions :: (Ord key, Ord value, Num value) => [Action key value] -> [([key], Maybe value)]
+mkNormalWithActions ::
+  (Ord key, Ord value, Num value) =>
+  [Action key (Sum value)] ->
+  [([key], Maybe (Sum value))]
 mkNormalWithActions = unionFindToNormalisedList . snd . runWithUnionFind . mapM applyActionM
 
-mkDummyNormalWithActions :: (Ord key, Ord value, Num value) => [Action key value] -> [([key], Maybe value)]
+mkDummyNormalWithActions ::
+  (Ord key, Ord value, Num value) =>
+  [Action key (Sum value)] ->
+  [([key], Maybe (Sum value))]
 mkDummyNormalWithActions = dummyUnionFindToNormalisedList . foldl (flip applyActionToDummy) []
 
 tests :: [TestTree]
@@ -55,15 +62,15 @@ tests = [
 
     testGroup "lookup . insert . insert == (<>)" [
       testProperty "QuickCheck" $
-        \(k :: Int) (v1 :: Int) v2 ->
-          snd (UFI.lookup k $ UFI.insertWith (+) k v2 $ UFI.insertWith (+) k v1 UFI.empty)
+        \(k :: Int) (v1 :: (Sum Int)) v2 ->
+          snd (UFI.lookup k $ UFI.insert k v2 $ UFI.insert k v1 UFI.empty)
           == Just (v1 + v2)
       ]
   ,
 
     testGroup "actions are commutative" [
       testProperty "QuickCheck" $
-        \(actions :: [Action Int Int]) ->
+        \(actions :: [Action Int (Sum Int)]) ->
           let (inserts, unions) = partition isInsert actions
               insertsFirst = inserts ++ unions
               unionsFirst = unions ++ inserts
@@ -83,7 +90,7 @@ tests = [
 
     testGroup "behaves like dummy" [
       testProperty "QuickCheck" $
-        \(actions :: [Action Int Int]) ->
+        \(actions :: [Action Int (Sum Int)]) ->
           let result = mkNormalWithActions actions
               result' = mkDummyNormalWithActions actions
            in result QC.=== result'
