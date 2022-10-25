@@ -44,6 +44,15 @@ insertWith merge key value duf =
       let newValue = maybe value (merge value) maybeValue
        in (keys, Just newValue) : duf'
 
+-- | Same as @insertWith@ for @(<>)@.
+insert ::
+  (Eq key, Semigroup value) =>
+  key ->
+  value ->
+  DummyUnionFind key value ->
+  DummyUnionFind key value
+insert = insertWith (<>)
+
 -- | Union of equivalence classes in a dummy union-find structure.
 unionWith ::
   Eq key =>
@@ -75,3 +84,11 @@ unionWith merge key1 key2 duf =
                   (Nothing, Just value2) -> Just value2
                   (Just value1, Just value2) -> Just $ merge value1 value2
            in (keys1 `List.union` keys2, newValue) : duf2
+
+union ::
+  (Eq key, Semigroup value) =>
+  key ->
+  key ->
+  DummyUnionFind key value ->
+  DummyUnionFind key value
+union = unionWith (<>)
