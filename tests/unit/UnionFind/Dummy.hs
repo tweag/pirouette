@@ -87,6 +87,7 @@ unionWith merge key1 key2 duf =
                       (Just value1, Just value2) -> Just $ merge value1 value2
                in (keys1 `List.union` keys2, newValue) : duf2
 
+-- | Same as @unionWith@ for @(<>)@.
 union ::
   (Eq key, Semigroup value) =>
   key ->
