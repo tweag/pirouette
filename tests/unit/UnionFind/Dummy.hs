@@ -1,11 +1,9 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module UnionFind.Dummy where
 
 import qualified Data.List as List
 import Test.QuickCheck ( Arbitrary, arbitrary )
-import UnionFind.Monad ( insert, union, WithUnionFind )
 
 -- | Binding in a dummy union-find structure: this is just the pair of a list of
 -- keys (with uniqueness) and a possible value.
