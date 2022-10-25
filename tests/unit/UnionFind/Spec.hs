@@ -13,7 +13,7 @@ import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
 import qualified UnionFind.Internal as UFI
 import UnionFind.Monad
-import UnionFind.Action ( Action, isInsert, applyActionToDummy, applyActionM )
+import UnionFind.Action ( Action(..), isInsert, applyActionToDummy, applyActionM )
 import qualified UnionFind.Dummy as DUF
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
@@ -72,11 +72,9 @@ tests = [
                 QC..&&. result1 QC.=== result3
       ,
       testCase "#1" $
-        let uf1 = UFI.union (+) 10 2 $ UFI.union (+) 11 10 $ UFI.insert (+) 2 0 UF.empty
-            uf2 = UFI.insert (+) 2 0 $ UFI.union (+) 11 10 $ UFI.union (+) 10 2 UF.empty
-            nuf1 = unionFindToNormalisedList uf1
-            nuf2 = unionFindToNormalisedList uf2
-         in nuf1 @?= nuf2
+        let uf1 = mkNormalWithActions [Insert 2 0, Union 11 10, Union 10 2]
+            uf2 = mkNormalWithActions [Union 10 2, Union 11 10, Insert 2 0]
+         in uf1 @?= uf2
       ]
   ,
 
@@ -89,10 +87,9 @@ tests = [
            in result QC.=== sorted'
       ,
       testCase "#1" $
-        let uf = UFI.union (+) 8 8 UF.empty
+        let uf = mkNormalWithActions [Union 8 8]
             duf = DUF.union (+) 8 8 []
-            nuf = unionFindToNormalisedList uf
             nduf = dummyUnionFindToNormalisedList duf
-         in nuf @?= nduf
+         in uf @?= nduf
       ]
   ]
