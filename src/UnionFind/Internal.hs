@@ -113,9 +113,10 @@ lookup key unionFind =
   let (unionFind', _, maybeValue) = find key unionFind
    in (unionFind', maybeValue)
 
--- | @union merge unionFind key1 key2@ merges together the equivalence classes
--- of @key1@ and @key2@ in @unionFind@, thus adding the information that @key1@
--- and @key2@ are equivalent, and returns an updated union-find structure.
+-- | @unionWith merge unionFind key1 key2@ merges together the equivalence
+-- classes of @key1@ and @key2@ in @unionFind@, thus adding the information that
+-- @key1@ and @key2@ are equivalent, and returns an updated union-find
+-- structure.
 --
 -- - If neither @key1@ nor @key2@ exists in @unionFind@, they are inserted as
 --   equivalent and without value.
@@ -132,30 +133,30 @@ lookup key unionFind =
 --   associated to the two equivalence classes. @merge@ receives the value
 --   associated to @key1@'s equivalence class as first argument and the value
 --   associated to @key2@'s equivalence class as second argument.
-union ::
+unionWith ::
   Ord key =>
   (value -> value -> value) ->
   key ->
   key ->
   UnionFind key value ->
   UnionFind key value
-union merge key1 key2 unionFind =
+unionWith merge key1 key2 unionFind =
   runIdentity $
-    unionM
+    unionWithM
       (\value1 value2 -> return $ merge value1 value2)
       key1
       key2
       unionFind
 
--- | @unionM@ is the same as @union@ but for a monadic merge function.
-unionM ::
+-- | @unionWithM@ is the same as @unionWith@ but for a monadic merge function.
+unionWithM ::
   (Ord key, Monad m) =>
   (value -> value -> m value) ->
   key ->
   key ->
   UnionFind key value ->
   m (UnionFind key value)
-unionM merge key1 key2 unionFind =
+unionWithM merge key1 key2 unionFind =
   let (unionFind1, ancestor1, maybeValue1) = find key1 unionFind
       (unionFind2, ancestor2, maybeValue2) = find key2 unionFind1
    in if ancestor1 == ancestor2
@@ -180,41 +181,41 @@ unionM merge key1 key2 unionFind =
                     Map.insert ancestor1 (ChildOf ancestor2)
                       . Map.insert ancestor2 (Ancestor $ Just value)
 
--- | Same as @union@ for trivial cases where one knows for sure that the keys
--- are not in the same equivalence class (or one is absent).
+-- | Same as @unionWith@ for trivial cases where one knows for sure that the
+-- keys are not in the same equivalence class (or one is absent).
 trivialUnion ::
   Ord key =>
   key ->
   key ->
   UnionFind key value ->
   UnionFind key value
-trivialUnion = union (\_ _ -> error "union was not trivial")
+trivialUnion = unionWith (\_ _ -> error "union was not trivial")
 
--- | @insert merge unionFind key value@ adds a binding from @key@ to @value@ in
--- the structure. If @key@ is already known in the structure, then @merge@ is
+-- | @insertWith merge unionFind key value@ adds a binding from @key@ to @value@
+-- in the structure. If @key@ is already known in the structure, then @merge@ is
 -- called to reconcile the known value and the new one. @merge@ receives the new
 -- value as first argument.
-insert ::
+insertWith ::
   Ord key =>
   (value -> value -> value) ->
   key ->
   value ->
   UnionFind key value ->
   UnionFind key value
-insert merge key value unionFind =
+insertWith merge key value unionFind =
   let (unionFind', ancestor, maybeValue) = find key unionFind
       newValue = maybe value (merge value) maybeValue
    in UnionFind $ Map.insert ancestor (Ancestor $ Just newValue) $ getMap unionFind'
 
--- | Same as @insert@ for trivial cases where one knows for sure that the key is
--- not already in the structure.
+-- | Same as @insertWith@ for trivial cases where one knows for sure that the
+-- key is not already in the structure.
 trivialInsert ::
   Ord key =>
   key ->
   value ->
   UnionFind key value ->
   UnionFind key value
-trivialInsert = insert (\_ _ -> error "insert was not trivial")
+trivialInsert = insertWith (\_ _ -> error "insert was not trivial")
 
 -- | @toLists unionFind@ returns a pair of of lists as well as a new union-find
 -- structure optimised for future calls.

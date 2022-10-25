@@ -29,14 +29,14 @@ extractBinding key = go []
       | otherwise = go (binding : prevBindings) nextBindings
 
 -- | Insertion of a binding in a dummy union-find structure.
-insert ::
+insertWith ::
   Eq key =>
   (value -> value -> value) ->
   key ->
   value ->
   DummyUnionFind key value ->
   DummyUnionFind key value
-insert merge key value duf =
+insertWith merge key value duf =
   let (mBinding, duf') = extractBinding key duf
    in case mBinding of
     Nothing -> ([key], Just value) : duf'
@@ -45,14 +45,14 @@ insert merge key value duf =
        in (keys, Just newValue) : duf'
 
 -- | Union of equivalence classes in a dummy union-find structure.
-union ::
+unionWith ::
   Eq key =>
   (value -> value -> value) ->
   key ->
   key ->
   DummyUnionFind key value ->
   DummyUnionFind key value
-union merge key1 key2 duf =
+unionWith merge key1 key2 duf =
   if key1 == key2
   then duf
   else

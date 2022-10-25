@@ -2,9 +2,9 @@ module UnionFind
   ( UnionFind,
     empty,
     lookup,
-    insert,
+    insertWith,
     trivialInsert,
-    union,
+    unionWith,
     trivialUnion,
     toList,
     toLists,
@@ -12,4 +12,13 @@ module UnionFind
 where
 
 import UnionFind.Internal
+    ( toLists,
+      lookup,
+      toList,
+      empty,
+      UnionFind,
+      unionWith,
+      trivialUnion,
+      insertWith,
+      trivialInsert )
 import Prelude ()

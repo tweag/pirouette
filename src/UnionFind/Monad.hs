@@ -29,34 +29,34 @@ lookup key = do
   S.put unionFind'
   return result
 
-union ::
+unionWith ::
   (Ord key, Monad m) =>
   (value -> value -> value) ->
   key ->
   key ->
   WithUnionFindT key value m ()
-union merge key1 key2 =
-  S.modify' $ UF.union merge key1 key2
+unionWith merge key1 key2 =
+  S.modify' $ UF.unionWith merge key1 key2
 
 trivialUnion ::
   (Ord key, Monad m) =>
   key ->
   key ->
   WithUnionFindT key value m ()
-trivialUnion = union (\_ _ -> error "union was not trivial")
+trivialUnion = unionWith (\_ _ -> error "union was not trivial")
 
-insert ::
+insertWith ::
   (Ord key, Monad m) =>
   (value -> value -> value) ->
   key ->
   value ->
   WithUnionFindT key value m ()
-insert merge key value =
-  S.modify' $ UF.insert merge key value
+insertWith merge key value =
+  S.modify' $ UF.insertWith merge key value
 
 trivialInsert ::
   (Ord key, Monad m) =>
   key ->
   value ->
   WithUnionFindT key value m ()
-trivialInsert = insert (\_ _ -> error "insert was not trivial")
+trivialInsert = insertWith (\_ _ -> error "insert was not trivial")

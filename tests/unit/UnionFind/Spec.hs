@@ -40,7 +40,7 @@ tests = [
                   trivialInsert 3 3
                   trivialInsert 4 4
                   trivialInsert 5 5
-                  union (+) 3 4
+                  unionWith (+) 3 4
                   trivialUnion 5 6
                   trivialUnion 7 8
          in nuf @?= [ ([2], Just 2), ([3, 4], Just 7), ([5, 6], Just 5), ([7, 8], Nothing) ]
@@ -56,7 +56,7 @@ tests = [
     testGroup "lookup . insert . insert == (<>)" [
       testProperty "QuickCheck" $
         \(k :: Int) (v1 :: Int) v2 ->
-          snd (UFI.lookup k $ UFI.insert (+) k v2 $ UFI.insert (+) k v1 UFI.empty)
+          snd (UFI.lookup k $ UFI.insertWith (+) k v2 $ UFI.insertWith (+) k v1 UFI.empty)
           == Just (v1 + v2)
       ]
   ,
