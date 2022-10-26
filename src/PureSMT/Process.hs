@@ -6,38 +6,39 @@ module PureSMT.Process where
 
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
-import Foreign.Ptr (Ptr)
+import Foreign.ForeignPtr
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
 import PureSMT.SExpr
 import qualified PureSMT.Z3 as Z3
-import System.IO
 import Prelude hiding (const)
 
-C.context (C.baseCtx <> C.bsCtx <> Z3.cContext)
+C.context (C.baseCtx <> C.fptrCtx <> C.bsCtx <> Z3.cContext)
 C.include "z3.h"
 
 data Solver = Solver
-  { context :: Ptr Z3.LogicalContext,
+  { context :: ForeignPtr Z3.LogicalContext,
     debugMode :: Bool
   }
 
 -- | Create a brand-new context for Z3 to work in.
--- The resulting Solver object is expected to be manually garbage-collected
--- using freeZ3Instance.
 initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
 initZ3Instance dbg = do
+  let ctxFinalizer =
+        [C.funPtr| void free_context(Z3_context ctx) {
+                                      Z3_del_context(ctx);
+                                      } |]
   solverCtx <-
-    [CU.block| Z3_context {
+    newForeignPtr ctxFinalizer
+      =<< [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
                      Z3_context ctx = Z3_mk_context(cfg);
                      Z3_del_config(cfg);
                      return ctx;
                      } |]
-
   let s = Solver solverCtx dbg
   setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
@@ -55,7 +56,7 @@ command solver cmd = do
   let ctx = context solver
   resp <-
     [CU.exp| const char* {
-                  Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
+                  Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmdTxt)
                   } |]
       >>= BS.packCString
   case readSExpr resp of
