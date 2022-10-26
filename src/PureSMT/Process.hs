@@ -87,10 +87,11 @@ command solver cmd =
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
-ackCommand solver c = TimeStats.measureM "command" $ do
-  let buffref = buffer solver
-  buff <- readIORef buffref
-  writeIORef buffref $ buff <> renderSExpr c
+ackCommand solver c = TimeStats.measureM "command" $
+  TimeStats.measureM "showsSExpr" $ do
+    let buffref = buffer solver
+    buff <- readIORef buffref
+    writeIORef buffref $ buff <> renderSExpr c
 
 -- res <- command solver c
 -- case res of
