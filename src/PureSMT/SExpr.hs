@@ -78,11 +78,11 @@ overAtomS f (List ss) = List [overAtomS f s | s <- ss]
 -- | Convert an s-expression to a (strict) null terminated bytestring.
 serializeSExpr :: SExpr -> BS.ByteString
 serializeSExpr = LBS.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
-  where
-    renderSExpr :: SExpr -> Builder
-    renderSExpr (Atom x) = stringUtf8 x
-    renderSExpr (List es) =
-      "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
+
+renderSExpr :: SExpr -> Builder
+renderSExpr (Atom x) = stringUtf8 x
+renderSExpr (List es) =
+  "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS

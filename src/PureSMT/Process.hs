@@ -7,7 +7,13 @@ module PureSMT.Process where
 
 import Control.DeepSeq (force)
 import Control.Monad
+import Data.ByteString.Builder
+  ( Builder,
+    toLazyByteString,
+  )
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import Data.IORef
 import qualified Debug.TimeStats as TimeStats
 import Foreign.Ptr (Ptr)
 import qualified Language.C.Inline as C
@@ -22,7 +28,8 @@ C.include "z3.h"
 
 data Solver = Solver
   { context :: Ptr Z3.LogicalContext,
-    debugMode :: Bool
+    debugMode :: Bool,
+    buffer :: IORef Builder
   }
 
 -- | Create a brand-new context for Z3 to work in.
@@ -40,9 +47,9 @@ initZ3Instance dbg = TimeStats.measureM "launchSolver" $ do
                      Z3_del_config(cfg);
                      return ctx;
                      } |]
-
-  let s = Solver solverCtx dbg
-  setOption s ":print-success" "true"
+  buff <- newIORef mempty
+  let s = Solver solverCtx dbg buff
+  -- setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
 
   return s
@@ -54,15 +61,21 @@ command :: Solver -> SExpr -> IO SExpr
 command solver cmd =
   let cmd' = force cmd
    in TimeStats.measureM "command" $ do
-        let !cmdTxt = TimeStats.measurePure "showsSExpr" $ serializeSExpr cmd'
+        buff <- readIORef $ buffer solver
+        writeIORef (buffer solver) mempty
+        let !cmdTxt =
+              TimeStats.measurePure "showsSExpr" $
+                LBS.toStrict $
+                  toLazyByteString $
+                    buff <> renderSExpr cmd' <> "\NUL"
         when (debugMode solver) $ do
           BS.putStrLn $ "[send] " `BS.append` cmdTxt
         let ctx = context solver
         resp <-
           TimeStats.measureM "Z3" $
             [CU.exp| const char* {
-                         Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
-                         } |]
+               Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
+               } |]
               >>= BS.packCString
         case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
           Nothing -> do
@@ -74,18 +87,21 @@ command solver cmd =
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
-ackCommand solver c =
-  do
-    res <- command solver c
-    case res of
-      Atom "success" -> return ()
-      _ ->
-        fail $
-          unlines
-            [ "Unexpected result from the SMT solver:",
-              "  Expected: success",
-              "  Result: " ++ showsSExpr res ""
-            ]
+ackCommand solver c = TimeStats.measureM "command" $ do
+  let buffref = buffer solver
+  buff <- readIORef buffref
+  writeIORef buffref $ buff <> renderSExpr c
+
+-- res <- command solver c
+-- case res of
+--   Atom "success" -> return ()
+--   _ ->
+--     fail $
+--       unlines
+--         [ "Unexpected result from the SMT solver:",
+--           "  Expected: success",
+--           "  Result: " ++ showsSExpr res ""
+--         ]
 
 -- | A command entirely made out of atoms, with no interesting result.
 simpleCommand :: Solver -> [String] -> IO ()
