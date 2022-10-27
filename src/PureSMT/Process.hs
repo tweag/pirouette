@@ -61,9 +61,11 @@ command :: Solver -> SExpr -> IO SExpr
 command solver cmd =
   let cmd' = force cmd
    in TimeStats.measureM "command" $ do
-        buff <- readIORef $ buffer solver
+        buff <- TimeStats.measureM "showsSExpr" $ do
+          buff <- readIORef $ buffer solver
+          writeIORef (buffer solver) mempty
+          return buff
         _ <- send solver buff
-        writeIORef (buffer solver) mempty
         resp <- send solver $ renderSExpr cmd'
         case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
           Nothing -> do
