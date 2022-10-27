@@ -15,7 +15,7 @@ let
       src = fetchFromGitHub {
         owner = "Z3Prover";
         repo = pname;
-        rev = "c181b7b8d691d3646caad18c5749484979e81127";
+        rev = "9ace7e91992aa6ac2bc7493c64d8e472a527c065";
         sha256 = sha256;
       };
 
@@ -38,7 +38,7 @@ let
           "--python --pypkgdir=$out/${python.sitePackages}") + "\n"
         + "cd build";
 
-      doCheck = true;
+      doCheck = false;
       checkPhase = ''
         make test
         ./test-z3 -a
@@ -71,5 +71,5 @@ let
     };
 in common {
   version = "4.8.15-faster-eval";
-  sha256 = "sha256:eR5caC5teynLpxpbpWZsjcpBXHU/L4OWp0k5jC7p92g=";
+  sha256 = "sha256:nfwEiaC2Ns7yeMVEvBYHz5kfhhp1hVO8TbPz+3Bh8S4=";
 }
