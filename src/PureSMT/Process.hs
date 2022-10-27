@@ -49,7 +49,7 @@ initZ3Instance dbg = TimeStats.measureM "launchSolver" $ do
                      } |]
   buff <- newIORef mempty
   let s = Solver solverCtx dbg buff
-  -- setOption s ":print-success" "true"
+  setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
 
   return s
@@ -62,21 +62,9 @@ command solver cmd =
   let cmd' = force cmd
    in TimeStats.measureM "command" $ do
         buff <- readIORef $ buffer solver
+        _ <- send solver buff
         writeIORef (buffer solver) mempty
-        let !cmdTxt =
-              TimeStats.measurePure "showsSExpr" $
-                LBS.toStrict $
-                  toLazyByteString $
-                    buff <> renderSExpr cmd' <> "\NUL"
-        when (debugMode solver) $ do
-          BS.putStrLn $ "[send] " `BS.append` cmdTxt
-        let ctx = context solver
-        resp <-
-          TimeStats.measureM "Z3" $
-            [CU.exp| const char* {
-               Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:cmdTxt)
-               } |]
-              >>= BS.packCString
+        resp <- send solver $ renderSExpr cmd'
         case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
           Nothing -> do
             fail $ "solver replied with:\n" ++ BS.unpack resp
@@ -84,6 +72,21 @@ command solver cmd =
             when (debugMode solver && sexpr /= Atom "success") $ do
               putStrLn $ "[recv] " ++ showsSExpr sexpr ""
             return sexpr
+  where
+    send s builder = do
+      let !bs =
+            TimeStats.measurePure "showsSExpr" $
+              LBS.toStrict $
+                toLazyByteString $
+                  builder <> "\NUL"
+      when (debugMode s) $ do
+        BS.putStrLn $ "[send] " `BS.append` bs
+      let ctx = context s
+      TimeStats.measureM "Z3" $
+        [CU.exp| const char* {
+               Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:bs)
+               } |]
+          >>= BS.packCString
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
