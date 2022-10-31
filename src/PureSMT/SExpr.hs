@@ -9,8 +9,8 @@ import Data.Bits (testBit)
 import Data.ByteString.Builder
   ( Builder,
     stringUtf8,
-    toLazyByteString,
   )
+import Data.ByteString.Builder.Extra (defaultChunkSize, smallChunkSize, toLazyByteStringWith, untrimmedStrategy)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (isDigit, isSpace)
@@ -62,14 +62,26 @@ overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
 
--- | Convert an s-expression to a (strict) null terminated bytestring.
-serializeSExpr :: SExpr -> BS.ByteString
-serializeSExpr = LBS.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
-  where
-    renderSExpr :: SExpr -> Builder
-    renderSExpr (Atom x) = stringUtf8 x
-    renderSExpr (List es) =
-      "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
+-- | Evaluate a bytestring builder to a strict bytestring that is expected to be
+-- consumed immediately.
+serializeUntrimmed :: Int -> Int -> Builder -> BS.ByteString
+serializeUntrimmed firstChunkSize newChunksSize = LBS.toStrict . toLazyByteStringWith (untrimmedStrategy firstChunkSize newChunksSize) "\NUL"
+
+-- | Evaluate a bytestring builder corresponding to a single SMTLib2 command
+-- (the size of the buffer is expected to be small).
+serializeSingle :: Builder -> BS.ByteString
+serializeSingle = serializeUntrimmed 256 2048
+
+-- | Evaluate a bytestring builder corresponding to a batch of SMTLib2 commands
+-- (the size of the buffer is expected to be important).
+serializeBatch :: Builder -> BS.ByteString
+serializeBatch = serializeUntrimmed smallChunkSize defaultChunkSize
+
+-- | Convert an s-expression to a (strict) null-terminated bytestring.
+renderSExpr :: SExpr -> Builder
+renderSExpr (Atom x) = stringUtf8 x
+renderSExpr (List es) =
+  "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS

@@ -5,7 +5,9 @@
 module PureSMT.Process where
 
 import Control.Monad
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Char8 as BS
+import Data.IORef
 import Foreign.ForeignPtr
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
@@ -18,7 +20,8 @@ C.include "z3.h"
 
 data Solver = Solver
   { context :: ForeignPtr Z3.LogicalContext,
-    debugMode :: Bool
+    debugMode :: Bool,
+    queue :: IORef Builder
   }
 
 -- | Create a brand-new context for Z3 to work in.
@@ -39,26 +42,44 @@ initZ3Instance dbg = do
                      Z3_del_config(cfg);
                      return ctx;
                      } |]
-  let s = Solver solverCtx dbg
+  solverQueue <- newIORef mempty
+  let s = Solver solverCtx dbg solverQueue
   setOption s ":print-success" "true"
   setOption s ":produce-models" "true"
 
   return s
 
--- | Have Z3 evaluate a command in SExpr format.
+-- | Send a bytestring to Z3.
 -- This function is thread-safe as long as concurrent instances do not share the
 -- same logical context.
-command :: Solver -> SExpr -> IO SExpr
-command solver cmd = do
-  let cmdTxt = serializeSExpr cmd
-  when (debugMode solver) $ do
-    BS.putStrLn $ "[send] " `BS.append` cmdTxt
+send :: Solver -> BS.ByteString -> IO (BS.ByteString)
+send solver cmd = do
   let ctx = context solver
-  resp <-
-    [CU.exp| const char* {
-                  Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmdTxt)
-                  } |]
-      >>= BS.packCString
+  when (debugMode solver) $ do
+    BS.putStrLn $ "[send] " `BS.append` cmd
+  [CU.exp| const char* {
+         Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd)
+         } |]
+    >>= BS.packCString
+
+-- | Force the solver to evaluate the queued commands.
+-- The result is not checked to ensure the commands were evaluated correctly.
+flush :: Solver -> IO ()
+flush solver = do
+  cmds <- do
+    let solverQueue = queue solver
+    cmds <- readIORef solverQueue
+    writeIORef solverQueue mempty
+    return $ serializeBatch cmds
+  _ <- send solver cmds
+  return ()
+
+-- | Have Z3 evaluate a command in SExpr format.
+command :: Solver -> SExpr -> IO SExpr
+command solver expr = do
+  flush solver
+  let cmd = serializeSingle $ renderSExpr expr
+  resp <- send solver cmd
   case readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ BS.unpack resp
@@ -68,19 +89,26 @@ command solver cmd = do
       return sexpr
 
 -- | A command with no interesting result.
+-- The result is only checked for consistency in debug mode.
 ackCommand :: Solver -> SExpr -> IO ()
-ackCommand solver c =
-  do
-    res <- command solver c
-    case res of
-      Atom "success" -> return ()
-      _ ->
-        fail $
-          unlines
-            [ "Unexpected result from the SMT solver:",
-              "  Expected: success",
-              "  Result: " ++ showsSExpr res ""
-            ]
+ackCommand solver expr =
+  if debugMode solver
+    then do
+      resp <- command solver expr
+      case resp of
+        Atom "success" -> return ()
+        _ ->
+          fail $
+            unlines
+              [ "Unexpected result from the SMT solver:",
+                "  Expected: success",
+                "  Result: " ++ showsSExpr resp ""
+              ]
+    else do
+      -- in normal mode, just write the command to the queue
+      let solverQueue = queue solver
+      cmds <- readIORef solverQueue
+      writeIORef solverQueue $ cmds <> renderSExpr expr
 
 -- | A command entirely made out of atoms, with no interesting result.
 simpleCommand :: Solver -> [String] -> IO ()
