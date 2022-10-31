@@ -62,22 +62,24 @@ overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
 
--- | Evaluate a bytestring builder to a strict bytestring that is expected to be
--- consumed immediately.
+-- | Evaluate a bytestring builder to a null-terminated strict bytestring
+-- that is expected to be consumed immediately.
 serializeUntrimmed :: Int -> Int -> Builder -> BS.ByteString
 serializeUntrimmed firstChunkSize newChunksSize = LBS.toStrict . toLazyByteStringWith (untrimmedStrategy firstChunkSize newChunksSize) "\NUL"
 
 -- | Evaluate a bytestring builder corresponding to a single SMTLib2 command
--- (the size of the buffer is expected to be small).
+-- (the size of the buffer is expected to be small). The output is a null-terminated
+-- strict bytestring that is expected to be consumed immediately.
 serializeSingle :: Builder -> BS.ByteString
 serializeSingle = serializeUntrimmed 256 2048
 
 -- | Evaluate a bytestring builder corresponding to a batch of SMTLib2 commands
--- (the size of the buffer is expected to be important).
+-- (the size of the buffer is expected to be important). The output is a
+-- null-terminated strict bytestring that is expected to be consumed immediately.
 serializeBatch :: Builder -> BS.ByteString
 serializeBatch = serializeUntrimmed smallChunkSize defaultChunkSize
 
--- | Convert an s-expression to a (strict) null-terminated bytestring.
+-- | Create a bytestring builder from an s-expression.
 renderSExpr :: SExpr -> Builder
 renderSExpr (Atom x) = stringUtf8 x
 renderSExpr (List es) =
