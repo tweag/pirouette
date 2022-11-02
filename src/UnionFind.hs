@@ -11,6 +11,8 @@ module UnionFind
     insertWith,
     trivialInsert,
     insert,
+    applyActionWith,
+    applyAction,
     toLists,
     toList,
   )
@@ -25,6 +27,7 @@ import Data.Monoid ((<>))
 import Data.Semigroup (Semigroup)
 import Data.Tuple (snd, swap)
 import Prettyprinter (Pretty (pretty), vsep, (<+>))
+import UnionFind.Action (Action (..))
 import UnionFind.Internal
   ( UnionFind (..),
     UnionFindCell (..),
@@ -116,6 +119,22 @@ insert ::
   UnionFind key value ->
   UnionFind key value
 insert = insertWith (<>)
+
+applyActionWith ::
+  Ord key =>
+  (value -> value -> value) ->
+  Action key value ->
+  UnionFind key value ->
+  UnionFind key value
+applyActionWith merge (Union k1 k2) = unionWith merge k1 k2
+applyActionWith merge (Insert k v) = insertWith merge k v
+
+applyAction ::
+  (Ord key, Semigroup value) =>
+  Action key value ->
+  UnionFind key value ->
+  UnionFind key value
+applyAction = applyActionWith (<>)
 
 -- | @toLists unionFind@ returns a pair of of lists as well as a new union-find
 -- structure optimised for future calls.
