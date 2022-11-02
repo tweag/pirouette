@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module UnionFind.Spec (tests) where
@@ -7,15 +8,30 @@ import Data.Function ((&))
 import Data.List (partition, sort)
 import qualified Data.List.NonEmpty as NE
 import Data.Monoid (Sum (..))
+import Test.QuickCheck (Arbitrary, arbitrary)
 import qualified Test.QuickCheck as QC
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
-import UnionFind.Action (Action (..), applyActionM, applyActionToDummy, isInsert)
+import UnionFind.Action (Action (..), isInsert)
 import qualified UnionFind.Dummy as DUF
 import qualified UnionFind.Internal as UFI
-import UnionFind.Monad
+import UnionFind.Monad as UFM
+
+instance (Arbitrary key, Arbitrary value) => Arbitrary (Action key value) where
+  arbitrary =
+    arbitrary >>= \case
+      True -> Insert <$> arbitrary <*> arbitrary
+      False -> Union <$> arbitrary <*> arbitrary
+
+applyActionM :: (Ord key, Semigroup value) => Action key value -> WithUnionFind key value ()
+applyActionM (Insert k v) = UFM.insert k v
+applyActionM (Union k1 k2) = UFM.union k1 k2
+
+applyActionToDummy :: (Ord key, Semigroup value) => Action key value -> DUF.DummyUnionFind key value -> DUF.DummyUnionFind key value
+applyActionToDummy (Insert k v) = DUF.insert k v
+applyActionToDummy (Union k1 k2) = DUF.union k1 k2
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
 unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList

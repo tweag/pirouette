@@ -59,6 +59,7 @@ library
       PureSMT.Process
       PureSMT.SExpr
       UnionFind
+      UnionFind.Action
       UnionFind.Internal
       UnionFind.Monad
   other-modules:
@@ -112,7 +113,6 @@ test-suite spec
       Pirouette.Transformations.MonomorphizationSpec
       Pirouette.Transformations.PrenexSpec
       Pirouette.Transformations.TermSpec
-      UnionFind.Action
       UnionFind.Dummy
       UnionFind.Spec
       Paths_pirouette
