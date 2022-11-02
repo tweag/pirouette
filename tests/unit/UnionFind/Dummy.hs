@@ -4,6 +4,7 @@ module UnionFind.Dummy where
 
 import qualified Data.List as List
 import Test.QuickCheck (Arbitrary, arbitrary)
+import UnionFind.Action
 
 -- | Binding in a dummy union-find structure: this is just the pair of a list of
 -- keys (with uniqueness) and a possible value.
@@ -95,3 +96,19 @@ union ::
   DummyUnionFind key value ->
   DummyUnionFind key value
 union = unionWith (<>)
+
+applyActionWith ::
+  Ord key =>
+  (value -> value -> value) ->
+  Action key value ->
+  DummyUnionFind key value ->
+  DummyUnionFind key value
+applyActionWith merge (Union k1 k2) = unionWith merge k1 k2
+applyActionWith merge (Insert k v) = insertWith merge k v
+
+applyAction ::
+  (Ord key, Semigroup value) =>
+  Action key value ->
+  DummyUnionFind key value ->
+  DummyUnionFind key value
+applyAction = applyActionWith (<>)
