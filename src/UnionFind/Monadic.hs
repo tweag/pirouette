@@ -1,14 +1,35 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module UnionFind.Monadic where
 
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (StateT, get, put, runState, runStateT)
+import Data.Foldable (foldlM)
+import Data.Function ((&))
 import Data.Functor.Identity (Identity)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Prettyprinter (Pretty (pretty), vsep, (<+>))
 import UnionFind.Action (Action (..))
 import UnionFind.Internal (UnionFind (..), UnionFindCell (..), empty)
+
+instance (Ord key, Pretty key, Pretty value) => Pretty (UnionFind key value) where
+  pretty unionFind =
+    let unionFindL = fst $ runWithUnionFind unionFind toList
+     in vsep $ map (uncurry prettyEqClassAndValue) unionFindL
+    where
+      prettyEqClassAndValue eqClass Nothing =
+        prettyEqClass eqClass
+      prettyEqClassAndValue eqClass (Just value) =
+        prettyEqClass eqClass <+> ":=" <+> pretty value
+      prettyEqClass eqClass =
+        foldl
+          (\p key -> p <+> "~~" <+> pretty key)
+          (pretty (NonEmpty.head eqClass))
+          (NonEmpty.tail eqClass)
 
 type WithUnionFindT key value = StateT (UnionFind key value)
 
@@ -242,3 +263,108 @@ applyAction ::
   Action key value ->
   WithUnionFindT key value m ()
 applyAction = applyActionWith (<>)
+
+-- | @toList@ returns a list representing the mappings in the union-find
+-- structure. The mappings are pairs, the left-hand side being a non-empty list
+-- of all the @key@s in an equivalence class and the right-hand side being the
+-- value associated with this equivalence class, or @Nothing@ if there is no
+-- such value.
+--
+-- In particular, @([key], Just value)@ represents the equivalence class
+-- containing only @key@ and bound to @value@ while @(keys, Nothing)@ represents
+-- the equivalence class containing all @keys@ but not bound to any value.
+--
+-- There are no occurrences of @[]@ of the left-hand side and there are no
+-- occurrences of a pair @([key], Nothing)@. Additionally, all the left-hand
+-- side lists are disjoint. The order of keys in those lists is not specified.
+toList ::
+  (Ord key, Monad m) =>
+  WithUnionFindT key value m [(NonEmpty key, Maybe value)]
+toList = do
+  bindings <- getBindings
+  bindings' <- foldlM gobble Map.empty $ Map.toList bindings
+  return $
+    Map.toList bindings'
+      & map
+        ( \(ancestor, (otherKeys, maybeValue)) ->
+            (NonEmpty.insert ancestor otherKeys, maybeValue)
+        )
+  where
+    gobble ::
+      (Ord key, Monad m) =>
+      Map key ([key], Maybe value) ->
+      (key, UnionFindCell key value) ->
+      WithUnionFindT key value m (Map key ([key], Maybe value))
+    gobble bindings (key, binding) =
+      case binding of
+        ChildOf _ -> do
+          (ancestor, _) <- find key
+          return $ addKeyToBindings key ancestor bindings
+        Ancestor Nothing ->
+          return bindings
+        Ancestor (Just value) ->
+          return $ addValueToBindings value key bindings
+    -- @addKeyToBindings key ancestor bindings@ adds @key@ to the equivalence
+    -- class of @ancestor@ in @bindings@, creating this equivalence class if
+    -- necessary.
+    addKeyToBindings ::
+      Ord key =>
+      key ->
+      key ->
+      Map key ([key], Maybe value) ->
+      Map key ([key], Maybe value)
+    addKeyToBindings key =
+      Map.alter
+        ( \case
+            Nothing -> Just ([key], Nothing)
+            Just (keys, mValue) -> Just (key : keys, mValue)
+        )
+    -- @addValueToBindings value ancestor bindings@ binds @value@ to @ancestor@
+    -- in @bindings@, creating the binding if necessary.
+    addValueToBindings ::
+      Ord key =>
+      value ->
+      key ->
+      Map key ([key], Maybe value) ->
+      Map key ([key], Maybe value)
+    addValueToBindings value =
+      Map.alter
+        ( \case
+            Nothing -> Just ([], Just value)
+            Just (keys, Nothing) -> Just (keys, Just value)
+            _ -> error "two bindings for the same ancestor"
+        )
+
+-- | @toLists@ returns a pair of lists:
+--
+-- - The first list contains pairs of keys, where the right-hand side is the
+--   representative of an equivalence class and the left-hand side is an element
+--   of the class. In case of singleton equivalence class, no binding appears in
+--   this list.
+--
+-- - The second list contains bindings from representative of an equivalence
+--   class to the associated value. In case of an equivalence class without
+--   binding, nothing appears in this list.
+--
+-- Unless you really want this low-level interface, prefer @toList@.
+toLists ::
+  (Ord key, Monad m) =>
+  WithUnionFindT key value m ([(key, key)], [(key, value)])
+toLists = do
+  bindings <- getBindings
+  foldlM gobble ([], []) $ Map.toList bindings
+  where
+    gobble ::
+      (Ord key, Monad m) =>
+      ([(key, key)], [(key, value)]) ->
+      (key, UnionFindCell key value) ->
+      WithUnionFindT key value m ([(key, key)], [(key, value)])
+    gobble (equalities, bindings) (key, binding) =
+      case binding of
+        ChildOf _ -> do
+          (ancestor, _) <- find key
+          return ((key, ancestor) : equalities, bindings)
+        Ancestor Nothing ->
+          return (equalities, bindings)
+        Ancestor (Just value) ->
+          return (equalities, (key, value) : bindings)
