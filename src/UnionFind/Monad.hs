@@ -3,7 +3,7 @@ module UnionFind.Monad where
 import Control.Monad.Trans.Class (MonadTrans (lift))
 import Control.Monad.Trans.State.Strict (StateT, get, modify', put, runState, runStateT)
 import Data.Functor.Identity (Identity)
-import UnionFind.Action
+import UnionFind.Action (Action (..))
 import qualified UnionFind.Internal as UF
 
 type WithUnionFindT key value = StateT (UF.UnionFind key value)
