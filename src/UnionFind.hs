@@ -11,6 +11,7 @@ module UnionFind
     insertWith,
     trivialInsert,
     insert,
+    toLists,
     toList,
   )
 where
@@ -115,6 +116,43 @@ insert ::
   UnionFind key value ->
   UnionFind key value
 insert = insertWith (<>)
+
+-- | @toLists unionFind@ returns a pair of of lists as well as a new union-find
+-- structure optimised for future calls.
+--
+-- - The first list contains pairs of keys, where the right-hand side is the
+--   representative of an equivalence class and the left-hand side is an element
+--   of the class. In case of singleton equivalence class, no binding appears in
+--   this list.
+--
+-- - The second list contains bindings from representative of an equivalence
+--   class to the associated value. In case of an equivalence class without
+--   binding, nothing appears in this list.
+--
+-- Unless you really want this low-level interface, prefer @toList@.
+toLists ::
+  Ord key =>
+  UnionFind key value ->
+  (UnionFind key value, [(key, key)], [(key, value)])
+toLists unionFind =
+  foldl gobble (unionFind, [], []) (Map.toList $ getMap unionFind)
+  where
+    gobble ::
+      Ord key =>
+      (UnionFind key value, [(key, key)], [(key, value)]) ->
+      (key, UnionFindCell key value) ->
+      (UnionFind key value, [(key, key)], [(key, value)])
+    gobble
+      (unionFind', equalities, bindings)
+      (key, binding) =
+        case binding of
+          ChildOf _ ->
+            let (unionFind'', ancestor, _) = find key unionFind'
+             in (unionFind'', (key, ancestor) : equalities, bindings)
+          Ancestor Nothing ->
+            (unionFind', equalities, bindings)
+          Ancestor (Just value) ->
+            (unionFind', equalities, (key, value) : bindings)
 
 -- | @toList unionFind@ returns a list representing the mappings in @unionFind@
 -- as well as a new union-find structure optimised for future calls. The
