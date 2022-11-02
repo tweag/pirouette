@@ -48,7 +48,7 @@ lookupAssignment ::
   ConstraintSet lang meta ->
   (ConstraintSet lang meta, Maybe (TermMeta lang meta))
 lookupAssignment u cs =
-  let (csAssignments', lookupResult) = UF.lookup u $ csAssignments cs
+  let (lookupResult, csAssignments') = UF.runWithUnionFind (csAssignments cs) $ UF.lookup u
    in (cs {csAssignments = csAssignments'}, lookupResult)
 
 instance Default (ConstraintSet lang meta) where
@@ -59,7 +59,7 @@ instance (Ord meta, LanguagePretty lang, Pretty meta) => Show (ConstraintSet lan
 
 instance (Ord meta, Pretty meta, Pretty (TermMeta lang meta)) => Pretty (ConstraintSet lang meta) where
   pretty ConstraintSet {..} =
-    let (_, unionFindL) = UF.toList csAssignments
+    let unionFindL = fst $ UF.runWithUnionFind csAssignments UF.toList
      in vsep $
           map (uncurry prettyEqClassAndValue) unionFindL
             ++ map prettyRelations csRelations
@@ -161,11 +161,12 @@ conjunct c cs0 =
                     -- this is a trivial union that might (or not) bring an
                     -- assignment to @v@.
                     SystF.App (SystF.Meta u') [] ->
-                      UF.trivialUnion v u' (csAssignments cs')
+                      snd $ UF.runWithUnionFind (csAssignments cs') $ UF.trivialUnion v u'
                     -- Otherwise, @u@ is a complex term and we register the
                     -- assignment from @v@ to @u@. This is trivial as @v@ does
                     -- not have any assignment at this point.
-                    _ -> UF.trivialInsert v u (csAssignments cs')
+                    _ ->
+                      snd $ UF.runWithUnionFind (csAssignments cs') $ UF.trivialInsert v u
                in Just cs {csAssignments = csAssignments'}
 
     unifyArgWith ::
@@ -194,7 +195,7 @@ constraintSetToSExpr ::
   m (Bool, UsedAnyUFs, PureSMT.SExpr)
 constraintSetToSExpr knownNames ConstraintSet {..} = do
   -- FIXME: this is dropping the optimised version of the union-find structure.
-  let (_, metaEqList, assignmentsList) = UF.toLists csAssignments
+  let (metaEqList, assignmentsList) = fst $ UF.runWithUnionFind csAssignments UF.toLists
   eAssignments <- mapM (runTranslator . uncurry trAssignment) assignmentsList
   eNotEq <- mapM (runTranslator . trRelations) csRelations
   let es = eAssignments ++ eNotEq

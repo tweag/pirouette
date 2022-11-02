@@ -1,5 +1,11 @@
 module UnionFind
   ( UnionFind,
+    WithUnionFind,
+    WithUnionFindT,
+    runWithUnionFind,
+    runWithUnionFindT,
+    runWithEmptyUnionFind,
+    runWithEmptyUnionFindT,
     empty,
     lookup,
     unionWith,
