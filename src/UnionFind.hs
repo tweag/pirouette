@@ -4,6 +4,13 @@
 module UnionFind
   ( UnionFind,
     empty,
+    lookup,
+    unionWith,
+    trivialUnion,
+    union,
+    insertWith,
+    trivialInsert,
+    insert,
     toList,
   )
 where
@@ -13,13 +20,18 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Monoid ((<>))
+import Data.Semigroup (Semigroup)
+import Data.Tuple (snd, swap)
 import Prettyprinter (Pretty (pretty), vsep, (<+>))
 import UnionFind.Internal
   ( UnionFind (..),
     UnionFindCell (..),
     empty,
   )
-import Prelude
+import UnionFind.Monad (runWithUnionFind)
+import qualified UnionFind.Monad as Monadic
+import Prelude (Maybe (..), Ord, error, foldl, map, uncurry, ($))
 
 instance (Ord key, Pretty key, Pretty value) => Pretty (UnionFind key value) where
   pretty unionFind =
@@ -35,6 +47,74 @@ instance (Ord key, Pretty key, Pretty value) => Pretty (UnionFind key value) whe
           (\p key -> p <+> "~~" <+> pretty key)
           (pretty (NonEmpty.head eqClass))
           (NonEmpty.tail eqClass)
+
+find ::
+  Ord key =>
+  key ->
+  UnionFind key value ->
+  (UnionFind key value, key, Maybe value)
+find key unionFind =
+  let ((ancestor, maybeValue), unionFind') = runWithUnionFind unionFind $ Monadic.find key
+   in (unionFind', ancestor, maybeValue)
+
+lookup ::
+  Ord key =>
+  key ->
+  UnionFind key value ->
+  (UnionFind key value, Maybe value)
+lookup key unionFind = swap $ runWithUnionFind unionFind $ Monadic.lookup key
+
+unionWith ::
+  Ord key =>
+  (value -> value -> value) ->
+  key ->
+  key ->
+  UnionFind key value ->
+  UnionFind key value
+unionWith merge key1 key2 unionFind =
+  snd $ runWithUnionFind unionFind $ Monadic.unionWith merge key1 key2
+
+trivialUnion ::
+  Ord key =>
+  key ->
+  key ->
+  UnionFind key value ->
+  UnionFind key value
+trivialUnion = unionWith (\_ _ -> error "union was not trivial")
+
+union ::
+  (Ord key, Data.Semigroup.Semigroup value) =>
+  key ->
+  key ->
+  UnionFind key value ->
+  UnionFind key value
+union = unionWith (<>)
+
+insertWith ::
+  Ord key =>
+  (value -> value -> value) ->
+  key ->
+  value ->
+  UnionFind key value ->
+  UnionFind key value
+insertWith merge key value unionFind =
+  snd $ runWithUnionFind unionFind $ Monadic.insertWith merge key value
+
+trivialInsert ::
+  Ord key =>
+  key ->
+  value ->
+  UnionFind key value ->
+  UnionFind key value
+trivialInsert = insertWith (\_ _ -> error "insert was not trivial")
+
+insert ::
+  (Ord key, Semigroup value) =>
+  key ->
+  value ->
+  UnionFind key value ->
+  UnionFind key value
+insert = insertWith (<>)
 
 -- | @toList unionFind@ returns a list representing the mappings in @unionFind@
 -- as well as a new union-find structure optimised for future calls. The

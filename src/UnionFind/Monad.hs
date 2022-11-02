@@ -15,14 +15,27 @@ type WithUnionFind key value = WithUnionFindT key value Identity
 
 runWithUnionFindT ::
   Monad m =>
+  UnionFind key value ->
   WithUnionFindT key value m result ->
   m (result, UnionFind key value)
-runWithUnionFindT f = runStateT f empty
+runWithUnionFindT = flip runStateT
+
+runWithEmptyUnionFindT ::
+  Monad m =>
+  WithUnionFindT key value m result ->
+  m (result, UnionFind key value)
+runWithEmptyUnionFindT = runWithUnionFindT empty
 
 runWithUnionFind ::
+  UnionFind key value ->
   WithUnionFind key value result ->
   (result, UnionFind key value)
-runWithUnionFind f = runState f empty
+runWithUnionFind = flip runState
+
+runWithEmptyUnionFind ::
+  WithUnionFind key value result ->
+  (result, UnionFind key value)
+runWithEmptyUnionFind = runWithUnionFind empty
 
 -- | Helper that gets the bindings from the state.
 getBindings ::
@@ -167,6 +180,12 @@ union = unionWith (<>)
 -- union-find structure. If @key@ is already known in the union-find structure,
 -- then @merge@ is called to reconcile the known value and the new one. @merge@
 -- receives the new value as first argument.
+insertWith ::
+  (Ord key, Monad m) =>
+  (value -> value -> value) ->
+  key ->
+  value ->
+  WithUnionFindT key value m ()
 insertWith merge = insertWithM (\value1 value2 -> return $ merge value1 value2)
 
 -- | @insertWithM@ is the same as @insertWith@ but for a monadic merge function.
