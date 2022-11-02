@@ -43,43 +43,27 @@ initZ3Instance dbg = do
                      return ctx;
                      } |]
   solverQueue <- newIORef mempty
-  let s = Solver solverCtx dbg solverQueue
-  setOption s ":print-success" "true"
-  setOption s ":produce-models" "true"
-
-  return s
+  let solver = Solver solverCtx dbg solverQueue
+  when (debugMode solver) $ do
+    -- this should not be enabled in non-debug mode, as it messes with parsing
+    -- the outputs of commands that are actually interesting
+    setOption solver ":print-success" "true"
+  setOption solver ":produce-models" "true"
+  return solver
 
 -- | Send a bytestring to Z3.
 -- This function is thread-safe as long as concurrent instances do not share the
 -- same logical context.
-send :: Solver -> BS.ByteString -> IO (BS.ByteString)
+send :: Solver -> BS.ByteString -> IO SExpr
 send solver cmd = do
   let ctx = context solver
   when (debugMode solver) $ do
     BS.putStrLn $ "[send] " `BS.append` cmd
-  [CU.exp| const char* {
+  resp <-
+    [CU.exp| const char* {
          Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd)
          } |]
-    >>= BS.packCString
-
--- | Force the solver to evaluate the queued commands.
--- The result is not checked to ensure the commands were evaluated correctly.
-flush :: Solver -> IO ()
-flush solver = do
-  cmds <- do
-    let solverQueue = queue solver
-    cmds <- readIORef solverQueue
-    writeIORef solverQueue mempty
-    return $ serializeBatch cmds
-  _ <- send solver cmds
-  return ()
-
--- | Have Z3 evaluate a command in SExpr format.
-command :: Solver -> SExpr -> IO SExpr
-command solver expr = do
-  flush solver
-  let cmd = serializeSingle $ renderSExpr expr
-  resp <- send solver cmd
+      >>= BS.packCString
   case readSExpr resp of
     Nothing -> do
       fail $ "solver replied with:\n" ++ BS.unpack resp
@@ -88,13 +72,39 @@ command solver expr = do
         putStrLn $ "[recv] " ++ showsSExpr sexpr ""
       return sexpr
 
+-- | Push a command on the solver's queue of commands to evaluate.
+-- The command must not produce any output when evaluated.
+putQueue :: Solver -> SExpr -> IO ()
+putQueue solver expr = do
+  let solverQueue = queue solver
+  cmds <- readIORef solverQueue
+  writeIORef solverQueue $ cmds <> renderSExpr expr
+
+-- | Empty the queue of commands to evaluate and return its content as a bytestring.
+flushQueue :: Solver -> IO (BS.ByteString)
+flushQueue solver = do
+  let solverQueue = queue solver
+  cmds <- readIORef solverQueue
+  writeIORef solverQueue mempty
+  return $ serializeBatch cmds
+
+-- | Have Z3 evaluate a command in SExpr format.
+-- This forces the queued commands to be evaluated as well, but their results are
+-- *not* checked for correctness.
+command :: Solver -> SExpr -> IO SExpr
+command solver expr = do
+  putQueue solver expr
+  cmds <- flushQueue solver
+  send solver cmds
+
 -- | A command with no interesting result.
 -- The result is only checked for consistency in debug mode.
 ackCommand :: Solver -> SExpr -> IO ()
 ackCommand solver expr =
   if debugMode solver
     then do
-      resp <- command solver expr
+      let cmd = serializeSingle $ renderSExpr expr
+      resp <- send solver cmd
       case resp of
         Atom "success" -> return ()
         _ ->
@@ -104,11 +114,7 @@ ackCommand solver expr =
                 "  Expected: success",
                 "  Result: " ++ showsSExpr resp ""
               ]
-    else do
-      -- in normal mode, just write the command to the queue
-      let solverQueue = queue solver
-      cmds <- readIORef solverQueue
-      writeIORef solverQueue $ cmds <> renderSExpr expr
+    else putQueue solver expr
 
 -- | A command entirely made out of atoms, with no interesting result.
 simpleCommand :: Solver -> [String] -> IO ()
