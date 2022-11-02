@@ -16,8 +16,7 @@ import Test.Tasty.QuickCheck (testProperty)
 import qualified UnionFind as UF
 import UnionFind.Action (Action (..), isInsert)
 import qualified UnionFind.Dummy as DUF
-import qualified UnionFind.Internal as UFI
-import UnionFind.Monad as UFM
+import qualified UnionFind.Monadic as UFM
 
 instance (Arbitrary key, Arbitrary value) => Arbitrary (Action key value) where
   arbitrary =
@@ -25,8 +24,8 @@ instance (Arbitrary key, Arbitrary value) => Arbitrary (Action key value) where
       True -> Insert <$> arbitrary <*> arbitrary
       False -> Union <$> arbitrary <*> arbitrary
 
-unionFindToNormalisedList :: (Ord key, Ord value) => UFI.UnionFind key value -> [([key], Maybe value)]
-unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UFI.toList
+unionFindToNormalisedList :: (Ord key, Ord value) => UF.UnionFind key value -> [([key], Maybe value)]
+unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . snd . UF.toList
 
 dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
 dummyUnionFindToNormalisedList = sort . map (first sort)
@@ -35,7 +34,7 @@ mkNormalWithActions ::
   (Ord key, Ord value, Num value) =>
   [Action key (Sum value)] ->
   [([key], Maybe (Sum value))]
-mkNormalWithActions = unionFindToNormalisedList . snd . runWithUnionFind . mapM UFM.applyAction
+mkNormalWithActions = unionFindToNormalisedList . snd . UFM.runWithEmptyUnionFind . mapM UFM.applyAction
 
 mkDummyNormalWithActions ::
   (Ord key, Ord value, Num value) =>
@@ -51,26 +50,26 @@ tests =
           let nuf =
                 unionFindToNormalisedList $
                   snd $
-                    runWithUnionFind $ do
-                      trivialInsert 2 2
-                      trivialInsert 3 3
-                      trivialInsert 4 4
-                      trivialInsert 5 5
-                      unionWith (+) 3 4
-                      trivialUnion 5 6
-                      trivialUnion 7 8
+                    UFM.runWithEmptyUnionFind $ do
+                      UFM.trivialInsert 2 2
+                      UFM.trivialInsert 3 3
+                      UFM.trivialInsert 4 4
+                      UFM.trivialInsert 5 5
+                      UFM.unionWith (+) 3 4
+                      UFM.trivialUnion 5 6
+                      UFM.trivialUnion 7 8
            in nuf @?= [([2], Just 2), ([3, 4], Just 7), ([5, 6], Just 5), ([7, 8], Nothing)]
       ],
     testGroup
       "lookup . insert == id"
       [ testProperty "QuickCheck" $
-          \(k :: Int) (v :: Int) -> snd (UFI.lookup k $ UFI.trivialInsert k v UFI.empty) == Just v
+          \(k :: Int) (v :: Int) -> snd (UF.lookup k $ UF.trivialInsert k v UF.empty) == Just v
       ],
     testGroup
       "lookup . insert . insert == (<>)"
       [ testProperty "QuickCheck" $
           \(k :: Int) (v1 :: (Sum Int)) v2 ->
-            snd (UFI.lookup k $ UFI.insert k v2 $ UFI.insert k v1 UFI.empty)
+            snd (UF.lookup k $ UF.insert k v2 $ UF.insert k v1 UF.empty)
               == Just (v1 + v2)
       ],
     testGroup
