@@ -71,7 +71,11 @@ serializeUntrimmed firstChunkSize newChunksSize = LBS.toStrict . toLazyByteStrin
 -- (the size of the buffer is expected to be small). The output is a null-terminated
 -- strict bytestring that is expected to be consumed immediately.
 serializeSingle :: Builder -> BS.ByteString
-serializeSingle = serializeUntrimmed 256 2048
+serializeSingle =
+  -- 256 is the first power of 2 that is bigger than the length of the longest
+  -- command with interesting output in isUnity, and 2048 is just four times this
+  -- because smallChunkSize * 4 = defaultChunkSize.
+  serializeUntrimmed 256 2048
 
 -- | Evaluate a bytestring builder corresponding to a batch of SMTLib2 commands
 -- (the size of the buffer is expected to be important). The output is a

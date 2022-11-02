@@ -98,7 +98,10 @@ command solver expr = do
   send solver cmds
 
 -- | A command with no interesting result.
--- The result is only checked for consistency in debug mode.
+-- In debug mode, the result is checked for correctness and the queue of commands
+-- to evaluate is ignored.
+-- In non-debug mode, the command must not produce any output when evaluated, and
+-- it is not checked for correctness.
 ackCommand :: Solver -> SExpr -> IO ()
 ackCommand solver expr =
   if debugMode solver
@@ -117,12 +120,14 @@ ackCommand solver expr =
     else putQueue solver expr
 
 -- | A command entirely made out of atoms, with no interesting result.
+-- See also `ackCommand`.
 simpleCommand :: Solver -> [String] -> IO ()
 simpleCommand solver = ackCommand solver . List . map Atom
 
 -- | Run a command and return True if successful, and False if unsupported.
--- This is useful for setting options that unsupported by some solvers, but used
+-- This is useful for setting options that are unsupported by some solvers, but used
 -- by others.
+-- See also `command`.
 simpleCommandMaybe :: Solver -> [String] -> IO Bool
 simpleCommandMaybe solver c =
   do
