@@ -1,25 +1,111 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module UnionFind
   ( UnionFind,
     empty,
-    lookup,
-    insertWith,
-    trivialInsert,
-    unionWith,
-    trivialUnion,
     toList,
-    toLists,
   )
 where
 
+import Data.Function ((&))
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Prettyprinter (Pretty (pretty), vsep, (<+>))
 import UnionFind.Internal
-  ( UnionFind,
+  ( UnionFind (..),
+    UnionFindCell (..),
     empty,
-    insertWith,
-    lookup,
-    toList,
-    toLists,
-    trivialInsert,
-    trivialUnion,
-    unionWith,
   )
-import Prelude ()
+import Prelude
+
+instance (Ord key, Pretty key, Pretty value) => Pretty (UnionFind key value) where
+  pretty unionFind =
+    let (_, unionFindL) = toList unionFind
+     in vsep $ map (uncurry prettyEqClassAndValue) unionFindL
+    where
+      prettyEqClassAndValue eqClass Nothing =
+        prettyEqClass eqClass
+      prettyEqClassAndValue eqClass (Just value) =
+        prettyEqClass eqClass <+> ":=" <+> pretty value
+      prettyEqClass eqClass =
+        foldl
+          (\p key -> p <+> "~~" <+> pretty key)
+          (pretty (NonEmpty.head eqClass))
+          (NonEmpty.tail eqClass)
+
+-- | @toList unionFind@ returns a list representing the mappings in @unionFind@
+-- as well as a new union-find structure optimised for future calls. The
+-- mappings are pairs, the left-hand side being a non-empty list of all the
+-- @key@s in an equivalence class and the right-hand side being the value
+-- associated with this equivalence class, or @Nothing@ if there is no such
+-- value.
+--
+-- In particular, @([key], Just value)@ represents the equivalence class
+-- containing only @key@ and bound to @value@ while @(keys, Nothing)@ represents
+-- the equivalence class containing all @keys@ but not bound to any value.
+--
+-- There are no occurrences of @[]@ of the left-hand side and there are no
+-- occurrences of a pair @([key], Nothing)@. Additionally, all the left-hand
+-- side lists are disjoint. The order of keys in those lists is not specified.
+toList ::
+  Ord key =>
+  UnionFind key value ->
+  (UnionFind key value, [(NonEmpty key, Maybe value)])
+toList unionFind =
+  let (unionFind', bindings) =
+        foldl gobble (unionFind, Map.empty) (Map.toList $ getMap unionFind)
+   in ( unionFind',
+        Map.toList bindings
+          & map
+            ( \(ancestor, (otherKeys, maybeValue)) ->
+                (NonEmpty.insert ancestor otherKeys, maybeValue)
+            )
+      )
+  where
+    gobble ::
+      Ord key =>
+      (UnionFind key value, Map key ([key], Maybe value)) ->
+      (key, UnionFindCell key value) ->
+      (UnionFind key value, Map key ([key], Maybe value))
+    gobble (unionFind', bindings) (key, binding) =
+      case binding of
+        ChildOf _ ->
+          let (unionFind'', ancestor, _) = find key unionFind'
+           in (unionFind'', addKeyToBindings key ancestor bindings)
+        Ancestor Nothing ->
+          (unionFind', bindings)
+        Ancestor (Just value) ->
+          (unionFind', addValueToBindings value key bindings)
+    -- @addKeyToBindings key ancestor bindings@ adds @key@ to the equivalence
+    -- class of @ancestor@ in @bindings@, creating this equivalence class if
+    -- necessary.
+    addKeyToBindings ::
+      Ord key =>
+      key ->
+      key ->
+      Map key ([key], Maybe value) ->
+      Map key ([key], Maybe value)
+    addKeyToBindings key =
+      Map.alter
+        ( \case
+            Nothing -> Just ([key], Nothing)
+            Just (keys, mValue) -> Just (key : keys, mValue)
+        )
+    -- @addValueToBindings value ancestor bindings@ binds @value@ to @ancestor@
+    -- in @bindings@, creating the binding if necessary.
+    addValueToBindings ::
+      Ord key =>
+      value ->
+      key ->
+      Map key ([key], Maybe value) ->
+      Map key ([key], Maybe value)
+    addValueToBindings value =
+      Map.alter
+        ( \case
+            Nothing -> Just ([], Just value)
+            Just (keys, Nothing) -> Just (keys, Just value)
+            _ -> error "two bindings for the same ancestor"
+        )
