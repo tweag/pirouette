@@ -3,6 +3,7 @@ module UnionFind.Monad where
 import Control.Monad.Trans.Class (MonadTrans (lift))
 import qualified Control.Monad.Trans.State.Strict as S
 import Data.Functor.Identity (Identity)
+import UnionFind.Action
 import qualified UnionFind.Internal as UF
 
 type WithUnionFindT key value = S.StateT (UF.UnionFind key value)
@@ -86,3 +87,18 @@ insert ::
   value ->
   WithUnionFindT key value m ()
 insert = insertWith (<>)
+
+applyActionWith ::
+  (Ord key, Monad m) =>
+  (value -> value -> value) ->
+  Action key value ->
+  WithUnionFindT key value m ()
+applyActionWith merge (Union k1 k2) = unionWith merge k1 k2
+applyActionWith merge (Insert k v) = insertWith merge k v
+
+-- | Same as @applyActionWith@ but uses @(<>)@ to merge values.
+applyAction ::
+  (Ord key, Semigroup value, Monad m) =>
+  Action key value ->
+  WithUnionFindT key value m ()
+applyAction = applyActionWith (<>)

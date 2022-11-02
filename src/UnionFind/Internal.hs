@@ -23,6 +23,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Prettyprinter
+import UnionFind.Action
 
 data UnionFindCell key value
   = ChildOf key
@@ -234,6 +235,25 @@ insert ::
   UnionFind key value ->
   UnionFind key value
 insert = insertWith (<>)
+
+-- | @applyActionWith merge action unionFind@ applies @action@ to @unionFind@
+-- using the @merge@ function.
+applyActionWith ::
+  Ord key =>
+  (value -> value -> value) ->
+  Action key value ->
+  UnionFind key value ->
+  UnionFind key value
+applyActionWith merge (Union k1 k2) = unionWith merge k1 k2
+applyActionWith merge (Insert k v) = insertWith merge k v
+
+-- | Same as @applyActionWith@ but uses @(<>)@ to merge values.
+applyAction ::
+  (Ord key, Semigroup value) =>
+  Action key value ->
+  UnionFind key value ->
+  UnionFind key value
+applyAction = applyActionWith (<>)
 
 -- | @toLists unionFind@ returns a pair of of lists as well as a new union-find
 -- structure optimised for future calls.

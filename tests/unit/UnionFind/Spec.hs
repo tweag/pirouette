@@ -25,10 +25,6 @@ instance (Arbitrary key, Arbitrary value) => Arbitrary (Action key value) where
       True -> Insert <$> arbitrary <*> arbitrary
       False -> Union <$> arbitrary <*> arbitrary
 
-applyActionM :: (Ord key, Semigroup value) => Action key value -> WithUnionFind key value ()
-applyActionM (Insert k v) = UFM.insert k v
-applyActionM (Union k1 k2) = UFM.union k1 k2
-
 applyActionToDummy :: (Ord key, Semigroup value) => Action key value -> DUF.DummyUnionFind key value -> DUF.DummyUnionFind key value
 applyActionToDummy (Insert k v) = DUF.insert k v
 applyActionToDummy (Union k1 k2) = DUF.union k1 k2
@@ -43,7 +39,7 @@ mkNormalWithActions ::
   (Ord key, Ord value, Num value) =>
   [Action key (Sum value)] ->
   [([key], Maybe (Sum value))]
-mkNormalWithActions = unionFindToNormalisedList . snd . runWithUnionFind . mapM applyActionM
+mkNormalWithActions = unionFindToNormalisedList . snd . runWithUnionFind . mapM UFM.applyAction
 
 mkDummyNormalWithActions ::
   (Ord key, Ord value, Num value) =>
