@@ -2,6 +2,7 @@
 
 module UnionFind.Monadic where
 
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (StateT, get, put, runState, runStateT)
 import Data.Functor.Identity (Identity)
 import Data.Map (Map)
@@ -136,7 +137,7 @@ unionWithM ::
   key ->
   key ->
   WithUnionFindT key value m ()
-unionWithM merge key1 key2 unionFind = do
+unionWithM merge key1 key2 = do
   (ancestor1, maybeValue1) <- find key1
   (ancestor2, maybeValue2) <- find key2
   if ancestor1 == ancestor2
@@ -154,7 +155,7 @@ unionWithM merge key1 key2 unionFind = do
         -- FIXME: Implement the optimisation that choses which key should be
         -- the other's child by keeping track of the size of the equivalence
         -- classes.
-        value <- merge value1 value2
+        value <- lift $ merge value1 value2
         updateBindings $
           Map.insert ancestor1 (ChildOf ancestor2)
             . Map.insert ancestor2 (Ancestor $ Just value)
@@ -197,7 +198,7 @@ insertWithM ::
   WithUnionFindT key value m ()
 insertWithM merge key value = do
   (ancestor, maybeValue) <- find key
-  newValue <- maybe (return value) (merge value) maybeValue
+  newValue <- lift $ maybe (return value) (merge value) maybeValue
   updateBindings $ Map.insert ancestor (Ancestor $ Just newValue)
 
 -- | Same as @insertWith@ for trivial cases where one knows for sure that the
