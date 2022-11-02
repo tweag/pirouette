@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 
-module UnionFind.Monad where
+module UnionFind.Monadic where
 
 import Control.Monad.Trans.State.Strict (StateT, get, put, runState, runStateT)
 import Data.Functor.Identity (Identity)

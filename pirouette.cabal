@@ -61,7 +61,7 @@ library
       UnionFind
       UnionFind.Action
       UnionFind.Internal
-      UnionFind.Monad
+      UnionFind.Monadic
   other-modules:
       Paths_pirouette
   autogen-modules:

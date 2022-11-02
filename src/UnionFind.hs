@@ -29,8 +29,8 @@ import UnionFind.Internal
     UnionFindCell (..),
     empty,
   )
-import UnionFind.Monad (runWithUnionFind)
-import qualified UnionFind.Monad as Monadic
+import UnionFind.Monadic (runWithUnionFind)
+import qualified UnionFind.Monadic as Monadic
 import Prelude (Maybe (..), Ord, error, foldl, map, uncurry, ($))
 
 instance (Ord key, Pretty key, Pretty value) => Pretty (UnionFind key value) where
