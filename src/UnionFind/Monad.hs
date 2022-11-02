@@ -1,12 +1,12 @@
 module UnionFind.Monad where
 
 import Control.Monad.Trans.Class (MonadTrans (lift))
-import qualified Control.Monad.Trans.State.Strict as S
+import Control.Monad.Trans.State.Strict (StateT, get, modify', put, runState, runStateT)
 import Data.Functor.Identity (Identity)
 import UnionFind.Action
 import qualified UnionFind.Internal as UF
 
-type WithUnionFindT key value = S.StateT (UF.UnionFind key value)
+type WithUnionFindT key value = StateT (UF.UnionFind key value)
 
 type WithUnionFind key value = WithUnionFindT key value Identity
 
@@ -14,21 +14,21 @@ runWithUnionFindT ::
   Monad m =>
   WithUnionFindT key value m result ->
   m (result, UF.UnionFind key value)
-runWithUnionFindT f = S.runStateT f UF.empty
+runWithUnionFindT f = runStateT f UF.empty
 
 runWithUnionFind ::
   WithUnionFind key value result ->
   (result, UF.UnionFind key value)
-runWithUnionFind f = S.runState f UF.empty
+runWithUnionFind f = runState f UF.empty
 
 lookup ::
   (Ord key, Monad m) =>
   key ->
   WithUnionFindT key value m (Maybe value)
 lookup key = do
-  unionFind <- S.get
+  unionFind <- get
   let (unionFind', result) = UF.lookup key unionFind
-  S.put unionFind'
+  put unionFind'
   return result
 
 unionWith ::
@@ -38,7 +38,7 @@ unionWith ::
   key ->
   WithUnionFindT key value m ()
 unionWith merge key1 key2 =
-  S.modify' $ UF.unionWith merge key1 key2
+  modify' $ UF.unionWith merge key1 key2
 
 unionWithM ::
   (Ord key, Monad m) =>
@@ -47,9 +47,9 @@ unionWithM ::
   key ->
   WithUnionFindT key value m ()
 unionWithM merge key1 key2 = do
-  uf <- S.get
+  uf <- get
   uf' <- lift $ UF.unionWithM merge key1 key2 uf
-  S.put uf'
+  put uf'
 
 trivialUnion ::
   (Ord key, Monad m) =>
@@ -72,7 +72,7 @@ insertWith ::
   value ->
   WithUnionFindT key value m ()
 insertWith merge key value =
-  S.modify' $ UF.insertWith merge key value
+  modify' $ UF.insertWith merge key value
 
 trivialInsert ::
   (Ord key, Monad m) =>
