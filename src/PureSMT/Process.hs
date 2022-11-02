@@ -21,7 +21,7 @@ C.include "z3.h"
 data Solver = Solver
   { context :: ForeignPtr Z3.LogicalContext,
     debugMode :: Bool,
-    queue :: IORef Builder
+    queue :: IORef Builder   -- only used in non-debug mode
   }
 
 -- | Create a brand-new context for Z3 to work in.
