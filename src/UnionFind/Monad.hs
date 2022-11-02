@@ -1,5 +1,6 @@
 module UnionFind.Monad where
 
+import Control.Monad.Trans.Class (MonadTrans (lift))
 import qualified Control.Monad.Trans.State.Strict as S
 import Data.Functor.Identity (Identity)
 import qualified UnionFind.Internal as UF
@@ -37,6 +38,17 @@ unionWith ::
   WithUnionFindT key value m ()
 unionWith merge key1 key2 =
   S.modify' $ UF.unionWith merge key1 key2
+
+unionWithM ::
+  (Ord key, Monad m) =>
+  (value -> value -> m value) ->
+  key ->
+  key ->
+  WithUnionFindT key value m ()
+unionWithM merge key1 key2 = do
+  uf <- S.get
+  uf' <- lift $ UF.unionWithM merge key1 key2 uf
+  S.put uf'
 
 trivialUnion ::
   (Ord key, Monad m) =>
