@@ -89,7 +89,7 @@ trTerm tyEnv termEnv (ExprIf ty c t e) = do
   e' <- trTerm tyEnv termEnv e
   return $ ifThenElse ty' c' t' e'
 -- trTerm tyEnv termEnv (ExprCase ty tyRes t cases) = trTerm tyEnv termEnv (ExprVar "undefined") -- TODO implement translation of case constructs
-trTerm tyEnv termEnv (ExprCase _tyRes _ty _t _cases) = throwError "translation of case expressions is not yet implemented"
+trTerm _tyEnv _termEnv (ExprCase _tyRes _ty _t _cases) = throwError "translation of case expressions is not yet implemented"
 trTerm _ termEnv (ExprVar s) =
   case s `elemIndex` termEnv of
     Just i -> return $ SystF.termPure $ SystF.Bound (SystF.Ann $ fromString s) (fromIntegral i)

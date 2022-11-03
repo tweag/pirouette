@@ -427,7 +427,7 @@ mapNameScoped f = go 0
 -- ** N-ary Reducing Applications
 
 class (HasSubst term) => HasApp term where
-  type AppArg term :: *
+  type AppArg term
   appN :: (IsVar (SubstVar term), HasCallStack) => term -> [AppArg term] -> term
 
 app :: (HasApp term, HasCallStack) => term -> AppArg term -> term

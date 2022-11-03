@@ -371,9 +371,9 @@ type LanguageConstrs lang =
 -- no idea what that is, defining an empty instance will use the default
 -- implementatino of @builtinPrelude = M.empty@, which is a fine definition.
 class (LanguageConstrs lang) => LanguageBuiltins lang where
-  type BuiltinTypes lang :: *
-  type BuiltinTerms lang :: *
-  type Constants lang :: *
+  type BuiltinTypes lang
+  type BuiltinTerms lang
+  type Constants lang
 
 -- | Auxiliary constraint for pretty-printing terms of a given language.
 type LanguagePretty lang =

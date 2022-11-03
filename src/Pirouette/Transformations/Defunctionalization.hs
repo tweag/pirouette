@@ -14,7 +14,6 @@ module Pirouette.Transformations.Defunctionalization (defunctionalize) where
 
 import Control.Arrow (first, (***))
 import Control.Monad.RWS.Strict
-import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Data.Generics.Uniplate.Data
 import Data.List (nub, sortOn)
@@ -25,7 +24,6 @@ import Data.String.Interpolate.IsString
 import qualified Data.Text as T
 import Data.Traversable
 import Pirouette.Monad
-import Pirouette.Monad.Maybe
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Base as B
 import qualified Pirouette.Term.Syntax.SystemF as SystF
@@ -216,7 +214,7 @@ defunCalls ::
   M.Map Name (HofsList lang) ->
   PrtUnorderedDefs lang ->
   DefunCallsCtx lang (PrtUnorderedDefs lang)
-defunCalls toDefun decls@PrtUnorderedDefs {..} = do
+defunCalls toDefun PrtUnorderedDefs {..} = do
   decls' <- for prtUODecls $ \case
     DFunction r body ty -> (\body' -> DFunction r body' ty) <$> defunCallsInTerm [] body
     def -> pure def
@@ -352,14 +350,6 @@ rewriteHofType = go 0
     go _ ty@SystF.TyApp {} = (ty, [])
     go pos (SystF.TyAll ann k ty) = SystF.TyAll ann k *** (Nothing :) $ go (pos + 1) ty
     go _pos SystF.TyLam {} = error "unexpected arg type" -- TODO mention the type
-
--- | This is a little more eager than 'rewriteHofType', in this case, we rewrite ALL
--- function types.
-rewriteFunType :: (Language lang) => B.Type lang -> B.Type lang
-rewriteFunType = transform go
-  where
-    go ty@SystF.TyFun {} = closureType ty
-    go x = x
 
 -- Assumes the body is normalized enough so that all the binders are at the front.
 -- Dis-assuming this is merely about recursing on `App` ctor as well.

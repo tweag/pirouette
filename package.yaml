@@ -15,6 +15,7 @@ dependencies:
   - interpolate
   - bytestring
   - containers
+  - extra
   - text
   - prettyprinter
   - megaparsec
@@ -32,14 +33,25 @@ dependencies:
   - optics-core
   - optics-th
   # PureSMT deps
-  - process
-  - typed-process
+  - inline-c
+
 
 library:
   source-dirs: src
   ghc-options:
     -Wall
     -Wno-orphans
+  # Copied from https://hackage.haskell.org/package/z3-408.2/src/z3.cabal
+  #
+  # In OS X libz3 is linked statically against libgomp.
+  # In Windows Z3 is compiled using MS C++.
+  when:
+    - condition: os(darwin) || os(windows)
+      then:
+        extra-libraries: z3
+      else:
+        extra-libraries: gomp z3 gomp
+
 
 tests:
   spec:
@@ -63,4 +75,3 @@ tests:
 ##       -fprof-auto
 ##       -fexternal-interpreter
 ##       "-with-rtsopts=-N -p -s -h"
-
