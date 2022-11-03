@@ -66,7 +66,6 @@ import Control.Monad.Writer
 import Control.Parallel.Strategies
 import Data.Default
 import Data.Foldable
-import Data.List (genericLength)
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
