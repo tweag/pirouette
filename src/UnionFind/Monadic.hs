@@ -38,8 +38,8 @@ type WithUnionFind key value = WithUnionFindT key value Identity
 runWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m (result, UnionFind key value)
 runWithUnionFindT = flip runStateT
 
-execWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m result
-runWithUnionFindT = flip runStateT
+evalWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m result
+evalWithUnionFindT = flip runStateT
 
 execWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m (UnionFind key value)
 execWithUnionFindT = flip runStateT
@@ -47,8 +47,8 @@ execWithUnionFindT = flip runStateT
 runWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m (result, UnionFind key value)
 runWithEmptyUnionFindT = runWithUnionFindT empty
 
-execWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m result
-execWithEmptyUnionFindT = execWithUnionFindT empty
+evalWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m result
+evalWithEmptyUnionFindT = execWithUnionFindT empty
 
 execWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m (UnionFind key value)
 execWithEmptyUnionFindT = execWithUnionFindT empty
@@ -56,8 +56,8 @@ execWithEmptyUnionFindT = execWithUnionFindT empty
 runWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> (result, UnionFind key value)
 runWithUnionFind = flip runState
 
-execWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> result
-execWithUnionFind = flip runState
+evalWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> result
+evalWithUnionFind = flip runState
 
 execWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> (UnionFind key value)
 execWithUnionFind = flip runState
@@ -65,8 +65,8 @@ execWithUnionFind = flip runState
 runWithEmptyUnionFind :: WithUnionFind key value result -> (result, UnionFind key value)
 runWithEmptyUnionFind = runWithUnionFind empty
 
-execWithEmptyUnionFind :: WithUnionFind key value result -> result
-execWithEmptyUnionFind = runWithUnionFind empty
+evalWithEmptyUnionFind :: WithUnionFind key value result -> result
+evalWithEmptyUnionFind = runWithUnionFind empty
 
 execWithEmptyUnionFind :: WithUnionFind key value result -> (UnionFind key value)
 execWithEmptyUnionFind = runWithUnionFind empty
