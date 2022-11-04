@@ -60,8 +60,8 @@ library
       PureSMT.SExpr
       UnionFind
       UnionFind.Action
+      UnionFind.Deferring
       UnionFind.Internal
-      UnionFind.Looping
       UnionFind.Monadic
   other-modules:
       Paths_pirouette

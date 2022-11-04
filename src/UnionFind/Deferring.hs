@@ -1,4 +1,4 @@
-module UnionFind.Looping
+module UnionFind.Deferring
   ( applyActionsWithDeferring,
     unionWithDeferring,
     insertWithDeferring,
