@@ -125,18 +125,18 @@ conjunct c cs0 =
       -- actions, hence the use of 'applyActionsWithDeferring'.
       actions <- unificationActions v u
       assignments <-
-        UF.execWithUnionFindT (csAssignments cs) $ -- FIXME: not `run` nor `exec` but the one that returns the union find itself
-          UF.applyActionsWithDeferring mergeDeferring actions
+        UF.execWithUnionFindT (csAssignments cs) $
+          UF.applyActionsWithDeferring merge actions
       Just $ cs {csAssignments = assignments}
       where
-        mergeDeferring ::
+        merge ::
           TermMeta lang meta ->
           TermMeta lang meta ->
           WriterT [UF.Action meta (TermMeta lang meta)] Maybe (TermMeta lang meta)
-        mergeDeferring v u = do
-          actions <- lift $ unificationActions v u
+        merge v' u' = do
+          actions <- lift $ unificationActions v' u'
           tell actions
-          return v
+          return v'
 
     -- Takes two terms and returns a list of union/insert actions that would
     -- be necessary to unify the two terms, or @Nothing@ if it is impossible.
