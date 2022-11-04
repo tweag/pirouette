@@ -35,29 +35,41 @@ type WithUnionFindT key value = StateT (UnionFind key value)
 
 type WithUnionFind key value = WithUnionFindT key value Identity
 
-runWithUnionFindT ::
-  Monad m =>
-  UnionFind key value ->
-  WithUnionFindT key value m result ->
-  m (result, UnionFind key value)
+runWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m (result, UnionFind key value)
 runWithUnionFindT = flip runStateT
 
-runWithEmptyUnionFindT ::
-  Monad m =>
-  WithUnionFindT key value m result ->
-  m (result, UnionFind key value)
+execWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m result
+runWithUnionFindT = flip runStateT
+
+execWithUnionFindT :: Monad m => UnionFind key value -> WithUnionFindT key value m result -> m (UnionFind key value)
+execWithUnionFindT = flip runStateT
+
+runWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m (result, UnionFind key value)
 runWithEmptyUnionFindT = runWithUnionFindT empty
 
-runWithUnionFind ::
-  UnionFind key value ->
-  WithUnionFind key value result ->
-  (result, UnionFind key value)
+execWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m result
+execWithEmptyUnionFindT = execWithUnionFindT empty
+
+execWithEmptyUnionFindT :: Monad m => WithUnionFindT key value m result -> m (UnionFind key value)
+execWithEmptyUnionFindT = execWithUnionFindT empty
+
+runWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> (result, UnionFind key value)
 runWithUnionFind = flip runState
 
-runWithEmptyUnionFind ::
-  WithUnionFind key value result ->
-  (result, UnionFind key value)
+execWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> result
+execWithUnionFind = flip runState
+
+execWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> (UnionFind key value)
+execWithUnionFind = flip runState
+
+runWithEmptyUnionFind :: WithUnionFind key value result -> (result, UnionFind key value)
 runWithEmptyUnionFind = runWithUnionFind empty
+
+execWithEmptyUnionFind :: WithUnionFind key value result -> result
+execWithEmptyUnionFind = runWithUnionFind empty
+
+execWithEmptyUnionFind :: WithUnionFind key value result -> (UnionFind key value)
+execWithEmptyUnionFind = runWithUnionFind empty
 
 -- | Helper that gets the bindings from the state.
 getBindings ::
