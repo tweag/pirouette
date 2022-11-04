@@ -14,6 +14,8 @@ module Pirouette.SMT.Constraints where
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Writer.Strict (WriterT, tell)
 import Data.Default
 import Data.Either
 import qualified Data.List.NonEmpty as NonEmpty
@@ -26,6 +28,8 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Prettyprinter hiding (Pretty (..))
 import qualified PureSMT
 import qualified UnionFind as UF
+import qualified UnionFind.Action as UF
+import qualified UnionFind.Deferring as UF
 
 data ConstraintSet lang meta = ConstraintSet
   { -- | Represents the set of productive symbolic variable assignments we know
@@ -105,78 +109,63 @@ conjunct c cs0 =
     -- we want to unify things: '=:=' or just register them as equal: 'termEq'
     Related tr t u -> Just $ cs0 {csRelations = (tr, t, u) : csRelations cs0}
   where
-    -- TODO: The functions below feel like a dangerous re-implementation of union find.
-    -- We should just rely on a library or implement this somewhere else and write a
-    -- nice test suite so we can rely on it. For now, this will do, but this
-    -- is of utmost priority!
-
-    -- Looking up representatives of equivalence classes (in csMetaEq) should really
-    -- be a single map lookup. Great first issue for a new pirouette developer! :)
-
-    -- Attempts to unify two terms in an environment given by a current known set
-    -- of constraints. Returns @Nothing@ when the terms can't be unified.
+    -- Takes a constraint set and two terms and attempts to unify the two
+    -- terms, adding new constraints along the way. Returns @Nothing@ when the
+    -- unification is impossible.
     unifyWith ::
       ConstraintSet lang meta ->
       TermMeta lang meta ->
       TermMeta lang meta ->
       Maybe (ConstraintSet lang meta)
-    unifyWith cs (SystF.App (SystF.Meta v) []) u = unifyMetaWith cs v u
-    unifyWith cs v (SystF.App (SystF.Meta u) []) = unifyMetaWith cs u v
-    unifyWith cs (SystF.App hdT argsT) (SystF.App hdU argsU) = do
+    unifyWith cs v u = do
+      -- The logic is in @unificationActions@ which yields a list of union-find
+      -- actions (either 'union' or 'insert') on meta-variables in the terms.
+      -- The following piece of code simply gets those actions and runs them in
+      -- the @csAssignments@ union-find structure. This might trigger new
+      -- actions, hence the use of 'applyActionsWithDeferring'.
+      actions <- unificationActions v u
+      assignments <-
+        UF.execWithUnionFindT (csAssignments cs) $ -- FIXME: not `run` nor `exec` but the one that returns the union find itself
+          UF.applyActionsWithDeferring mergeDeferring actions
+      Just $ cs {csAssignments = assignments}
+      where
+        mergeDeferring ::
+          TermMeta lang meta ->
+          TermMeta lang meta ->
+          WriterT [UF.Action meta (TermMeta lang meta)] Maybe (TermMeta lang meta)
+        mergeDeferring v u = do
+          actions <- lift $ unificationActions v u
+          tell actions
+          return v
+
+    -- Takes two terms and returns a list of union/insert actions that would
+    -- be necessary to unify the two terms, or @Nothing@ if it is impossible.
+    unificationActions ::
+      TermMeta lang meta ->
+      TermMeta lang meta ->
+      Maybe [UF.Action meta (TermMeta lang meta)]
+    unificationActions (SystF.App (SystF.Meta t) []) (SystF.App (SystF.Meta u) []) = Just [UF.Union t u]
+    unificationActions (SystF.App (SystF.Meta t) []) u = Just [UF.Insert t u]
+    unificationActions t (SystF.App (SystF.Meta u) []) = Just [UF.Insert u t]
+    unificationActions (SystF.App hdT argsT) (SystF.App hdU argsU) = do
+      -- FIXME: Why must the heads be equal; shouldn't we unify them instead? I
+      -- suppose there is a reason, eg. we know we are in weak normal form.
       guard (hdT == hdU)
       guard (length argsT == length argsU)
-      iterateM cs $ zipWith (\x y -> \cs' -> unifyArgWith cs' x y) argsT argsU
-      where
-        iterateM :: (Monad m) => a -> [a -> m a] -> m a
-        iterateM a [] = return a
-        iterateM a (f : fs) = f a >>= flip iterateM fs
-    unifyWith _ t u =
+      concat <$> zipWithM unificationActions' argsT argsU
+    unificationActions t u =
       error $
         "unifyWith: Unimplemented for:\n"
           ++ unlines (map (renderSingleLineStr . pretty) [t, u])
 
-    -- Attempts to unify a metavariable with a term; will perform any potential lookup
-    -- that is needed. WARNING: no occurs-check is performed, if the variable occurs within
-    -- the term this function will loop. For our particular use case we don't need to occurs
-    -- check since we'll only ever attempt to unify terms that have generated metavariables.
-    unifyMetaWith ::
-      ConstraintSet lang meta ->
-      meta ->
-      TermMeta lang meta ->
-      Maybe (ConstraintSet lang meta)
-    unifyMetaWith cs v u =
-      let (cs', lookupResult) = lookupAssignment v cs
-       in case lookupResult of
-            -- @v@ is known to be a given term; it has to be unifiable with @u@.
-            -- Note that we forget here the assignment of @v@ to @u@. It will
-            -- only be contained in the assignment of @v@ to @t@ and the result
-            -- of the unification of @t@ and @u@.
-            Just t -> unifyWith cs' t u
-            -- @v@ is either unknown, or known to be bound to any assignment. We
-            -- distinguish two cases.
-            Nothing ->
-              let csAssignments' = case u of
-                    -- If @u@ itself is just a meta-variable, then we declare
-                    -- @v@ and @u@ as equal in the @csAssignments@ union-find;
-                    -- this is a trivial union that might (or not) bring an
-                    -- assignment to @v@.
-                    SystF.App (SystF.Meta u') [] ->
-                      snd $ UF.runWithUnionFind (csAssignments cs') $ UF.trivialUnion v u'
-                    -- Otherwise, @u@ is a complex term and we register the
-                    -- assignment from @v@ to @u@. This is trivial as @v@ does
-                    -- not have any assignment at this point.
-                    _ ->
-                      snd $ UF.runWithUnionFind (csAssignments cs') $ UF.trivialInsert v u
-               in Just cs {csAssignments = csAssignments'}
-
-    unifyArgWith ::
-      ConstraintSet lang meta ->
+    -- Same as @unificationActions@ but for term application arguments.
+    unificationActions' ::
       ArgMeta lang meta ->
       ArgMeta lang meta ->
-      Maybe (ConstraintSet lang meta)
-    unifyArgWith cs (SystF.TermArg x) (SystF.TermArg y) = unifyWith cs x y
-    unifyArgWith cs (SystF.TyArg _) (SystF.TyArg _) = Just cs -- TODO: unify types too? I don't think so
-    unifyArgWith _ _ _ = Nothing
+      Maybe [UF.Action meta (TermMeta lang meta)]
+    unificationActions' (SystF.TermArg t) (SystF.TermArg u) = unificationActions t u
+    unificationActions' (SystF.TyArg _) (SystF.TyArg _) = Just [] -- TODO: unify types too? I don't think so
+    unificationActions' _ _ = Nothing
 
 expandDefOf :: (Ord meta) => ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
 expandDefOf cs v =
