@@ -7,115 +7,134 @@ module PureSMT.Process where
 
 import Control.DeepSeq (force)
 import Control.Monad
-import Data.ByteString.Builder
-  ( Builder,
-    toLazyByteString,
-  )
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.IORef
 import qualified Debug.TimeStats as TimeStats
-import Foreign.Ptr (Ptr)
+import Foreign.ForeignPtr
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Unsafe as CU
 import PureSMT.SExpr
 import qualified PureSMT.Z3 as Z3
-import System.IO
 import Prelude hiding (const)
 
-C.context (C.baseCtx <> C.bsCtx <> Z3.cContext)
+C.context (C.baseCtx <> C.fptrCtx <> C.bsCtx <> Z3.cContext)
 C.include "z3.h"
 
 data Solver = Solver
-  { context :: Ptr Z3.LogicalContext,
+  { context :: ForeignPtr Z3.LogicalContext,
     debugMode :: Bool,
-    buffer :: IORef Builder
+    queue :: IORef Builder -- only used in non-debug mode
   }
 
 -- | Create a brand-new context for Z3 to work in.
--- The resulting Solver object is expected to be manually garbage-collected
--- using freeZ3Instance.
 initZ3Instance ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
 initZ3Instance dbg = TimeStats.measureM "launchSolver" $ do
+  let ctxFinalizer =
+        [C.funPtr| void free_context(Z3_context ctx) {
+                                      Z3_del_context(ctx);
+                                      } |]
   solverCtx <-
-    [CU.block| Z3_context {
+    newForeignPtr ctxFinalizer
+      =<< [CU.block| Z3_context {
                      Z3_config cfg = Z3_mk_config();
                      Z3_context ctx = Z3_mk_context(cfg);
                      Z3_del_config(cfg);
                      return ctx;
                      } |]
-  buff <- newIORef mempty
-  let s = Solver solverCtx dbg buff
-  setOption s ":print-success" "true"
-  setOption s ":produce-models" "true"
+  solverQueue <- newIORef mempty
+  let solver = Solver solverCtx dbg solverQueue
+  when (debugMode solver) $ do
+    -- this should not be enabled in non-debug mode, as it messes with parsing
+    -- the outputs of commands that are actually interesting
+    setOption solver ":print-success" "true"
+  setOption solver ":produce-models" "true"
+  return solver
 
-  return s
-
--- | Have Z3 evaluate a command in SExpr format.
+-- | Send a bytestring to Z3.
 -- This function is thread-safe as long as concurrent instances do not share the
 -- same logical context.
+send :: Solver -> BS.ByteString -> IO SExpr
+send solver cmd = do
+  let ctx = context solver
+  let !cmd' = cmd
+  when (debugMode solver) $ do
+    BS.putStrLn $ "[send] " `BS.append` cmd'
+  resp <-
+    TimeStats.measureM "Z3" $
+      [CU.exp| const char* {
+         Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
+         } |]
+        >>= BS.packCString
+  case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
+    Nothing -> do
+      fail $ "solver replied with:\n" ++ BS.unpack resp
+    Just (sexpr, _) -> do
+      when (debugMode solver && sexpr /= Atom "success") $ do
+        putStrLn $ "[recv] " ++ showsSExpr sexpr ""
+      return sexpr
+
+-- | Push a command on the solver's queue of commands to evaluate.
+-- The command must not produce any output when evaluated.
+putQueue :: Solver -> SExpr -> IO ()
+putQueue solver expr = do
+  let solverQueue = queue solver
+  cmds <- readIORef solverQueue
+  writeIORef solverQueue $ cmds <> renderSExpr expr
+
+-- | Empty the queue of commands to evaluate and return its content as a bytestring.
+flushQueue :: Solver -> IO (BS.ByteString)
+flushQueue solver = do
+  let solverQueue = queue solver
+  cmds <- readIORef solverQueue
+  writeIORef solverQueue mempty
+  return $ serializeBatch cmds
+
+-- | Have Z3 evaluate a command in SExpr format.
+-- This forces the queued commands to be evaluated as well, but their results are
+-- *not* checked for correctness.
 command :: Solver -> SExpr -> IO SExpr
-command solver cmd =
-  let cmd' = force cmd
-   in TimeStats.measureM "command" $ do
-        buff <- TimeStats.measureM "showsSExpr" $ do
-          buff <- readIORef $ buffer solver
-          writeIORef (buffer solver) mempty
-          return buff
-        _ <- send solver buff
-        resp <- send solver $ renderSExpr cmd'
-        case TimeStats.measurePure "readSExpr" $ force $ readSExpr resp of
-          Nothing -> do
-            fail $ "solver replied with:\n" ++ BS.unpack resp
-          Just (sexpr, _) -> do
-            when (debugMode solver && sexpr /= Atom "success") $ do
-              putStrLn $ "[recv] " ++ showsSExpr sexpr ""
-            return sexpr
-  where
-    send s builder = do
-      let !bs =
-            TimeStats.measurePure "showsSExpr" $
-              LBS.toStrict $
-                toLazyByteString $
-                  builder <> "\NUL"
-      when (debugMode s) $ do
-        BS.putStrLn $ "[send] " `BS.append` bs
-      let ctx = context s
-      TimeStats.measureM "Z3" $
-        [CU.exp| const char* {
-               Z3_eval_smtlib2_string($(Z3_context ctx), $bs-ptr:bs)
-               } |]
-          >>= BS.packCString
+command solver expr = TimeStats.measureM "command" $ do
+  cmds <- TimeStats.measureM "showsSExpr" $ do
+    putQueue solver expr
+    flushQueue solver
+  send solver cmds
 
 -- | A command with no interesting result.
+-- In debug mode, the result is checked for correctness and the queue of commands
+-- to evaluate is ignored.
+-- In non-debug mode, the command must not produce any output when evaluated, and
+-- it is not checked for correctness.
 ackCommand :: Solver -> SExpr -> IO ()
-ackCommand solver c = TimeStats.measureM "command" $
-  TimeStats.measureM "showsSExpr" $ do
-    let buffref = buffer solver
-    buff <- readIORef buffref
-    writeIORef buffref $ buff <> renderSExpr c
-
--- res <- command solver c
--- case res of
---   Atom "success" -> return ()
---   _ ->
---     fail $
---       unlines
---         [ "Unexpected result from the SMT solver:",
---           "  Expected: success",
---           "  Result: " ++ showsSExpr res ""
---         ]
+ackCommand solver expr =
+  TimeStats.measureM "command" $
+    if debugMode solver
+      then do
+        let !cmd = TimeStats.measurePure "showsSExpr" $ serializeSingle $ renderSExpr expr
+        resp <- send solver cmd
+        case resp of
+          Atom "success" -> return ()
+          _ ->
+            fail $
+              unlines
+                [ "Unexpected result from the SMT solver:",
+                  "  Expected: success",
+                  "  Result: " ++ showsSExpr resp ""
+                ]
+      else TimeStats.measureM "showsSExpr" $ putQueue solver expr
 
 -- | A command entirely made out of atoms, with no interesting result.
+-- See also `ackCommand`.
 simpleCommand :: Solver -> [String] -> IO ()
 simpleCommand solver = ackCommand solver . List . map Atom
 
 -- | Run a command and return True if successful, and False if unsupported.
--- This is useful for setting options that unsupported by some solvers, but used
+-- This is useful for setting options that are unsupported by some solvers, but used
 -- by others.
+-- See also `command`.
 simpleCommandMaybe :: Solver -> [String] -> IO Bool
 simpleCommandMaybe solver c =
   do
