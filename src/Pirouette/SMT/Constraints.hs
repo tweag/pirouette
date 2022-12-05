@@ -12,7 +12,6 @@
 -- | Constraints that we can translate to SMT
 module Pirouette.SMT.Constraints where
 
-import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Writer.Strict (WriterT, tell)
