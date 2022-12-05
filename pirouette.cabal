@@ -25,6 +25,7 @@ library
       Pirouette
       Pirouette.Monad
       Pirouette.Monad.Maybe
+      Pirouette.Runner
       Pirouette.SMT
       Pirouette.SMT.Base
       Pirouette.SMT.Constraints
@@ -58,6 +59,7 @@ library
       PureSMT
       PureSMT.Process
       PureSMT.SExpr
+      PureSMT.Z3
       UnionFind
       UnionFind.Action
       UnionFind.Deferring
@@ -78,7 +80,9 @@ library
     , containers
     , data-default
     , deriving-compat
+    , extra
     , haskell-stack-trace-plugin
+    , inline-c
     , interpolate
     , megaparsec
     , mtl >=2.2.2
@@ -87,7 +91,6 @@ library
     , parallel
     , parser-combinators
     , prettyprinter
-    , process
     , tasty
     , tasty-expected-failure
     , tasty-hunit
@@ -95,8 +98,13 @@ library
     , template-haskell
     , text
     , transformers
-    , typed-process
     , uniplate
+  if os(darwin) || os(windows)
+    extra-libraries:
+        z3
+  else
+    extra-libraries:
+        gomp z3 gomp
   default-language: Haskell2010
 
 test-suite spec
@@ -130,7 +138,9 @@ test-suite spec
     , containers
     , data-default
     , deriving-compat
+    , extra
     , haskell-stack-trace-plugin
+    , inline-c
     , interpolate
     , megaparsec
     , mtl >=2.2.2
@@ -140,7 +150,6 @@ test-suite spec
     , parser-combinators
     , pirouette
     , prettyprinter
-    , process
     , tasty
     , tasty-expected-failure
     , tasty-hunit
@@ -148,6 +157,5 @@ test-suite spec
     , template-haskell
     , text
     , transformers
-    , typed-process
     , uniplate
   default-language: Haskell2010

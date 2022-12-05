@@ -4,5 +4,6 @@
 let
   ourpkgs = import ./packages.nix {};
 in pkgs.mkShell {
+    nativeBuildInputs = ourpkgs.native-deps;
     buildInputs = ourpkgs.build-deps;
 }

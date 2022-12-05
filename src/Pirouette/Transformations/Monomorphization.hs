@@ -22,6 +22,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
+import Debug.Trace
 import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
@@ -29,19 +30,6 @@ import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Utils
 
 -- * Monomorphization
-
-{-
-TODO: I can see how the name-fixing function that uses '!' and how the option of
-whether we should or should not monomorphize all polymorphic definitions could be made into
-options:
-
-data MonomorphizeOpts = MonomorphizeOpts
-  { -- | Monomorphizes only definitions that contain a polymorphic higher-order function.
-    -- Simple polymophic datatypes like @Maybe@ or functions like @id@ won't be monomorphized.
-    monoHOFOnly :: Bool,
-    fixName :: ... -> Name,
-  }
--}
 
 -- | Given a set of definitions in prenex form (i.e., all 'SystF.TyAll' appear in the front and
 -- you can rely on "Pirouette.Transformations.Prenex" to get there), will yield a new set
@@ -74,18 +62,21 @@ monomorphize defs0 = prune $ go mempty defs0
         newOrders = filter (`S.notMember` prevOrders) specOrders
         newDefs = foldMap executeSpecRequest newOrders
 
+    -- Remove the polymorphic definitions we've found earlier.
+    -- All calls to them have been replaced with the monomorphic versions,
+    -- so the poly ones are not used anymore.
     prune :: PrtUnorderedDefs lang -> PrtUnorderedDefs lang
     prune defs = defs {prtUODecls = M.filterWithKey (\n _ -> n `M.notMember` defsToMono) $ prtUODecls defs}
 
--- | Return a set of definitions that either satisfy 'shouldMono' or have one
---  of its transitive dependencies satisfy 'shouldMono'. In other words, picks
---  all definitions that should be monomorphized. It also picks up associated definitions
---  that should be monomorphized (constructors and destructors), but associates them
---  with no particular definition.
+-- | Picks all definitions that should be monomorphized.
+--  Right now, any polymorphic definition (be it a function or a type) is subject to monomorphization.
+--  This function also picks up associated definitions that should be monomorphized
+--  (constructors and destructors for types),
+--  but associates them with no particular definition.
 --
 --  Moreover, it is important to keep the 'Namespace' in the map, otherwise we might
 --  run into scenarios where a type that has a homonym constructor might not be
---  monomorphized becase one entry overriden the other in the map.
+--  monomorphized becase one entry overrides the other in the map.
 selectMonoDefs ::
   forall lang.
   (Language lang) =>
@@ -107,10 +98,14 @@ selectMonoDefs PrtUnorderedDefs {..} =
 type FunOrTypeDef lang = SystF.Arg (TypeDef lang) (FunDef lang)
 
 -- | Returns whether we should monomorphize this function or type.
+--
+-- Any polymorphic function and any type with type variables is subject to monomorphization.
 shouldMono :: FunOrTypeDef lang -> Bool
 shouldMono (SystF.TermArg FunDef {..}) = isPolyType funTy
 shouldMono (SystF.TyArg Datatype {..}) = not (null typeVariables)
 
+-- Since we require the definitions to be in the prenex form,
+-- it's sufficient to check just the first argument to see if it's a ∀.
 isPolyType :: SystF.AnnType ann ty -> Bool
 isPolyType SystF.TyAll {} = True
 isPolyType _ = False
@@ -126,27 +121,25 @@ isFunOrTypeDef _ = Nothing
 -- with the given type arguments list. The specialized definitions are generated
 -- through 'executeSpecRequest'
 data SpecRequest lang = SpecRequest
-  { srName :: Name,
+  { -- | the name under which the specialized definition should be added
+    srName :: Name,
+    -- | the original, polymorphic definition
     srOrigDef :: FunOrTypeDef lang,
+    -- | the type arguments to specialize the srOrigDef with
     srArgs :: [Type lang]
   }
   deriving (Show, Eq, Ord)
 
 -- | Specializes a function application of the form:
 --
---  > hof @Integer @Bool x y z
+--  > f @Integer @Bool x y z
 --
--- at call site, where @hof@ has been identified as
--- 1. either a higher-order function itself,
--- 2. or invoking a polymorphic higher-order function, perhaps, transitively;
--- and its type argument contains no bound-variables: in other words,
--- we can substitute that call with @hof\@Integer\@Bool@ while creating a monomorphic
--- definition for @hof@.
+-- at call site.
 --
--- We only specialize type arguments that appear /before/ the first term-argument.
+-- The function assumes the program is in the prenex form (as all other parts of this transformation do).
 --
 -- This function only does the substitution _at call site_ and emits a 'SpecRequest' denoting that the corresponding
--- higher-order _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
+-- _definition_ needs to be specialized (which will be handled later by 'executeSpecRequest').
 specFunApp ::
   (MonadWriter [SpecRequest lang] m, Language lang) =>
   M.Map (Namespace, Name) (Maybe (FunOrTypeDef lang)) ->
@@ -170,13 +163,6 @@ specFunApp _ x = pure x
 --
 --  > HOFType @Integer
 --
---  where @HOFType a@ has at least one constructor having a higher-order argument mentioning @a@,
---  perhaps, transitively.
---  For example, both these definitions would be specialized:
---
---  > data Semigroup a = MkSemigroup (a -> a -> a)
---  > data Monoid a = MkMonoid (Semigroup a) a
---
 --  See the docs for 'specFunApp' for more details.
 specTyApp ::
   (MonadWriter [SpecRequest lang] m, Language lang) =>
@@ -197,24 +183,26 @@ specRequestPartialApp :: SpecRequest lang -> Term lang
 specRequestPartialApp SpecRequest {..} =
   SystF.App (SystF.Free $ TermSig srName) $ map SystF.TyArg srArgs
 
--- Below is an useful definition for debugging specialization requests, just rename
--- the original one to executeSpecRequest'
--- executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
--- executeSpecRequest sr =
---   let res = executeSpecRequest' sr
---       str =
---         unlines
---           [ "---------------------------------",
---             "executeSpecRequest: ",
---             "  " ++ show (pretty $ specRequestPartialApp sr),
---             "result:",
---             show (pretty res)
---           ]
---    in trace str res
+-- | A version of 'executeSpecRequest' that also debug-prints what's going on.
+executeSpecRequestTracing :: (Language lang) => SpecRequest lang -> Decls lang
+executeSpecRequestTracing sr = str `trace` res
+  where
+    res = executeSpecRequest sr
+    str =
+      unlines
+        [ "---------------------------------",
+          "executeSpecRequest: ",
+          "  " ++ show (pretty $ specRequestPartialApp sr),
+          "result:",
+          show (pretty res)
+        ]
 
 -- | Takes a description of what needs to be specialized
 -- (a function or a type definition along with specialization args)
 -- and produces the specialized definitions.
+--
+-- Conceptually, it just applies the existing polymorphic definition to the
+-- specialization args.
 executeSpecRequest :: (Language lang) => SpecRequest lang -> Decls lang
 executeSpecRequest SpecRequest {..} = M.fromList $
   case srOrigDef of
@@ -290,7 +278,7 @@ monoNameSep = ['<', '>', '$', '_', '!'] -- TODO: get rid of '!'
 -- We can either choose to control the order in which specialization happens,
 -- alwasy specializing "smaller" types first or we make sure that that order
 -- doesn't matter by generating the same name regardless. Currently, we choose
--- the later.
+-- the latter.
 genSpecName :: forall lang. (Language lang) => [Type lang] -> Name -> Name
 genSpecName tys n0 = combine n0 (map specTypeNames tys)
   where
@@ -319,46 +307,3 @@ argsToStr = T.intercalate msep . map f
 tyBaseName :: LanguageBuiltins lang => TypeBase lang -> Name
 tyBaseName (TyBuiltin bt) = Name (T.pack $ show bt) Nothing
 tyBaseName (TySig na) = na
-
-{-
--- Returns the definitions containing (polymorphic) higher-order functions,
--- be it functions or types.
---
--- The returned Map maps any name that contains higher-order stuff.
--- In particular, for a type it contains the type itself as well as
--- the type's constructors and destructor.
-findPolyHOFDefs :: LanguageBuiltins lang => Decls lang -> HOFDefs lang
-findPolyHOFDefs = findHOFDefs (isPolyType . funTy) (const $ const True) . M.toList
-
-findPolyFuns ::
-  LanguageBuiltins lang =>
-  (FunDef lang -> Bool) ->
-  [((space, Name), Definition lang)] ->
-  [((space, Name), HofDef lang)]
-findPolyFuns predi = flip findFuns (\f -> isPolyType (funTy f) && predi f)
-
--- | Finds the transitive closure of functions invoking higher-order things.
---
--- > hofsClosure decls hofDefs
---
--- returns the set of type or function definitions (a subset of @decls@)
--- that transitively mention names in @hofDefs@.
-hofsClosure :: forall lang. (Language lang) => Decls lang -> HOFDefs lang -> HOFDefs lang
-hofsClosure decls = go
-  where
-    declsPairs = M.toList decls
-
-    go hofs
-      | hofs == hofs' = hofs
-      | otherwise = go hofs'
-      where
-        hofs' = hofs <> M.fromList (hofTypes' <> hofFuns')
-        hofTypes' = findTypes declsPairs $ \_ typeDef -> hasHofName typeDef
-        hofFuns' = findPolyFuns hasHofName declsPairs
-
-        hasHofName :: (Data a) => a -> Bool
-        hasHofName entity =
-          not (null [() | TySig name <- universeBi entity :: [TypeBase lang], (TypeNamespace, name) `M.member` hofs])
-            || not (null [() | TermSig name <- universeBi entity :: [TermBase lang], (TermNamespace, name) `M.member` hofs])
-
--}

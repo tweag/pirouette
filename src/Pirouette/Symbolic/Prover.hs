@@ -21,7 +21,6 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as R
 import Prettyprinter hiding (Pretty, pretty)
 import PureSMT (SExpr (..))
-import System.IO.Unsafe
 
 -- | A problem represents a triple that should be checked.
 -- It should be the case that assuming 'problemAssume',

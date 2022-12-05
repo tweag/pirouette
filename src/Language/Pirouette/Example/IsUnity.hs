@@ -1,4 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
+-- -l has the effect of causing the TH interpreter to try loading
+-- z3 to resolve otherwise undefined symbols
+{-# OPTIONS_GHC -lz3 #-}
 
 module Language.Pirouette.Example.IsUnity where
 
