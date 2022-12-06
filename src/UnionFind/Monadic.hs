@@ -59,7 +59,7 @@ runWithUnionFind = flip runState
 evalWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> result
 evalWithUnionFind = flip evalState
 
-execWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> (UnionFind key value)
+execWithUnionFind :: UnionFind key value -> WithUnionFind key value result -> UnionFind key value
 execWithUnionFind = flip execState
 
 runWithEmptyUnionFind :: WithUnionFind key value result -> (result, UnionFind key value)
@@ -68,7 +68,7 @@ runWithEmptyUnionFind = runWithUnionFind empty
 evalWithEmptyUnionFind :: WithUnionFind key value result -> result
 evalWithEmptyUnionFind = evalWithUnionFind empty
 
-execWithEmptyUnionFind :: WithUnionFind key value result -> (UnionFind key value)
+execWithEmptyUnionFind :: WithUnionFind key value result -> UnionFind key value
 execWithEmptyUnionFind = execWithUnionFind empty
 
 -- | Helper that gets the bindings from the state.
