@@ -18,7 +18,7 @@ import qualified Data.Map as Map
 
 data UnionFindCell key value
   = ChildOf key
-  | Ancestor (Maybe value)
+  | Ancestor Int (Maybe value)
 
 -- | A persistent union-find data structure.
 --

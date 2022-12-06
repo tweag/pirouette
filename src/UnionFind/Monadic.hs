@@ -12,6 +12,7 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Tuple.Extra (third3)
 import Prettyprinter (Pretty (pretty), vsep, (<+>))
 import UnionFind.Action (Action (..))
 import UnionFind.Internal (UnionFind (..), UnionFindCell (..), empty)
@@ -94,40 +95,41 @@ updateBindings f = do
   let newBindings = f bindings
   putBindings newBindings
 
--- | @find key@ finds the ancestor and value associated to @key@ in the
--- union-find structure. It returns the ancestor for @key@ and the found value
--- or @Nothing@ if there is no such value.
+-- | @find key@ finds the ancestor, size and value associated to @key@ in the
+-- union-find structure. It returns the ancestor for @key@, the size of its
+-- equivalence class, and the found value or @Nothing@ if there is no such
+-- value.
 --
 -- Prefer using @lookup@.
 find ::
   (Ord key, Monad m) =>
   key ->
-  WithUnionFindT key value m (key, Maybe value)
+  WithUnionFindT key value m (key, Int, Maybe value)
 find key =
   Map.lookup key <$> getBindings >>= \case
-    Nothing -> return (key, Nothing)
+    Nothing -> return (key, 1, Nothing)
     Just (ChildOf key') -> do
       -- We use @findExn@ because invariant (ii) guarantees that it will
       -- succeed. If it ever raises an exception, then we found a bug.
-      (ancestor, maybeValue) <- findExn key'
+      (ancestor, size, maybeValue) <- findExn key'
       updateBindings $ Map.insert key $ ChildOf ancestor
-      return (ancestor, maybeValue)
-    Just (Ancestor maybeValue) -> return (key, maybeValue)
+      return (ancestor, size, maybeValue)
+    Just (Ancestor size maybeValue) -> return (key, size, maybeValue)
 
 -- | Same as @find@ but fails where there is no value associated to the given
 -- key. Prefer using @find@ or @lookup@.
 findExn ::
   (Ord key, Monad m) =>
   key ->
-  WithUnionFindT key value m (key, Maybe value)
+  WithUnionFindT key value m (key, Int, Maybe value)
 findExn key =
   Map.lookup key <$> getBindings >>= \case
     Nothing -> error "findExn: no value associated with key"
     Just (ChildOf key') -> do
-      (ancestor, maybeValue) <- findExn key'
+      (ancestor, size, maybeValue) <- findExn key'
       updateBindings $ Map.insert key $ ChildOf ancestor
-      return (ancestor, maybeValue)
-    Just (Ancestor maybeValue) -> return (key, maybeValue)
+      return (ancestor, size, maybeValue)
+    Just (Ancestor size maybeValue) -> return (key, size, maybeValue)
 
 -- | @lookup key@ returns the value associated to @key@ in the union-find
 -- structure, or @Nothing@ if there is no such binding.
@@ -135,7 +137,9 @@ lookup ::
   (Ord key, Monad m) =>
   key ->
   WithUnionFindT key value m (Maybe value)
-lookup key = snd <$> find key
+lookup key = do
+  (_ancestor, _size, maybeValue) <- find key
+  return maybeValue
 
 -- | @unionWith merge key1 key2@ merges together the equivalence classes of
 -- @key1@ and @key2@ in the union-find structure, thus adding the information
@@ -172,27 +176,25 @@ unionWithM ::
   key ->
   WithUnionFindT key value m ()
 unionWithM merge key1 key2 = do
-  (ancestor1, maybeValue1) <- find key1
-  (ancestor2, maybeValue2) <- find key2
+  (ancestor1, size1, maybeValue1) <- find key1
+  (ancestor2, size2, maybeValue2) <- find key2
   if ancestor1 == ancestor2
     then return ()
-    else case (maybeValue1, maybeValue2) of
-      (Nothing, Nothing) ->
-        updateBindings $
-          Map.insert ancestor1 (ChildOf ancestor2)
-            . Map.insert ancestor2 (Ancestor Nothing)
-      (Just _, Nothing) ->
-        updateBindings $ Map.insert ancestor2 (ChildOf ancestor1)
-      (Nothing, Just _) ->
-        updateBindings $ Map.insert ancestor1 (ChildOf ancestor2)
-      (Just value1, Just value2) -> do
-        -- FIXME: Implement the optimisation that choses which key should be
-        -- the other's child by keeping track of the size of the equivalence
-        -- classes.
-        value <- lift $ merge value1 value2
-        updateBindings $
-          Map.insert ancestor1 (ChildOf ancestor2)
-            . Map.insert ancestor2 (Ancestor $ Just value)
+    else do
+      maybeValue <- case (maybeValue1, maybeValue2) of
+        (Nothing, Nothing) -> return Nothing
+        (Just value1, Nothing) -> return $ Just value1
+        (Nothing, Just value2) -> return $ Just value2
+        (Just value1, Just value2) -> lift $ Just <$> merge value1 value2
+      if size1 < size2
+        then
+          updateBindings $
+            Map.insert ancestor1 (ChildOf ancestor2)
+              . Map.insert ancestor2 (Ancestor (size1 + size2) maybeValue)
+        else
+          updateBindings $
+            Map.insert ancestor2 (ChildOf ancestor1)
+              . Map.insert ancestor1 (Ancestor (size1 + size2) maybeValue)
 
 -- | Same as @unionWith@ for trivial cases where one knows for sure that the
 -- keys are not in the same equivalence class (or one is absent).
@@ -231,9 +233,9 @@ insertWithM ::
   value ->
   WithUnionFindT key value m ()
 insertWithM merge key value = do
-  (ancestor, maybeValue) <- find key
+  (ancestor, size, maybeValue) <- find key
   newValue <- lift $ maybe (return value) (merge value) maybeValue
-  updateBindings $ Map.insert ancestor (Ancestor $ Just newValue)
+  updateBindings $ Map.insert ancestor (Ancestor size $ Just newValue)
 
 -- | Same as @insertWith@ for trivial cases where one knows for sure that the
 -- key is not already in the structure.
@@ -311,11 +313,11 @@ toList = do
     gobble bindings (key, binding) =
       case binding of
         ChildOf _ -> do
-          (ancestor, _) <- find key
+          (ancestor, _size, _maybeValue) <- find key
           return $ addKeyToBindings key ancestor bindings
-        Ancestor Nothing ->
+        Ancestor _size Nothing ->
           return bindings
-        Ancestor (Just value) ->
+        Ancestor _size (Just value) ->
           return $ addValueToBindings value key bindings
     -- @addKeyToBindings key ancestor bindings@ adds @key@ to the equivalence
     -- class of @ancestor@ in @bindings@, creating this equivalence class if
@@ -375,9 +377,9 @@ toLists = do
     gobble (equalities, bindings) (key, binding) =
       case binding of
         ChildOf _ -> do
-          (ancestor, _) <- find key
+          (ancestor, _size, _maybeValue) <- find key
           return ((key, ancestor) : equalities, bindings)
-        Ancestor Nothing ->
+        Ancestor _size Nothing ->
           return (equalities, bindings)
-        Ancestor (Just value) ->
+        Ancestor _size (Just value) ->
           return (equalities, (key, value) : bindings)
