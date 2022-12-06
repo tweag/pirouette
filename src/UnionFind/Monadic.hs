@@ -99,8 +99,6 @@ updateBindings f = do
 -- or @Nothing@ if there is no such value.
 --
 -- Prefer using @lookup@.
---
--- FIXME: Implement the optimisation for future calls
 find ::
   (Ord key, Monad m) =>
   key ->
@@ -108,16 +106,16 @@ find ::
 find key =
   Map.lookup key <$> getBindings >>= \case
     Nothing -> return (key, Nothing)
-    Just (ChildOf key') ->
+    Just (ChildOf key') -> do
       -- We use @findExn@ because invariant (ii) guarantees that it will
       -- succeed. If it ever raises an exception, then we found a bug.
-      findExn key'
+      (ancestor, maybeValue) <- findExn key'
+      updateBindings $ Map.insert key $ ChildOf ancestor
+      return (ancestor, maybeValue)
     Just (Ancestor maybeValue) -> return (key, maybeValue)
 
 -- | Same as @find@ but fails where there is no value associated to the given
 -- key. Prefer using @find@ or @lookup@.
---
--- FIXME: Implement the optimisation for future calls
 findExn ::
   (Ord key, Monad m) =>
   key ->
@@ -125,7 +123,10 @@ findExn ::
 findExn key =
   Map.lookup key <$> getBindings >>= \case
     Nothing -> error "findExn: no value associated with key"
-    Just (ChildOf key') -> findExn key'
+    Just (ChildOf key') -> do
+      (ancestor, maybeValue) <- findExn key'
+      updateBindings $ Map.insert key $ ChildOf ancestor
+      return (ancestor, maybeValue)
     Just (Ancestor maybeValue) -> return (key, maybeValue)
 
 -- | @lookup key@ returns the value associated to @key@ in the union-find
