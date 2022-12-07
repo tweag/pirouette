@@ -42,18 +42,6 @@ data ConstraintSet lang meta = ConstraintSet
     csRelations :: [(TermRelation, TermMeta lang meta, TermMeta lang meta)]
   }
 
--- | Wrapper around @UF.UnionFind@ to lookup a meta-variable in a constraint
--- set, returning the corresponding term or @Nothing@, in addition to a new
--- constraint set with an optimised union-find.
-lookupAssignment ::
-  Ord meta =>
-  meta ->
-  ConstraintSet lang meta ->
-  (ConstraintSet lang meta, Maybe (TermMeta lang meta))
-lookupAssignment u cs =
-  let (lookupResult, csAssignments') = UF.runWithUnionFind (csAssignments cs) $ UF.lookup u
-   in (cs {csAssignments = csAssignments'}, lookupResult)
-
 instance Default (ConstraintSet lang meta) where
   def = ConstraintSet UF.empty [] []
 
@@ -169,7 +157,7 @@ conjunct c cs0 =
 expandDefOf :: (Ord meta) => ConstraintSet lang meta -> meta -> Maybe (TermMeta lang meta)
 expandDefOf cs v =
   -- FIXME: with @snd@, we forget the optimised version of the @ConstraintSet@.
-  snd $ lookupAssignment v cs
+  UF.evalWithUnionFind (csAssignments cs) $ UF.lookup v
 
 -- | Since the translation of individual constraints can fail,
 -- the translation of constraints does not always carry all the information it could.
