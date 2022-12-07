@@ -32,9 +32,9 @@ dependencies:
   - parallel
   - optics-core
   - optics-th
+  - transformers
   # PureSMT deps
   - inline-c
-
 
 library:
   source-dirs: src
