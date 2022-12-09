@@ -8,12 +8,14 @@ module PureSMT.SExpr where
 import Data.Bits (testBit)
 import Data.ByteString.Builder
   ( Builder,
+    lazyByteString,
     stringUtf8,
+    toLazyByteString,
   )
 import Data.ByteString.Builder.Extra (defaultChunkSize, smallChunkSize, toLazyByteStringWith, untrimmedStrategy)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.Char (isDigit, isSpace)
+import Data.Char (isAlphaNum, isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
@@ -234,25 +236,51 @@ readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
 readSExpr (c :< more) | isSpace c = readSExpr more
 readSExpr (';' :< more) = readSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
 readSExpr ('|' :< more) = do
-  let (sym, '|' :< rest) = BS.break (== '|') more
-  Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', rest)
+  (quotedSymbol, '|' :< rest) <- return $ BS.break (== '|') more
+  Just (Atom $ "|" ++ BS.unpack quotedSymbol ++ "|", rest)
+readSExpr ('"' :< more) = do
+  (stringLiteral, rest) <- readStringLiteral more
+  Just
+    (Atom $ "\"" ++ LBS.unpack (toLazyByteString stringLiteral) ++ "\"", rest)
+  where
+    readStringLiteral :: BS.ByteString -> Maybe (Builder, BS.ByteString)
+    readStringLiteral more' = do
+      (part, '"' :< rest) <- return $ BS.break (== '"') more'
+      let partBuilder = lazyByteString $ LBS.fromStrict part
+      case rest of
+        ('"' :< more'') -> do
+          (part', rest') <- readStringLiteral more''
+          return (partBuilder <> stringUtf8 "\"\"" <> part', rest')
+        _ -> return (partBuilder, rest)
 readSExpr ('(' :< more) = do
-  (es, rest) <- list more
-  return (List es, rest)
+  (exprs, rest) <- list more
+  return (List exprs, rest)
   where
     list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
     list (c :< more') | isSpace c = list more'
     list (')' :< more') = return ([], more')
     list more' = do
-      (e, rest) <- readSExpr more'
-      (es, rest') <- list rest
-      return (e : es, rest')
+      (expr, rest) <- readSExpr more'
+      (exprs, rest') <- list rest
+      return (expr : exprs, rest')
+readSExpr (':' :< more) =
+  let (simpleSymbol, rest) = BS.span allowedSimpleChar more
+   in Just (Atom $ ":" ++ BS.unpack simpleSymbol, rest)
+readSExpr ('#' :< base :< more) = do
+  isValidDigit <-
+    case base of
+      'b' -> return $ \digit -> digit == '0' || digit == '1'
+      'x' -> return isAlphaNum
+      _ -> Nothing
+  let (number, rest) = BS.span isValidDigit more
+  if BS.null number
+    then Nothing
+    else Just (Atom $ '#' : base : BS.unpack number, rest)
 readSExpr txt =
-  case BS.break end txt of
-    (atom, rest) | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
+  case BS.span allowedSimpleChar txt of
+    (atom, rest)
+      | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
     _ -> Nothing
-  where
-    end x = x == ')' || isSpace x
 
 -- * Constructing 'SExpr'
 
