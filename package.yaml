@@ -32,6 +32,7 @@ dependencies:
   - parallel
   - optics-core
   - optics-th
+  - raw-strings-qq
   # PureSMT deps
   - inline-c
 
