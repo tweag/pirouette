@@ -33,7 +33,8 @@ dependencies:
   - optics-core
   - optics-th
   # PureSMT deps
-  - inline-c
+  - smtlib-backends
+  - smtlib-backends-z3
 
 
 library:

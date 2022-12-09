@@ -10,8 +10,6 @@ import Data.ByteString.Builder
   ( Builder,
     stringUtf8,
   )
-import Data.ByteString.Builder.Extra (defaultChunkSize, smallChunkSize, toLazyByteStringWith, untrimmedStrategy)
-import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (isDigit, isSpace)
 import Data.List (intersperse)
@@ -61,27 +59,6 @@ overAtomV _ rest = rest
 overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
-
--- | Evaluate a bytestring builder to a null-terminated strict bytestring
--- that is expected to be consumed immediately.
-serializeUntrimmed :: Int -> Int -> Builder -> BS.ByteString
-serializeUntrimmed firstChunkSize newChunksSize = LBS.toStrict . toLazyByteStringWith (untrimmedStrategy firstChunkSize newChunksSize) "\NUL"
-
--- | Evaluate a bytestring builder corresponding to a single SMTLib2 command
--- (the size of the buffer is expected to be small). The output is a null-terminated
--- strict bytestring that is expected to be consumed immediately.
-serializeSingle :: Builder -> BS.ByteString
-serializeSingle =
-  -- 256 is the first power of 2 that is bigger than the length of the longest
-  -- command with interesting output in isUnity, and 2048 is just four times this
-  -- because smallChunkSize * 4 = defaultChunkSize.
-  serializeUntrimmed 256 2048
-
--- | Evaluate a bytestring builder corresponding to a batch of SMTLib2 commands
--- (the size of the buffer is expected to be important). The output is a
--- null-terminated strict bytestring that is expected to be consumed immediately.
-serializeBatch :: Builder -> BS.ByteString
-serializeBatch = serializeUntrimmed smallChunkSize defaultChunkSize
 
 -- | Create a bytestring builder from an s-expression.
 renderSExpr :: SExpr -> Builder
@@ -226,21 +203,21 @@ ppSExpr = go 0
 
 infixr 5 :<
 
-pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
-pattern c :< rest <- (BS.uncons -> Just (c, rest))
+pattern (:<) :: Char -> LBS.ByteString -> LBS.ByteString
+pattern c :< rest <- (LBS.uncons -> Just (c, rest))
 
 -- | Parse an s-expression.
-readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+readSExpr :: LBS.ByteString -> Maybe (SExpr, LBS.ByteString)
 readSExpr (c :< more) | isSpace c = readSExpr more
-readSExpr (';' :< more) = readSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
+readSExpr (';' :< more) = readSExpr $ LBS.drop 1 $ LBS.dropWhile (/= '\n') more
 readSExpr ('|' :< more) = do
-  let (sym, '|' :< rest) = BS.break (== '|') more
-  Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', rest)
+  let (sym, '|' :< rest) = LBS.break (== '|') more
+  Just (Atom $ LBS.unpack $ LBS.cons '|' $ LBS.snoc sym '|', rest)
 readSExpr ('(' :< more) = do
   (es, rest) <- list more
   return (List es, rest)
   where
-    list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
+    list :: LBS.ByteString -> Maybe ([SExpr], LBS.ByteString)
     list (c :< more') | isSpace c = list more'
     list (')' :< more') = return ([], more')
     list more' = do
@@ -248,8 +225,8 @@ readSExpr ('(' :< more) = do
       (es, rest') <- list rest
       return (e : es, rest')
 readSExpr txt =
-  case BS.break end txt of
-    (atom, rest) | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
+  case LBS.break end txt of
+    (atom, rest) | P.not (LBS.null atom) -> Just (Atom $ LBS.unpack atom, rest)
     _ -> Nothing
   where
     end x = x == ')' || isSpace x

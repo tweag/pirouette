@@ -2,133 +2,65 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module PureSMT.Process where
+module PureSMT.Process (module PureSMT.Process, Bck.Solver) where
 
 import Control.Monad
-import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Char8 as BS
-import Data.IORef
-import Foreign.ForeignPtr
-import qualified Language.C.Inline as C
-import qualified Language.C.Inline.Unsafe as CU
+import Data.ByteString.Builder (hPutBuilder)
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import PureSMT.SExpr
-import qualified PureSMT.Z3 as Z3
+import qualified SMTLIB.Backends as Bck
+import qualified SMTLIB.Backends.Z3 as Z3
+import System.IO (hFlush, stdout)
 import Prelude hiding (const)
 
-C.context (C.baseCtx <> C.fptrCtx <> C.bsCtx <> Z3.cContext)
-C.include "z3.h"
-
-data Solver = Solver
-  { context :: ForeignPtr Z3.LogicalContext,
-    debugMode :: Bool,
-    queue :: IORef Builder -- only used in non-debug mode
-  }
-
--- | Create a brand-new context for Z3 to work in.
-initZ3Instance ::
+-- | Launch a solver.
+-- Here we just initialize a new context for the Z3 C API to work with.
+launchSolver ::
   -- | Whether or not to debug the interaction
   Bool ->
-  IO Solver
-initZ3Instance dbg = do
-  let ctxFinalizer =
-        [C.funPtr| void free_context(Z3_context ctx) {
-                                      Z3_del_context(ctx);
-                                      } |]
-  solverCtx <-
-    newForeignPtr ctxFinalizer
-      =<< [CU.block| Z3_context {
-                     Z3_config cfg = Z3_mk_config();
-                     Z3_context ctx = Z3_mk_context(cfg);
-                     Z3_del_config(cfg);
-                     return ctx;
-                     } |]
-  solverQueue <- newIORef mempty
-  let solver = Solver solverCtx dbg solverQueue
-  when (debugMode solver) $ do
-    -- this should not be enabled in non-debug mode, as it messes with parsing
-    -- the outputs of commands that are actually interesting
-    setOption solver ":print-success" "true"
-  setOption solver ":produce-models" "true"
-  return solver
+  IO Bck.Solver
+launchSolver dbg = do
+  z3 <- Z3.toBackend <$> Z3.new
+  Bck.initSolver z3 lazyMode logger
+  where
+    lazyMode = dbg
+    logger msg =
+      if dbg
+        then do
+          hPutBuilder stdout $ msg <> "\n"
+          hFlush stdout
+        else return ()
 
--- | Send a bytestring to Z3.
--- This function is thread-safe as long as concurrent instances do not share the
--- same logical context.
-send :: Solver -> BS.ByteString -> IO SExpr
-send solver cmd = do
-  let ctx = context solver
-  when (debugMode solver) $ do
-    BS.putStrLn $ "[send] " `BS.append` cmd
-  resp <-
-    [CU.exp| const char* {
-         Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd)
-         } |]
-      >>= BS.packCString
-  case readSExpr resp of
-    Nothing -> do
-      fail $ "solver replied with:\n" ++ BS.unpack resp
-    Just (sexpr, _) -> do
-      when (debugMode solver && sexpr /= Atom "success") $ do
-        putStrLn $ "[recv] " ++ showsSExpr sexpr ""
-      return sexpr
-
--- | Push a command on the solver's queue of commands to evaluate.
--- The command must not produce any output when evaluated.
-putQueue :: Solver -> SExpr -> IO ()
-putQueue solver expr = do
-  let solverQueue = queue solver
-  cmds <- readIORef solverQueue
-  writeIORef solverQueue $ cmds <> renderSExpr expr
-
--- | Empty the queue of commands to evaluate and return its content as a bytestring.
-flushQueue :: Solver -> IO (BS.ByteString)
-flushQueue solver = do
-  let solverQueue = queue solver
-  cmds <- readIORef solverQueue
-  writeIORef solverQueue mempty
-  return $ serializeBatch cmds
-
--- | Have Z3 evaluate a command in SExpr format.
+-- | Have the evaluate a command in SExpr format.
 -- This forces the queued commands to be evaluated as well, but their results are
 -- *not* checked for correctness.
-command :: Solver -> SExpr -> IO SExpr
+command :: Bck.Solver -> SExpr -> IO SExpr
 command solver expr = do
-  putQueue solver expr
-  cmds <- flushQueue solver
-  send solver cmds
+  result <- Bck.command solver $ renderSExpr expr
+  case readSExpr result of
+    Nothing -> do
+      fail $ "solver replied with:\n" ++ LBS.unpack result
+    Just (expr', _) -> do
+      return expr'
 
 -- | A command with no interesting result.
 -- In debug mode, the result is checked for correctness and the queue of commands
 -- to evaluate is ignored.
 -- In non-debug mode, the command must not produce any output when evaluated, and
 -- it is not checked for correctness.
-ackCommand :: Solver -> SExpr -> IO ()
-ackCommand solver expr =
-  if debugMode solver
-    then do
-      let cmd = serializeSingle $ renderSExpr expr
-      resp <- send solver cmd
-      case resp of
-        Atom "success" -> return ()
-        _ ->
-          fail $
-            unlines
-              [ "Unexpected result from the SMT solver:",
-                "  Expected: success",
-                "  Result: " ++ showsSExpr resp ""
-              ]
-    else putQueue solver expr
+ackCommand :: Bck.Solver -> SExpr -> IO ()
+ackCommand solver = Bck.ackCommand solver . renderSExpr
 
 -- | A command entirely made out of atoms, with no interesting result.
 -- See also `ackCommand`.
-simpleCommand :: Solver -> [String] -> IO ()
+simpleCommand :: Bck.Solver -> [String] -> IO ()
 simpleCommand solver = ackCommand solver . List . map Atom
 
 -- | Run a command and return True if successful, and False if unsupported.
 -- This is useful for setting options that are unsupported by some solvers, but used
 -- by others.
 -- See also `command`.
-simpleCommandMaybe :: Solver -> [String] -> IO Bool
+simpleCommandMaybe :: Bck.Solver -> [String] -> IO Bool
 simpleCommandMaybe solver c =
   do
     res <- command solver (List (map Atom c))
@@ -144,41 +76,41 @@ simpleCommandMaybe solver c =
             ]
 
 -- | Set a solver option.
-setOption :: Solver -> String -> String -> IO ()
+setOption :: Bck.Solver -> String -> String -> IO ()
 setOption s x y = simpleCommand s ["set-option", x, y]
 
 -- | Set a solver option, returning False if the option is unsupported.
-setOptionMaybe :: Solver -> String -> String -> IO Bool
+setOptionMaybe :: Bck.Solver -> String -> String -> IO Bool
 setOptionMaybe s x y = simpleCommandMaybe s ["set-option", x, y]
 
 -- | Set the solver's logic.  Usually, this should be done first.
-setLogic :: Solver -> String -> IO ()
+setLogic :: Bck.Solver -> String -> IO ()
 setLogic s x = simpleCommand s ["set-logic", x]
 
 -- | Set the solver's logic, returning False if the logic is unsupported.
-setLogicMaybe :: Solver -> String -> IO Bool
+setLogicMaybe :: Bck.Solver -> String -> IO Bool
 setLogicMaybe s x = simpleCommandMaybe s ["set-logic", x]
 
 -- | Request unsat cores.  Returns if the solver supports them.
-produceUnsatCores :: Solver -> IO Bool
+produceUnsatCores :: Bck.Solver -> IO Bool
 produceUnsatCores s = setOptionMaybe s ":produce-unsat-cores" "true"
 
 -- | Checkpoint state.
-push :: Solver -> IO ()
+push :: Bck.Solver -> IO ()
 push = flip simpleCommand ["push", "1"]
 
 -- | Restore to last check-point.
-pop :: Solver -> IO ()
+pop :: Bck.Solver -> IO ()
 pop = flip simpleCommand ["pop", "1"]
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
-declare :: Solver -> String -> SExpr -> IO SExpr
+declare :: Bck.Solver -> String -> SExpr -> IO SExpr
 declare solver f = declareFun solver f []
 
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
-declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
+declareFun :: Bck.Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun solver f args r =
   do
     ackCommand solver $ fun "declare-fun" [Atom f, List args, r]
@@ -186,7 +118,7 @@ declareFun solver f args r =
 
 -- | Declare an ADT using the format introduced in SmtLib 2.6.
 declareDatatype ::
-  Solver ->
+  Bck.Solver ->
   -- | datatype name
   String ->
   -- | sort parameters
@@ -204,7 +136,7 @@ declareDatatype solver t ps cs =
 
 -- | Declare an ADT using the format introduced in SmtLib 2.6.
 declareDatatypes ::
-  Solver ->
+  Bck.Solver ->
   [(String, [String], [(String, [(String, SExpr)])])] ->
   IO ()
 declareDatatypes solver dts =
@@ -229,7 +161,7 @@ datatypeDefn ps cs =
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns the defined name as a constant expression.
 define ::
-  Solver ->
+  Bck.Solver ->
   -- | New symbol
   String ->
   -- | Symbol type
@@ -242,7 +174,7 @@ define solver f = defineFun solver f []
 -- | Define a function or a constant.
 -- For convenience, returns an the defined name as a constant expression.
 defineFun ::
-  Solver ->
+  Bck.Solver ->
   -- | New symbol
   String ->
   -- | Parameters, with types
@@ -264,7 +196,7 @@ defineFun solver f args t e =
 -- returns an the defined name as a constant expression.  This body
 -- takes the function name as an argument.
 defineFunRec ::
-  Solver ->
+  Bck.Solver ->
   -- | New symbol
   String ->
   -- | Parameters, with types
@@ -287,7 +219,7 @@ defineFunRec solver f args t e =
 -- returns an the defined name as a constant expression.  This body
 -- takes the function name as an argument.
 defineFunsRec ::
-  Solver ->
+  Bck.Solver ->
   [(String, [(String, SExpr)], SExpr, SExpr)] ->
   IO ()
 defineFunsRec solver ds = ackCommand solver $ fun "define-funs-rec" [decls, bodies]
@@ -297,11 +229,11 @@ defineFunsRec solver ds = ackCommand solver $ fun "define-funs-rec" [decls, bodi
     bodies = List (map (\(_, _, _, body) -> body) ds)
 
 -- | Assume a fact.
-assert :: Solver -> SExpr -> IO ()
+assert :: Bck.Solver -> SExpr -> IO ()
 assert solver e = ackCommand solver $ fun "assert" [e]
 
 -- | Check if the current set of assertion is consistent.
-check :: Solver -> IO Result
+check :: Bck.Solver -> IO Result
 check solver =
   do
     res <- command solver (List [Atom "check-sat"])
@@ -319,7 +251,7 @@ check solver =
 
 -- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.
-getExprs :: Solver -> [SExpr] -> IO [(SExpr, Value)]
+getExprs :: Bck.Solver -> [SExpr] -> IO [(SExpr, Value)]
 getExprs solver vals =
   do
     res <- command solver $ List [Atom "get-value", List vals]
@@ -347,25 +279,25 @@ getExprs solver vals =
 -- | Get the values of some constants in the current model.
 -- A special case of 'getExprs'.
 -- Only valid after a 'Sat' result.
-getConsts :: Solver -> [String] -> IO [(String, Value)]
+getConsts :: Bck.Solver -> [String] -> IO [(String, Value)]
 getConsts solver xs =
   do
     ans <- getExprs solver (map Atom xs)
     return [(x, e) | (Atom x, e) <- ans]
 
 -- | Get the value of a single expression.
-getExpr :: Solver -> SExpr -> IO Value
+getExpr :: Bck.Solver -> SExpr -> IO Value
 getExpr solver x =
   do
     [(_, v)] <- getExprs solver [x]
     return v
 
 -- | Get the value of a single constant.
-getConst :: Solver -> String -> IO Value
+getConst :: Bck.Solver -> String -> IO Value
 getConst solver x = getExpr solver (Atom x)
 
 -- | Returns the names of the (named) formulas involved in a contradiction.
-getUnsatCore :: Solver -> IO [String]
+getUnsatCore :: Bck.Solver -> IO [String]
 getUnsatCore s =
   do
     res <- command s $ List [Atom "get-unsat-core"]
@@ -381,7 +313,7 @@ getUnsatCore s =
     unexpected x e =
       fail $
         unlines
-          [ "Unexpected response from the SMT Solver:",
+          [ "Unexpected response from the SMT Bck.Solver:",
             "  Expected: " ++ x,
             "  Result: " ++ showsSExpr e ""
           ]
