@@ -32,11 +32,11 @@ dependencies:
   - parallel
   - optics-core
   - optics-th
+  - transformers
   # PureSMT deps
   - inline-c
   - deepseq
   - timestats
-
 
 library:
   source-dirs: src
