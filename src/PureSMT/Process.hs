@@ -2,7 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module PureSMT.Process where 
+module PureSMT.Process where
 
 import Control.Monad
 import Data.ByteString.Builder (hPutBuilder)
@@ -13,10 +13,10 @@ import qualified SMTLIB.Backends.Z3 as Z3
 import System.IO (hFlush, stdout)
 import Prelude hiding (const)
 
-data Solver = Solver {
-  backend :: Bck.Solver,
-  debugMode :: Bool
-  } 
+data Solver = Solver
+  { backend :: Bck.Solver,
+    debugMode :: Bool
+  }
 
 -- | Launch a solver.
 -- Here we just initialize a new context for the Z3 C API to work with.
