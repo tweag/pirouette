@@ -32,29 +32,26 @@ jobs:
         key: ${{ runner.os }}-${{ hashFiles('pirouette.cabal', 'cabal.project') }}]
         restore-keys: ${{ runner.os }}-
 
-    - name: Accessing the result cache
-      uses: actions/cache@v3
+    - name: Build and test pirouette
+      run: nix develop .#ci --command bash tests/run-tests.sh --ci
+
+    - name: Upload tests results as artifacts
+      uses: actions/upload-artifact@v3
       with:
+        name: pirouette-checks
         path: |
           ./*.out
           ./*.res
-        key: result-cache-${{ github.sha }}
-
-    - name: Build and test pirouette
-      run: nix develop .#ci --command bash tests/run-tests.sh --ci
 
   check-result:
     needs: build-and-test
     name: check-result
     runs-on: ubuntu-latest
     steps:
-    - name: Accessing the result cache
-      uses: actions/cache@v2
+    - name: Access the results
+      uses: actions/download-artifact@v3
       with:
-        path: |
-          ./*.out
-          ./*.res
-        key: result-cache-${{ github.sha }}
+        name: pirouette-checks
 
     - name: Check result
       run: |
@@ -67,4 +64,3 @@ jobs:
         if [[ "$cabal_res" != "0" ]] || [[ "$ormolu_res" != "0" ]]; then
           exit 1
         fi
-
