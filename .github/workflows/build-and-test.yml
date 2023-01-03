@@ -32,7 +32,7 @@ jobs:
         key: ${{ runner.os }}-${{ hashFiles('pirouette.cabal', 'cabal.project') }}]
         restore-keys: ${{ runner.os }}-
 
-    - name: Accessing the result artifact
+    - name: Accessing the result cache
       uses: actions/cache@v3
       with:
         path: |
