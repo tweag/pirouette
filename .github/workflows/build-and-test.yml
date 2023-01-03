@@ -1,3 +1,4 @@
+name: Build and test
 
 on:
   push:
@@ -7,60 +8,53 @@ on:
   pull_request:
 
 jobs:
-  build-and-test:
-    name: build-and-test
+  build-and-run-tests:
+    name: Build & run tests
     runs-on: ubuntu-latest
     steps:
     - name: Check out repository code.
       uses: actions/checkout@v2.4.0
 
     - name: Install nix
-      uses: cachix/install-nix-action@v15
+      uses: cachix/install-nix-action@v18
       with:
-        nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
+    ## Example from
+    ## https://github.com/actions/cache/blob/ac25611caef967612169ab7e95533cf932c32270/examples.md#haskell---cabal
     - name: Accessing the cabal cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
+          ~/.cabal/packages
           ~/.cabal/store
           dist-newstyle
-        ## We can use the counter to invalidate the cache whenever necessary
-        key: cabal-cache-1-${{ github.sha }}
-        restore-keys: |
-          cabal-cache-1-
-
-    - name: Accessing the result cache
-      uses: actions/cache@v2
-      with:
-        path: |
-          ./*.out
-          ./*.res
-        key: result-cache-${{ github.sha }}
-
-    - name: Chmod test script
-      run: |
-        chmod u+x tests/run-tests.sh
+        key: ${{ runner.os }}-${{ hashFiles('pirouette.cabal', 'cabal.project') }}]
+        restore-keys: ${{ runner.os }}-
 
     - name: Build and test pirouette
-      uses: ./.github/actions/nix-run
-      with:
-        command: ./tests/run-tests.sh --ci
+      run: nix develop .#ci --command bash tests/run-tests.sh --ci
 
-  check-result:
-    needs: build-and-test
-    name: check-result
-    runs-on: ubuntu-latest
-    steps:
-    - name: Accessing the result cache
-      uses: actions/cache@v2
+    - name: Upload tests results as artifacts
+      uses: actions/upload-artifact@v3
       with:
+        name: pirouette-checks
         path: |
           ./*.out
           ./*.res
-        key: result-cache-${{ github.sha }}
 
-    - name: Check result
+  check-result:
+    needs: build-and-run-tests
+    name: Check tests output
+    runs-on: ubuntu-latest
+    steps:
+    - name: Access tests output
+      uses: actions/download-artifact@v3
+      with:
+        name: pirouette-checks
+
+    - name: Check output
       run: |
         echo "!! CABAL TEST OUTPUT:"
         cat pirouette-cabal-test.out
@@ -71,4 +65,3 @@ jobs:
         if [[ "$cabal_res" != "0" ]] || [[ "$ormolu_res" != "0" ]]; then
           exit 1
         fi
-
