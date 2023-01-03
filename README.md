@@ -91,7 +91,7 @@ proof of correctness.
 # Building, Installing and Hacking
 
 The recommended way of building pirouette is through [Nix](https://nixos.org/guides/install-nix.html).
-Enter the Nix shell with `nix develop` then run `cabal build` at the
+Enter the Nix shell with `nix develop` then run `cabal update` and `cabal build` at the
 root of the repository.
 
 ## Pre-commit Hooks and CI
