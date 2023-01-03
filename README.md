@@ -91,13 +91,8 @@ proof of correctness.
 # Building, Installing and Hacking
 
 The recommended way of building pirouette is through [Nix](https://nixos.org/guides/install-nix.html).
-Enter the Nix shell with `nix-shell` then run `cabal build` at the
-root of the repository. It is important that you *set up your nix cache* according to the
-[instructions in the plutus repository](https://github.com/input-output-hk/plutus#iohk-binary-cache)
-to avoid building GHC when you start the nix shell.
-
-You might want to consider `direnv` and [`nix-direnv`](https://github.com/nix-community/nix-direnv)
-instead of running `nix-shell` directly.
+Enter the Nix shell with `nix develop` then run `cabal build` at the
+root of the repository.
 
 ## Pre-commit Hooks and CI
 
