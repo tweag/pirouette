@@ -217,37 +217,25 @@ instance (SymEvalConstr lang) => Alternative (SymEval lang) where
               (runSymEvalRaw env st xs, runSymEvalRaw env st ys)
        in xs' <|> ys'
 
--- | Prune the set of paths in the current set.
-prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
-prune xs = SymEval $
-  ReaderT $ \env -> StateT $ \st ->
-    weightedParFilter
-      (\(_, st') -> solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env)))
-      (runSymEvalRaw env st xs)
-
-weightedParFilter :: (a -> Bool) -> WeightedList a -> WeightedList a
-weightedParFilter _ ListT.Fail = ListT.Fail
-weightedParFilter f (ListT.Weight n w) =
-  case weightedParFilter f w of
-    ListT.Fail -> ListT.Fail
-    other -> ListT.Weight n other
-weightedParFilter f (ListT.Action (Identity w)) = weightedParFilter f w
-weightedParFilter f (ListT.Yield a w) =
-  let (keep, rest) =
-        withStrategy
-          (parTuple2 rpar rpar)
-          (f a, weightedParFilter f w)
-   in if keep then ListT.Yield a rest else rest
-
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
---  the current path. Make sure that this branch gets marked as /not/ validated, regardless
---  of whether or not we had already validated it before.
+--  the current path, then checks whether it leads to an inconsistency and fails
+-- if it does.
 learn :: (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
 learn cs = do
   curr <- gets sestConstraint
+  -- Add the conjunct. `C.conjunct` fails when it detects trivial inconsistencies.
   case foldl' (\mc c -> mc >>= C.conjunct c) (Just curr) cs of
-    Just curr' -> modify (\st -> st {sestConstraint = curr'})
     Nothing -> empty
+    Just curr' ->
+      -- As far as `C.conjunct` is concerned, there is no inconsistencies. Let us
+      -- call the solver to actually check that.
+      SymEval $
+        ReaderT $ \env -> do
+          st <- get
+          let st' = st {sestConstraint = curr'}
+          if solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env))
+            then put st'
+            else empty
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
@@ -507,6 +495,10 @@ moreConstructors n = do
 
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
+
+-- | Prune the set of paths in the current set.
+prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
+prune xs = SymEval $ ReaderT $ \env -> StateT $ \st -> runSymEvalRaw env st xs
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
