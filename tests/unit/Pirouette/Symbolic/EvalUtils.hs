@@ -17,7 +17,7 @@ thing *=* expected = do
     Right x -> x @=? expected
 
 satisfies ::
-  (Eq a, Show a) =>
+  (Show a) =>
   IO a ->
   (a -> Bool) ->
   Assertion

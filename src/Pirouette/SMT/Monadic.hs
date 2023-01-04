@@ -29,7 +29,6 @@ module Pirouette.SMT.Monadic
 
     -- * Convenient re-exports
     Constraint (..),
-    AtomicConstraint (..),
     PureSMT.Result (..),
     module Base,
     Branch (..),

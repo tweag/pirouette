@@ -60,6 +60,11 @@ library
       PureSMT.Process
       PureSMT.SExpr
       PureSMT.Z3
+      UnionFind
+      UnionFind.Action
+      UnionFind.Deferring
+      UnionFind.Internal
+      UnionFind.Monadic
   other-modules:
       Paths_pirouette
   autogen-modules:
@@ -92,6 +97,7 @@ library
     , tasty-quickcheck
     , template-haskell
     , text
+    , transformers
     , uniplate
   if os(darwin) || os(windows)
     extra-libraries:
@@ -116,6 +122,8 @@ test-suite spec
       Pirouette.Transformations.MonomorphizationSpec
       Pirouette.Transformations.PrenexSpec
       Pirouette.Transformations.TermSpec
+      UnionFind.Dummy
+      UnionFind.Spec
       Paths_pirouette
   autogen-modules:
       Paths_pirouette
@@ -148,5 +156,6 @@ test-suite spec
     , tasty-quickcheck
     , template-haskell
     , text
+    , transformers
     , uniplate
   default-language: Haskell2010
