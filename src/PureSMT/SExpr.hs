@@ -236,7 +236,9 @@ readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
 readSExpr (c :< more) | isSpace c = readSExpr more
 readSExpr (';' :< more) = readSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
 readSExpr ('|' :< more) = do
-  (quotedSymbol, '|' :< rest) <- return $ BS.break (== '|') more
+  (quotedSymbol, '|' :< rest) <-
+    return $
+      BS.break (\c -> c == '|' || c == '\\') more
   Just (Atom $ "|" ++ BS.unpack quotedSymbol ++ "|", rest)
 readSExpr ('"' :< more) = do
   (stringLiteral, rest) <- readStringLiteral more
