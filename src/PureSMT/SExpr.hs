@@ -274,6 +274,7 @@ readSExpr ('(' :< more) = do
     list more' = do
       (expr, rest) <- readSExpr more'
       (exprs, rest') <- list rest
+      return (expr : exprs, rest')
 -- keywords
 -- A keyword is a token of the form :〈simple_symbol〉
 readSExpr (':' :< more) =
