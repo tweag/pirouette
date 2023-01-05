@@ -53,6 +53,7 @@ library
       Pirouette.Transformations.Inline
       Pirouette.Transformations.Monomorphization
       Pirouette.Transformations.Prenex
+      Pirouette.Transformations.Tagged
       Pirouette.Transformations.Term
       Pirouette.Transformations.Utils
       Pirouette.Utils

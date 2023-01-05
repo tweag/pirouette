@@ -19,6 +19,7 @@ import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax
 import Pirouette.Transformations (elimEvenOddMutRec)
 import Pirouette.Transformations.Defunctionalization
+import Pirouette.Transformations.EtaExpand
 import Pirouette.Transformations.Monomorphization
 import qualified PureSMT
 import Test.Tasty
@@ -379,9 +380,9 @@ execFull ::
   IO a
 execFull toDo (prog0, tyRes, fn) (assume, toProve) = do
   -- liftIO $ writeFile "prog0" (show $ pretty $ prtUODecls prog0)
-  let prog1 = monomorphize prog0
+  let prog1 = monomorphize' prog0
   -- liftIO $ writeFile "prog1" (show $ pretty $ prtUODecls prog1)
-  let decls = defunctionalize prog1
+  let decls = defunctionalize' $ etaExpandAll' prog1
   -- liftIO $ writeFile "final" (show $ pretty $ prtUODecls decls)
   let orderedDecls = elimEvenOddMutRec decls
   flip runReaderT orderedDecls $

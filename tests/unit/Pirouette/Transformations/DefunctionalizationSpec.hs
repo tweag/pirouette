@@ -34,13 +34,14 @@ tests =
 defuncTestsMono :: [TestTree]
 defuncTestsMono =
   [ testCase "add and apply, monomorphic" $
-      defunctionalize addAndApply `equalModuloDestructors` addAndApplyDefunc,
+      defunEta addAndApply `equalModuloDestructors` addAndApplyDefunc,
     testCase "add and const, monomorphic" $
-      defunctionalize addConst `equalModuloDestructors` addConstDefunc,
+      defunEta addConst `equalModuloDestructors` addConstDefunc,
     testCase "data type, monomorphic, free variables" $
-      defunctionalize dataType `equalModuloDestructors` dataTypeDefunc
+      defunEta dataType `equalModuloDestructors` dataTypeDefunc
   ]
   where
+    defunEta = defunctionalize' . etaExpandAll'
     -- We're testing equality of definitions except for destructors
     equalModuloDestructors :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex -> Assertion
     equalModuloDestructors p1 p2 = do
@@ -192,7 +193,7 @@ defuncTestsPoly =
   ]
   where
     monoDefunc :: PrtUnorderedDefs Ex -> PrtUnorderedDefs Ex
-    monoDefunc = defunctionalize . monomorphize
+    monoDefunc = defunctionalize' . etaExpandAll' . monomorphize'
 
     runTest :: PrtUnorderedDefs Ex -> Assertion
     runTest decls0 =

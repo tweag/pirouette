@@ -1,8 +1,9 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Pirouette.Transformations.Prenex (prenex) where
+module Pirouette.Transformations.Prenex (prenex, prenex', Prenex) where
 
 import qualified Data.Map as Map
 import Optics.Core (over)
@@ -10,6 +11,9 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst (shift)
 import qualified Pirouette.Term.Syntax.SystemF as SystemF
+import Pirouette.Transformations.Tagged
+
+data Prenex
 
 -- | * Prenex form of types
 --
@@ -27,10 +31,13 @@ import qualified Pirouette.Term.Syntax.SystemF as SystemF
 -- out on non-prenex types in other transformations, because
 -- those cases are quite rare and difficult to handle
 -- (usually involving some impredicative types.)
-prenex ::
+prenex :: Xform '[] '[Prenex] (PrtUnorderedDefs lang)
+prenex = Xform prenex'
+
+prenex' ::
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
-prenex (PrtUnorderedDefs prtUODecls) =
+prenex' (PrtUnorderedDefs prtUODecls) =
   -- this is done in two steps
   -- step 1. prenexify the types and lambdas
   let prenexDecls = Map.map prenexDefinitionLambdas prtUODecls

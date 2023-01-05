@@ -1,7 +1,9 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Pirouette.Runner where
 
@@ -21,15 +23,20 @@ import Pirouette.Term.Syntax
 import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker
 import Pirouette.Transformations
+import Pirouette.Transformations.Tagged
 import Test.Tasty.HUnit
 
 -- | Set of options to control the particular run of pirouette
-type DumpingStages lang = (Language lang, LanguageBuiltinTypes lang) => FilePath -> Stages (PrtUnorderedDefs lang) (PrtOrderedDefs lang)
+data StagesPipeline a b where
+  MkPipeline ::
+    (ReqsSatisfied reqs) =>
+    Stages reqs prov a b ->
+    StagesPipeline a b
 
 data RunOptions = RunOptions
   { optsPirouette :: P.Options,
     optsDumpIntermediate :: Maybe ([String], FilePath),
-    optsStages :: forall lang. DumpingStages lang
+    optsStages :: forall lang. (Language lang, LanguageBuiltinTypes lang) => FilePath -> StagesPipeline (PrtUnorderedDefs lang) (PrtOrderedDefs lang)
   }
 
 instance Default RunOptions where
@@ -112,13 +119,16 @@ runPirouette opts (PrtUnorderedDefs augments) (toAssume :==>: toProve) main0 pre
 -- | Defines the stages a pirouette program goes through; the first stage is the identidy to enable us
 --  to easily print the set of definitions that come from translating a PlutusIR program into a
 --  pirouette one, before the set of definitions that happen in between.
-pirouetteBoundedSymExecStages :: forall lang. DumpingStages lang
+pirouetteBoundedSymExecStages :: forall lang. (Language lang, LanguageBuiltinTypes lang) => FilePath -> StagesPipeline (PrtUnorderedDefs lang) (PrtOrderedDefs lang)
 pirouetteBoundedSymExecStages fpath =
-  Comp "init" id dumpUDefs $
-  Comp "rm-excessive-destr" removeExcessiveDestArgs' dumpUDefs $
+  MkPipeline $
+  Comp "init" (trivialXform id) dumpUDefs $
+  Comp "rm-excessive-destr" (trivialXform removeExcessiveDestArgs') dumpUDefs $
+  Comp "prenex" prenex dumpUDefs $
+  Comp "eta-expand" etaExpandAll dumpUDefs $
   Comp "monomorphize" monomorphize dumpUDefs $
   Comp "defunctionalize" defunctionalize dumpUDefs $
-  Comp "cycle-elim" elimEvenOddMutRec dumpOrdDefs
+  Comp "cycle-elim" (trivialXform elimEvenOddMutRec) dumpOrdDefs
   Id
   where
     typecheck :: String -> Decls lang -> IO ()
@@ -152,19 +162,22 @@ removeExcessiveDestArgs' defs =
 
 -- * Auxiliar Definitions
 
-data Stages a b where
-  Id :: Stages a a
-  Comp :: String -> (a -> b) -> (String -> b -> IO ()) -> Stages b c -> Stages a c
+data Stages requires provides a b where
+  Id :: Stages '[] '[] a a
+  Comp :: String -> Xform' r1 p1 a b -> (String -> b -> IO ()) -> Stages r2 p2 b c -> Stages (r1 ∪ (r2 \\ p1)) (p1 ∪ p2) a c
 
-runStages :: (MonadIO m) => Maybe [String] -> Stages a b -> a -> m b
-runStages _dump Id a = return a
-runStages dump (Comp stageName f dbg rest) a = do
-  let b = f a
-  when shouldDebug $ liftIO $ dbg stageName b
-  runStages dump rest b
+runStages :: forall m a b. (MonadIO m) => Maybe [String] -> StagesPipeline a b -> a -> m b
+runStages dump (MkPipeline stages) = go stages
   where
-    shouldDebug =
-      case dump of
-        Nothing -> False
-        Just [] -> True
-        Just prefs -> any (`L.isPrefixOf` stageName) prefs
+    go :: Stages r p a' b' -> a' -> m b'
+    go Id a = return a
+    go (Comp stageName (Xform f) dbg rest) a = do
+      let b = f a
+      when shouldDebug $ liftIO $ dbg stageName b
+      go rest b
+      where
+        shouldDebug =
+          case dump of
+            Nothing -> False
+            Just [] -> True
+            Just prefs -> any (`L.isPrefixOf` stageName) prefs
