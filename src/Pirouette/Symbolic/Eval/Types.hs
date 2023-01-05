@@ -116,21 +116,13 @@ class (SMT.LanguageSMT lang) => LanguageSymEval lang where
   isTrue :: PureSMT.SExpr -> PureSMT.SExpr
 
 newtype SymVar = SymVar {symVar :: Name}
-  deriving (Eq, Show, Data, Typeable, IsString)
+  deriving (Eq, Ord, Show, Data, Typeable, IsString)
 
 instance Pretty SymVar where
   pretty (SymVar n) = pretty n
 
 instance SMT.ToSMT SymVar where
   translate = SMT.translate . symVar
-
-type Constraint lang = SMT.Constraint lang SymVar
-
-symVarEq :: SymVar -> SymVar -> Constraint lang
-symVarEq a b = SMT.And [SMT.VarEq a b]
-
-(=:=) :: SymVar -> TermMeta lang SymVar -> Constraint lang
-a =:= t = SMT.And [SMT.Assign a t]
 
 data PathStatus = Completed | OutOfFuel deriving (Eq, Show)
 
@@ -139,16 +131,16 @@ instance Pretty PathStatus where
   pretty OutOfFuel = "OutOfFuel"
 
 data Path lang res = Path
-  { pathConstraint :: Constraint lang,
+  { pathConstraint :: SMT.ConstraintSet lang SymVar,
     pathGamma :: M.Map Name (Type lang),
     pathStatus :: PathStatus,
     pathResult :: res
   }
   deriving (Functor, Traversable, Foldable)
 
-deriving instance (Eq (Constraint lang), Eq (Type lang), Eq res) => Eq (Path lang res)
+deriving instance (Eq (SMT.ConstraintSet lang SymVar), Eq (Type lang), Eq res) => Eq (Path lang res)
 
-deriving instance (Show (Constraint lang), Show (Type lang), Show res) => Show (Path lang res)
+deriving instance (Show (SMT.ConstraintSet lang SymVar), Show (Type lang), Show res) => Show (Path lang res)
 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds _gamma ps res) =
@@ -163,15 +155,16 @@ data AvailableFuel = Fuel Int | InfiniteFuel
   deriving (Eq, Show)
 
 data SymEvalSt lang = SymEvalSt
-  { sestConstraint :: Constraint lang,
+  { sestConstraint :: SMT.ConstraintSet lang SymVar,
     sestGamma :: M.Map Name (Type lang),
     sestFreshCounter :: Int,
     sestStatistics :: SymEvalStatistics,
-    -- | A branch that has been validated before is never validated again /unless/ we 'learn' something new.
-    sestValidated :: Bool,
     -- | The set of names the SMT solver is aware of
     sestKnownNames :: S.Set Name
   }
+
+instance Default (SymEvalSt lang) where
+  def = SymEvalSt def M.empty 0 mempty S.empty
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt {..} =

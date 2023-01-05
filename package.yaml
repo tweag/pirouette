@@ -33,9 +33,9 @@ dependencies:
   - optics-core
   - optics-th
   - raw-strings-qq
+  - transformers
   # PureSMT deps
   - inline-c
-
 
 library:
   source-dirs: src

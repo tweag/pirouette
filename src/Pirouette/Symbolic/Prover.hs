@@ -158,12 +158,14 @@ worker ::
   SymTerm lang ->
   SymEval lang (EvaluationWitness lang)
 worker resultVar bodyTerm assumeTerm proveTerm = do
-  -- debugPutStr "ONE STEP"
-  -- debugPrint (pretty bodyTerm)
-  -- debugPrint (pretty assumeTerm)
-  -- debugPrint (pretty proveTerm)
+  -- let x = unsafePerformIO $ do
+  --       putStrLn ("Body:   " ++ show (pretty bodyTerm))
+  --       putStrLn ("Assume: " ++ show (pretty assumeTerm))
+  --       putStrLn ("Prove:  " ++ show (pretty proveTerm))
+  --       getLine
+  -- debugPutStr "Constraint:"
   -- gets sestConstraint >>= debugPrint . pretty
-  -- _ <- liftIO getLine
+  -- debugPutStr ("ONE STEP: " ++ x)
 
   -- terms are only useful if they are in WHNF or are stuck
   -- (stuck-ness if defined per language)
@@ -190,7 +192,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
   mayProveCond <- fmap (isTrue @lang) <$> translate proveTerm
   -- introduce the assumption about the result, if useful
   case mayBodyTerm of
-    Right _ -> learn $ And [Assign resultVar bodyTerm]
+    Right _ -> learn [resultVar =:= bodyTerm]
     _ -> pure ()
   -- debugPrint $ pretty (mayBodyTerm, mayAssumeCond, mayProveCond)
   -- now try to prune if we can translate the things
@@ -199,11 +201,11 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     (Right _, Right assumeCond, Left _) -> do
       -- debugPutStr "prunning with unknown prove..."
       -- _ <- liftIO getLine
-      pruneAndValidate (And [Native assumeCond]) Nothing []
+      pruneAndValidate assumeCond Nothing []
     (Right _, Right assumeCond, Right proveCond) -> do
       -- debugPutStr "prunning..."
       -- _ <- liftIO getLine
-      pruneAndValidate (And [Native assumeCond]) (Just $ And [Native proveCond]) []
+      pruneAndValidate assumeCond (Just proveCond) []
     _ -> pure PruneUnknown
   -- step 2. depending on the result, stop or keep going
   case result of
@@ -213,9 +215,9 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
     _ -> do
       -- one step of evaluation on each,
       -- but going into matches first
-      ([bodyTerm', assumeTerm', proveTerm'], somethingWasEval) <-
+      ([assumeTerm', bodyTerm', proveTerm'], somethingWasEval) <-
         prune $
-          symEvalParallel [bodyTerm, assumeTerm, proveTerm]
+          symEvalParallel [assumeTerm, bodyTerm, proveTerm]
       -- debugPutStr "ONE STEP"
       -- debugPrint (pretty bodyTerm')
       -- debugPrint (pretty assumeTerm')

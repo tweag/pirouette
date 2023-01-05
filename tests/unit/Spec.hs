@@ -10,6 +10,7 @@ import qualified Pirouette.Transformations.PrenexSpec as Prenex
 import qualified Pirouette.Transformations.TermSpec as Tr
 import qualified PureSMT.SExpr.ParsingSpec as SExpr
 import Test.Tasty
+import qualified UnionFind.Spec as UF
 
 main :: IO ()
 main = defaultMain tests
@@ -40,5 +41,6 @@ tests =
         [testGroup "Example" Ex.tests],
       testGroup
         "PureSMT"
-        [testGroup "Parsing s-expressions" SExpr.tests]
+        [testGroup "Parsing s-expressions" SExpr.tests],
+      testGroup "UnionFind" UF.tests
     ]

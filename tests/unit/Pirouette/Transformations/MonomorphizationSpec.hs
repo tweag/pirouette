@@ -121,8 +121,8 @@ tests =
               assertFailure $ show $ pretty ty,
     -- Monomorphized declarations typecheck
     testCase "monomorphize sampleUDefs has no type applications" $
-      let res = monomorphize sampleUDefs
-       in case typeCheckDecls (prtUODecls $ monomorphize sampleUDefs) of
+      let res = monomorphize' sampleUDefs
+       in case typeCheckDecls (prtUODecls $ monomorphize' sampleUDefs) of
             Left err -> assertFailure (show $ pretty err)
             Right _ -> forM_ (M.toList $ prtUODecls res) $ \((sp, name), def) -> do
               case fromTermDef def of

@@ -13,6 +13,7 @@ import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax (pretty)
 import Pirouette.Term.Syntax.Base
 import Pirouette.Transformations
+import Pirouette.Transformations.Tagged
 import System.Console.ANSI
 import qualified Test.Tasty.HUnit as Test
 
@@ -71,8 +72,7 @@ execIncorrectnessLogic toDo prog (IncorrectnessParams fn ty (assume :==>: toProv
   -- us to translate it to SMTLIB later on
   let orderedDecls =
         elimEvenOddMutRec
-          . defunctionalize
-          . monomorphize
+          . xform pipeline
           $ prog
   -- Now we can contextualize the necessary terms and run the worker
   flip runReaderT orderedDecls $ do
@@ -81,6 +81,8 @@ execIncorrectnessLogic toDo prog (IncorrectnessParams fn ty (assume :==>: toProv
     assume' <- contextualizeTerm assume
     toProve' <- contextualizeTerm toProve
     toDo (Problem ty' fn' assume' toProve')
+  where
+    pipeline = prenex >:> monomorphize >:> etaExpandAll >:> defunctionalize
 
 printIRResult ::
   Int ->
