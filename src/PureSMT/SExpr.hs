@@ -233,13 +233,22 @@ pattern c :< rest <- (BS.uncons -> Just (c, rest))
 
 -- | Parse an s-expression.
 readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+-- ignore whitespace
 readSExpr (c :< more) | isSpace c = readSExpr more
+-- ignore comments
 readSExpr (';' :< more) = readSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
+-- quoted symbols
+-- A quoted symbol is any sequence of whitespace characters and printable
+-- characters that starts and ends with | and does not contain | or \ .
 readSExpr ('|' :< more) = do
   (quotedSymbol, '|' :< rest) <-
     return $
       BS.break (\c -> c == '|' || c == '\\') more
   Just (Atom $ "|" ++ BS.unpack quotedSymbol ++ "|", rest)
+-- string literals
+-- A string literal is any sequence of characters from 〈printable_char〉
+-- or〈white_space_char〉 delimited by the double quote character ". The
+-- character " can itself occur within a string literal only if duplicated.
 readSExpr ('"' :< more) = do
   (stringLiteral, rest) <- readStringLiteral more
   Just
@@ -254,6 +263,7 @@ readSExpr ('"' :< more) = do
           (part', rest') <- readStringLiteral more''
           return (partBuilder <> stringUtf8 "\"\"" <> part', rest')
         _ -> return (partBuilder, rest)
+-- nested s-expressions
 readSExpr ('(' :< more) = do
   (exprs, rest) <- list more
   return (List exprs, rest)
@@ -264,10 +274,13 @@ readSExpr ('(' :< more) = do
     list more' = do
       (expr, rest) <- readSExpr more'
       (exprs, rest') <- list rest
-      return (expr : exprs, rest')
+-- keywords
+-- A keyword is a token of the form :〈simple_symbol〉
 readSExpr (':' :< more) =
   let (simpleSymbol, rest) = BS.span allowedSimpleChar more
    in Just (Atom $ ":" ++ BS.unpack simpleSymbol, rest)
+-- binaries and hexadecimals
+-- e.g. #b010 or #xAb32
 readSExpr ('#' :< base :< more) = do
   isValidDigit <-
     case base of
@@ -278,6 +291,10 @@ readSExpr ('#' :< base :< more) = do
   if BS.null number
     then Nothing
     else Just (Atom $ '#' : base : BS.unpack number, rest)
+-- simple symbols and reserved words
+-- A simple symbol is any non-empty sequence of elements of letters, digits and
+-- the characters ~ ! @ $ % ^ & * _ - + = < > . ? / that does not start with a
+-- digit and is not a reserved word.
 readSExpr txt =
   case BS.span allowedSimpleChar txt of
     (atom, rest)
