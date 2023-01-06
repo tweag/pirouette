@@ -8,6 +8,7 @@ import qualified Pirouette.Transformations.EtaExpandSpec as Eta
 import qualified Pirouette.Transformations.MonomorphizationSpec as Mono
 import qualified Pirouette.Transformations.PrenexSpec as Prenex
 import qualified Pirouette.Transformations.TermSpec as Tr
+import qualified PureSMT.SExpr.ParsingSpec as SExpr
 import Test.Tasty
 import qualified UnionFind.Spec as UF
 
@@ -38,5 +39,8 @@ tests =
       testGroup
         "Language"
         [testGroup "Example" Ex.tests],
+      testGroup
+        "PureSMT"
+        [testGroup "Parsing s-expressions" SExpr.tests],
       testGroup "UnionFind" UF.tests
     ]

@@ -92,6 +92,7 @@ library
     , parallel
     , parser-combinators
     , prettyprinter
+    , raw-strings-qq
     , tasty
     , tasty-expected-failure
     , tasty-hunit
@@ -123,6 +124,7 @@ test-suite spec
       Pirouette.Transformations.MonomorphizationSpec
       Pirouette.Transformations.PrenexSpec
       Pirouette.Transformations.TermSpec
+      PureSMT.SExpr.ParsingSpec
       UnionFind.Dummy
       UnionFind.Spec
       Paths_pirouette
@@ -151,6 +153,7 @@ test-suite spec
     , parser-combinators
     , pirouette
     , prettyprinter
+    , raw-strings-qq
     , tasty
     , tasty-expected-failure
     , tasty-hunit
