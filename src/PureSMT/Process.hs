@@ -7,7 +7,7 @@ module PureSMT.Process where
 import Control.Monad
 import Data.ByteString.Builder (hPutBuilder)
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import PureSMT.SExpr
+import PureSMT.SExpr hiding (not)
 import qualified SMTLIB.Backends as Bck
 import qualified SMTLIB.Backends.Z3 as Z3
 import System.IO (hFlush, stdout)
@@ -20,16 +20,17 @@ data Solver = Solver
 
 -- | Launch a solver.
 -- Here we just initialize a new context for the Z3 C API to work with.
+-- In debug mode we disable queuing commands with no interesting output.
 launchSolver ::
   -- | Whether or not to debug the interaction
   Bool ->
   IO Solver
 launchSolver dbg = do
   z3 <- Z3.toBackend <$> Z3.new
-  solver <- Bck.initSolver z3 lazy
+  solver <- Bck.initSolver z3 queuing
   return $ Solver solver dbg
   where
-    lazy = dbg
+    queuing = not dbg
 
 -- | Have the solver evaluate a command in SExpr format.
 -- This forces the queued commands to be evaluated as well, but their results are
