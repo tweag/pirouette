@@ -5,18 +5,23 @@
 module PureSMT.Process where
 
 import Control.Monad
-import Data.ByteString.Builder (hPutBuilder)
+import Data.ByteString.Builder (Builder, hPutBuilder)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import PureSMT.SExpr hiding (not)
 import qualified SMTLIB.Backends as Bck
 import qualified SMTLIB.Backends.Z3 as Z3
 import System.IO (hFlush, stdout)
-import Prelude hiding (const)
+import Prelude hiding (const, log)
 
 data Solver = Solver
   { backend :: Bck.Solver,
     debugMode :: Bool
   }
+
+log :: Solver -> Builder -> IO ()
+log solver msg = when (debugMode solver) $ do
+  hPutBuilder stdout msg
+  hFlush stdout
 
 -- | Launch a solver.
 -- Here we just initialize a new context for the Z3 C API to work with.
@@ -38,16 +43,13 @@ launchSolver dbg = do
 command :: Solver -> SExpr -> IO SExpr
 command solver expr = do
   let cmd = renderSExpr expr
-  when (debugMode solver) $ do
-    hPutBuilder stdout $ "[send] " <> cmd <> "\n"
-    hFlush stdout
+  log solver $ "[send] " <> cmd <> "\n"
   result <- Bck.command (backend solver) cmd
   case readSExpr result of
     Nothing -> do
       fail $ "solver replied with:\n" ++ LBS.unpack result
     Just (expr', _) -> do
-      when (debugMode solver) $ do
-        putStrLn $ "[recv] " ++ showsSExpr expr' ""
+      log solver $ "[recv] " <> renderSExpr expr' <> "\n"
       return expr'
 
 -- | A command with no interesting result.
@@ -58,9 +60,7 @@ command solver expr = do
 ackCommand :: Solver -> SExpr -> IO ()
 ackCommand solver expr = do
   let cmd = renderSExpr expr
-  when (debugMode solver) $ do
-    hPutBuilder stdout $ "[send ack] " <> cmd <> "\n"
-    hFlush stdout
+  log solver $ "[send ack] " <> cmd <> "\n"
   Bck.command_ (backend solver) cmd
 
 -- | A command entirely made out of atoms, with no interesting result.
