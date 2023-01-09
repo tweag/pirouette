@@ -64,8 +64,8 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Parallel.Strategies
+import Data.Default
 import Data.Foldable
-import Data.List (genericLength)
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
@@ -132,9 +132,7 @@ symeval ::
   m [Path lang a]
 symeval opts prob = do
   defs <- getPrtOrderedDefs
-  return $ runSymEval opts defs st0 prob
-  where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
+  return $ runSymEval opts defs def prob
 
 symevalAnyPathAccum ::
   (SymEvalConstr lang, PirouetteDepOrder lang m) =>
@@ -146,9 +144,7 @@ symevalAnyPathAccum ::
   m (Maybe (Path lang a), st)
 symevalAnyPathAccum f s0 opts p prob = do
   defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs st0 prob
-  where
-    st0 = SymEvalSt mempty M.empty 0 mempty False S.empty
+  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs def prob
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -246,8 +242,12 @@ weightedParFilter f (ListT.Yield a w) =
 -- | Learn a new constraint and add it as a conjunct to the set of constraints of
 --  the current path. Make sure that this branch gets marked as /not/ validated, regardless
 --  of whether or not we had already validated it before.
-learn :: (SymEvalConstr lang) => Constraint lang -> SymEval lang ()
-learn c = modify (\st -> st {sestConstraint = c <> sestConstraint st, sestValidated = False})
+learn :: (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
+learn cs = do
+  curr <- gets sestConstraint
+  case foldl' (\mc c -> mc >>= C.conjunct c) (Just curr) cs of
+    Just curr' -> modify (\st -> st {sestConstraint = curr'})
+    Nothing -> empty
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
@@ -349,25 +349,9 @@ symEvalOneStep t@(R.App hd args) = case hd of
   R.Meta vr -> do
     -- if we have a meta, try to replace it
     cstr <- gets sestConstraint
-    case cstr of
-      C.And atomics -> do
-        let findAssignment v (C.Assign w _) = v == w
-            findAssignment _ _ = False
-            findEq v (C.VarEq w _) = v == w
-            findEq _ _ = False
-            -- we need to jump more than one equality,
-            -- hence the involved loop here
-            findLoop v
-              | Just (C.Assign _ tm) <- find (findAssignment v) atomics =
-                Just tm
-              | Just (C.VarEq _ other) <- find (findEq v) atomics =
-                findLoop other
-              | otherwise =
-                Nothing
-        case findLoop vr of
-          Nothing -> justEvaluateArgs
-          Just lp -> signalEvaluation >> pure lp
-      _ -> justEvaluateArgs
+    case C.expandDefOf cstr vr of
+      Nothing -> justEvaluateArgs
+      Just valOfvr -> signalEvaluation >> pure valOfvr
 
   -- in any other case don't try too hard
   _ -> justEvaluateArgs
@@ -473,32 +457,30 @@ symEvalDestructor t@(R.App hd _args) tyName = do
     (Any True, _, _) -> pure bailOutTerm -- we did some evaluation
     (_, Nothing, Nothing) -> pure bailOutTerm -- cannot make progress still
     (_, _, Just WHNFConstant {}) -> pure bailOutTerm -- match and constant is a weird combination
-    (_, Just _, _) -> do
+    (_, Just s, _) -> do
       -- we have a meta, explore every possibility
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show tyName <> " over " <> show term'
       let tyParams' = map typeFromMeta tyParams
       asum $
+        -- Here motive is $x and type is, for instance, List Integer.
+        -- The next @for2@ will generate all possibilities for $x:
+        -- 1. It can be Nil
+        -- 2. It can be Cons $y $ys, where $y and $ys are freshly generated symbolic vars
         for2 consList cases $ \(consName, consTy) caseTerm -> do
-          let instantiatedTy = R.tyInstantiateN consTy tyParams'
-          let (consArgs, _) = R.tyFunArgs instantiatedTy
+          -- For consName == "Cons" and consTy == "forall a . a -> List a -> List a", we have:
+          -- wlog, assume tyParams' = ["Integer"].
+          let instantiatedTy = R.tyInstantiateN consTy tyParams' -- instantiatedTy == "Integer -> List Integer -> List Integer"
+          let (consArgs, _) = R.tyFunArgs instantiatedTy -- consArgs == ["Integer", "List Integer"]
           svars <- lift $ freshSymVars consArgs
           let symbArgs = map (R.TermArg . (`R.App` []) . R.Meta) svars
           let symbCons = R.App (R.Free $ TermSig consName) (map (R.TyArg . typeToMeta) tyParams' ++ symbArgs)
-          let mconstr = unify term' symbCons
-          -- liftIO $ print mconstr
-          case mconstr of
-            Nothing -> empty
-            Just constr -> do
-              let countAssigns SMT.Bot = 0
-                  countAssigns (SMT.And atomics) = genericLength $ filter isAssign atomics
-                  isAssign SMT.Assign {} = True
-                  isAssign _ = False
-              -- add weight as many new assignments we get from unification
-              ListT.weight (countAssigns constr) $ do
-                lift $ learn constr
-                moreConstructors (countAssigns constr)
-                signalEvaluation
-                pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
+          -- We just assigned a value to the motive, hence, by definition, we add one
+          -- assignment.
+          ListT.weight 1 $ do
+            lift $ learn [s C.=:= symbCons]
+            moreConstructors 1
+            signalEvaluation
+            pure $ (caseTerm `R.appN` symbArgs) `R.appN` excess
     (_, _, Just (WHNFConstructor ix _ty constructorArgs)) -> do
       -- we have a particular constructor
       -- liftIO $ putStrLn $ "DESTRUCTOR " <> show ix <> " from type " <> show ty <> " ; " <> show tyName <> " over " <> show term'
@@ -523,43 +505,14 @@ moreConstructors :: (SymEvalConstr lang) => Int -> WriterT Any (SymEval lang) ()
 moreConstructors n = do
   modify (\st -> st {sestStatistics = sestStatistics st <> mempty {sestConstructors = n}})
 
-unify :: (LanguageBuiltins lang) => TermMeta lang SymVar -> TermMeta lang SymVar -> Maybe (Constraint lang)
-unify (R.App (R.Meta s) []) (R.App (R.Meta r) []) = Just (symVarEq s r)
-unify (R.App (R.Meta s) []) t = Just (s =:= t)
-unify u (R.App (R.Meta s) []) = Just (s =:= u)
-unify (R.App hdT argsT) (R.App hdU argsU) = do
-  uTU <- unifyVar hdT hdU
-  uArgs <- zipWithMPlus unifyArg argsT argsU
-  return $ uTU <> mconcat uArgs
-unify t u = Just (SMT.And [SMT.NonInlinableSymbolEq t u])
-
-unifyVar :: (LanguageBuiltins lang) => VarMeta lang SymVar -> VarMeta lang SymVar -> Maybe (Constraint lang)
-unifyVar (R.Meta s) (R.Meta r) = Just (symVarEq s r)
-unifyVar (R.Meta s) t = Just (s =:= R.App t [])
-unifyVar t (R.Meta s) = Just (s =:= R.App t [])
-unifyVar t u = guard (t == u) >> Just (SMT.And [])
-
-unifyArg :: (LanguageBuiltins lang) => ArgMeta lang SymVar -> ArgMeta lang SymVar -> Maybe (Constraint lang)
-unifyArg (R.TermArg x) (R.TermArg y) = unify x y
-unifyArg (R.TyArg _) (R.TyArg _) = Just (SMT.And []) -- TODO: unify types too?
-unifyArg _ _ = Nothing
-
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
-
--- | Variation on zipwith that forces arguments to be of the same length,
--- returning 'mzero' whenever that does not hold.
-zipWithMPlus :: (MonadPlus m) => (a -> b -> m c) -> [a] -> [b] -> m [c]
-zipWithMPlus _ [] [] = return []
-zipWithMPlus _ _ [] = mzero
-zipWithMPlus _ [] _ = mzero
-zipWithMPlus f (x : xs) (y : ys) = (:) <$> f x y <*> zipWithMPlus f xs ys
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
   (SymEvalConstr lang) =>
-  Constraint lang ->
-  Maybe (Constraint lang) ->
+  PureSMT.SExpr ->
+  Maybe PureSMT.SExpr ->
   [UniversalAxiom lang] ->
   SymEval lang PruneResult
 pruneAndValidate cOut cIn axioms =

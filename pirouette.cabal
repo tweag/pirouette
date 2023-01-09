@@ -53,12 +53,18 @@ library
       Pirouette.Transformations.Inline
       Pirouette.Transformations.Monomorphization
       Pirouette.Transformations.Prenex
+      Pirouette.Transformations.Tagged
       Pirouette.Transformations.Term
       Pirouette.Transformations.Utils
       Pirouette.Utils
       PureSMT
       PureSMT.Process
       PureSMT.SExpr
+      UnionFind
+      UnionFind.Action
+      UnionFind.Deferring
+      UnionFind.Internal
+      UnionFind.Monadic
   other-modules:
       Paths_pirouette
   autogen-modules:
@@ -84,6 +90,7 @@ library
     , parallel
     , parser-combinators
     , prettyprinter
+    , raw-strings-qq
     , smtlib-backends
     , smtlib-backends-z3
     , tasty
@@ -92,6 +99,7 @@ library
     , tasty-quickcheck
     , template-haskell
     , text
+    , transformers
     , uniplate
   default-language: Haskell2010
 
@@ -110,6 +118,9 @@ test-suite spec
       Pirouette.Transformations.MonomorphizationSpec
       Pirouette.Transformations.PrenexSpec
       Pirouette.Transformations.TermSpec
+      PureSMT.SExpr.ParsingSpec
+      UnionFind.Dummy
+      UnionFind.Spec
       Paths_pirouette
   autogen-modules:
       Paths_pirouette
@@ -135,6 +146,7 @@ test-suite spec
     , parser-combinators
     , pirouette
     , prettyprinter
+    , raw-strings-qq
     , smtlib-backends
     , smtlib-backends-z3
     , tasty
@@ -143,5 +155,6 @@ test-suite spec
     , tasty-quickcheck
     , template-haskell
     , text
+    , transformers
     , uniplate
   default-language: Haskell2010

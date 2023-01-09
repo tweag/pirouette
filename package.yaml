@@ -32,6 +32,8 @@ dependencies:
   - parallel
   - optics-core
   - optics-th
+  - raw-strings-qq
+  - transformers
   # PureSMT deps
   - smtlib-backends
   - smtlib-backends-z3

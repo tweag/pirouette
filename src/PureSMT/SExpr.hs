@@ -8,10 +8,12 @@ module PureSMT.SExpr where
 import Data.Bits (testBit)
 import Data.ByteString.Builder
   ( Builder,
+    lazyByteString,
     stringUtf8,
+    toLazyByteString,
   )
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.Char (isDigit, isSpace)
+import Data.Char (isAlphaNum, isDigit, isSpace)
 import Data.List (intersperse)
 import Data.Ratio (denominator, numerator, (%))
 import qualified Data.Text
@@ -208,28 +210,74 @@ pattern c :< rest <- (LBS.uncons -> Just (c, rest))
 
 -- | Parse an s-expression.
 readSExpr :: LBS.ByteString -> Maybe (SExpr, LBS.ByteString)
+-- ignore whitespace
 readSExpr (c :< more) | isSpace c = readSExpr more
+-- ignore comments
 readSExpr (';' :< more) = readSExpr $ LBS.drop 1 $ LBS.dropWhile (/= '\n') more
+-- quoted symbols
+-- A quoted symbol is any sequence of whitespace characters and printable
+-- characters that starts and ends with | and does not contain | or \ .
 readSExpr ('|' :< more) = do
-  let (sym, '|' :< rest) = LBS.break (== '|') more
-  Just (Atom $ LBS.unpack $ LBS.cons '|' $ LBS.snoc sym '|', rest)
+  (quotedSymbol, '|' :< rest) <-
+    return $
+      LBS.break (\c -> c == '|' || c == '\\') more
+  Just (Atom $ "|" ++ LBS.unpack quotedSymbol ++ "|", rest)
+-- string literals
+-- A string literal is any sequence of characters from 〈printable_char〉
+-- or〈white_space_char〉 delimited by the double quote character ". The
+-- character " can itself occur within a string literal only if duplicated.
+readSExpr ('"' :< more) = do
+  (stringLiteral, rest) <- readStringLiteral more
+  Just
+    (Atom $ "\"" ++ LBS.unpack (toLazyByteString stringLiteral) ++ "\"", rest)
+  where
+    readStringLiteral :: LBS.ByteString -> Maybe (Builder, LBS.ByteString)
+    readStringLiteral more' = do
+      (part, '"' :< rest) <- return $ LBS.break (== '"') more'
+      let partBuilder = lazyByteString part
+      case rest of
+        ('"' :< more'') -> do
+          (part', rest') <- readStringLiteral more''
+          return (partBuilder <> stringUtf8 "\"\"" <> part', rest')
+        _ -> return (partBuilder, rest)
+-- nested s-expressions
 readSExpr ('(' :< more) = do
-  (es, rest) <- list more
-  return (List es, rest)
+  (exprs, rest) <- list more
+  return (List exprs, rest)
   where
     list :: LBS.ByteString -> Maybe ([SExpr], LBS.ByteString)
     list (c :< more') | isSpace c = list more'
     list (')' :< more') = return ([], more')
     list more' = do
-      (e, rest) <- readSExpr more'
-      (es, rest') <- list rest
-      return (e : es, rest')
+      (expr, rest) <- readSExpr more'
+      (exprs, rest') <- list rest
+      return (expr : exprs, rest')
+-- keywords
+-- A keyword is a token of the form :〈simple_symbol〉
+readSExpr (':' :< more) =
+  let (simpleSymbol, rest) = LBS.span allowedSimpleChar more
+   in Just (Atom $ ":" ++ LBS.unpack simpleSymbol, rest)
+-- binaries and hexadecimals
+-- e.g. #b010 or #xAb32
+readSExpr ('#' :< base :< more) = do
+  isValidDigit <-
+    case base of
+      'b' -> return $ \digit -> digit == '0' || digit == '1'
+      'x' -> return isAlphaNum
+      _ -> Nothing
+  let (number, rest) = LBS.span isValidDigit more
+  if LBS.null number
+    then Nothing
+    else Just (Atom $ '#' : base : LBS.unpack number, rest)
+-- simple symbols and reserved words
+-- A simple symbol is any non-empty sequence of elements of letters, digits and
+-- the characters ~ ! @ $ % ^ & * _ - + = < > . ? / that does not start with a
+-- digit and is not a reserved word.
 readSExpr txt =
-  case LBS.break end txt of
-    (atom, rest) | P.not (LBS.null atom) -> Just (Atom $ LBS.unpack atom, rest)
+  case LBS.span allowedSimpleChar txt of
+    (atom, rest)
+      | P.not (LBS.null atom) -> Just (Atom $ LBS.unpack atom, rest)
     _ -> Nothing
-  where
-    end x = x == ')' || isSpace x
 
 -- * Constructing 'SExpr'
 

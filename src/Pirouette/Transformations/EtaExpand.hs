@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -5,7 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Pirouette.Transformations.EtaExpand (etaExpandAll, etaExpandTerm) where
+module Pirouette.Transformations.EtaExpand (etaExpandAll, etaExpandAll', etaExpandTerm, EtaExpanded) where
 
 import Control.Monad.Identity
 import qualified Data.Map as M
@@ -13,15 +14,21 @@ import Pirouette.Monad
 import Pirouette.Term.Syntax
 import Pirouette.Term.Syntax.Subst
 import qualified Pirouette.Term.Syntax.SystemF as SystF
+import Pirouette.Transformations.Tagged
 import Pirouette.Transformations.Utils
 
+data EtaExpanded
+
 -- | Eta-expands all usages of all terms involved in a program
-etaExpandAll ::
+etaExpandAll :: (LanguageBuiltinTypes lang, Language lang) => Xform '[] '[EtaExpanded] (PrtUnorderedDefs lang)
+etaExpandAll = Xform etaExpandAll'
+
+etaExpandAll' ::
   forall lang.
   (LanguageBuiltinTypes lang, Language lang) =>
   PrtUnorderedDefs lang ->
   PrtUnorderedDefs lang
-etaExpandAll PrtUnorderedDefs {..} =
+etaExpandAll' PrtUnorderedDefs {..} =
   PrtUnorderedDefs $ M.map (runIdentity . defTermMapM (return . go)) prtUODecls
   where
     go = etaExpandAux prtUODecls []
