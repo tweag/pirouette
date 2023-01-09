@@ -31,7 +31,7 @@ launchSolver dbg = do
   where
     lazy = dbg
 
--- | Have the evaluate a command in SExpr format.
+-- | Have the solver evaluate a command in SExpr format.
 -- This forces the queued commands to be evaluated as well, but their results are
 -- *not* checked for correctness.
 command :: Solver -> SExpr -> IO SExpr
