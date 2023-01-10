@@ -46,7 +46,6 @@ module Pirouette.Symbolic.Eval
     runSymEval,
     declSymVars,
     learn,
-    prune,
     symEvalOneStep,
     pruneAndValidate,
     PruneResult (..),
@@ -495,10 +494,6 @@ moreConstructors n = do
 
 for2 :: [a] -> [b] -> (a -> b -> c) -> [c]
 for2 as bs f = zipWith f as bs
-
--- | Prune the set of paths in the current set.
-prune :: forall lang a. (SymEvalConstr lang) => SymEval lang a -> SymEval lang a
-prune xs = SymEval $ ReaderT $ \env -> StateT $ \st -> runSymEvalRaw env st xs
 
 -- | Prune the set of paths in the current set.
 pruneAndValidate ::
