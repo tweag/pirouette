@@ -3,7 +3,7 @@
 module PureSMT.SExpr.ParsingSpec (tests) where
 
 import Control.Monad (zipWithM_)
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (unfoldr)
 import PureSMT.SExpr
 import Test.Tasty
@@ -16,7 +16,7 @@ tests = do
   return $
     testCase (name example) $ do
       let expecteds = parse example
-          gots = unfoldr readSExpr $ BS.pack $ content example
+          gots = unfoldr readSExpr $ LBS.pack $ content example
       zipWithM_
         ( \expected got ->
             assertBool

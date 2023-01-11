@@ -60,7 +60,6 @@ library
       PureSMT
       PureSMT.Process
       PureSMT.SExpr
-      PureSMT.Z3
       UnionFind
       UnionFind.Action
       UnionFind.Deferring
@@ -83,7 +82,6 @@ library
     , deriving-compat
     , extra
     , haskell-stack-trace-plugin
-    , inline-c
     , interpolate
     , megaparsec
     , mtl >=2.2.2
@@ -93,6 +91,8 @@ library
     , parser-combinators
     , prettyprinter
     , raw-strings-qq
+    , smtlib-backends
+    , smtlib-backends-z3
     , tasty
     , tasty-expected-failure
     , tasty-hunit
@@ -101,12 +101,6 @@ library
     , text
     , transformers
     , uniplate
-  if os(darwin) || os(windows)
-    extra-libraries:
-        z3
-  else
-    extra-libraries:
-        gomp z3 gomp
   default-language: Haskell2010
 
 test-suite spec
@@ -143,7 +137,6 @@ test-suite spec
     , deriving-compat
     , extra
     , haskell-stack-trace-plugin
-    , inline-c
     , interpolate
     , megaparsec
     , mtl >=2.2.2
@@ -154,6 +147,8 @@ test-suite spec
     , pirouette
     , prettyprinter
     , raw-strings-qq
+    , smtlib-backends
+    , smtlib-backends-z3
     , tasty
     , tasty-expected-failure
     , tasty-hunit

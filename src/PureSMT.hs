@@ -93,7 +93,7 @@ initAll opts ctx = replicateM nWorkers $ do
   -- this would be especially useful if the solver options are passed
   -- when creating the configuration instead of inside the initSolver
   -- function
-  s <- X.initZ3Instance (debug opts)
+  s <- X.launchSolver (debug opts)
   initSolver @domain ctx s
   newMVar s
   where

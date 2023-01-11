@@ -12,8 +12,6 @@ import Data.ByteString.Builder
     stringUtf8,
     toLazyByteString,
   )
-import Data.ByteString.Builder.Extra (defaultChunkSize, smallChunkSize, toLazyByteStringWith, untrimmedStrategy)
-import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (isAlphaNum, isDigit, isSpace)
 import Data.List (intersperse)
@@ -63,27 +61,6 @@ overAtomV _ rest = rest
 overAtomS :: (String -> String) -> SExpr -> SExpr
 overAtomS f (Atom s) = Atom (f s)
 overAtomS f (List ss) = List [overAtomS f s | s <- ss]
-
--- | Evaluate a bytestring builder to a null-terminated strict bytestring
--- that is expected to be consumed immediately.
-serializeUntrimmed :: Int -> Int -> Builder -> BS.ByteString
-serializeUntrimmed firstChunkSize newChunksSize = LBS.toStrict . toLazyByteStringWith (untrimmedStrategy firstChunkSize newChunksSize) "\NUL"
-
--- | Evaluate a bytestring builder corresponding to a single SMTLib2 command
--- (the size of the buffer is expected to be small). The output is a null-terminated
--- strict bytestring that is expected to be consumed immediately.
-serializeSingle :: Builder -> BS.ByteString
-serializeSingle =
-  -- 256 is the first power of 2 that is bigger than the length of the longest
-  -- command with interesting output in isUnity, and 2048 is just four times this
-  -- because smallChunkSize * 4 = defaultChunkSize.
-  serializeUntrimmed 256 2048
-
--- | Evaluate a bytestring builder corresponding to a batch of SMTLib2 commands
--- (the size of the buffer is expected to be important). The output is a
--- null-terminated strict bytestring that is expected to be consumed immediately.
-serializeBatch :: Builder -> BS.ByteString
-serializeBatch = serializeUntrimmed smallChunkSize defaultChunkSize
 
 -- | Create a bytestring builder from an s-expression.
 renderSExpr :: SExpr -> Builder
@@ -228,23 +205,23 @@ ppSExpr = go 0
 
 infixr 5 :<
 
-pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
-pattern c :< rest <- (BS.uncons -> Just (c, rest))
+pattern (:<) :: Char -> LBS.ByteString -> LBS.ByteString
+pattern c :< rest <- (LBS.uncons -> Just (c, rest))
 
 -- | Parse an s-expression.
-readSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+readSExpr :: LBS.ByteString -> Maybe (SExpr, LBS.ByteString)
 -- ignore whitespace
 readSExpr (c :< more) | isSpace c = readSExpr more
 -- ignore comments
-readSExpr (';' :< more) = readSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
+readSExpr (';' :< more) = readSExpr $ LBS.drop 1 $ LBS.dropWhile (/= '\n') more
 -- quoted symbols
 -- A quoted symbol is any sequence of whitespace characters and printable
 -- characters that starts and ends with | and does not contain | or \ .
 readSExpr ('|' :< more) = do
   (quotedSymbol, '|' :< rest) <-
     return $
-      BS.break (\c -> c == '|' || c == '\\') more
-  Just (Atom $ "|" ++ BS.unpack quotedSymbol ++ "|", rest)
+      LBS.break (\c -> c == '|' || c == '\\') more
+  Just (Atom $ "|" ++ LBS.unpack quotedSymbol ++ "|", rest)
 -- string literals
 -- A string literal is any sequence of characters from 〈printable_char〉
 -- or〈white_space_char〉 delimited by the double quote character ". The
@@ -254,10 +231,10 @@ readSExpr ('"' :< more) = do
   Just
     (Atom $ "\"" ++ LBS.unpack (toLazyByteString stringLiteral) ++ "\"", rest)
   where
-    readStringLiteral :: BS.ByteString -> Maybe (Builder, BS.ByteString)
+    readStringLiteral :: LBS.ByteString -> Maybe (Builder, LBS.ByteString)
     readStringLiteral more' = do
-      (part, '"' :< rest) <- return $ BS.break (== '"') more'
-      let partBuilder = lazyByteString $ LBS.fromStrict part
+      (part, '"' :< rest) <- return $ LBS.break (== '"') more'
+      let partBuilder = lazyByteString part
       case rest of
         ('"' :< more'') -> do
           (part', rest') <- readStringLiteral more''
@@ -268,7 +245,7 @@ readSExpr ('(' :< more) = do
   (exprs, rest) <- list more
   return (List exprs, rest)
   where
-    list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
+    list :: LBS.ByteString -> Maybe ([SExpr], LBS.ByteString)
     list (c :< more') | isSpace c = list more'
     list (')' :< more') = return ([], more')
     list more' = do
@@ -278,8 +255,8 @@ readSExpr ('(' :< more) = do
 -- keywords
 -- A keyword is a token of the form :〈simple_symbol〉
 readSExpr (':' :< more) =
-  let (simpleSymbol, rest) = BS.span allowedSimpleChar more
-   in Just (Atom $ ":" ++ BS.unpack simpleSymbol, rest)
+  let (simpleSymbol, rest) = LBS.span allowedSimpleChar more
+   in Just (Atom $ ":" ++ LBS.unpack simpleSymbol, rest)
 -- binaries and hexadecimals
 -- e.g. #b010 or #xAb32
 readSExpr ('#' :< base :< more) = do
@@ -288,18 +265,18 @@ readSExpr ('#' :< base :< more) = do
       'b' -> return $ \digit -> digit == '0' || digit == '1'
       'x' -> return isAlphaNum
       _ -> Nothing
-  let (number, rest) = BS.span isValidDigit more
-  if BS.null number
+  let (number, rest) = LBS.span isValidDigit more
+  if LBS.null number
     then Nothing
-    else Just (Atom $ '#' : base : BS.unpack number, rest)
+    else Just (Atom $ '#' : base : LBS.unpack number, rest)
 -- simple symbols and reserved words
 -- A simple symbol is any non-empty sequence of elements of letters, digits and
 -- the characters ~ ! @ $ % ^ & * _ - + = < > . ? / that does not start with a
 -- digit and is not a reserved word.
 readSExpr txt =
-  case BS.span allowedSimpleChar txt of
+  case LBS.span allowedSimpleChar txt of
     (atom, rest)
-      | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
+      | P.not (LBS.null atom) -> Just (Atom $ LBS.unpack atom, rest)
     _ -> Nothing
 
 -- * Constructing 'SExpr'
