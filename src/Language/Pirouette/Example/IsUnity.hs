@@ -6,6 +6,7 @@
 module Language.Pirouette.Example.IsUnity where
 
 import Language.Pirouette.Example
+import Language.Pirouette.Example.StdLib (progWithStdLib)
 import Pirouette.Monad
 import Pirouette.Symbolic.Prover.Runner
 import qualified Test.Tasty.HUnit as Test
@@ -38,47 +39,12 @@ checkOk =
 
 definitions :: PrtUnorderedDefs Ex
 definitions =
-  [prog|
-and :
-  Bool ->
-  Bool ->
-  Bool
-and x y = if @Bool x then y else False
-
-or : Bool -> Bool -> Bool
-or x y = if @Bool x then True else y
-
+  [progWithStdLib|
 eqInt : Integer -> Integer -> Bool
 eqInt x y = x == y
 
 eqString : String -> String -> Bool
 eqString x y = x ~~ y
-
-data List a
-  = Nil : List a
-  | Cons : a -> List a -> List a
-
-foldr : forall a r . (a -> r -> r) -> r -> List a -> r
-foldr @a @r f e l =
-  match_List @a l @r
-    e
-    (\(x : a) (xs : List a) . f x (foldr @a @r f e xs))
-
-listEq :
-  forall a .
-  (a -> a -> Bool) ->
-  List a -> List a -> Bool
-listEq @a eq x0 y0 = 
-  match_List @a x0 @Bool
-    (match_List @a y0 @Bool True (\(y : a) (ys : List a) . False))
-    (\(x : a) (xs : List a) .
-      match_List @a y0 @Bool False (\(y : a) (ys : List a) . and (eq x y) (listEq @a eq xs ys)))
-
-contains : forall a . (a -> Bool) -> List a -> Bool
-contains @a eq x0 = 
-  match_List @a x0 @Bool
-    False
-    (\(x : a) (xs : List a) . or (eq x) (contains @a eq xs))
 
 data Pair x y
   = P : x -> y -> Pair x y
@@ -175,7 +141,7 @@ correct_isUnity v ac =
      (\(openV : KVMap String (KVMap String Integer))
       . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Bool
           (\(tokM : KVMap String Integer)
-           . listEq @(Pair String Integer)
+           . eqList @(Pair String Integer)
                (pairEq @String @Integer eqString eqInt)
                (toList @String @Integer tokM)
                (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))
@@ -201,7 +167,7 @@ eqTxOutRef r1 r2 =
 
 spendsOutput : List (Pair TxOutRef TxOut) -> TxOutRef -> Bool
 spendsOutput inputs wanted =
-    contains @(Pair TxOutRef TxOut)
+    any @(Pair TxOutRef TxOut)
       (\(p : Pair TxOutRef TxOut)
       . match_Pair @TxOutRef @TxOut p @Bool (\(r : TxOutRef) (o : TxOut) . eqTxOutRef wanted r))
       inputs

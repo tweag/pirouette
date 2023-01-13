@@ -17,6 +17,7 @@ library
   exposed-modules:
       Language.Pirouette.Example
       Language.Pirouette.Example.IsUnity
+      Language.Pirouette.Example.StdLib
       Language.Pirouette.QuasiQuoter
       Language.Pirouette.QuasiQuoter.Internal
       Language.Pirouette.QuasiQuoter.Syntax
