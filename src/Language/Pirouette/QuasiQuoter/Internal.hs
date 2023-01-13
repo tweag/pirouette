@@ -22,7 +22,6 @@ import Language.Pirouette.QuasiQuoter.ToTerm
 import Pirouette.Term.Syntax.Base
 import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import qualified Pirouette.Term.Syntax.SystemF as SystF
-import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 
 parseQ :: Parser a -> String -> Q a
