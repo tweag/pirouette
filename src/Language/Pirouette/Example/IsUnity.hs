@@ -59,19 +59,11 @@ pairEq @a @b eqA eqB x y =
     (\(x0 : a) (x1 : b) . match_Pair @a @b y @Bool
       (\(y0 : a) (y1 : b) . and (eqA x0 y0) (eqB x1 y1)))
 
-data Maybe x
-  = Just : x -> Maybe x
-  | Nothing : Maybe x
-
-maybeSum : forall x . Maybe x -> Maybe x -> Maybe x
-maybeSum @x mx my =
-  match_Maybe @x mx @(Maybe x)
-    (\(jx : x) . Just @x jx)
-    my
-
-isJust : forall x . Maybe x -> Bool
-isJust @x mx =
-  match_Maybe @x mx @Bool (\(jx : x) . True) False
+maybeSum : forall a . Maybe a -> Maybe a -> Maybe a
+maybeSum @a m1 m2 =
+  match_Maybe @a m1 @(Maybe a)
+    m2
+    (\(j1 : a) . Just @a j1)
 
 data KVMap k v
   = KV : List (Pair k v) -> KVMap k v
@@ -110,17 +102,15 @@ data TxInfo
 assetClassValueOf : Value -> Pair String String -> Integer
 assetClassValueOf v ac =
   match_Pair @String @String ac @Integer
-    (\(curSym : String) (tokName : String)
-     . match_Value v @Integer
-     (\(openV : KVMap String (KVMap String Integer))
-      . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Integer
-          (\(tokM : KVMap String Integer)
-           . match_Maybe @Integer (lkup @String @Integer eqString tokM tokName) @Integer
-               (\(r : Integer) . r)
-               0
-          )
-          0
-    ))
+    (\(curSym : String) (tokName : String) .
+      match_Value v @Integer
+        (\(openV : KVMap String (KVMap String Integer)) .
+          match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Integer
+            0
+            (\(tokM : KVMap String Integer) .
+              match_Maybe @Integer (lkup @String @Integer eqString tokM tokName) @Integer
+                0
+                (\(r : Integer) . r))))
 
 -- Now we define the wrong isUnity function, that is too permissive
 wrong_isUnity : Value -> Pair String String -> Bool
@@ -136,17 +126,16 @@ wrong_isUnity v ac = assetClassValueOf v ac == 1
 correct_isUnity : Value -> Pair String String -> Bool
 correct_isUnity v ac =
   match_Pair @String @String ac @Bool
-    (\(curSym : String) (tokName : String)
-     . match_Value v @Bool
-     (\(openV : KVMap String (KVMap String Integer))
-      . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Bool
-          (\(tokM : KVMap String Integer)
-           . eqList @(Pair String Integer)
-               (pairEq @String @Integer eqString eqInt)
-               (toList @String @Integer tokM)
-               (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))
-          False
-     ))
+    (\(curSym : String) (tokName : String) .
+      match_Value v @Bool
+        (\(openV : KVMap String (KVMap String Integer)) .
+          match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Bool
+            False
+            (\(tokM : KVMap String Integer) .
+              eqList @(Pair String Integer)
+                (pairEq @String @Integer eqString eqInt)
+                (toList @String @Integer tokM)
+                (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))))
 
 -- Now we define a simple example asset class
 example_ac : Pair String String

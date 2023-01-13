@@ -12,6 +12,7 @@ import Data.Default
 import Data.Maybe (isJust)
 import Language.Pirouette.Example
 import qualified Language.Pirouette.Example.IsUnity as IsUnity
+import Language.Pirouette.Example.StdLib (stdLib)
 import Pirouette.Monad
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.EvalUtils
@@ -62,23 +63,6 @@ input0Output1 =
   ( [term| \(result : Integer) (x : Integer) . greaterThan1 result |],
     [term| \(result : Integer) (x : Integer) . greaterThan0 x |]
   )
-
-maybes :: PrtUnorderedDefs Ex
-maybes =
-  [prog|
-data MaybeInt
-  = JustInt : Integer -> MaybeInt
-  | NothingInt : MaybeInt
-
-isNothing : MaybeInt -> Bool
-isNothing m = match_MaybeInt m @Bool (\(n : Integer) . False) True
-
-isJust : MaybeInt -> Bool
-isJust m = match_MaybeInt m @Bool (\(n : Integer) . True) False
-
-not : Bool -> Bool
-not b = if @Bool b then False else True
-|]
 
 -- This is a small example taken from O'Hearn's paper; besides being interesting for
 -- testing conditionals, it is also interesting in and of itself. This is the example:
@@ -330,14 +314,14 @@ tests =
         testCase "[isNothing x] isJust x [not result] verified" $
           exec
             (proveUnbounded def)
-            (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
-            ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isNothing x|])
+            (stdLib, [ty|Bool|], [term|\(x:Maybe Integer) . isJust @Integer x|])
+            ([term|\(r:Bool) (x:Maybe Integer) . not r|], [term|\(r:Bool) (x:Maybe Integer) . isNothing @Integer x|])
             `pathSatisfies` (all isNoCounter .&. any isVerified),
         testCase "[isJust x] isJust x [not result] counter" $
           exec
             (proveUnbounded def)
-            (maybes, [ty|Bool|], [term|\(x:MaybeInt) . isJust x|])
-            ([term|\(r:Bool) (x:MaybeInt) . not r|], [term|\(r:Bool) (x:MaybeInt) . isJust x|])
+            (stdLib, [ty|Bool|], [term|\(x:Maybe Integer) . isJust @Integer x|])
+            ([term|\(r:Bool) (x:Maybe Integer) . not r|], [term|\(r:Bool) (x:Maybe Integer) . isJust @Integer x|])
             `pathSatisfies` any isCounter
       ],
     testGroup

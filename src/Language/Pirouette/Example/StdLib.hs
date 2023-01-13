@@ -33,6 +33,29 @@ and x y = if @Bool x then y else False
 
 or : Bool -> Bool -> Bool
 or x y = if @Bool x then True else y
+
+not : Bool -> Bool
+not b = if @Bool b then False else True
+|]
+
+maybes :: PrtUnorderedDefs Ex
+maybes =
+  [progNoTC|
+data Maybe a
+  = Nothing : Maybe a
+  | Just : a -> Maybe a
+
+isNothing : forall a . Maybe a -> Bool
+isNothing @a m =
+  match_Maybe @a m @Bool
+    True
+    (\(n : a) . False)
+
+isJust : forall a . Maybe a -> Bool
+isJust @a m =
+  match_Maybe @a m @Bool
+    False
+    (\(n : a) . True)
 |]
 
 lists :: PrtUnorderedDefs Ex
@@ -76,7 +99,7 @@ all @a p xs =
 |]
 
 stdLib :: PrtUnorderedDefs Ex
-stdLib = unionPrtUODefs booleans lists
+stdLib = unionPrtUODefs booleans $ unionPrtUODefs maybes lists
 
 progWithStdLib :: QuasiQuoter
 progWithStdLib = quoter $ \str -> do
