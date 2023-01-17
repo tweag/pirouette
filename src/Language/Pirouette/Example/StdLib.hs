@@ -99,7 +99,7 @@ all @a p xs =
 |]
 
 stdLib :: PrtUnorderedDefs Ex
-stdLib = unionPrtUODefs booleans $ unionPrtUODefs maybes lists
+stdLib = unionsPrtUODefs [booleans, maybes, lists]
 
 progWithStdLib :: QuasiQuoter
 progWithStdLib = quoter $ \str -> do

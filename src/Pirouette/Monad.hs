@@ -217,6 +217,12 @@ unionPrtUODefs defs1 defs2 =
     { prtUODecls = Map.unionWith (\_ _ -> error "unionPrtUODefs") (prtUODecls defs1) (prtUODecls defs2)
     }
 
+unionsPrtUODefs :: forall lang. [PrtUnorderedDefs lang] -> PrtUnorderedDefs lang
+unionsPrtUODefs defss =
+  PrtUnorderedDefs
+    { prtUODecls = Map.unionsWith (\_ _ -> error "unionPrtUODefs") (map prtUODecls defss)
+    }
+
 -- | The definitions in this prelude are meant to support any builtins from your surface
 -- language. For instance, say you have a builtin /ifListIsEmpty/ on your surface language
 -- but you don't necessarily want to have that as a compiled builtin. Instead, you
