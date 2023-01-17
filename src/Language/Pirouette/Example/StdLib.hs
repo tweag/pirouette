@@ -22,6 +22,7 @@ import Language.Pirouette.QuasiQuoter.Internal (maybeQ, parseQ, quoter, trQ)
 import Language.Pirouette.QuasiQuoter.Syntax
 import Language.Pirouette.QuasiQuoter.ToTerm
 import Pirouette.Monad
+import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 
@@ -99,7 +100,11 @@ all @a p xs =
 |]
 
 stdLib :: PrtUnorderedDefs Ex
-stdLib = unionsPrtUODefs [booleans, maybes, lists]
+stdLib =
+  let decls = unionsPrtUODefs [booleans, maybes, lists]
+   in case typeCheckDecls $ prtUODecls decls of
+        Left typeError -> errorWithoutStackTrace $ ("Could not type-check standard library: " ++) $ show $ pretty typeError
+        Right () -> decls
 
 progWithStdLib :: QuasiQuoter
 progWithStdLib = quoter $ \str -> do
