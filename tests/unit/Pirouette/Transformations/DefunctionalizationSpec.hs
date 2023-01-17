@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -213,7 +212,7 @@ data AdditiveMonoid a
   = AdditiveMon : (a -> a -> a) -> a -> AdditiveMonoid a
 
 additiveToMonoid : forall a . AdditiveMonoid a -> Monoid a
-additiveToMonoid @a x = 
+additiveToMonoid @a x =
     Mon @a (match_AdditiveMonoid @a x @(a -> a -> a) (\(f : a -> a -> a) (z : a) . f))
            (match_AdditiveMonoid @a x @a (\(f : a -> a -> a) (z : a) . z))
 
