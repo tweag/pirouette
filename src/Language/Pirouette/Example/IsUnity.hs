@@ -40,12 +40,6 @@ checkOk =
 definitions :: PrtUnorderedDefs Ex
 definitions =
   [progWithStdLib|
-eqInt : Integer -> Integer -> Bool
-eqInt x y = x == y
-
-eqString : String -> String -> Bool
-eqString x y = x ~~ y
-
 data Pair x y
   = P : x -> y -> Pair x y
 
@@ -133,7 +127,7 @@ correct_isUnity v ac =
             False
             (\(tokM : KVMap String Integer) .
               eqList @(Pair String Integer)
-                (pairEq @String @Integer eqString eqInt)
+                (pairEq @String @Integer eqString eqInteger)
                 (toList @String @Integer tokM)
                 (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))))
 
@@ -151,7 +145,7 @@ eqTxOutRef r1 r2 =
             (\(n1 : Integer)
             . match_TxId i2 @Bool
               (\(n2 : Integer)
-              . and (eqInt n1 n2) (eqInt ix1 ix2)
+              . and (eqInteger n1 n2) (eqInteger ix1 ix2)
               ))))
 
 spendsOutput : List (Pair TxOutRef TxOut) -> TxOutRef -> Bool
