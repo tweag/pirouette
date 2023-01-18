@@ -114,6 +114,18 @@ all @a p xs =
 
 elem : forall a . (a -> a -> Bool) -> a -> List a -> Bool
 elem @a eq x l = any @a (eq x) l
+
+revAppend : forall a . List a -> List a -> List a
+revAppend @a l1 l2 =
+  match_List @a l1 @(List a)
+    l2
+    (\(x1 : a) (xs1 : List a) . revAppend @a xs1 (Cons @a x1 l2))
+
+reverse : forall a . List a -> List a
+reverse @a l = revAppend @a (Nil @a) l
+
+append : forall a . List a -> List a -> List a
+append @a l1 l2 = revAppend @a (reverse @a l1) l2
 |]
 
 stdLib :: PrtUnorderedDefs Ex
