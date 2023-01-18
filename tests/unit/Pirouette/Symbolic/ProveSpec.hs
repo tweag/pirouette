@@ -17,6 +17,7 @@ import Pirouette.Monad
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.EvalUtils
 import Pirouette.Symbolic.ProveSpec.Internal
+import qualified Pirouette.Symbolic.ProveSpec.NastyLists as NastyLists
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax
 import Pirouette.Transformations (elimEvenOddMutRec)
@@ -324,7 +325,8 @@ tests =
       ],
     ohearnTest,
     ohearnTestPeano,
-    isUnityTest
+    isUnityTest,
+    testGroup "Nasty Lists" NastyLists.tests
   ]
 
 -- * IsUnity example

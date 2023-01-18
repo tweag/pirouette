@@ -113,6 +113,7 @@ test-suite spec
       Pirouette.Symbolic.EvalSpec
       Pirouette.Symbolic.EvalUtils
       Pirouette.Symbolic.ProveSpec
+      Pirouette.Symbolic.ProveSpec.NastyLists
       Pirouette.Symbolic.ProveSpec.Internal
       Pirouette.Term.Syntax.BaseSpec
       Pirouette.Term.Syntax.SystemFSpec

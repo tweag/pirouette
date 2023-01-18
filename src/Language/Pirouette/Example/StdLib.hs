@@ -111,6 +111,9 @@ all @a p xs =
   match_List @a xs @Bool
     True
     (\(x : a) (xs2 : List a) . and (p x) (all @a p xs2))
+
+elem : forall a . (a -> a -> Bool) -> a -> List a -> Bool
+elem @a eq x l = any @a (eq x) l
 |]
 
 stdLib :: PrtUnorderedDefs Ex
