@@ -24,7 +24,7 @@ instance (Arbitrary key, Arbitrary value) => Arbitrary (Action key value) where
       False -> Union <$> arbitrary <*> arbitrary
 
 unionFindToNormalisedList :: (Ord key, Ord value) => UF.UnionFind key value -> [([key], Maybe value)]
-unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . (\uf -> fst $ UF.runWithUnionFind uf $ UF.toList)
+unionFindToNormalisedList = sort . map (first (sort . NE.toList)) . (\uf -> fst $ UF.runWithUnionFind uf UF.toList)
 
 dummyUnionFindToNormalisedList :: (Ord key, Ord value) => DUF.DummyUnionFind key value -> [([key], Maybe value)]
 dummyUnionFindToNormalisedList = sort . map (first sort)

@@ -105,8 +105,9 @@ find ::
   (Ord key, Monad m) =>
   key ->
   WithUnionFindT key value m (key, Int, Maybe value)
-find key =
-  Map.lookup key <$> getBindings >>= \case
+find key = do
+  bindings <- getBindings
+  case Map.lookup key bindings of
     Nothing -> return (key, 1, Nothing)
     Just (ChildOf key') -> do
       -- We use @findExn@ because invariant (ii) guarantees that it will
@@ -122,8 +123,9 @@ findExn ::
   (Ord key, Monad m) =>
   key ->
   WithUnionFindT key value m (key, Int, Maybe value)
-findExn key =
-  Map.lookup key <$> getBindings >>= \case
+findExn key = do
+  bindings <- getBindings
+  case Map.lookup key bindings of
     Nothing -> error "findExn: no value associated with key"
     Just (ChildOf key') -> do
       (ancestor, size, maybeValue) <- findExn key'

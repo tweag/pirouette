@@ -405,7 +405,7 @@ instance (Show v, Show ty, Show ann, IsVar v, HasSubst ty) => HasApp (AnnTerm ty
             -- Now we know we'll be applying n arguments at once.
             (_, body) = getNHead n t
             (args, excess) = splitAt n vs
-            sigma xs = foldl' (\x y -> Just y :< x) (Inc 0) xs
+            sigma = foldl' (\x y -> Just y :< x) (Inc 0)
          in case mapM from args of
               Just as -> appN (sub (sigma as) body) excess
               Nothing -> error "Mismatched Term/Type application"

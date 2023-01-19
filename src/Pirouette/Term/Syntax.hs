@@ -41,7 +41,7 @@ separateBoundFrom u t =
 
     -- `structuredInter` transforms the set of name clashes into a map
     -- from nameString to the list of nameUnique associated.
-    structuredInter inter = Set.fold (\n m -> Map.insertWith (++) (nameString n) [nameUnique n] m) Map.empty inter
+    structuredInter = Set.fold (\n m -> Map.insertWith (++) (nameString n) [nameUnique n] m) Map.empty
 
     -- `nextFresh s txt i n` takes a set `s` of names and a `nameString` `txt` and outputs
     -- the first index which does not create clash.
