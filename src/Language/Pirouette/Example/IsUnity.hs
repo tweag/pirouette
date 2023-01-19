@@ -59,12 +59,6 @@ pairEq @a @b eqA eqB x y =
     (\(x0 : a) (x1 : b) . match_Pair @a @b y @Bool
       (\(y0 : a) (y1 : b) . and (eqA x0 y0) (eqB x1 y1)))
 
-maybeSum : forall a . Maybe a -> Maybe a -> Maybe a
-maybeSum @a m1 m2 =
-  match_Maybe @a m1 @(Maybe a)
-    m2
-    (\(j1 : a) . Just @a j1)
-
 data KVMap k v
   = KV : List (Pair k v) -> KVMap k v
 
@@ -79,7 +73,7 @@ lkupOne @k @v predi m =
 lkup : forall k v . (k -> k -> Bool) -> KVMap k v -> k -> Maybe v
 lkup @k @v eq m tgt =
   match_KVMap @k @v m @(Maybe v)
-    (foldr @(Pair k v) @(Maybe v) (\(pk : Pair k v) . maybeSum @v (lkupOne @k @v (eq tgt) pk)) (Nothing @v))
+    (foldr @(Pair k v) @(Maybe v) (\(pk : Pair k v) . firstJust @v (lkupOne @k @v (eq tgt) pk)) (Nothing @v))
 
 -- Just like a plutus value, but se use integers for currency symbols and token names
 -- to not have to deal with bytestrings

@@ -54,6 +54,9 @@ isJust @a m =
   match_Maybe @a m @Bool
     False
     (\(n : a) . True)
+
+firstJust : forall a . Maybe a -> Maybe a -> Maybe a
+firstJust @a m1 m2 = if @(Maybe a) isJust @a m1 then m1 else m2
 |]
 
 lists :: PrtUnorderedDefs Ex
