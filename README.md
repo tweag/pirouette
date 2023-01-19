@@ -75,7 +75,7 @@ plutus through `Language.Pirouette.PlutusIR`, but further work is necessary to
 seamlessly interact with validator scripts.
 
 To run Pirouette on Plutus Intermediate Representation scripts,
-one has to use the [pirouette-plutusir library](https://github.com/tweag/plutus-libs/tree/main/pirouette-plutusir), provided in the [Plutus-libs](https://github.com/tweag/plutus-libs).
+one has to use the [pirouette-plutusir library](https://github.com/tweag/plutus-libs/tree/main/pirouette-plutusir), provided in the [Plutus-libs](https://github.com/tweag/plutus-libs) repository.
 
 [Plutus]: https://plutus.readthedocs.io/en/latest/
 
@@ -96,10 +96,10 @@ root of the repository.
 
 ## Pre-commit Hooks and CI
 
-Our CI runs `ormolu` and `cabal test`. In order to help avoid CI failures due to
-formatting problems, we recommend that you install the
-[pre-commit hook for running ormolu](tests/ormolu-pre-commit-hook.sh).
-To do so, simply copy (or link) the script into `.git/hooks/pre-commit`.
+In addition to `cabal test`, our CI runs `nixfmt` and `ormolu`.
+In order to help avoid CI failures due to formatting problems,
+we recommend that you install a pre-commit hook for running Ormolu.
+The Nix shell already enables such a pre-commit hook transparently.
 
 # Contributing
 
@@ -113,4 +113,3 @@ We welcome pull requests! Check the [issue](https://github.com/tweag/pirouette/i
 See [LICENSE](LICENSE).
 
 Copyright © 2021–present Tweag I/O
-
