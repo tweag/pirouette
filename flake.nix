@@ -8,6 +8,11 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         hpkgs = pkgs.haskell.packages.ghc902;
+
+        pre-commit = pre-commit-hooks.lib.${system}.run {
+          src = ./.;
+          hooks = { nixfmt.enable = true; };
+        };
       in {
         formatter = pkgs.nixfmt;
 
@@ -42,8 +47,11 @@
               xdot
               haskellPackages.graphmod
             ]) ++ [ hpkgs.haskell-language-server ];
+            inherit (pre-commit) shellHook;
             inherit LD_LIBRARY_PATH;
           };
         };
+
+        checks = { inherit pre-commit; };
       });
 }
