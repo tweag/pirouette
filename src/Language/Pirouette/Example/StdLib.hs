@@ -10,9 +10,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
--- -l has the effect of causing the TH interpreter to try loading
--- z3 to resolve otherwise undefined symbols
-{-# OPTIONS_GHC -lz3 #-}
 
 module Language.Pirouette.Example.StdLib where
 
