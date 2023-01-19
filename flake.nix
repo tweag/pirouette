@@ -14,7 +14,6 @@
           hooks = {
             nixfmt.enable = true;
             ormolu.enable = true;
-            hlint.enable = true;
           };
         };
       in {
