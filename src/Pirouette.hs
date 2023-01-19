@@ -12,3 +12,10 @@ import Pirouette.Symbolic.Prover.Runner as X
     replIncorrectnessLogic,
     replIncorrectnessLogicSingl,
   )
+
+test :: Int
+test =
+  let x = 7 in
+    case x of
+      0 -> 2
+      n -> n + 4

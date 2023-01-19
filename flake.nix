@@ -11,7 +11,10 @@
 
         pre-commit = pre-commit-hooks.lib.${system}.run {
           src = ./.;
-          hooks = { nixfmt.enable = true; ormolu.enable = true; };
+          hooks = {
+            nixfmt.enable = true;
+            ormolu.enable = true;
+          };
         };
       in {
         formatter = pkgs.nixfmt;
