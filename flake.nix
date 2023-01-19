@@ -1,6 +1,7 @@
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/22.11";
   inputs.flake-utils.url = "github:numtide/flake-utils";
+
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -8,6 +9,7 @@
         hpkgs = pkgs.haskell.packages.ghc902;
       in {
         formatter = pkgs.nixfmt;
+
         devShells = let
           buildInputs = (with pkgs; [
             git # Required to build in pure nix shells
@@ -17,6 +19,7 @@
             ormolu # Needed by the CI
             z3
           ]) ++ [ hpkgs.ghc ];
+
           LD_LIBRARY_PATH = pkgs.lib.strings.makeLibraryPath [ pkgs.z3 ];
         in {
           ## A minimal development shell
@@ -24,6 +27,7 @@
             inherit buildInputs;
             inherit LD_LIBRARY_PATH;
           };
+
           ## A development shell with more features
           default = pkgs.mkShell {
             buildInputs = buildInputs ++ (with pkgs; [
