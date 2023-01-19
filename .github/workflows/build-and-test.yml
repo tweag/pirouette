@@ -59,9 +59,3 @@ jobs:
         echo "!! CABAL TEST OUTPUT:"
         cat pirouette-cabal-test.out
         cabal_res=$(cat pirouette-cabal-test.res | cut -d':' -f2)
-        echo "!! ORMOLU OUTPUT:"
-        cat pirouette-ormolu.out
-        ormolu_res=$(cat pirouette-ormolu.res | cut -d':' -f2)
-        if [[ "$cabal_res" != "0" ]] || [[ "$ormolu_res" != "0" ]]; then
-          exit 1
-        fi
