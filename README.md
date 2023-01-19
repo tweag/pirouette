@@ -96,7 +96,6 @@ root of the repository.
 
 ## Pre-commit Hooks and CI
 
-In addition to `cabal test`, our CI runs `nixfmt` and `ormolu`.
 In order to help avoid CI failures due to formatting problems,
 we recommend that you install a pre-commit hook for running Ormolu.
 The Nix shell already enables such a pre-commit hook transparently.
