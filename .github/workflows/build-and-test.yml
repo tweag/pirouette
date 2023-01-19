@@ -59,3 +59,19 @@ jobs:
         echo "!! CABAL TEST OUTPUT:"
         cat pirouette-cabal-test.out
         cabal_res=$(cat pirouette-cabal-test.res | cut -d':' -f2)
+
+  check-flake:
+    name: Check the flake
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code.
+        uses: actions/checkout@v3.3.0
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v18
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the flake
+        run: nix flake check
