@@ -40,32 +40,54 @@ thing `pathSatisfies` property = do
     )
     (property paths)
 
+-- ** Path Predicates
+
+-- *** Combinators
+
+-- | Logical conjunction of two predicates.
 (.&.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 p .&. q = \x -> p x && q x
 
+-- | Logical disjunction of two predicates.
 (.||.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 p .||. q = \x -> p x || q x
 
-isVerified,
-  isDischarged,
-  isCounter,
-  isNoCounter,
-  ranOutOfFuel ::
-    Path lang (EvaluationWitness lang) -> Bool
-isVerified Path {pathResult = Verified} = True
-isVerified _ = False
-isDischarged Path {pathResult = Discharged} = True
-isDischarged _ = False
-isCounter Path {pathResult = CounterExample _ _} = True
-isCounter _ = False
+-- | Logical implication of two predicate.
+(.=>.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
+p .=>. q = \x -> not (p x) || q x
+
+-- *** Path Status Predicates
+
+stillHasFuel :: Path lang (EvaluationWitness lang) -> Bool
+stillHasFuel Path {pathStatus = OutOfFuel} = False
+stillHasFuel _ = False
+
+ranOutOfFuel :: Path lang (EvaluationWitness lang) -> Bool
 ranOutOfFuel Path {pathStatus = OutOfFuel} = True
 ranOutOfFuel _ = False
+
+-- *** Path Result Predicates
+
+isVerified :: Path lang (EvaluationWitness lang) -> Bool
+isVerified Path {pathResult = Verified} = True
+isVerified _ = False
+
+isDischarged :: Path lang (EvaluationWitness lang) -> Bool
+isDischarged Path {pathResult = Discharged} = True
+isDischarged _ = False
+
+isCounter :: Path lang (EvaluationWitness lang) -> Bool
+isCounter Path {pathResult = CounterExample _ _} = True
+isCounter _ = False
 
 isCounterWith :: (Model -> Bool) -> Path lang (EvaluationWitness lang) -> Bool
 isCounterWith f Path {pathResult = CounterExample _ m} = f m
 isCounterWith f _ = False
 
+isNoCounter :: Path lang (EvaluationWitness lang) -> Bool
 isNoCounter = not . isCounter
+
+-- *** Others
 
 isSingleton :: [a] -> Bool
 isSingleton [_] = True
