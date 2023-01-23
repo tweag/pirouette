@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Pirouette.Symbolic.EvalUtils where
 
+import Data.List (intersperse)
 import Pirouette.Symbolic.Eval
 import Pirouette.Symbolic.Prover
 import Pirouette.Term.Syntax.Base
@@ -32,7 +34,11 @@ pathSatisfies ::
   Assertion
 thing `pathSatisfies` property = do
   paths <- thing
-  assertBool ("property not satisfied:\n" <> show (vsep $ map pretty paths)) (property paths)
+  assertBool
+    ( "`pathSatisfies`: the given property is not satisfied by the following paths:\n\n"
+        <> show (vsep $ intersperse "" $ map pretty paths)
+    )
+    (property paths)
 
 (.&.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 p .&. q = \x -> p x && q x

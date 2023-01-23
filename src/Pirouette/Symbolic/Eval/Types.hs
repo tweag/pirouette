@@ -145,10 +145,10 @@ deriving instance (Show (SMT.ConstraintSet lang SymVar), Show (Type lang), Show 
 instance (LanguagePretty lang, Pretty a) => Pretty (Path lang a) where
   pretty (Path conds _gamma ps res) =
     vsep
-      [ "", -- "Env:" <+> hsep (map pretty (M.toList gamma)),
-        "Path:" <+> indent 2 (pretty conds),
-        "Status:" <+> pretty ps,
-        "Tip:" <+> indent 2 (pretty res)
+      [ -- "Gamma:" <+> hsep (map pretty (M.toList gamma)),
+        "Constraint:" <+> indent 2 (pretty conds),
+        "Status:" <+> indent 2 (pretty ps),
+        "Result:" <+> indent 2 (pretty res)
       ]
 
 data AvailableFuel = Fuel Int | InfiniteFuel
