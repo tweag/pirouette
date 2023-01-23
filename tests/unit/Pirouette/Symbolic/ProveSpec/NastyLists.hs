@@ -37,17 +37,17 @@ tests =
           [term|\(r:Bool) (x:Integer) (l:List Integer) . True|]
         )
         `pathSatisfies` (all isNoCounter .&. any isVerified),
-    testCase "forall l. elem 0 l => False" $
+    testCase "not (forall l. elem 0 l)" $
       exec
-        (proveUnbounded def)
+        (prove def)
         (stdLib, [ty|Bool|], [term|\(l:List Integer) . elem @Integer eqInteger 0 l|])
-        ( [term|\(r:Bool) (l:List Integer) . r|],
+        ( [term|\(r:Bool) (l:List Integer) . not r|],
           [term|\(r:Bool) (l:List Integer) . True|]
         )
-        `pathSatisfies` (all isNoCounter .&. any isVerified),
+        `pathSatisfies` any isCounter,
     testCase "forall x l. elem x (append l [x])" $
       exec
-        (proveUnbounded def)
+        (proveBounded def 0)
         (stdLib, [ty|Bool|], [term|\(x:Integer) (l:List Integer) . elem @Integer eqInteger x (append @Integer l (Cons @Integer x (Nil @Integer)))|])
         ( [term|\(r:Bool) (x:Integer) (l:List Integer) . r|],
           [term|\(r:Bool) (x:Integer) (l:List Integer) . True|]
