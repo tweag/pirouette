@@ -76,6 +76,14 @@ proveUnbounded ::
   m [Path lang (EvaluationWitness lang)]
 proveUnbounded opts = prove (opts {shouldStop = const False})
 
+proveBounded ::
+  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  Options ->
+  Int ->
+  Problem lang ->
+  m [Path lang (EvaluationWitness lang)]
+proveBounded opts fuel = prove (opts {shouldStop = \stats -> sestConstructors stats > fuel})
+
 -- | Executes the problem while the stopping condition is valid until
 --  the supplied predicate returns @True@. A return value of @Nothing@
 --  means that on all paths that we looked at they were either verified or
