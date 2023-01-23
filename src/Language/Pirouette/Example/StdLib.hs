@@ -126,6 +126,12 @@ reverse @a l = revAppend @a (Nil @a) l
 
 append : forall a . List a -> List a -> List a
 append @a l1 l2 = revAppend @a (reverse @a l1) l2
+
+length : forall a . List a -> Integer
+length @a l =
+  match_List @a l @Integer
+    0
+    (\(x : a) (xs : List a) . 1 + length @a xs)
 |]
 
 stdLib :: PrtUnorderedDefs Ex
