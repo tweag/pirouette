@@ -52,5 +52,12 @@ tests =
         ( [term|\(r:Bool) (x:Integer) (l:List Integer) . r|],
           [term|\(r:Bool) (x:Integer) (l:List Integer) . True|]
         )
-        `pathSatisfies` (all (stillHasFuel .=>. isNoCounter) .&. any isVerified)
+        `pathSatisfies` ( all (stillHasFuel .=>. isNoCounter)
+                            .&. any (stillHasFuel .&. isVerified)
+                        )
+                        -- NOTE: We really need this predicate `stillHasFuel .=> isNoCounter` here
+                        -- because paths that run out of fuel are also considered counter-example
+                        -- but we do not want those paths to make the test fail. The predicate
+                        -- `stillHasFuel .&. isVerified` is overkill as `isVerified` would
+                        -- probably be enough, but we find this version clearer.
   ]
