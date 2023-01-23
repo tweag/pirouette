@@ -47,10 +47,10 @@ tests =
         `pathSatisfies` any isCounter,
     testCase "forall x l. elem x (append l [x])" $
       exec
-        (proveBounded def 0)
+        (proveBounded def 25) -- fuel heuristically chosen to not take too long
         (stdLib, [ty|Bool|], [term|\(x:Integer) (l:List Integer) . elem @Integer eqInteger x (append @Integer l (Cons @Integer x (Nil @Integer)))|])
         ( [term|\(r:Bool) (x:Integer) (l:List Integer) . r|],
           [term|\(r:Bool) (x:Integer) (l:List Integer) . True|]
         )
-        `pathSatisfies` (all isNoCounter .&. any isVerified)
+        `pathSatisfies` (all (stillHasFuel .=>. isNoCounter) .&. any isVerified)
   ]
