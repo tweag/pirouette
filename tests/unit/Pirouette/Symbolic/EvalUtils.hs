@@ -60,7 +60,7 @@ p .=>. q = \x -> not (p x) || q x
 
 stillHasFuel :: Path lang (EvaluationWitness lang) -> Bool
 stillHasFuel Path {pathStatus = OutOfFuel} = False
-stillHasFuel _ = False
+stillHasFuel _ = True
 
 ranOutOfFuel :: Path lang (EvaluationWitness lang) -> Bool
 ranOutOfFuel Path {pathStatus = OutOfFuel} = True
