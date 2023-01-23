@@ -16,17 +16,11 @@
 --  Check "Language.Pirouette.Example.QuasiQuoter" for an example instantiation.
 module Language.Pirouette.QuasiQuoter (QuasiQuoter, prog, progNoTC, term, ty, funDecl) where
 
-import Control.Monad.Except (runExcept)
-import Control.Monad.Reader
-import qualified Data.Map as M
 import Language.Haskell.TH.Quote
-import Language.Haskell.TH.Syntax hiding (Name, Type)
 import Language.Pirouette.QuasiQuoter.Internal
 import Language.Pirouette.QuasiQuoter.Syntax
 import Language.Pirouette.QuasiQuoter.ToTerm
 import Pirouette.Term.Syntax.Base
-import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
-import qualified Pirouette.Term.Syntax.SystemF as SystF
 import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 

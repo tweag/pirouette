@@ -76,14 +76,14 @@ tests =
           canParseProgram
             [prog|
           -- Increments a number
-          inc : Integer -> Integer  
+          inc : Integer -> Integer
           inc x = x + 1
-     
+
           -- Decrements a number
           dec :
                Integer -- Number to be decremented
             -> Integer
-                  
+
           dec x =
             x - 1
 

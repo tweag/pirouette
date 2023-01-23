@@ -10,9 +10,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
--- -l has the effect of causing the TH interpreter to try loading
--- z3 to resolve otherwise undefined symbols
-{-# OPTIONS_GHC -lz3 #-}
 
 module Language.Pirouette.Example.StdLib where
 
@@ -71,6 +68,9 @@ isJust @a m =
   match_Maybe @a m @Bool
     False
     (\(n : a) . True)
+
+firstJust : forall a . Maybe a -> Maybe a -> Maybe a
+firstJust @a m1 m2 = if @(Maybe a) isJust @a m1 then m1 else m2
 |]
 
 lists :: PrtUnorderedDefs Ex
