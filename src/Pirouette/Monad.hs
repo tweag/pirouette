@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -198,8 +199,29 @@ termIsWHNFOrMeta tm = do
 newtype PrtUnorderedDefs lang = PrtUnorderedDefs {prtUODecls :: Decls lang}
   deriving (Eq, Data, Show)
 
-addDecls :: Decls builtins -> PrtUnorderedDefs builtins -> PrtUnorderedDefs builtins
+-- | Add declarations to a set of unordered declarations. In case of
+-- declarations going by the same name, already-existing ones are preserved and
+-- new ones are ignored. See also @addDeclsSafe@.
+addDecls :: forall lang. Decls lang -> PrtUnorderedDefs lang -> PrtUnorderedDefs lang
 addDecls decls defs = defs {prtUODecls = prtUODecls defs <> decls}
+
+-- | Add declarations to a set of unordered declarations. In case of
+-- declarations going by the same name, raises an error.
+addDeclsSafe :: forall lang. Decls lang -> PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+addDeclsSafe decls defs =
+  defs {prtUODecls = Map.unionWith (\_ _ -> error "addDeclsSafe") (prtUODecls defs) decls}
+
+unionPrtUODefs :: forall lang. PrtUnorderedDefs lang -> PrtUnorderedDefs lang -> PrtUnorderedDefs lang
+unionPrtUODefs defs1 defs2 =
+  PrtUnorderedDefs
+    { prtUODecls = Map.unionWith (\_ _ -> error "unionPrtUODefs") (prtUODecls defs1) (prtUODecls defs2)
+    }
+
+unionsPrtUODefs :: forall lang. [PrtUnorderedDefs lang] -> PrtUnorderedDefs lang
+unionsPrtUODefs defss =
+  PrtUnorderedDefs
+    { prtUODecls = Map.unionsWith (\_ _ -> error "unionPrtUODefs") (map prtUODecls defss)
+    }
 
 -- | The definitions in this prelude are meant to support any builtins from your surface
 -- language. For instance, say you have a builtin /ifListIsEmpty/ on your surface language

@@ -6,6 +6,7 @@
 module Language.Pirouette.Example.IsUnity where
 
 import Language.Pirouette.Example
+import Language.Pirouette.Example.StdLib (progWithStdLib)
 import Pirouette.Monad
 import Pirouette.Symbolic.Prover.Runner
 import qualified Test.Tasty.HUnit as Test
@@ -38,47 +39,12 @@ checkOk =
 
 definitions :: PrtUnorderedDefs Ex
 definitions =
-  [prog|
-and :
-  Bool ->
-  Bool ->
-  Bool
-and x y = if @Bool x then y else False
-
-or : Bool -> Bool -> Bool
-or x y = if @Bool x then True else y
-
+  [progWithStdLib|
 eqInt : Integer -> Integer -> Bool
 eqInt x y = x == y
 
 eqString : String -> String -> Bool
 eqString x y = x ~~ y
-
-data List a
-  = Nil : List a
-  | Cons : a -> List a -> List a
-
-foldr : forall a r . (a -> r -> r) -> r -> List a -> r
-foldr @a @r f e l =
-  match_List @a l @r
-    e
-    (\(x : a) (xs : List a) . f x (foldr @a @r f e xs))
-
-listEq :
-  forall a .
-  (a -> a -> Bool) ->
-  List a -> List a -> Bool
-listEq @a eq x0 y0 =
-  match_List @a x0 @Bool
-    (match_List @a y0 @Bool True (\(y : a) (ys : List a) . False))
-    (\(x : a) (xs : List a) .
-      match_List @a y0 @Bool False (\(y : a) (ys : List a) . and (eq x y) (listEq @a eq xs ys)))
-
-contains : forall a . (a -> Bool) -> List a -> Bool
-contains @a eq x0 =
-  match_List @a x0 @Bool
-    False
-    (\(x : a) (xs : List a) . or (eq x) (contains @a eq xs))
 
 data Pair x y
   = P : x -> y -> Pair x y
@@ -92,20 +58,6 @@ pairEq @a @b eqA eqB x y =
   match_Pair @a @b x @Bool
     (\(x0 : a) (x1 : b) . match_Pair @a @b y @Bool
       (\(y0 : a) (y1 : b) . and (eqA x0 y0) (eqB x1 y1)))
-
-data Maybe x
-  = Just : x -> Maybe x
-  | Nothing : Maybe x
-
-maybeSum : forall x . Maybe x -> Maybe x -> Maybe x
-maybeSum @x mx my =
-  match_Maybe @x mx @(Maybe x)
-    (\(jx : x) . Just @x jx)
-    my
-
-isJust : forall x . Maybe x -> Bool
-isJust @x mx =
-  match_Maybe @x mx @Bool (\(jx : x) . True) False
 
 data KVMap k v
   = KV : List (Pair k v) -> KVMap k v
@@ -121,7 +73,7 @@ lkupOne @k @v predi m =
 lkup : forall k v . (k -> k -> Bool) -> KVMap k v -> k -> Maybe v
 lkup @k @v eq m tgt =
   match_KVMap @k @v m @(Maybe v)
-    (foldr @(Pair k v) @(Maybe v) (\(pk : Pair k v) . maybeSum @v (lkupOne @k @v (eq tgt) pk)) (Nothing @v))
+    (foldr @(Pair k v) @(Maybe v) (\(pk : Pair k v) . firstJust @v (lkupOne @k @v (eq tgt) pk)) (Nothing @v))
 
 -- Just like a plutus value, but se use integers for currency symbols and token names
 -- to not have to deal with bytestrings
@@ -144,17 +96,15 @@ data TxInfo
 assetClassValueOf : Value -> Pair String String -> Integer
 assetClassValueOf v ac =
   match_Pair @String @String ac @Integer
-    (\(curSym : String) (tokName : String)
-     . match_Value v @Integer
-     (\(openV : KVMap String (KVMap String Integer))
-      . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Integer
-          (\(tokM : KVMap String Integer)
-           . match_Maybe @Integer (lkup @String @Integer eqString tokM tokName) @Integer
-               (\(r : Integer) . r)
-               0
-          )
-          0
-    ))
+    (\(curSym : String) (tokName : String) .
+      match_Value v @Integer
+        (\(openV : KVMap String (KVMap String Integer)) .
+          match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Integer
+            0
+            (\(tokM : KVMap String Integer) .
+              match_Maybe @Integer (lkup @String @Integer eqString tokM tokName) @Integer
+                0
+                (\(r : Integer) . r))))
 
 -- Now we define the wrong isUnity function, that is too permissive
 wrong_isUnity : Value -> Pair String String -> Bool
@@ -170,17 +120,16 @@ wrong_isUnity v ac = assetClassValueOf v ac == 1
 correct_isUnity : Value -> Pair String String -> Bool
 correct_isUnity v ac =
   match_Pair @String @String ac @Bool
-    (\(curSym : String) (tokName : String)
-     . match_Value v @Bool
-     (\(openV : KVMap String (KVMap String Integer))
-      . match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Bool
-          (\(tokM : KVMap String Integer)
-           . listEq @(Pair String Integer)
-               (pairEq @String @Integer eqString eqInt)
-               (toList @String @Integer tokM)
-               (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))
-          False
-     ))
+    (\(curSym : String) (tokName : String) .
+      match_Value v @Bool
+        (\(openV : KVMap String (KVMap String Integer)) .
+          match_Maybe @(KVMap String Integer) (lkup @String @(KVMap String Integer) eqString openV curSym) @Bool
+            False
+            (\(tokM : KVMap String Integer) .
+              eqList @(Pair String Integer)
+                (pairEq @String @Integer eqString eqInt)
+                (toList @String @Integer tokM)
+                (Cons @(Pair String Integer) (P @String @Integer tokName 1) (Nil @(Pair String Integer))))))
 
 -- Now we define a simple example asset class
 example_ac : Pair String String
@@ -201,7 +150,7 @@ eqTxOutRef r1 r2 =
 
 spendsOutput : List (Pair TxOutRef TxOut) -> TxOutRef -> Bool
 spendsOutput inputs wanted =
-    contains @(Pair TxOutRef TxOut)
+    any @(Pair TxOutRef TxOut)
       (\(p : Pair TxOutRef TxOut)
       . match_Pair @TxOutRef @TxOut p @Bool (\(r : TxOutRef) (o : TxOut) . eqTxOutRef wanted r))
       inputs
