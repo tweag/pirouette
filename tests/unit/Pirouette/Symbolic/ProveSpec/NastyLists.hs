@@ -32,7 +32,11 @@ tests =
   [ testCase "forall x l. elem x (Cons x l)" $
       exec
         (proveUnbounded def)
-        (stdLib, [ty|Bool|], [term|\(x:Integer) (l:List Integer) . elem @Integer eqInteger x (Cons @Integer x l)|])
+        ( stdLib,
+          [ty|Bool|],
+          [term|\(x:Integer) (l:List Integer) .
+                  elem @Integer eqInteger x (Cons @Integer x l)|]
+        )
         ( [term|\(r:Bool) (x:Integer) (l:List Integer) . r|],
           [term|\(r:Bool) (x:Integer) (l:List Integer) . True|]
         )
@@ -40,7 +44,10 @@ tests =
     testCase "not (forall l. elem 0 l)" $
       exec
         (prove def)
-        (stdLib, [ty|Bool|], [term|\(l:List Integer) . elem @Integer eqInteger 0 l|])
+        ( stdLib,
+          [ty|Bool|],
+          [term|\(l:List Integer) . elem @Integer eqInteger 0 l|]
+        )
         ( [term|\(r:Bool) (l:List Integer) . not r|],
           [term|\(r:Bool) (l:List Integer) . True|]
         )
@@ -48,7 +55,11 @@ tests =
     testCase "forall x l. elem x (append l [x])" $
       exec
         (proveBounded def 25) -- fuel heuristically chosen to not take too long
-        (stdLib, [ty|Bool|], [term|\(x:Integer) (l:List Integer) . elem @Integer eqInteger x (append @Integer l (Cons @Integer x (Nil @Integer)))|])
+        ( stdLib,
+          [ty|Bool|],
+          [term|\(x:Integer) (l:List Integer) .
+                  elem @Integer eqInteger x (append @Integer l (Cons @Integer x (Nil @Integer)))|]
+        )
         ( [term|\(r:Bool) (x:Integer) (l:List Integer) . r|],
           [term|\(r:Bool) (x:Integer) (l:List Integer) . True|]
         )
