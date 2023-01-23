@@ -51,7 +51,7 @@ tests =
         ( [term|\(r:Bool) (l:List Integer) . not r|],
           [term|\(r:Bool) (l:List Integer) . True|]
         )
-        `pathSatisfies` any isCounter,
+        `pathSatisfies` any (stillHasFuel .&. isCounter),
     testCase "forall x l. elem x (append l [x])" $
       exec
         (proveBounded def 25) -- fuel heuristically chosen to not take too long
