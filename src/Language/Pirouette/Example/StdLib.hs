@@ -23,6 +23,13 @@ import Pirouette.Term.Syntax.Pretty.Class (Pretty (..))
 import Pirouette.Term.TypeChecker (typeCheckDecls)
 import Text.Megaparsec
 
+integers :: PrtUnorderedDefs Ex
+integers =
+  [progNoTC|
+eqInteger : Integer -> Integer -> Bool
+eqInteger x y = x == y
+|]
+
 booleans :: PrtUnorderedDefs Ex
 booleans =
   [progNoTC|
@@ -34,6 +41,13 @@ or x y = if @Bool x then True else y
 
 not : Bool -> Bool
 not b = if @Bool b then False else True
+|]
+
+strings :: PrtUnorderedDefs Ex
+strings =
+  [progNoTC|
+eqString : String -> String -> Bool
+eqString x y = x ~~ y
 |]
 
 maybes :: PrtUnorderedDefs Ex
@@ -97,11 +111,14 @@ all @a p xs =
   match_List @a xs @Bool
     True
     (\(x : a) (xs2 : List a) . and (p x) (all @a p xs2))
+
+elem : forall a . (a -> a -> Bool) -> a -> List a -> Bool
+elem @a eq x l = any @a (eq x) l
 |]
 
 stdLib :: PrtUnorderedDefs Ex
 stdLib =
-  let decls = unionsPrtUODefs [booleans, maybes, lists]
+  let decls = unionsPrtUODefs [integers, booleans, strings, maybes, lists]
    in case typeCheckDecls $ prtUODecls decls of
         Left typeError -> errorWithoutStackTrace $ ("Could not type-check standard library: " ++) $ show $ pretty typeError
         Right () -> decls
