@@ -79,6 +79,7 @@ library
     , ansi-terminal
     , base >=4.9 && <5
     , bytestring
+    , containers
     , data-default
     , deriving-compat
     , extra
@@ -87,6 +88,7 @@ library
     , megaparsec
     , mtl >=2.2.2
     , optics-core
+    , optics-th
     , parallel
     , parser-combinators
     , prettyprinter
@@ -95,6 +97,7 @@ library
     , smtlib-backends-z3
     , tasty
     , tasty-expected-failure
+    , tasty-hunit
     , tasty-quickcheck
     , template-haskell
     , text
@@ -133,6 +136,7 @@ test-suite spec
     , ansi-terminal
     , base >=4.9 && <5
     , bytestring
+    , containers
     , data-default
     , deriving-compat
     , extra
@@ -141,14 +145,17 @@ test-suite spec
     , megaparsec
     , mtl >=2.2.2
     , optics-core
+    , optics-th
     , parallel
     , parser-combinators
+    , pirouette
     , prettyprinter
     , raw-strings-qq
     , smtlib-backends
     , smtlib-backends-z3
     , tasty
     , tasty-expected-failure
+    , tasty-hunit
     , tasty-quickcheck
     , template-haskell
     , text
