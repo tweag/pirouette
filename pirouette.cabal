@@ -81,7 +81,6 @@ library
     , bytestring
     , containers
     , data-default
-    , deriving-compat
     , extra
     , haskell-stack-trace-plugin
     , interpolate
@@ -90,19 +89,12 @@ library
     , optics-core
     , optics-th
     , parallel
-    , parser-combinators
     , prettyprinter
     , raw-strings-qq
     , smtlib-backends
     , smtlib-backends-z3
-    , tasty
-    , tasty-expected-failure
-    , tasty-hunit
-    , tasty-quickcheck
-    , template-haskell
     , text
     , transformers
-    , uniplate
   default-language: Haskell2010
 
 test-suite spec
@@ -138,7 +130,6 @@ test-suite spec
     , bytestring
     , containers
     , data-default
-    , deriving-compat
     , extra
     , haskell-stack-trace-plugin
     , interpolate
@@ -147,18 +138,10 @@ test-suite spec
     , optics-core
     , optics-th
     , parallel
-    , parser-combinators
-    , pirouette
     , prettyprinter
     , raw-strings-qq
     , smtlib-backends
     , smtlib-backends-z3
-    , tasty
-    , tasty-expected-failure
-    , tasty-hunit
-    , tasty-quickcheck
-    , template-haskell
     , text
     , transformers
-    , uniplate
   default-language: Haskell2010
