@@ -14,7 +14,6 @@ dependencies:
   - mtl >= 2.2.2
   - interpolate
   - bytestring
-  - containers
   - extra
   - text
   - prettyprinter
@@ -24,14 +23,12 @@ dependencies:
   - deriving-compat
   - template-haskell
   - tasty
-  - tasty-hunit
   - tasty-quickcheck
   - tasty-expected-failure
   - QuickCheck
   - haskell-stack-trace-plugin
   - parallel
   - optics-core
-  - optics-th
   - raw-strings-qq
   - transformers
   # PureSMT deps
@@ -49,20 +46,5 @@ tests:
     main: Spec.hs
     source-dirs:
       - tests/unit
-    dependencies:
-      - pirouette
     ghc-options:
       -threaded
-
-## executables:
-##   spec-prof:
-##     main: Spec.hs
-##     source-dirs:
-##       - tests/unit
-##     dependencies:
-##       - pirouette
-##     ghc-options:
-##       -threaded
-##       -fprof-auto
-##       -fexternal-interpreter
-##       "-with-rtsopts=-N -p -s -h"
