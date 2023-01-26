@@ -14,6 +14,11 @@
           hooks = {
             nixfmt.enable = true;
             ormolu.enable = true;
+            hpack-sync = {
+              enable = true;
+              entry = "${pkgs.hpack}/bin/hpack";
+              files = "^package\\.yaml$";
+            };
           };
         };
       in {
