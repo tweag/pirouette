@@ -35,13 +35,12 @@ library
       Pirouette.SMT.Monadic
       Pirouette.Symbolic.Eval
       Pirouette.Symbolic.Eval.BranchingHelpers
-      Pirouette.Symbolic.Eval.SMT
       Pirouette.Symbolic.Eval.Types
       Pirouette.Symbolic.Prover
       Pirouette.Symbolic.Prover.Runner
-      Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Base
       Pirouette.Term.Syntax.Pretty
+      Pirouette.Term.Syntax
       Pirouette.Term.Syntax.Pretty.Class
       Pirouette.Term.Syntax.Subst
       Pirouette.Term.Syntax.SystemF
@@ -49,17 +48,16 @@ library
       Pirouette.Term.TypeChecker
       Pirouette.Transformations
       Pirouette.Transformations.Contextualize
-      Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.ElimEvenOddMutRec
       Pirouette.Transformations.EtaExpand
       Pirouette.Transformations.Inline
       Pirouette.Transformations.Monomorphization
       Pirouette.Transformations.Prenex
+      Pirouette.Transformations.Defunctionalization
       Pirouette.Transformations.Tagged
       Pirouette.Transformations.Term
       Pirouette.Transformations.Utils
       Pirouette.Utils
-      PureSMT
       PureSMT.Process
       PureSMT.SExpr
       UnionFind
@@ -80,7 +78,6 @@ library
     , base >=4.9 && <5
     , bytestring
     , containers
-    , data-default
     , deriving-compat
     , extra
     , haskell-stack-trace-plugin
@@ -92,7 +89,6 @@ library
     , parallel
     , parser-combinators
     , prettyprinter
-    , raw-strings-qq
     , smtlib-backends
     , smtlib-backends-z3
     , tasty
@@ -144,14 +140,14 @@ test-suite spec
     , interpolate
     , megaparsec
     , mtl >=2.2.2
+    , parallel
     , optics-core
     , optics-th
-    , parallel
     , parser-combinators
     , pirouette
+    , smtlib-backends
     , prettyprinter
     , raw-strings-qq
-    , smtlib-backends
     , smtlib-backends-z3
     , tasty
     , tasty-expected-failure
