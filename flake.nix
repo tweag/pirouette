@@ -35,8 +35,7 @@
                   '';
                 };
               in "${hpack-dir}/bin/hpack-dir";
-              files =
-                "(\\.l?hs(-boot)?$)|(\\.cabal$)|(^package\\.yaml$)|(/package\\.yaml$)";
+              files = "(\\.l?hs(-boot)?$)|(\\.cabal$)|((^|/)package\\.yaml$)";
               pass_filenames = false;
             };
           };
