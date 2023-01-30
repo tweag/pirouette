@@ -16,7 +16,6 @@ dependencies:
   - bytestring
   - containers
   - extra
-  - text
   - prettyprinter
   - megaparsec
   - parser-combinators
@@ -49,20 +48,5 @@ tests:
     main: Spec.hs
     source-dirs:
       - tests/unit
-    dependencies:
-      - pirouette
     ghc-options:
       -threaded
-
-## executables:
-##   spec-prof:
-##     main: Spec.hs
-##     source-dirs:
-##       - tests/unit
-##     dependencies:
-##       - pirouette
-##     ghc-options:
-##       -threaded
-##       -fprof-auto
-##       -fexternal-interpreter
-##       "-with-rtsopts=-N -p -s -h"
