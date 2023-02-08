@@ -35,8 +35,8 @@ dependencies:
   - raw-strings-qq
   - transformers
   # PureSMT deps
-  - smtlib-backends
-  - smtlib-backends-z3
+  - smtlib-backends >=0.3 && <0.4
+  - smtlib-backends-z3 >=0.3 && <0.4
 
 library:
   source-dirs: src
