@@ -84,7 +84,7 @@ import qualified PureSMT
 
 data SymEvalSolvers lang = SymEvalSolvers
   { -- | Check whether a path is plausible
-    solvePathProblem :: CheckPathProblem lang -> Bool,
+    solvePathProblem :: CheckPathProblem lang -> Either () (Maybe Model),
     -- | Check whether a certain property currently holds over a given path
     solvePropProblem :: CheckPropertyProblem lang -> PruneResult
   }
@@ -233,9 +233,9 @@ learn cs = do
         ReaderT $ \env -> do
           st <- get
           let st' = st {sestConstraint = curr'}
-          if solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env))
-            then put st'
-            else empty
+          case solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env)) of
+            Left () -> empty
+            Right model -> put st' {sestModel = model}
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do

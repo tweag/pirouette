@@ -25,6 +25,7 @@ import qualified Data.Kind as K
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import Data.Tuple.Extra (second)
 import Pirouette.Monad
 import Pirouette.SMT
 import Pirouette.Symbolic.Eval.Types
@@ -58,7 +59,7 @@ data UniversalAxiom lang = UniversalAxiom
 --   2. Check whether a certain property currently holds over a given path
 data SolverProblem lang :: K.Type -> K.Type where
   CheckProperty :: (LanguagePretty lang) => CheckPropertyProblem lang -> SolverProblem lang PruneResult
-  CheckPath :: CheckPathProblem lang -> SolverProblem lang Bool
+  CheckPath :: CheckPathProblem lang -> SolverProblem lang (Either () (Maybe Model))
 
 data CheckPropertyProblem lang = CheckPropertyProblem
   { cpropOut :: PureSMT.SExpr,
@@ -84,10 +85,6 @@ data CheckPathProblem lang = CheckPathProblem
   { cpathState :: SymEvalSt lang,
     cpathDefs :: PrtOrderedDefs lang
   }
-
--- | Models returned by the SMT solver
-newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
-  deriving (Eq, Show)
 
 instance Pretty Model where
   pretty (Model m) =
@@ -125,10 +122,11 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
       pathIsPlausible ::
         (LanguageSMT lang) =>
         SymEvalSt lang ->
-        HackSolver lang Bool
+        HackSolver lang (Either () (Maybe Model))
       pathIsPlausible env = do
         solverPush
-        decl <- runExceptT (declareVariables (sestGamma env))
+        let vars = sestGamma env
+        decl <- runExceptT $ declareVariables vars
         case decl of
           Right _ -> return ()
           Left err -> error err
@@ -138,11 +136,33 @@ instance (LanguageSMT lang) => PureSMT.Solve lang where
         -- so is the translation of the whole set of constraints.
         (_, _, pathConstraints) <- constraintSetToSExpr (sestKnownNames env) (sestConstraint env)
         assert pathConstraints
-        res <- checkSat
+        initResult <- case sestModel env of
+          -- if we already have a candidate model from a previous check
+          -- first try to check for satisfiability within that model
+          Just model -> do
+            solverPush
+            assertModel model
+            initResult <- getModelIfSat vars =<< checkSat
+            solverPop
+            return initResult
+          -- if we don't have such a model, do nothing
+          Nothing -> return $ Left ()
+        finalResult <- case initResult of
+          -- if we got a model satisfying the new constraint set at the previous step,
+          -- we're done
+          Right (Just _) -> return initResult
+          -- otherwise, check for satisfiability without assuming any prior model
+          _ -> getModelIfSat vars =<< checkSat
         solverPop
-        return $ case res of
-          Unsat -> False
-          _ -> True
+        return finalResult
+
+      getModelIfSat vars Sat = do
+        model <- if null vars then pure [] else getModel (M.keys vars)
+        return $ Right $ Just $ Model model
+      getModelIfSat _ Unknown = return $ Right Nothing
+      getModelIfSat _ Unsat = return $ Left ()
+
+      assertModel (Model assignments) = assert $ PureSMT.andMany $ map (uncurry PureSMT.eq . second PureSMT.value) assignments
   solveProblem (CheckProperty CheckPropertyProblem {..}) s =
     hackSolverPrt s cpropDefs $ checkProperty cpropOut cpropIn cpropAxioms cpropState
     where

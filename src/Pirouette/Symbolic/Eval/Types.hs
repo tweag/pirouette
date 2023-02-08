@@ -160,11 +160,12 @@ data SymEvalSt lang = SymEvalSt
     sestFreshCounter :: Int,
     sestStatistics :: SymEvalStatistics,
     -- | The set of names the SMT solver is aware of
-    sestKnownNames :: S.Set Name
+    sestKnownNames :: S.Set Name,
+    sestModel :: Maybe Model
   }
 
 instance Default (SymEvalSt lang) where
-  def = SymEvalSt def M.empty 0 mempty S.empty
+  def = SymEvalSt def M.empty 0 mempty S.empty Nothing
 
 instance (LanguagePretty lang) => Pretty (SymEvalSt lang) where
   pretty SymEvalSt {..} =
@@ -202,3 +203,7 @@ path stop x st =
       pathStatus = if stop (sestStatistics st) then OutOfFuel else Completed,
       pathResult = x
     }
+
+-- | Models returned by the SMT solver
+newtype Model = Model [(PureSMT.SExpr, PureSMT.Value)]
+  deriving (Eq, Show)
