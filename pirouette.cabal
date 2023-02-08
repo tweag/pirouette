@@ -93,8 +93,8 @@ library
     , parser-combinators
     , prettyprinter
     , raw-strings-qq
-    , smtlib-backends
-    , smtlib-backends-z3
+    , smtlib-backends ==0.3.*
+    , smtlib-backends-z3 ==0.3.*
     , tasty
     , tasty-expected-failure
     , tasty-hunit
@@ -151,8 +151,8 @@ test-suite spec
     , pirouette
     , prettyprinter
     , raw-strings-qq
-    , smtlib-backends
-    , smtlib-backends-z3
+    , smtlib-backends ==0.3.*
+    , smtlib-backends-z3 ==0.3.*
     , tasty
     , tasty-expected-failure
     , tasty-hunit

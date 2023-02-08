@@ -8,13 +8,13 @@ import Control.Monad
 import Data.ByteString.Builder (Builder, hPutBuilder)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import PureSMT.SExpr hiding (not)
-import qualified SMTLIB.Backends as Bck
+import qualified SMTLIB.Backends as SMT
 import qualified SMTLIB.Backends.Z3 as Z3
 import System.IO (hFlush, stdout)
 import Prelude hiding (const, log)
 
 data Solver = Solver
-  { backend :: Bck.Solver,
+  { backend :: SMT.Solver,
     debugMode :: Bool
   }
 
@@ -31,11 +31,11 @@ launchSolver ::
   Bool ->
   IO Solver
 launchSolver dbg = do
-  z3 <- Z3.toBackend <$> Z3.new
-  solver <- Bck.initSolver z3 queuing
+  z3 <- Z3.toBackend <$> Z3.new Z3.defaultConfig
+  solver <- SMT.initSolver queuing z3
   return $ Solver solver dbg
   where
-    queuing = not dbg
+    queuing = if dbg then SMT.NoQueuing else SMT.Queuing
 
 -- | Have the solver evaluate a command in SExpr format.
 -- This forces the queued commands to be evaluated as well, but their results are
@@ -44,7 +44,7 @@ command :: Solver -> SExpr -> IO SExpr
 command solver expr = do
   let cmd = renderSExpr expr
   log solver $ "[send] " <> cmd <> "\n"
-  result <- Bck.command (backend solver) cmd
+  result <- SMT.command (backend solver) cmd
   case readSExpr result of
     Nothing -> do
       fail $ "solver replied with:\n" ++ LBS.unpack result
@@ -61,7 +61,7 @@ ackCommand :: Solver -> SExpr -> IO ()
 ackCommand solver expr = do
   let cmd = renderSExpr expr
   log solver $ "[send ack] " <> cmd <> "\n"
-  Bck.command_ (backend solver) cmd
+  SMT.command_ (backend solver) cmd
 
 -- | A command entirely made out of atoms, with no interesting result.
 -- See also `ackCommand`.
