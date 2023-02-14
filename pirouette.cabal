@@ -75,6 +75,7 @@ library
   build-depends:
       QuickCheck
     , ansi-terminal
+    , async
     , base >=4.9 && <5
     , bytestring
     , containers
@@ -133,6 +134,7 @@ test-suite spec
   build-depends:
       QuickCheck
     , ansi-terminal
+    , async
     , base >=4.9 && <5
     , bytestring
     , containers

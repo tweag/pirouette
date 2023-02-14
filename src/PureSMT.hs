@@ -10,10 +10,12 @@
 -- will re-export a number of functions from "PureSMT.SExpr" to construct S-expressions
 module PureSMT (module X, Solve (..), solve, solveOpts, Options (..)) where
 
+import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar
 import Control.Concurrent.QSem
 import Control.Monad
 import Data.Default
+import Data.Functor.Identity (Identity (..))
 import Data.Kind
 import GHC.Conc (numCapabilities)
 import PureSMT.Process as X
@@ -59,7 +61,7 @@ instance Default Options where
       }
 
 solve :: forall domain res. Solve domain => Ctx domain -> Problem domain res -> res
-solve = solveOpts @domain @res def
+solve d = runIdentity . solveOpts @domain @res @Identity def d . Identity
 
 -- | Evaluates a 'Problem' with an SMT solver chosen from a global pool of
 -- SMT solvers.
@@ -69,23 +71,26 @@ solve = solveOpts @domain @res def
 -- @Ctx domain@ if @solve@ is called from different modules, or if GHC
 -- optimizations fail to apply CSE over calls to solve in the same module.
 {-# NOINLINE solveOpts #-}
-solveOpts :: forall domain res. Options -> Solve domain => Ctx domain -> Problem domain res -> res
+solveOpts :: forall domain res t. Options -> Solve domain => Ctx domain -> Traversable t => t (Problem domain res) -> t res
 solveOpts opts ctx = unsafePerformIO $ do
   -- we end up with a list of MVars, which we will protect in another MVar.
   allProcs <- initAll @domain opts ctx >>= newMStack
 
   -- Finally, we return the actual closure, the internals make sure
   -- to use 'withMVar' to not mess up the command/response pairs.
-  return $ \problem -> unsafePerformIO $ do
-    ms <- popMStack allProcs
-    r <- withMVar ms $ \solver -> do
-      -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
-      -- add it to the pool of workers and just retry the problem. In a future implementation
-      -- we could try launching it again
-      r <- solveProblem @domain problem solver
-      return r
-    pushMStack ms allProcs
-    return r
+  return $
+    unsafePerformIO
+      . ( mapConcurrently $ \problem -> do
+            ms <- popMStack allProcs
+            r <- withMVar ms $ \solver -> do
+              -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
+              -- add it to the pool of workers and just retry the problem. In a future implementation
+              -- we could try launching it again
+              r <- solveProblem @domain problem solver
+              return r
+            pushMStack ms allProcs
+            return r
+        )
 
 initAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
 initAll opts ctx = replicateM nWorkers $ do

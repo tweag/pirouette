@@ -9,6 +9,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
@@ -92,6 +93,7 @@ data SymEvalSolvers lang = SymEvalSolvers
 data SymEvalEnv lang = SymEvalEnv
   { seeDefs :: PrtOrderedDefs lang,
     seeSolvers :: SymEvalSolvers lang,
+    seeAsyncSolver :: [CheckPathProblem lang] -> [Bool],
     seeOptions :: Options
   }
 
@@ -182,11 +184,15 @@ runSymEvalWorker opts defs st f = do
       -- TODO: Write a test to check that only one SMT pool is actually created over
       --       multiple calls to runSymEvalWorker.
       {-# NOINLINE sharedSolve #-}
-      sharedSolve :: SolverProblem lang res -> res
+      sharedSolve :: Traversable t => t (SolverProblem lang res) -> t res
       sharedSolve = PureSMT.solveOpts (optsPureSMT opts) solverCtx
-  let solvers = SymEvalSolvers (sharedSolve . CheckPath) (sharedSolve . CheckProperty)
+  let syncSolver :: SolverProblem lang res -> res
+      syncSolver = runIdentity . sharedSolve . Identity
+      solvers = SymEvalSolvers (syncSolver . CheckPath) (syncSolver . CheckProperty)
+      asyncSolver = sharedSolve . map CheckPath
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
+  -- solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
+  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers asyncSolver opts) st' f
   let paths = uncurry (path $ shouldStop opts) solvPair
   return paths
   where
@@ -217,9 +223,20 @@ instance (SymEvalConstr lang) => Alternative (SymEval lang) where
               (runSymEvalRaw env st xs, runSymEvalRaw env st ys)
        in xs' <|> ys'
 
--- | Learn a new constraint and add it as a conjunct to the set of constraints of
---  the current path, then checks whether it leads to an inconsistency and fails
--- if it does.
+learnBranches :: (SymEvalConstr lang) => [SMT.Branch lang SymVar] -> SymEval lang (TermMeta lang SymVar)
+learnBranches branches = SymEval $
+  ReaderT $ \SymEvalEnv {..} ->
+    StateT $ \st@(SymEvalSt {..}) ->
+      let addConstraints = foldl' (\mc c -> mc >>= C.conjunct c) (Just sestConstraint)
+          branchesTrimmed = flip mapMaybe branches $ \(SMT.Branch additionalInfo newTerm) ->
+            flip fmap (addConstraints additionalInfo) $ \sestConstraint' ->
+              (newTerm, st {sestConstraint = sestConstraint'})
+          satMask = seeAsyncSolver $
+            flip map branchesTrimmed $ \(_, st') ->
+              CheckPathProblem st' seeDefs
+          branchesTrimmed' = map snd $ filter fst $ zip satMask branchesTrimmed
+       in asum $ map pure branchesTrimmed'
+
 learn :: (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
 learn cs = do
   curr <- gets sestConstraint
@@ -233,7 +250,7 @@ learn cs = do
         ReaderT $ \env -> do
           st <- get
           let st' = st {sestConstraint = curr'}
-          if solvePathProblem (seeSolvers env) (CheckPathProblem st' (seeDefs env))
+          if solvePathProblem (seeSolvers env) $ CheckPathProblem st' $ seeDefs env
             then put st'
             else empty
 
@@ -312,12 +329,16 @@ symEvalOneStep t@(R.App hd args) = case hd of
     mayBranches <- lift $ branchesBuiltinTerm @lang builtin translator args
     case mayBranches of
       -- if successful, open all the branches
-      Just branches -> asum $
-        flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-          lift $ learn additionalInfo
-          consumeFuel
-          signalEvaluation
-          pure newTerm
+      Just branches -> do
+        consumeFuel
+        signalEvaluation
+        lift $ learnBranches branches
+      -- asum $
+      -- flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+      --   lift $ learn additionalInfo
+      --   consumeFuel
+      --   signalEvaluation
+      --   pure newTerm
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
