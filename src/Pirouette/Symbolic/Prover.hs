@@ -216,8 +216,7 @@ worker resultVar bodyTerm assumeTerm proveTerm = do
       -- one step of evaluation on each,
       -- but going into matches first
       ([assumeTerm', bodyTerm', proveTerm'], somethingWasEval) <-
-        prune $
-          symEvalParallel [assumeTerm, bodyTerm, proveTerm]
+        symEvalParallel [assumeTerm, bodyTerm, proveTerm]
       -- debugPutStr "ONE STEP"
       -- debugPrint (pretty bodyTerm')
       -- debugPrint (pretty assumeTerm')
