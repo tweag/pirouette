@@ -5,11 +5,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
@@ -66,9 +66,11 @@ import Control.Monad.Writer
 import Control.Parallel.Strategies
 import Data.Default
 import Data.Foldable
+import Data.Functor.Compose (Compose (Compose, getCompose))
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
+import Data.Tuple (swap)
 import ListT.Weighted (WeightedList)
 import qualified ListT.Weighted as ListT
 import Pirouette.Monad
@@ -92,7 +94,7 @@ data SymEvalSolvers lang = SymEvalSolvers
 data SymEvalEnv lang = SymEvalEnv
   { seeDefs :: PrtOrderedDefs lang,
     seeSolvers :: SymEvalSolvers lang,
-    seeAsyncSolver :: [CheckPathProblem lang] -> [Bool],
+    seeAsyncSolver :: forall t res. Traversable t => t (SolverProblem lang res) -> t res,
     seeOptions :: Options
   }
 
@@ -178,17 +180,16 @@ runSymEvalWorker ::
   SymEval lang a ->
   WeightedList (Path lang a)
 runSymEvalWorker opts defs st f = do
-  let -- sharedSolve is here to hint to GHC not to create more than one pool
-      -- of SMT solvers, which could happen if sharedSolve were inlined.
+  let -- asyncSolver is here to hint to GHC not to create more than one pool
+      -- of SMT solvers, which could happen if asyncSolver were inlined.
       -- TODO: Write a test to check that only one SMT pool is actually created over
       --       multiple calls to runSymEvalWorker.
-      {-# NOINLINE sharedSolve #-}
-      sharedSolve :: Traversable t => t (SolverProblem lang res) -> t res
-      sharedSolve = PureSMT.solveOpts (optsPureSMT opts) solverCtx
+      {-# NOINLINE asyncSolver #-}
+      asyncSolver :: forall t res. Traversable t => t (SolverProblem lang res) -> t res
+      asyncSolver = PureSMT.solveOpts (optsPureSMT opts) solverCtx
   let syncSolver :: SolverProblem lang res -> res
-      syncSolver = runIdentity . sharedSolve . Identity
+      syncSolver = runIdentity . asyncSolver . Identity
       solvers = SymEvalSolvers (syncSolver . CheckPath) (syncSolver . CheckProperty)
-      asyncSolver = sharedSolve . map CheckPath
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
   -- solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
   solvPair <- runSymEvalRaw (SymEvalEnv defs solvers asyncSolver opts) st' f
@@ -222,36 +223,33 @@ instance (SymEvalConstr lang) => Alternative (SymEval lang) where
               (runSymEvalRaw env st xs, runSymEvalRaw env st ys)
        in xs' <|> ys'
 
-learnBranches :: (SymEvalConstr lang) => [SMT.Branch lang SymVar] -> SymEval lang (TermMeta lang SymVar)
-learnBranches branches = SymEval $
-  ReaderT $ \SymEvalEnv {..} ->
-    StateT $ \st@(SymEvalSt {..}) ->
-      let addConstraints = foldl' (\mc c -> mc >>= C.conjunct c) (Just sestConstraint)
-          branchesTrimmed = flip mapMaybe branches $ \(SMT.Branch additionalInfo newTerm) ->
-            flip fmap (addConstraints additionalInfo) $ \sestConstraint' ->
-              (newTerm, st {sestConstraint = sestConstraint'})
-          satMask = seeAsyncSolver $
-            flip map branchesTrimmed $ \(_, st') ->
-              CheckPathProblem st' seeDefs
-          branchesTrimmed' = map snd $ filter fst $ zip satMask branchesTrimmed
-       in asum $ map pure branchesTrimmed'
-
-learn :: (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
-learn cs = do
+pruneOrGetPathProblem :: (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang (SolverProblem lang Bool)
+pruneOrGetPathProblem cs = do
   curr <- gets sestConstraint
-  -- Add the conjunct. `C.conjunct` fails when it detects trivial inconsistencies.
   case foldl' (\mc c -> mc >>= C.conjunct c) (Just curr) cs of
     Nothing -> empty
-    Just curr' ->
-      -- As far as `C.conjunct` is concerned, there is no inconsistencies. Let us
-      -- call the solver to actually check that.
-      SymEval $
-        ReaderT $ \env -> do
-          st <- get
-          let st' = st {sestConstraint = curr'}
-          if solvePathProblem (seeSolvers env) $ CheckPathProblem st' $ seeDefs env
-            then put st'
-            else empty
+    Just curr' -> do
+      st <- get
+      defs <- asks seeDefs
+      let st' = st {sestConstraint = curr'}
+      put st'
+      return $ CheckPath (CheckPathProblem st' defs)
+
+solveAll :: forall lang res t. Traversable t => SymEval lang (t (SolverProblem lang res)) -> SymEval lang (t res)
+solveAll (SymEval f) = SymEval $
+  ReaderT $ \env -> StateT $ \st ->
+    let problems = runStateT (runReaderT f env) st
+        -- change the type to get a Traversable instance
+        problemsTraversable = Compose $ Compose . swap <$> problems
+        -- solve the problems asynchronously
+        resultsTraversable = seeAsyncSolver env @(Compose WeightedList (Compose ((,) (SymEvalSt lang)) t)) problemsTraversable
+     in -- get the correct type back
+        swap . getCompose <$> getCompose resultsTraversable
+
+learn :: forall lang. (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
+learn cs = do
+  result <- fmap runIdentity $ solveAll $ Identity <$> pruneOrGetPathProblem cs
+  unless result empty
 
 declSymVars :: (SymEvalConstr lang) => [(Name, Type lang)] -> SymEval lang [SymVar]
 declSymVars vs = do
@@ -329,15 +327,28 @@ symEvalOneStep t@(R.App hd args) = case hd of
     case mayBranches of
       -- if successful, open all the branches
       Just branches -> do
-        consumeFuel
-        signalEvaluation
-        lift $ learnBranches branches
-      -- asum $
-      -- flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-      --   lift $ learn additionalInfo
-      --   consumeFuel
-      --   signalEvaluation
-      --   pure newTerm
+        -- do
+        -- consumeFuel
+        -- signalEvaluation
+        -- lift $ learnBranches branches
+        --
+        -- asum $ flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+        --   lift $ learn additionalInfo
+        --   consumeFuel
+        --   signalEvaluation
+        --   pure newTerm
+        --
+        let problemsWithTerms = asum $
+              flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+                problem <- pruneOrGetPathProblem additionalInfo
+                pure $ (newTerm, problem)
+        (newTerm, result) <- lift $ solveAll problemsWithTerms
+        if result
+          then do
+            consumeFuel
+            signalEvaluation
+            pure newTerm
+          else empty
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
