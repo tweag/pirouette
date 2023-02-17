@@ -17,7 +17,7 @@ import Control.Monad
 import Data.Default
 import Data.Functor.Identity (Identity (..))
 import Data.Kind
-import GHC.Conc (numCapabilities)
+import GHC.Conc (getNumCapabilities, numCapabilities)
 import PureSMT.Process as X
 import PureSMT.SExpr as X
 import System.IO.Unsafe (unsafePerformIO)
@@ -57,7 +57,7 @@ instance Default Options where
   def =
     Options
       { debug = False,
-        numWorkers = Nothing
+        numWorkers = Just 3
       }
 
 solve :: forall domain res. Solve domain => Ctx domain -> Problem domain res -> res
@@ -68,7 +68,7 @@ solve d = runIdentity . solveOpts @domain @res @Identity def d . Identity
 --
 -- At least one pool is started for each value of @Ctx domain@. Note that
 -- multiple pools of SMT solvers might be created for the same value of
--- @Ctx domain@ if @solve@ is called from different modules, or if GHC
+-- @1tx domain@ if @solve@ is called from different modules, or if GHC
 -- optimizations fail to apply CSE over calls to solve in the same module.
 {-# NOINLINE solveOpts #-}
 solveOpts :: forall domain res t. Options -> Solve domain => Ctx domain -> Traversable t => t (Problem domain res) -> t res
@@ -93,18 +93,17 @@ solveOpts opts ctx = unsafePerformIO $ do
         )
 
 initAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
-initAll opts ctx = replicateM nWorkers $ do
-  -- TODO: each init creates its own config but they could be shared
-  -- this would be especially useful if the solver options are passed
-  -- when creating the configuration instead of inside the initSolver
-  -- function
-  s <- X.initZ3Instance (debug opts)
-  initSolver @domain ctx s
-  newMVar s
+initAll opts ctx = do
+  nWorkers <- ensurePos <$> maybe getNumCapabilities return (numWorkers opts)
+  replicateM nWorkers $ do
+    -- TODO: each init creates its own config but they could be shared
+    -- this would be especially useful if the solver options are passed
+    -- when creating the configuration instead of inside the initSolver
+    -- function
+    s <- X.initZ3Instance (debug opts)
+    initSolver @domain ctx s
+    newMVar s
   where
-    nWorkers :: Int
-    nWorkers = maybe numCapabilities ensurePos (numWorkers opts)
-
     ensurePos :: Int -> Int
     ensurePos n = if n >= 1 then n else error "PureSMT: need a positive, non-zero, amount of workers"
 
