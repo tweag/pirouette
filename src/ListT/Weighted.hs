@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
--- {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,6 +13,7 @@ module ListT.Weighted
     MonadWeightedList (..),
     (<|>),
     mapWeightedListT,
+    runActions,
     toList,
     firstThat,
     firstThatAccum,
@@ -29,13 +29,13 @@ import Control.Monad.State (MonadState (..), StateT (..))
 import Control.Monad.Trans (MonadTrans (..))
 import Control.Monad.Writer (WriterT (..))
 import Data.Foldable (fold)
-import Data.Functor.Identity (Identity)
+import Data.Functor.Identity (Identity (..))
 import GHC.Natural
 
 -- | Weighted nondeterminstic computations over the weight @w@.
 --
 -- When combining WeightedListT computations, computations with smaller
--- weights are scheduled to run earlier. See the implementation of `mplus`.
+-- weights are scheduled to runActions earlier. See the implementation of `mplus`.
 data WeightedListT m a
   = Fail
   | -- | returns one value, and then more of them
@@ -52,6 +52,12 @@ mapWeightedListT _ Fail = Fail
 mapWeightedListT f (Yield x m) = Yield x (mapWeightedListT f m)
 mapWeightedListT f (Weight w m) = Weight w (mapWeightedListT f m)
 mapWeightedListT f (Action a) = Action (mapWeightedListT f <$> f a)
+
+runActions :: Monad m => WeightedListT m a -> m (WeightedList a)
+runActions Fail = return Fail
+runActions (Yield x l) = Yield x <$> runActions l
+runActions (Weight w l) = Weight w <$> runActions l
+runActions (Action a) = a >>= runActions
 
 instance (Functor m) => Functor (WeightedListT m) where
   fmap _ Fail = Fail
