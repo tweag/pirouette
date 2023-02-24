@@ -8,17 +8,17 @@
 -- | This module implements a pool of external processes, each running an
 -- SMT solver. It is often a good idea to import this module qualified as it
 -- will re-export a number of functions from "PureSMT.SExpr" to construct S-expressions
-module PureSMT (module X, Solve (..), solve, solveOpts, Options (..)) where
+module PureSMT (module X, Solve (..), solve, Options (..), initAll) where
 
+import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar
 import Control.Concurrent.QSem
 import Control.Monad
 import Data.Default
 import Data.Kind
-import GHC.Conc (numCapabilities)
+import GHC.Conc (getNumCapabilities)
 import PureSMT.Process as X
 import PureSMT.SExpr as X
-import System.IO.Unsafe (unsafePerformIO)
 
 -- | This class provides an interface to communicate with an individual
 -- SMT solver, while the `solve` function provides access to the pool.
@@ -58,48 +58,33 @@ instance Default Options where
         numWorkers = Nothing
       }
 
-solve :: forall domain res. Solve domain => Ctx domain -> Problem domain res -> res
-solve = solveOpts @domain @res def
-
 -- | Evaluates a 'Problem' with an SMT solver chosen from a global pool of
 -- SMT solvers.
---
--- At least one pool is started for each value of @Ctx domain@. Note that
--- multiple pools of SMT solvers might be created for the same value of
--- @Ctx domain@ if @solve@ is called from different modules, or if GHC
--- optimizations fail to apply CSE over calls to solve in the same module.
-{-# NOINLINE solveOpts #-}
-solveOpts :: forall domain res. Options -> Solve domain => Ctx domain -> Problem domain res -> res
-solveOpts opts ctx = unsafePerformIO $ do
-  -- we end up with a list of MVars, which we will protect in another MVar.
-  allProcs <- initAll @domain opts ctx >>= newMStack
-
-  -- Finally, we return the actual closure, the internals make sure
-  -- to use 'withMVar' to not mess up the command/response pairs.
-  return $ \problem -> unsafePerformIO $ do
-    ms <- popMStack allProcs
-    r <- withMVar ms $ \solver -> do
-      -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
-      -- add it to the pool of workers and just retry the problem. In a future implementation
-      -- we could try launching it again
-      r <- solveProblem @domain problem solver
-      return r
-    pushMStack ms allProcs
+solve :: forall domain res t. Solve domain => MStack (MVar X.Solver) -> Traversable t => t (Problem domain res) -> IO (t res)
+solve allProcs = mapConcurrently $ \problem -> do
+  ms <- popMStack allProcs
+  r <- withMVar ms $ \solver -> do
+    -- TODO: what happens in an exception? For now, we just loose a solver but we shouldn't
+    -- add it to the pool of workers and just retry the problem. In a future implementation
+    -- we could try launching it again
+    r <- solveProblem @domain problem solver
     return r
+  pushMStack ms allProcs
+  return r
 
-initAll :: forall domain. Options -> Solve domain => Ctx domain -> IO [MVar X.Solver]
-initAll opts ctx = replicateM nWorkers $ do
-  -- TODO: each init creates its own config but they could be shared
-  -- this would be especially useful if the solver options are passed
-  -- when creating the configuration instead of inside the initSolver
-  -- function
-  s <- X.initZ3Instance (debug opts)
-  initSolver @domain ctx s
-  newMVar s
+initAll :: forall domain. Options -> Solve domain => Ctx domain -> IO (MStack (MVar X.Solver))
+initAll opts ctx =
+  newMStack =<< do
+    nWorkers <- ensurePos <$> maybe getNumCapabilities return (numWorkers opts)
+    replicateM nWorkers $ do
+      -- TODO: each init creates its own config but they could be shared
+      -- this would be especially useful if the solver options are passed
+      -- when creating the configuration instead of inside the initSolver
+      -- function
+      s <- X.initZ3Instance (debug opts)
+      initSolver @domain ctx s
+      newMVar s
   where
-    nWorkers :: Int
-    nWorkers = maybe numCapabilities ensurePos (numWorkers opts)
-
     ensurePos :: Int -> Int
     ensurePos n = if n >= 1 then n else error "PureSMT: need a positive, non-zero, amount of workers"
 

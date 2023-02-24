@@ -35,6 +35,7 @@ dependencies:
   - transformers
   # PureSMT deps
   - inline-c
+  - async
 
 library:
   source-dirs: src
