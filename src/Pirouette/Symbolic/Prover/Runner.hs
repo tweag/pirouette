@@ -3,7 +3,6 @@
 
 module Pirouette.Symbolic.Prover.Runner where
 
-import Control.Monad.Identity
 import Control.Monad.Reader
 import Data.Default
 import qualified Data.Map as M
@@ -37,7 +36,7 @@ runIncorrectnessLogicSingl ::
   (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
   Options ->
   IncorrectnessParams lang ->
-  IncorrectnessResult lang
+  IO (IncorrectnessResult lang)
 runIncorrectnessLogicSingl opts =
   runIncorrectnessLogic opts (PrtUnorderedDefs M.empty)
 
@@ -46,9 +45,9 @@ runIncorrectnessLogic ::
   Options ->
   PrtUnorderedDefs lang ->
   IncorrectnessParams lang ->
-  IncorrectnessResult lang
-runIncorrectnessLogic opts prog parms =
-  runIdentity $ execIncorrectnessLogic (proveAny opts isCounter) prog parms
+  IO (IncorrectnessResult lang)
+runIncorrectnessLogic opts =
+  execIncorrectnessLogic (proveAny opts isCounter)
   where
     isCounter Path {pathResult = CounterExample _ _, pathStatus = s}
       | s /= OutOfFuel = True
@@ -110,8 +109,8 @@ replIncorrectnessLogic ::
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogic maxCstrs defs params =
-  printIRResult maxCstrs $
-    runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params
+  printIRResult maxCstrs
+    =<< runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params
 
 replIncorrectnessLogicSingl ::
   (Language lang, LanguageBuiltinTypes lang, LanguageSymEval lang) =>
@@ -119,8 +118,8 @@ replIncorrectnessLogicSingl ::
   IncorrectnessParams lang ->
   IO ()
 replIncorrectnessLogicSingl maxCstrs params =
-  printIRResult maxCstrs $
-    runIncorrectnessLogicSingl (def {shouldStop = (> maxCstrs) . sestConstructors}) params
+  printIRResult maxCstrs
+    =<< runIncorrectnessLogicSingl (def {shouldStop = (> maxCstrs) . sestConstructors}) params
 
 -- | Assert a test failure (Tasty HUnit integration) when the result of the
 -- incorrectness logic execution reveals an error or a counterexample.
@@ -131,4 +130,4 @@ assertIncorrectnessLogic ::
   IncorrectnessParams lang ->
   Test.Assertion
 assertIncorrectnessLogic maxCstrs defs params =
-  assertIRResult (runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params)
+  assertIRResult =<< runIncorrectnessLogic (def {shouldStop = (> maxCstrs) . sestConstructors}) defs params

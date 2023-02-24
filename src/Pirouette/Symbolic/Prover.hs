@@ -62,7 +62,7 @@ rESULTNAME = "__result"
 
 -- | Executes the problem returning /all/ paths (up to some stopping condition).
 prove ::
-  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m, MonadIO m) =>
   Options ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
@@ -70,7 +70,7 @@ prove opts problem = symeval opts $ proveRaw problem
 
 -- | Prove without any stopping condition.
 proveUnbounded ::
-  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m, MonadIO m) =>
   Options ->
   Problem lang ->
   m [Path lang (EvaluationWitness lang)]
@@ -81,7 +81,7 @@ proveUnbounded opts = prove (opts {shouldStop = const False})
 --  means that on all paths that we looked at they were either verified or
 --  they reached the stopping condition.
 proveAny ::
-  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m, MonadIO m) =>
   Options ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->
@@ -89,7 +89,7 @@ proveAny ::
 proveAny opts p problem = fst <$> proveAnyAccum opts p problem
 
 proveAnyAccum ::
-  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m, MonadIO m) =>
   Options ->
   (Path lang (EvaluationWitness lang) -> Bool) ->
   Problem lang ->

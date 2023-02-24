@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -71,7 +70,7 @@ import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import Data.Tuple (swap)
-import ListT.Weighted (WeightedList)
+import ListT.Weighted (WeightedList, WeightedListT)
 import qualified ListT.Weighted as ListT
 import Pirouette.Monad
 import Pirouette.Monad.Maybe
@@ -86,26 +85,26 @@ import qualified PureSMT
 
 data SymEvalSolvers lang = SymEvalSolvers
   { -- | Check whether a path is plausible
-    solvePathProblem :: CheckPathProblem lang -> Bool,
+    solvePathProblem :: CheckPathProblem lang -> IO Bool,
     -- | Check whether a certain property currently holds over a given path
-    solvePropProblem :: CheckPropertyProblem lang -> PruneResult
+    solvePropProblem :: CheckPropertyProblem lang -> IO PruneResult
   }
 
 data SymEvalEnv lang = SymEvalEnv
   { seeDefs :: PrtOrderedDefs lang,
     seeSolvers :: SymEvalSolvers lang,
-    seeAsyncSolver :: forall t res. Traversable t => t (SolverProblem lang res) -> t res,
+    seeAsyncSolver :: forall t res. Traversable t => t (SolverProblem lang res) -> IO (t res),
     seeOptions :: Options
   }
 
 -- | A 'SymEval' is equivalent to a function with type:
 --
--- > SymEvalEnv lang -> SymEvalSt lang -> [(a, SymEvalSt lang)]
+-- > SymEvalEnv lang -> SymEvalSt lang -> IO [(a, SymEvalSt lang)]
 newtype SymEval lang a = SymEval
   { symEval ::
       ReaderT
         (SymEvalEnv lang)
-        (StateT (SymEvalSt lang) WeightedList)
+        (StateT (SymEvalSt lang) (WeightedListT IO))
         a
   }
   deriving (Functor)
@@ -129,16 +128,16 @@ instance MonadFail (SymEval lang) where
   fail = error
 
 symeval ::
-  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m, MonadIO m) =>
   Options ->
   SymEval lang a ->
   m [Path lang a]
 symeval opts prob = do
   defs <- getPrtOrderedDefs
-  return $ runSymEval opts defs def prob
+  liftIO $ runSymEval opts defs def prob
 
 symevalAnyPathAccum ::
-  (SymEvalConstr lang, PirouetteDepOrder lang m) =>
+  (SymEvalConstr lang, PirouetteDepOrder lang m, MonadIO m) =>
   (Path lang a -> st -> st) ->
   st ->
   Options ->
@@ -147,7 +146,7 @@ symevalAnyPathAccum ::
   m (Maybe (Path lang a), st)
 symevalAnyPathAccum f s0 opts p prob = do
   defs <- getPrtOrderedDefs
-  return $ runIdentity $ ListT.firstThatAccum f s0 p $ runSymEvalWorker opts defs def prob
+  liftIO $ runIdentity . ListT.firstThatAccum f s0 p <$> runSymEvalWorker opts defs def prob
 
 -- | Running a symbolic execution will prepare the solver only once, then use a persistent session
 --  to make all the necessary queries.
@@ -157,15 +156,15 @@ runSymEval ::
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
-  [Path lang a]
-runSymEval opts defs st = runIdentity . ListT.toList . runSymEvalWorker opts defs st
+  IO [Path lang a]
+runSymEval opts defs st = fmap (runIdentity . ListT.toList) . runSymEvalWorker opts defs st
 
 runSymEvalRaw ::
   (SymEvalConstr lang) =>
   SymEvalEnv lang ->
   SymEvalSt lang ->
   SymEval lang a ->
-  WeightedList (a, SymEvalSt lang)
+  WeightedListT IO (a, SymEvalSt lang)
 runSymEvalRaw env st act =
   runStateT (runReaderT (symEval act) env) st
 
@@ -178,23 +177,20 @@ runSymEvalWorker ::
   PrtOrderedDefs lang ->
   SymEvalSt lang ->
   SymEval lang a ->
-  WeightedList (Path lang a)
+  IO (WeightedList (Path lang a))
 runSymEvalWorker opts defs st f = do
-  let -- asyncSolver is here to hint to GHC not to create more than one pool
-      -- of SMT solvers, which could happen if asyncSolver were inlined.
-      -- TODO: Write a test to check that only one SMT pool is actually created over
-      --       multiple calls to runSymEvalWorker.
-      {-# NOINLINE asyncSolver #-}
-      asyncSolver :: forall t res. Traversable t => t (SolverProblem lang res) -> t res
-      asyncSolver = PureSMT.solveOpts (optsPureSMT opts) solverCtx
-  let syncSolver :: SolverProblem lang res -> res
-      syncSolver = runIdentity . asyncSolver . Identity
+  workers <- PureSMT.initAll (optsPureSMT opts) solverCtx
+  let asyncSolver :: forall t res. Traversable t => t (SolverProblem lang res) -> IO (t res)
+      asyncSolver = PureSMT.solve workers
+  let syncSolver :: SolverProblem lang res -> IO res
+      syncSolver = fmap runIdentity . asyncSolver . Identity
       solvers = SymEvalSolvers (syncSolver . CheckPath) (syncSolver . CheckProperty)
   let st' = st {sestKnownNames = solverSharedCtxUsedNames solverCtx `S.union` sestKnownNames st}
-  -- solvPair <- runSymEvalRaw (SymEvalEnv defs solvers opts) st' f
-  solvPair <- runSymEvalRaw (SymEvalEnv defs solvers asyncSolver opts) st' f
-  let paths = uncurry (path $ shouldStop opts) solvPair
-  return paths
+  solvPairs <- ListT.runActions $ runSymEvalRaw (SymEvalEnv defs solvers asyncSolver opts) st' f
+  return $ do
+    solvPair <- solvPairs
+    let paths = uncurry (path $ shouldStop opts) solvPair
+    return paths
   where
     lkupTypeDefOf decls name = case M.lookup (TypeNamespace, name) decls of
       Just (DTypeDef tdef) -> Just (name, tdef)
@@ -237,14 +233,15 @@ pruneOrGetPathProblem cs = do
 
 solveAll :: forall lang res t. Traversable t => SymEval lang (t (SolverProblem lang res)) -> SymEval lang (t res)
 solveAll (SymEval f) = SymEval $
-  ReaderT $ \env -> StateT $ \st ->
-    let problems = runStateT (runReaderT f env) st
-        -- change the type to get a Traversable instance
+  ReaderT $ \env -> StateT $ \st -> ListT.Action @IO $ do
+    problems <- ListT.runActions $ runStateT (runReaderT f env) st
+    let -- change the type to get a Traversable instance
         problemsTraversable = Compose $ Compose . swap <$> problems
-        -- solve the problems asynchronously
-        resultsTraversable = seeAsyncSolver env @(Compose WeightedList (Compose ((,) (SymEvalSt lang)) t)) problemsTraversable
-     in -- get the correct type back
-        swap . getCompose <$> getCompose resultsTraversable
+    -- solve the problems asynchronously
+    resultsTraversable <- seeAsyncSolver env @(Compose WeightedList (Compose ((,) (SymEvalSt lang)) t)) problemsTraversable
+    let -- get the correct type back
+        results = swap . getCompose <$> getCompose resultsTraversable
+    return $ ListT.mapWeightedListT (pure . runIdentity) results
 
 learn :: forall lang. (SymEvalConstr lang) => [C.Constraint lang SymVar] -> SymEval lang ()
 learn cs = do
@@ -332,23 +329,24 @@ symEvalOneStep t@(R.App hd args) = case hd of
         -- signalEvaluation
         -- lift $ learnBranches branches
         --
-        -- asum $ flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-        --   lift $ learn additionalInfo
-        --   consumeFuel
-        --   signalEvaluation
-        --   pure newTerm
-        --
-        let problemsWithTerms = asum $
-              flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
-                problem <- pruneOrGetPathProblem additionalInfo
-                pure $ (newTerm, problem)
-        (newTerm, result) <- lift $ solveAll problemsWithTerms
-        if result
-          then do
+        asum $
+          flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+            lift $ learn additionalInfo
             consumeFuel
             signalEvaluation
             pure newTerm
-          else empty
+      --
+      -- let problemsWithTerms = asum $
+      --       flip map branches $ \(SMT.Branch additionalInfo newTerm) -> do
+      --         problem <- pruneOrGetPathProblem additionalInfo
+      --         pure $ (newTerm, problem)
+      -- (newTerm, result) <- lift $ solveAll problemsWithTerms
+      -- if result
+      --   then do
+      --     consumeFuel
+      --     signalEvaluation
+      --     pure newTerm
+      --   else empty
       -- if it's not ready, just keep evaluating the arguments
       Nothing -> justEvaluateArgs
   R.Free (TermSig n) -> do
@@ -537,5 +535,6 @@ pruneAndValidate ::
 pruneAndValidate cOut cIn axioms =
   SymEval $
     ReaderT $ \env ->
-      StateT $ \st ->
-        return (solvePropProblem (seeSolvers env) (CheckPropertyProblem cOut cIn axioms st (seeDefs env)), st)
+      StateT $ \st -> ListT.Action $ do
+        result <- solvePropProblem (seeSolvers env) (CheckPropertyProblem cOut cIn axioms st (seeDefs env))
+        return $ pure (result, st)
