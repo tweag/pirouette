@@ -67,11 +67,10 @@ plutus through `Language.Pirouette.PlutusIR`, but further work is necessary to
 seamlessly interact with validator scripts.
 
 To run Pirouette on Plutus Intermediate Representation scripts,
-one has to use the [pirouette-plutusir library], provided in the [cooked-validators] repository.
+one has to use the [pirouette-plutusir library].
 
 [Plutus]: https://plutus.readthedocs.io/en/latest/
-[pirouette-plutusir library]: https://github.com/tweag/cooked-validators/tree/v1.0.0/pirouette-plutusir
-[cooked-validators]: https://github.com/tweag/cooked-validators
+[pirouette-plutusir library]: https://github.com/tweag/pirouette-plutusir
 
 ### Limitations
 
