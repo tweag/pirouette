@@ -2,14 +2,6 @@
 
 _Pirouette is a research prototype under active development_
 
-* [Bounded Symbolic Evaluation](#bounded-symbolic-evaluation)
-  - [Use case: Example](#example-language)
-  - [Use case: Plutus Smart Contracts](#plutus-smart-contracts)
-  - [Limitations](#limitations)
-* [Building, Installing and Hacking](#building-installing-and-hacking)
-* [Contributing](#contributing)
-* [License](#license)
-
 Pirouette is a framework for constructing different static
 analysis tools for [System F][systemf]-based languages. It has a number of
 transformations (monomorphization, defunctionalization, prenex, etc...) implemented,
