@@ -11,7 +11,9 @@ is System F-like. Anyone can then come and define their instance of
 `LanguageBuiltins`, which is Pirouette's way of defining the constants, builtin
 terms and builtin types of a language. The definition of the classes can be
 found in [`Pirouette.Term.Syntax.Base`]. For a simple, concrete instantiation of
-a language, you might want to check [the example language].
+a language, you might want to check [the example language]. For a more involved
+one, you might want to check [the support for Plutus IR][plutus intermediate
+representation].
 
 [`Pirouette.Term.Syntax.Base`]: ./src/Pirouette/Term/Syntax/Base.hs
 
@@ -102,6 +104,8 @@ myProgram = [progWithStdLib|
 [`Language.Pirouette.Example.StdLib`]: ./src/Language/Pirouette/Example/StdLib.hs
 
 ### Plutus Intermediate Representation
+
+[plutus intermediate representation]: #plutus-intermediate-representation
 
 To run Pirouette on Plutus Intermediate Representation scripts, one has to use
 the [pirouette-plutusir library].
