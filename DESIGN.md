@@ -6,14 +6,27 @@ Languages
 
 ### Pirouette's genericity
 
+Pirouette attempts to be generic in the input language by only assuming that it
+is System F-like. Anyone can then come and define their instance of
+`LanguageBuiltins`, which is Pirouette's way of defining the constants, builtin
+terms and builtin types of a language. The definition of the classes can be
+found in [`Pirouette.Term.Syntax.Base`]. For a simple, concrete instantiation of
+a language, you might want to check [the example language].
+
+[`Pirouette.Term.Syntax.Base`]: ./src/Pirouette/Term/Syntax/Base.hs
+
 ### The example language
+
+[the example language]: #the-example-language
 
 The example language is the only instance of a language included in Pirouette.
 It is a simple functional language supporting higher-order types with explicit
 type annotations, basic types (booleans, integers, strings) with their
 associated operators, algebraic datatypes and pattern-matching. The definition
 of the language is done by providing the `LanguageBuiltins` instance. You will
-find all the heavy work in `Language.Pirouette.Example`.
+find all the heavy work in [`Language.Pirouette.Example`].
+
+[`Language.Pirouette.Example`]: ./src/Language/Pirouette/Example.hs
 
 The example language also has a concrete syntax heavily inspired by Haskell.
 Thanks to quasi-quoters, it is easy to define a set of unordered value
@@ -70,7 +83,7 @@ myListTotal =
 ```
 
 For more examples, check out the standard library for the example language in
-`Language.Pirouette.Example.StdLib`. The standard library also comes with a
+[`Language.Pirouette.Example.StdLib`]. The standard library also comes with a
 quasi-quoter of its own allowing you to leverage it in your code should you want
 it:
 ```haskell
@@ -85,6 +98,8 @@ myProgram = [progWithStdLib|
       0
 |]
 ```
+
+[`Language.Pirouette.Example.StdLib`]: ./src/Language/Pirouette/Example/StdLib.hs
 
 ### Plutus Intermediate Representation
 
