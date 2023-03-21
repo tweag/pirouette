@@ -147,6 +147,78 @@ convert assumptions/constraints to the [SMT-LIB] language. These modules live in
 
 [symbolic evaluator]: #symbolic-evaluator
 
+The heart of Pirouette's symbolic engine lives in [`Pirouette.Symbolic.Eval`].
+This module defines the `SymEval` monad providing all the tooling to make
+symbolic evaluation work. Here is the monad in question:
+```haskell
+newtype SymEval lang a = SymEval
+  { symEval ::
+      ReaderT
+        (SymEvalEnv lang)
+        (StateT (SymEvalSt lang) WeightedList)
+        a
+  }
+```
+Morally speaking, though, and forgetting the `lang` type parameters, this monad
+simply represent functions of type:
+```haskell
+SymEvalEnv -> SymEvalSt -> [(a, SymEvalSt)]
+```
+taking an environment and a state and returning a list of state, as well as
+potential return values. It returns a list because symbolic evaluation may
+branch and explore different paths.
+
+[`Pirouette.Symbolic.Eval`]: ./src/Pirouette/Symbolic/Eval.hs
+
+The key function in this module is `symEvalOneStep`, whose type is the
+following:
+```haskell
+symEvalOneStep ::
+  forall lang .
+  SymEvalConstr lang =>
+  TermMeta lang SymVar ->
+  WriterT Any (SymEval lang) (TermMeta lang SymVar)
+```
+Once again, morally speaking, forgetting the `lang` type parameters and
+replacing `TermMeta lang SymVar` by just `Term`, this function has type `Term ->
+SymEval Term`. One can then think of this as a function of type:
+```haskell
+SymEvalEnv -> (Term, SymEvalSt) -> [(Term, SymEvalSt)]
+```
+Such a function takes a term in the input language and a symbolic evaluation
+state. It tries to apply one step of beta-reduction to the term, which may yield
+zero, one or several potential terms and updated states.
+
+For an example, let us assume that our input term is the body of the `foldr`
+function in [the example language], specialised for lists of `Integer`s (for
+readability, we remove the type applications).
+```haskell
+match_List l
+  e
+  (\(x : Integer) (xs : List Integer) . f x (foldr f e xs))
+```
+and that our state specifies that:
+- `e` is an integer, without giving its value,
+- `f` is the function `\(x : Integer) (y : Integer) . x + y`, and
+- `l` is a list of integers, without giving its value.
+
+One step of the symbolic engine would then have to explore both branches of the
+pattern matching, and therefore it would return two pairs `Term, SymEvalSt`:
+1. In the first pair, the `Term` would be `e` itself and the state would be
+   updated to account for the fact that we now know that `l = Nil`.
+2. In the second pair, the `Term` would be `f x (foldr f e xs)` and the state
+   would be updated to account for the fact the we now have two more variables,
+   `x` and `xs`, that are an integer and a list of integers respectively, and an
+   additional constraint, `l = Cons x xs`.
+
+The whole symbolic execution consists in running this one step over and over
+again until it is not possible to reduce the terms anymore. In the example
+above, our first term/state is now blocked because there isn't much one can do
+with an integer. The second term/state is not blocked because one can replace
+`f` by its definition and continue unfolding from there.
+
 ### Symbolic Prover
 
 [symbolic prover]: #symbolic-prover
+
+[`Pirouette.Symbolic.Prover`]
