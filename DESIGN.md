@@ -127,6 +127,22 @@ aspects in the following sub-sections.
 
 [smt prover]: #smt-prover
 
+As is classic in symbolic engines, Pirouette relies on SMT provers to do the
+hard work. These provers are used in two different ways. They help pruning
+branches of execution that are actually unreachable, and they help deciding
+whether the user's statement/questions actually hold.
+
+Pirouette relies on [smtlib-backend] for the communication with its SMT prover
+of choice, [Z3]. There are still a bunch of modules in Pirouette making the
+interface between the rest of the engine and [smtlib-backends], mainly to
+convert assumptions/constraints to the [SMT-LIB] language. These modules live in
+[`Pirouette.SMT`].
+
+[z3]: https://github.com/Z3Prover/z3
+[smtlib-backends]: https://github.com/tweag/smtlib-backends
+[smt-lib]: https://smtlib.cs.uiowa.edu/
+[`Pirouette.SMT`]: ./src/Pirouette/SMT.hs
+
 ### Symbolic Evaluator
 
 [symbolic evaluator]: #symbolic-evaluator
