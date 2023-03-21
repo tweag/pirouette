@@ -155,9 +155,13 @@ convert assumptions/constraints to the [SMT-LIB] language. These modules live in
 
 [symbolic evaluator]: #symbolic-evaluator
 
+#### The symbolic evaluation monad -- `SymEval`
+
 The heart of Pirouette's symbolic engine lives in [`Pirouette.Symbolic.Eval`].
 This module defines the `SymEval` monad providing all the tooling to make
 symbolic evaluation work. Here is the monad in question:
+
+[`Pirouette.Symbolic.Eval`]: ./src/Pirouette/Symbolic/Eval.hs
 
 ```haskell
 newtype SymEval lang a = SymEval
@@ -180,7 +184,7 @@ taking an environment and a state and returning a list of state, as well as
 potential return values. It returns a list because symbolic evaluation may
 branch and explore different paths.
 
-[`Pirouette.Symbolic.Eval`]: ./src/Pirouette/Symbolic/Eval.hs
+#### The key function -- `symEvalOneStep`
 
 The key function in this module is `symEvalOneStep`, whose type is the
 following:
@@ -236,6 +240,28 @@ again until it is not possible to reduce the terms anymore. In the example
 above, our first term/state is now blocked because there isn't much one can do
 with an integer. The second term/state is not blocked because one can replace
 `f` by its definition and continue unfolding from there.
+
+#### The symbolic evaluation state -- `SymEvalSt`
+
+Defined in [`Pirouette.Symbolic.Eval.Types`], the symbolic state basically
+contains the following:
+
+1. A context of variables, that is a map from variable names to their types.
+   This context is typically called Γ in literature, and `gamma` in the code.
+
+2. A set of constraints linking variables together, for instance `l == Cons x
+   xs`, `k != Nil` or `x = 7`. It is in fact not a set, but a complex
+   union-find-based type.
+
+3. Statistics on the execution, for instance the number of unfoldings that took
+   place. Despite the name, those statistics can have an important impact on the
+   behaviour of the engine because they are observed to decide whether to stop
+   the execution or not.
+
+as well as some extra fields necessary for administrative reasons. Those field
+names are prefixed by `sest` in the code.
+
+[`Pirouette.Symbolic.Eval.Types`]: ./src/Pirouette/Symbolic/Eval/Types.hs
 
 ### Symbolic Prover
 
