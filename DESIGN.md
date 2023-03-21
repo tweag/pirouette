@@ -115,5 +115,22 @@ the [pirouette-plutusir library].
 Transformations
 ---------------
 
-Evaluation
-----------
+Symbolic Engine
+---------------
+
+The symbolic engine is split into three main parts: an SMT prover, as well as
+all the administrative work to communicate with it, Pirouette's _[symbolic
+evaluator]_, and Pirouette's _[symbolic prover]_. We describe these three
+aspects in the following sub-sections.
+
+### SMT prover
+
+[smt prover]: #smt-prover
+
+### Symbolic Evaluator
+
+[symbolic evaluator]: #symbolic-evaluator
+
+### Symbolic Prover
+
+[symbolic prover]: #symbolic-prover
