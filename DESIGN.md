@@ -46,7 +46,7 @@ Now for a more involved example. Say we want to compute a sum of integers in a
 generic way. We can do that by writing a function `sum` taking a list of
 integers and returning the total. In order to do that, we first need a notion of
 lists, which we choose to do in a generic way. Here we go:
-```
+```haskell
 data List a
   = Nil : List a
   | Cons : a -> List a -> List a
@@ -54,7 +54,7 @@ data List a
 
 Computing the sum of the elements of a list requires traversing it, which we can
 also decide to do in a generic way with a fold over the list.
-```
+```haskell
 foldr : forall a r . (a -> r -> r) -> r -> List a -> r
 foldr @a @r f e l =
   match_List @a l @r
@@ -68,7 +68,7 @@ returning type, and as many cases as there are constructors, in the same order.
 
 The hardest part has been done. It is now simple to define a list of integers --
 say `1`, `2`, `3` -- and sum over them.
-```
+```haskell
 myList : List Integer
 myList = Cons @Integer 1 (Cons @Integer 2 (Cons @Integer 3 (Nil @Integer)))
 
