@@ -86,6 +86,13 @@ myProgram = [progWithStdLib|
 |]
 ```
 
+### Plutus Intermediate Representation
+
+To run Pirouette on Plutus Intermediate Representation scripts, one has to use
+the [pirouette-plutusir library].
+
+[pirouette-plutusir library]: https://github.com/tweag/pirouette-plutusir
+
 Transformations
 ---------------
 
