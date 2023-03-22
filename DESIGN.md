@@ -72,21 +72,23 @@ datatype `List` also creates the corresponding `match_List` function taking, in
 that order, the datatype type arguments, an element of that datatype, the
 returning type, and as many cases as there are constructors, in the same order.
 
-The hardest part has been done. It is now simple to define a list of integers --
-say `1`, `2`, `3` -- and sum over them.
+The hardest part has been done. It is now simple to define a `sum` function, a
+list of integers -- say `1`, `2`, `3` -- and apply `sum` over them.
 
 ```haskell
-myList : List Integer
-myList = Cons @Integer 1 (Cons @Integer 2 (Cons @Integer 3 (Nil @Integer)))
-
-myListTotal : Integer
-myListTotal =
+sum : List Integer -> Integer
+sum =
   foldr
     @Integer
     @Integer
     (\(x : Integer) (y : Integer) . x + y)
     0
-    myList
+
+myList : List Integer
+myList = Cons @Integer 1 (Cons @Integer 2 (Cons @Integer 3 (Nil @Integer)))
+
+myListTotal : Integer
+myListTotal = sum myList
 ```
 
 For more examples, check out the standard library for the example language in
@@ -97,8 +99,8 @@ it:
 ```haskell
 myProgram :: PrtUnorderedDefs Ex
 myProgram = [progWithStdLib|
-  totalSum : List Integer -> Integer
-  totalSum =
+  sum : List Integer -> Integer
+  sum =
     foldr
       @Integer
       @Integer
