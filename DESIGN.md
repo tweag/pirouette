@@ -135,11 +135,15 @@ the [pirouette-plutusir library].
 Transformations
 ---------------
 
+[transformations]: #transformations
+
 _This part is empty and should be documented._ Transformations live in
 [`Pirouette.Transformations`].
 
 Symbolic Engine
 ---------------
+
+[symbolic engine]: #symbolic-engine
 
 The symbolic engine is split into three main parts: an SMT prover, as well as
 all the administrative work to communicate with it, Pirouette's _[symbolic
