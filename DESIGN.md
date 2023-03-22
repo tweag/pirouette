@@ -196,6 +196,8 @@ branch and explore different paths.
 
 #### The key function — `symEvalOneStep`
 
+[`symEvalOneStep`]: #the-key-function-symEvalOneStep
+
 The key function in this module is `symEvalOneStep`, whose type is the
 following:
 
@@ -305,7 +307,48 @@ Those field names are prefixed by `see` in the code.
 
 [symbolic prover]: #symbolic-prover
 
-[`Pirouette.Symbolic.Prover`]
+The symbolic prover is a wrapper around the [symbolic evaluator]. One can see
+the symbolic evaluator as the library providing the generic tooling for symbolic
+evaluation, which the symbolic prover uses to answer requests about Hoare
+triples.
+
+#### The key functions — `proveRaw` and `worker`
+
+Defined in [`Pirouette.Symbolic.Prover`], the `proveRaw` and `worker` function
+are the main part of the symbolic prover. Morally speaking, these functions take
+as input a triple of terms, called the _antecedent_, the _body_ and the
+_consequent_, of shapes `λr,xs. A(r,xs)`, `λxs. B(xs)` and `λr,xs. C(r,xs)`
+respectively, where `r` is a symbolic argument for the _result_ and `xs` is a
+list of symbolic arguments common to all three terms. The idea that `r` is the
+result means that we will always consider `λxs. A(B(xs), xs)` and `λxs. C(B(xs),
+xs)`. Assuming the body is of type `αs -> ρ`, then the antecedent and consequent
+should be of type `ρ -> αs -> Bool`, that is they should be considered as two
+predicates on the body's result and arguments. The prover attempts to check two
+properties on the three terms `A`, `B` and `C`:
+
+- First, the prover attempts to check whether the antecedent is consistent, that
+  is whether there exists `xs` such that `A(B(xs), xs)` holds.
+
+- Second, the prover attempts to check whether the antecedent implies the
+  consequent, that is whether for all `xs`, `A(B(xs), xs) ⇒ C(B(xs), xs)`.
+
+Concretely, `proveRaw` takes a `Problem` and does all the administrative work of
+extracting the `xs` from the body, creating corresponding symbolic variables,
+preparing the terms, and then calls `worker`, where all the actual work happens.
+
+`worker` takes the three aforementioned terms as input and evaluates them all by
+one step. We refer the reader to [`symEvalOneStep`] for what this means
+precisely. If any of the three terms is stuck, that is if it is not possible to
+evaluate them more, then `worker` attempts to see if the properties above holds.
+It can do that without having fully evaluated the terms: for instance, it is
+possible to check whether the antecedent is consistent without knowing anything
+about the consequent. To some extent, it is even possible to check whether the
+antecedent is consistent without knowing anything about the body.
+
+If we manage to prove that the antecedent is inconsistent, or the antecedent
+does imply the consequent, or the antecedent cannot imply the consequent, then
+the computation stops. Otherwise, the `worker` starts again, evaluating the
+terms by one step, etc.
 
 [`Language.Pirouette.Example`]: ./src/Language/Pirouette/Example.hs
 [`Language.Pirouette.Example.StdLib`]: ./src/Language/Pirouette/Example/StdLib.hs
