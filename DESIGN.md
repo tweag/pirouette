@@ -135,7 +135,8 @@ the [pirouette-plutusir library].
 Transformations
 ---------------
 
-[`Pirouette.Transformations`]
+_This part is empty and should be documented._ Transformations live in
+[`Pirouette.Transformations`].
 
 Symbolic Engine
 ---------------
