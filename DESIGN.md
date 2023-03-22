@@ -15,8 +15,6 @@ a language, you might want to check [the example language]. For a more involved
 one, you might want to check [the support for Plutus IR][plutus intermediate
 representation].
 
-[`Pirouette.Term.Syntax.Base`]: ./src/Pirouette/Term/Syntax/Base.hs
-
 ### The example language
 
 [the example language]: #the-example-language
@@ -27,8 +25,6 @@ type annotations, basic types (booleans, integers, strings) with their
 associated operators, algebraic datatypes and pattern-matching. The definition
 of the language is done by providing the `LanguageBuiltins` instance. You will
 find all the heavy work in [`Language.Pirouette.Example`].
-
-[`Language.Pirouette.Example`]: ./src/Language/Pirouette/Example.hs
 
 The example language also has a concrete syntax heavily inspired by Haskell.
 Thanks to quasi-quoters, it is easy to define a set of unordered value
@@ -109,8 +105,6 @@ myProgram = [progWithStdLib|
 |]
 ```
 
-[`Language.Pirouette.Example.StdLib`]: ./src/Language/Pirouette/Example/StdLib.hs
-
 ### Plutus Intermediate Representation
 
 [plutus intermediate representation]: #plutus-intermediate-representation
@@ -124,8 +118,6 @@ Transformations
 ---------------
 
 [`Pirouette.Transformations`]
-
-[`Pirouette.Transformations`]: ./src/Pirouette/Transformations.hs
 
 Symbolic Engine
 ---------------
@@ -151,7 +143,6 @@ convert assumptions/constraints to the [SMT-LIB] language. These modules live in
 [z3]: https://github.com/Z3Prover/z3
 [smtlib-backends]: https://github.com/tweag/smtlib-backends
 [smt-lib]: https://smtlib.cs.uiowa.edu/
-[`Pirouette.SMT`]: ./src/Pirouette/SMT.hs
 
 ### Symbolic Evaluator
 
@@ -162,8 +153,6 @@ convert assumptions/constraints to the [SMT-LIB] language. These modules live in
 The heart of Pirouette's symbolic engine lives in [`Pirouette.Symbolic.Eval`].
 This module defines the `SymEval` monad providing all the tooling to make
 symbolic evaluation work. Here is the monad in question:
-
-[`Pirouette.Symbolic.Eval`]: ./src/Pirouette/Symbolic/Eval.hs
 
 ```haskell
 newtype SymEval lang a = SymEval
@@ -263,8 +252,6 @@ contains the following:
 as well as some extra fields necessary for administrative reasons. Those field
 names are prefixed by `sest` in the code.
 
-[`Pirouette.Symbolic.Eval.Types`]: ./src/Pirouette/Symbolic/Eval/Types.hs
-
 #### The symbolic evaluation environment -- `SymEvalEnv`
 
 Defined in [`Pirouette.Symbolic.Eval`], the symbolic environment contains the
@@ -301,4 +288,11 @@ Those field names are prefixed by `see` in the code.
 
 [`Pirouette.Symbolic.Prover`]
 
+[`Language.Pirouette.Example`]: ./src/Language/Pirouette/Example.hs
+[`Language.Pirouette.Example.StdLib`]: ./src/Language/Pirouette/Example/StdLib.hs
+[`Pirouette.SMT`]: ./src/Pirouette/SMT.hs
+[`Pirouette.Symbolic.Eval`]: ./src/Pirouette/Symbolic/Eval.hs
+[`Pirouette.Symbolic.Eval.Types`]: ./src/Pirouette/Symbolic/Eval/Types.hs
 [`Pirouette.Symbolic.Prover`]: ./src/Pirouette/Symbolic/Prover.hs
+[`Pirouette.Term.Syntax.Base`]: ./src/Pirouette/Term/Syntax/Base.hs
+[`Pirouette.Transformations`]: ./src/Pirouette/Transformations.hs
