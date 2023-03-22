@@ -148,7 +148,7 @@ convert assumptions/constraints to the [SMT-LIB] language. These modules live in
 
 [symbolic evaluator]: #symbolic-evaluator
 
-#### The symbolic evaluation monad -- `SymEval`
+#### The symbolic evaluation monad — `SymEval`
 
 The heart of Pirouette's symbolic engine lives in [`Pirouette.Symbolic.Eval`].
 This module defines the `SymEval` monad providing all the tooling to make
@@ -175,7 +175,7 @@ taking an environment and a state and returning a list of state, as well as
 potential return values. It returns a list because symbolic evaluation may
 branch and explore different paths.
 
-#### The key function -- `symEvalOneStep`
+#### The key function — `symEvalOneStep`
 
 The key function in this module is `symEvalOneStep`, whose type is the
 following:
@@ -232,7 +232,7 @@ above, our first term/state is now blocked because there isn't much one can do
 with an integer. The second term/state is not blocked because one can replace
 `f` by its definition and continue unfolding from there.
 
-#### The symbolic evaluation state -- `SymEvalSt`
+#### The symbolic evaluation state — `SymEvalSt`
 
 Defined in [`Pirouette.Symbolic.Eval.Types`], the symbolic state basically
 contains the following:
@@ -252,7 +252,7 @@ contains the following:
 as well as some extra fields necessary for administrative reasons. Those field
 names are prefixed by `sest` in the code.
 
-#### The symbolic evaluation environment -- `SymEvalEnv`
+#### The symbolic evaluation environment — `SymEvalEnv`
 
 Defined in [`Pirouette.Symbolic.Eval`], the symbolic environment contains the
 following:
