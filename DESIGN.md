@@ -1,8 +1,26 @@
 Pirouette's Design
 ==================
 
+This document aims at giving an overview of the crucial parts of Pirouette, and
+pointers to get familiar with the code. As such, it contains three parts.
+
+1. The [first part][languages] describe how Pirouette supports several input
+   languages as well as two languages that are particularly relevant to us: [the
+   example language] and the support for Plutus IR – [Plutus intermediate
+   representation].
+
+2. The [second part][transformations] describes the transformations that
+   Pirouette performs on the input language to get it in a shape ready for
+   symbolic execution.
+
+3. The [third part][symbolic engine] digs into what constitutes the heart of
+   Pirouette: its symbolic engine, and in particular the [symbolic evaluator]
+   and the [symbolic prover].
+
 Languages
 ---------
+
+[languages]: #languages
 
 ### Pirouette's genericity
 
