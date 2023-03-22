@@ -87,7 +87,7 @@ that order, the datatype type arguments, an element of that datatype, the
 returning type, and as many cases as there are constructors, in the same order.
 
 The hardest part has been done. It is now simple to define a `sum` function, a
-list of integers -- say `1`, `2`, `3` -- and apply `sum` over them.
+list of integers – say `1`, `2`, `3` – and apply `sum` over them.
 
 ```haskell
 sum : List Integer -> Integer
