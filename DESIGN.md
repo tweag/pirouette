@@ -265,6 +265,36 @@ names are prefixed by `sest` in the code.
 
 [`Pirouette.Symbolic.Eval.Types`]: ./src/Pirouette/Symbolic/Eval/Types.hs
 
+#### The symbolic evaluation environment -- `SymEvalEnv`
+
+Defined in [`Pirouette.Symbolic.Eval`], the symbolic environment contains the
+following:
+
+1. A set of unordered definitions in which to evaluate the term. For instance,
+   if your term is `foldr @Integer @Integer (\(x : Integer) (y : Integer) . x +
+   y) 0 l`, then `foldr` and `l` have to come from somewhere, and it will
+   probably be the example language's standard library augmented with the
+   definition of the list of integers `l`, and that would be the set of
+   definitions in the environment.
+
+2. Two “solvers” that are functions taking a problem and trying to solve it. The
+   one of interest to us in the symbolic evaluation is `solvePathProblem ::
+   CheckPathProblem lang -> Bool` which takes a “path problem” describing the
+   logical formulas that have to hold for this path to be reachable and answers
+   whether or not it is.
+
+3. Options influencing the behaviour of the symbolic execution. Those control
+   for instance the size of the pool of SMT solvers that Pirouette uses in the
+   background. More importantly, the options contain a function `shouldStop ::
+   StoppingCondition`, where `StoppingCondition` is a type alias for
+   `SymEvalStatistics -> Bool`. This function inspects the statistics in the
+   symbolic evaluation state and decides whether the symbolic evaluation should
+   stop. This is a generalisation of the usual notion of “fuel”. Two trivial
+   instances would be `\_ -> false` that never stops and `\stat ->
+   sestConstructors stat > 50` that stops after 50 constructors unfoldings.
+
+Those field names are prefixed by `see` in the code.
+
 ### Symbolic Prover
 
 [symbolic prover]: #symbolic-prover
