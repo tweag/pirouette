@@ -1,12 +1,12 @@
 Pirouette's Design
 ==================
 
-This document aims at giving an overview of the crucial parts of Pirouette, and
+This document gives an overview of Pirouette, and
 pointers to get familiar with the code. As such, it contains three parts.
 
-1. The [first part][languages] describe how Pirouette supports several input
+1. The [first part][languages] describes how Pirouette supports several input
    languages as well as two languages that are particularly relevant to us: [the
-   example language] and the support for Plutus IR – [Plutus intermediate
+   example language] and Plutus IR – [Plutus intermediate
    representation].
 
 2. The [second part][transformations] describes the transformations that
@@ -24,11 +24,11 @@ Languages
 
 ### Pirouette's genericity
 
-Pirouette attempts to be generic in the input language by only assuming that it
-is System F-like. Anyone can then come and define their instance of
+Pirouette can process any System F-like language.
+More precisely, users can come and define their instance of
 `LanguageBuiltins`, which is Pirouette's way of defining the constants, builtin
 terms and builtin types of a language. The definition of the classes can be
-found in [`Pirouette.Term.Syntax.Base`]. For a simple, concrete instantiation of
+found in [`Pirouette.Term.Syntax.Base`]. For a simple instantiation of
 a language, you might want to check [the example language]. For a more involved
 one, you might want to check [the support for Plutus IR][plutus intermediate
 representation].
@@ -40,8 +40,7 @@ representation].
 The example language is the only instance of a language included in Pirouette.
 It is a simple functional language supporting higher-order types with explicit
 type annotations, basic types (booleans, integers, strings) with their
-associated operators, algebraic datatypes and pattern-matching. The definition
-of the language is done by providing the `LanguageBuiltins` instance. You will
+associated operators, algebraic datatypes and pattern-matching. You will
 find all the heavy work in [`Language.Pirouette.Example`].
 
 The example language also has a concrete syntax heavily inspired by Haskell.
@@ -85,8 +84,7 @@ Note how quantification in types has to be explicit, and the definition of the
 datatype `List` also creates the corresponding `match_List` function taking, in
 that order, the datatype type arguments, an element of that datatype, the
 returning type, and as many cases as there are constructors, in the same order.
-
-The hardest part has been done. It is now simple to define a `sum` function, a
+It is now possible to define a `sum` function, a
 list of integers – say `1`, `2`, `3` – and apply `sum` over them.
 
 ```haskell
@@ -155,7 +153,7 @@ aspects in the following sub-sections.
 As is classic in symbolic engines, Pirouette relies on SMT provers to do the
 hard work. These provers are used in two different ways. They help pruning
 branches of execution that are actually unreachable, and they help deciding
-whether the user's statement/questions actually hold.
+whether the user's statements/questions actually hold.
 
 Pirouette relies on [smtlib-backend] for the communication with its SMT prover
 of choice, [Z3]. There are still a bunch of modules in Pirouette making the
@@ -194,7 +192,7 @@ simply represent functions of type:
 SymEvalEnv -> SymEvalSt -> [(a, SymEvalSt)]
 ```
 
-taking an environment and a state and returning a list of state, as well as
+taking an environment and a state and returning a list of states, as well as
 potential return values. It returns a list because symbolic evaluation may
 branch and explore different paths.
 
@@ -225,7 +223,7 @@ Such a function takes a term in the input language and a symbolic evaluation
 state. It tries to apply one step of beta-reduction to the term, which may yield
 zero, one or several potential terms and updated states.
 
-For an example, let us assume that our input term is the body of the `foldr`
+As an example, let us assume that our input term is the body of the `foldr`
 function in [the example language], specialised for lists of `Integer`s (for
 readability, we remove the type applications).
 
@@ -336,14 +334,14 @@ properties on the three terms `A`, `B` and `C`:
 - Second, the prover attempts to check whether the antecedent implies the
   consequent, that is whether for all `xs`, `A(B(xs), xs) ⇒ C(B(xs), xs)`.
 
-Concretely, `proveRaw` takes a `Problem` and does all the administrative work of
+Concretely, `proveRaw` takes a `Problem`, does all the administrative work of
 extracting the `xs` from the body, creating corresponding symbolic variables,
 preparing the terms, and then calls `worker`, where all the actual work happens.
 
 `worker` takes the three aforementioned terms as input and evaluates them all by
 one step. We refer the reader to [`symEvalOneStep`] for what this means
-precisely. If any of the three terms is stuck, that is if it is not possible to
-evaluate them more, then `worker` attempts to see if the properties above holds.
+precisely. If any of the three terms is stuck, that is if no more reductions are possible,
+then `worker` attempts to see if the properties above holds.
 It can do that without having fully evaluated the terms: for instance, it is
 possible to check whether the antecedent is consistent without knowing anything
 about the consequent. To some extent, it is even possible to check whether the
