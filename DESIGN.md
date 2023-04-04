@@ -185,8 +185,9 @@ newtype SymEval lang a = SymEval
   }
 ```
 
-Morally speaking, though, and forgetting the `lang` type parameters, this monad
-simply represent functions of type:
+Morally speaking, though, forgetting the `lang` type parameters and assuming
+that `WeightedList`s are just lists, this monad simply represent functions of
+type:
 
 ```haskell
 SymEvalEnv -> SymEvalSt -> [(a, SymEvalSt)]
