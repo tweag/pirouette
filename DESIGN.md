@@ -192,13 +192,13 @@ simply represent functions of type:
 SymEvalEnv -> SymEvalSt -> [(a, SymEvalSt)]
 ```
 
-taking an environment and a state and returning a list of states, as well as
-potential return values. It returns a list because symbolic evaluation may
-branch and explore different paths.
+taking an environment and a [state][`SymEvalSt`] and returning a list of states,
+as well as potential return values. It returns a list because symbolic
+evaluation may branch and explore different paths.
 
 #### The key function — `symEvalOneStep`
 
-[`symEvalOneStep`]: #the-key-function-symEvalOneStep
+[`symEvalOneStep`]: #the-key-function--symEvalOneStep
 
 The key function in this module is `symEvalOneStep`, whose type is the
 following:
@@ -258,7 +258,9 @@ with an integer. The second term/state is not blocked because one can replace
 
 #### The symbolic evaluation state — `SymEvalSt`
 
-Defined in [`Pirouette.Symbolic.Eval.Types`], the symbolic state basically
+[`SymEvalSt`]: #the-symbolic-evaluation-state--symevalst
+
+ Defined in [`Pirouette.Symbolic.Eval.Types`], the symbolic state basically
 contains the following:
 
 1. A context of variables, that is a map from variable names to their types.
@@ -277,6 +279,8 @@ It also contains some extra fields necessary for administrative reasons. Those f
 names are prefixed by `sest` in the code.
 
 #### The symbolic evaluation environment — `SymEvalEnv`
+
+[`SymEvalEnv`]: #the-symbolic-evaluation-environment--symevalenv
 
 Defined in [`Pirouette.Symbolic.Eval`], the symbolic environment contains the
 following:
