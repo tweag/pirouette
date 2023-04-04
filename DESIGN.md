@@ -155,7 +155,7 @@ hard work. These provers are used in two different ways. They help pruning
 branches of execution that are actually unreachable, and they help deciding
 whether the user's statements/questions actually hold.
 
-Pirouette relies on [smtlib-backend] for the communication with its SMT prover
+Pirouette relies on [smtlib-backends] for the communication with its SMT prover
 of choice, [Z3]. There are still a bunch of modules in Pirouette making the
 interface between the rest of the engine and [smtlib-backends], mainly to
 convert assumptions/constraints to the [SMT-LIB] language. These modules live in
@@ -240,7 +240,7 @@ and that our state specifies that:
 - `l` is a list of integers, without giving its value.
 
 One step of the symbolic engine would then have to explore both branches of the
-pattern matching, and therefore it would return two pairs `Term, SymEvalSt`:
+pattern matching, and therefore it would return two pairs `(Term, SymEvalSt)`:
 
 1. In the first pair, the `Term` would be `e` itself and the state would be
    updated to account for the fact that we now know that `l = Nil`.
@@ -264,15 +264,15 @@ contains the following:
    This context is typically called Γ in literature, and `gamma` in the code.
 
 2. A set of constraints linking variables together, for instance `l == Cons x
-   xs`, `k != Nil` or `x = 7`. It is in fact not a set, but a complex
+   xs`, `k != Nil` or `x == 7`. It is in fact not a set, but a complex
    union-find-based type.
 
-3. Statistics on the execution, for instance the number of unfoldings that took
+3. Statistics on the execution, for instance the number of case analyses that took
    place. Despite the name, those statistics can have an important impact on the
    behaviour of the engine because they are observed to decide whether to stop
    the execution or not.
 
-as well as some extra fields necessary for administrative reasons. Those field
+It also contains some extra fields necessary for administrative reasons. Those field
 names are prefixed by `sest` in the code.
 
 #### The symbolic evaluation environment — `SymEvalEnv`
@@ -301,7 +301,7 @@ following:
    symbolic evaluation state and decides whether the symbolic evaluation should
    stop. This is a generalisation of the usual notion of “fuel”. Two trivial
    instances would be `\_ -> false` that never stops and `\stat ->
-   sestConstructors stat > 50` that stops after 50 constructors unfoldings.
+   sestConstructors stat > 50` that stops after 50 constructor unfoldings.
 
 Those field names are prefixed by `see` in the code.
 
@@ -341,7 +341,7 @@ preparing the terms, and then calls `worker`, where all the actual work happens.
 `worker` takes the three aforementioned terms as input and evaluates them all by
 one step. We refer the reader to [`symEvalOneStep`] for what this means
 precisely. If any of the three terms is stuck, that is if no more reductions are possible,
-then `worker` attempts to see if the properties above holds.
+then `worker` attempts to see if the properties above hold.
 It can do that without having fully evaluated the terms: for instance, it is
 possible to check whether the antecedent is consistent without knowing anything
 about the consequent. To some extent, it is even possible to check whether the
