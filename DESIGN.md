@@ -243,11 +243,12 @@ One step of the symbolic engine would then have to explore both branches of the
 pattern matching, and therefore it would return two pairs `(Term, SymEvalSt)`:
 
 1. In the first pair, the `Term` would be `e` itself and the state would be
-   updated to account for the fact that we now know that `l = Nil`.
+   updated to account for the fact that we now know that `l == Nil`.
+
 2. In the second pair, the `Term` would be `f x (foldr f e xs)` and the state
    would be updated to account for the fact the we now have two more variables,
    `x` and `xs`, that are an integer and a list of integers respectively, and an
-   additional constraint, `l = Cons x xs`.
+   additional constraint, `l == Cons x xs`.
 
 The whole symbolic execution consists in running this one step over and over
 again until it is not possible to reduce the terms anymore. In the example
