@@ -389,7 +389,10 @@ above, our first term/state is now blocked because there isn't much one can do
 with an integer. The second term/state is not blocked because one can replace
 `f` by its definition and continue unfolding from there. The `WriterT Any` layer
 actually comes into play here: its only goal is to carry a boolean value
-tracking whether a step of evaluation was taken.
+tracking whether a step of evaluation was taken. Technically, it is possible for
+anyone to write their wrapper around `symEvalOneStep`; the default ones are
+breadth-first, and the way the `SymEval` monad is design clearly encourages this
+kind of algorithm.
 
 #### The symbolic evaluation state — `SymEvalSt`
 
