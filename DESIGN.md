@@ -467,41 +467,83 @@ Those field names are prefixed by `see` in the code.
 
 The symbolic prover is a wrapper around the [symbolic evaluator]. One can see
 the symbolic evaluator as the library providing the generic tooling for symbolic
-evaluation, which the symbolic prover uses to answer requests about Hoare
-triples.
+evaluation, which the symbolic prover uses to answer requests about some variant
+of Hoare logic, both simplified in the context of pure computations and
+generalised.
+
+#### About our variant of Hoare logic
+
+[our variant of Hoare logic]: #about-our-variant-of-hoare-logic
+
+For an introduction to Hoare logic, we refer the reader to
+[Wikipedia][wikipedia:hoare-logic] or [(Hoare 1969)].
+
+In a standard setting, a Hoare triple is something of the form `{P} C {Q}` where
+`P` and `Q` are predicates over a global state and `C` mutates said global
+state. `P` and `Q` are formulae in some predicate logic, while `C` is a program.
+A Hoare triple `{P} C {Q}` holds if for each state such that `P` holds, then `Q`
+holds on the state mutated by `C`.
+
+In our setting, however, we deal with pure terms, which changes two things:
+
+- First, there is no global state, only functions taking _arguments_ and
+  returning _results_.
+
+- Second, there is no useful distinction between predicates and programs and we
+  can simply use terms everywhere.
+
+We can therefore give a slightly different presentation of Hoare triples as a
+triple of terms which we call the _antecedent_, the _body_ and the _consequent_.
+If the body is a function of shape `λxs. B(xs)`, where `xs` is a list of
+arguments, then the antecedent is of shape `λxs. A(xs)` and the consequent is of
+shape `λr. C(r)` where `r` stands for _result_. Assuming the body is of type `αs
+-> ρ`, then the antecedent should be of type `αs -> Bool` and the consequent
+should be of type `ρ -> Bool`, that is they should be considered as two
+predicates on the body's arguments and result respectively. Similarly to Hoare
+triples, a triple `{A} B {C}` holds if for all `xs` and `r` such that `A` holds
+on `xs` and `r = B(xs)`, `C` holds on `r` or, more directly, if for all `xs`,
+`A(xs) ⇒ C(B(xs))` is `True`.
+
+To get to our variant of Hoare triple, we now generalise this presentation by
+allowing both the antecedent and the consequent to talk about arguments and
+results, that is they are of shapes `λr,xs. A(r,xs)` and `λr,xs. C(r,xs)` and of
+type `ρ -> αs -> Bool`. Such a triple `{A} B {C}` holds if for all `xs`,
+`A(B(xs), xs) ⇒ C(B(xs), xs)` is `True`. The previous presentation of Hoare
+triples can obviously be encoded in this one, but our new presentation now
+allows for more expressivity and, in particular, it allows expression
+_incorrectness triples_ [(O'hearn 2020)]. As such, our logic _might be_ a
+simpler form of _outcome logic_ [(Zilberstein et al. 2023)].
+
+[wikipedia:hoare-logic]: https://en.wikipedia.org/wiki/Hoare_logic
+[(Hoare 1969)]: https://dl.acm.org/doi/pdf/10.1145/363235.363259
+[(O'hearn 2020)]: https://dl.acm.org/doi/pdf/10.1145/3371078
+[(Zilberstein et al. 2023)]: https://arxiv.org/pdf/2303.03111.pdf
 
 #### The key functions — `proveRaw` and `worker`
 
 Defined in [`Pirouette.Symbolic.Prover`], the `proveRaw` and `worker` function
-are the main part of the symbolic prover. Morally speaking, these functions take
-as input a triple of terms, called the _antecedent_, the _body_ and the
-_consequent_, of shapes `λr,xs. A(r,xs)`, `λxs. B(xs)` and `λr,xs. C(r,xs)`
-respectively, where `r` is a symbolic argument for the _result_ and `xs` is a
-list of symbolic arguments common to all three terms. The idea that `r` is the
-result means that we will always consider `λxs. A(B(xs), xs)` and `λxs. C(B(xs),
-xs)`. Assuming the body is of type `αs -> ρ`, then the antecedent and consequent
-should be of type `ρ -> αs -> Bool`, that is they should be considered as two
-predicates on the body's result and arguments. The prover attempts to check two
-properties on the three terms `A`, `B` and `C`:
+are the main part of the symbolic prover. Both these functions take as input a
+triple `{A} B {C}` in [our variant of Hoare logic]. The prover then attempts to
+check two properties this triple:
 
 - First, the prover attempts to check whether the antecedent is consistent, that
   is whether there exists `xs` such that `A(B(xs), xs)` holds.
 
-- Second, the prover attempts to check whether the antecedent implies the
-  consequent, that is whether for all `xs`, `A(B(xs), xs) ⇒ C(B(xs), xs)`.
+- Second, the prover attempts to check whether the triple holds, that is whether
+  for all `xs`, `A(B(xs), xs) ⇒ C(B(xs), xs)`.
 
 Concretely, `proveRaw` takes a `Problem`, does all the administrative work of
 extracting the `xs` from the body, creating corresponding symbolic variables,
 preparing the terms, and then calls `worker`, where all the actual work happens.
 
-`worker` takes the three aforementioned terms as input and evaluates them all by
+`worker` takes the aforementioned triple as input and evaluates all its terms by
 one step. We refer the reader to [`symEvalOneStep`] for what this means
-precisely. If any of the three terms is stuck, that is if no more reductions are possible,
-then `worker` attempts to see if the properties above hold.
-It can do that without having fully evaluated the terms: for instance, it is
-possible to check whether the antecedent is consistent without knowing anything
-about the consequent. To some extent, it is even possible to check whether the
-antecedent is consistent without knowing anything about the body.
+precisely. If any of the three terms is stuck, that is if no more reductions are
+possible, then `worker` attempts to see if the properties above hold. It can do
+that without having fully evaluated the terms: for instance, it is possible to
+check whether the antecedent is consistent without knowing anything about the
+consequent. To some extent, it is even possible to check whether the antecedent
+is consistent without knowing anything about the body.
 
 If we manage to prove that the antecedent is inconsistent, or the antecedent
 does imply the consequent, or the antecedent cannot imply the consequent, then
