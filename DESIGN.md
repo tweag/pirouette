@@ -388,14 +388,25 @@ pattern matching, and therefore it would return two pairs `(Term, SymEvalSt)`:
 
 The whole symbolic execution consists in running this one step over and over
 again until it is not possible to reduce the terms anymore. In the example
-above, our first term/state is now blocked because it reached a built-in value
--- an integer -- which cannot be reduced further. The second term/state is not
+above, our first term/state is now blocked because it reached a built-in value —
+an integer — which cannot be reduced further. The second term/state is not
 blocked because one can replace `f` by its definition and continue unfolding
 from there. The `WriterT Any` layer actually comes into play here: its only goal
 is to carry a boolean value tracking whether a step of evaluation was taken.
-Technically, it is possible for anyone to write their wrapper around
-`symEvalOneStep`; the default ones are breadth-first, and the way the `SymEval`
-monad is design clearly encourages this kind of algorithm.
+
+Actually, there isn't one way to write a symbolic evaluation engine but there
+are as many possibilities as one can imagine wrappers around `symEvalOneStep`.
+Some default wrappers are provided in Pirouette, but they are very simple. They
+are also breadth-first, and the way the `SymEval` monad is design clearly
+encourages this kind of algorithm. Moreover, note that there is no guarantee
+that applying `symEvalOneStep` over and over ever terminates, and that the
+symbolic evaluator makes no effort in that regard and simply keeps track of some
+statistics during evaluation (eg. the number of case analyses that took place).
+It is up to the wrapper around `symEvalOneStep` to implement strategies to
+ensure termination. For instance, the [symbolic prover], our main wrapper around
+symbolic evaluation, regularly queries a function `shouldStop` that inspects the
+aforementioned statistic to decide whether one should apply `symEvalOneStep`
+once more or stop there.
 
 #### The symbolic evaluation state — `SymEvalSt`
 
