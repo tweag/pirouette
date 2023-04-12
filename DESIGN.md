@@ -385,14 +385,14 @@ pattern matching, and therefore it would return two pairs `(Term, SymEvalSt)`:
 
 The whole symbolic execution consists in running this one step over and over
 again until it is not possible to reduce the terms anymore. In the example
-above, our first term/state is now blocked because there isn't much one can do
-with an integer. The second term/state is not blocked because one can replace
-`f` by its definition and continue unfolding from there. The `WriterT Any` layer
-actually comes into play here: its only goal is to carry a boolean value
-tracking whether a step of evaluation was taken. Technically, it is possible for
-anyone to write their wrapper around `symEvalOneStep`; the default ones are
-breadth-first, and the way the `SymEval` monad is design clearly encourages this
-kind of algorithm.
+above, our first term/state is now blocked because it reached a built-in value
+-- an integer -- which cannot be reduced further. The second term/state is not
+blocked because one can replace `f` by its definition and continue unfolding
+from there. The `WriterT Any` layer actually comes into play here: its only goal
+is to carry a boolean value tracking whether a step of evaluation was taken.
+Technically, it is possible for anyone to write their wrapper around
+`symEvalOneStep`; the default ones are breadth-first, and the way the `SymEval`
+monad is design clearly encourages this kind of algorithm.
 
 #### The symbolic evaluation state — `SymEvalSt`
 
