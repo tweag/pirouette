@@ -236,7 +236,9 @@ each function type among functions that need to be defunctionalised, as opposed
 to a single of such function in the untyped case.
 
 For a general introduction to defunctionalisation, we refer the user to
-[Wikipedia](https://en.wikipedia.org/wiki/Defunctionalization).
+[Wikipedia][wikipedia:defunctionalisation].
+
+[wikipedia:defunctionalisation]: https://en.wikipedia.org/wiki/Defunctionalization
 
 ### Elimination of mutually recursive functions
 
@@ -436,9 +438,14 @@ following:
 
 2. Two “solvers” that are functions taking a problem and trying to solve it. The
    one of interest to us in the symbolic evaluation is `solvePathProblem ::
-   CheckPathProblem lang -> Bool` which takes a “path problem” describing the
-   logical formulas that have to hold for this path to be reachable and answers
-   whether or not it is.
+   CheckPathProblem lang -> Bool` where `CheckPathProblem lang` is simply a pair
+   of [a symbolic evaluation state `SymEvalSt`][`SymEvalSt`] and a set of
+   definitions `PrtUnorderedDefs lang` (as per item 1) and answers whether the
+   constraints in the state are [satisfiable][wikipedia:satisfiability], that is
+   if there exists an assignment of the variables in the state such that all the
+   constraints hold. If the `CheckPathProblem lang` is for sure unsatisfiable,
+   then we can safely discard the corresponding path because it is not actually
+   reachable.
 
 3. Options influencing the behaviour of the symbolic execution. Those control
    for instance the size of the pool of SMT solvers that Pirouette uses in the
@@ -451,6 +458,8 @@ following:
    sestConstructors stat > 50` that stops after 50 constructor unfoldings.
 
 Those field names are prefixed by `see` in the code.
+
+[wikipedia:satisfiability]: https://en.wikipedia.org/wiki/Satisfiability
 
 ### Symbolic Prover
 
