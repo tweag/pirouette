@@ -426,12 +426,13 @@ names are prefixed by `sest` in the code.
 Defined in [`Pirouette.Symbolic.Eval`], the symbolic environment contains the
 following:
 
-1. A set of unordered definitions in which to evaluate the term, that is a value
-   of type `PrtUnorderedDefs lang`. For instance, if your term is `foldr
-   @Integer @Integer (\(x : Integer) (y : Integer) . x + y) 0 l`, then `foldr`
-   and `l` have to come from somewhere, and it will probably be the example
-   language's standard library augmented with the definition of the list of
-   integers `l`, and that would be the set of definitions in the environment.
+1. A set of definitions in which to evaluate the term. This is a value of type
+   `PrtUnorderedDefs lang`, that is a set of mutually-recursive definitions. For
+   instance, if your term is `foldr @Integer @Integer (\(x : Integer) (y :
+   Integer) . x + y) 0 l`, then `foldr` and `l` have to come from somewhere, and
+   it will probably be the example language's standard library augmented with
+   the definition of the list of integers `l`, and that would be the set of
+   definitions in the environment.
 
 2. Two “solvers” that are functions taking a problem and trying to solve it. The
    one of interest to us in the symbolic evaluation is `solvePathProblem ::
