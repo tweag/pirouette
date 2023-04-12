@@ -406,8 +406,8 @@ contains the following:
    This context is typically called Γ in literature, and `gamma` in the code.
 
 2. A set of constraints linking variables together, for instance `l == Cons x
-   xs`, `k != Nil` or `x == 7`. It is in fact not a set, but a complex
-   union-find-based type.
+   xs`, `k != Nil` or `x == 7`. It is implemented with a [union-find]-based data
+   structure.
 
 3. Statistics on the execution, for instance the number of case analyses that took
    place. Despite the name, those statistics can have an important impact on the
@@ -416,6 +416,8 @@ contains the following:
 
 It also contains some extra fields necessary for administrative reasons. Those field
 names are prefixed by `sest` in the code.
+
+[union-find]: https://en.wikipedia.org/wiki/Disjoint-set_data_structure
 
 #### The symbolic evaluation environment — `SymEvalEnv`
 
