@@ -24,14 +24,21 @@ Languages
 
 ### Pirouette's genericity
 
-Pirouette can process any System F-like language.
-More precisely, users can come and define their instance of
-`LanguageBuiltins`, which is Pirouette's way of defining the constants, builtin
-terms and builtin types of a language. The definition of the classes can be
-found in [`Pirouette.Term.Syntax.Base`]. For a simple instantiation of
-a language, you might want to check [the example language]. For a more involved
-one, you might want to check [the support for Plutus IR][plutus intermediate
-representation].
+Pirouette can process any System F-like language. More precisely, users can come
+and define their instance of `LanguageBuiltins`, which is Pirouette's way of
+defining the constants, builtin terms and builtin types of a language. The
+definition of the classes can be found in [`Pirouette.Term.Syntax.Base`].
+
+Unless preprocessed in a way or another, Pirouette languages feature explicit
+type anotations, no namespacing and the definitions of terms are considered to
+be all mutually recursive. In fact, almost all of Pirouette works on the type
+`PrtUnorderedDefs lang` which describes a set of “Pirouette unordered
+definitions“ for a given `lang`uage — think of a Haskell module where order does
+not matter and terms can reference one another freely.
+
+For a simple instantiation of a language, you might want to check [the example
+language]. For a more involved one, you might want to check [the support for
+Plutus IR][plutus intermediate representation].
 
 ### The example language
 
@@ -40,22 +47,16 @@ representation].
 The example language is the only instance of a language included in Pirouette.
 It is a simple functional language supporting higher-order types with explicit
 type annotations, basic types (booleans, integers, strings) with their
-associated operators, algebraic datatypes and pattern-matching. You will
-find all the heavy work in [`Language.Pirouette.Example`].
-
-The example language also has a concrete syntax heavily inspired by Haskell.
-Thanks to quasi-quoters, it is easy to define a set of unordered value
-definitions for the `Ex`ample language:
+associated operators, algebraic datatypes and pattern-matching. You will find
+all the heavy work in [`Language.Pirouette.Example`]. The example language also
+has a concrete syntax heavily inspired by Haskell. Consider for instance:
 
 ```haskell
-myProgram :: PrtUnorderedDefs Ex
-myProgram = [prog|
-  addone : Integer -> Integer
-  addone x = x + 1
+addone : Integer -> Integer
+addone x = x + 1
 
-  addtwo : Integer -> Integer
-  addtwo x = x + 2
-|]
+addtwo : Integer -> Integer
+addtwo x = x + 2
 ```
 
 Now for a more involved example. Say we want to compute a sum of integers in a
@@ -423,12 +424,12 @@ names are prefixed by `sest` in the code.
 Defined in [`Pirouette.Symbolic.Eval`], the symbolic environment contains the
 following:
 
-1. A set of unordered definitions in which to evaluate the term. For instance,
-   if your term is `foldr @Integer @Integer (\(x : Integer) (y : Integer) . x +
-   y) 0 l`, then `foldr` and `l` have to come from somewhere, and it will
-   probably be the example language's standard library augmented with the
-   definition of the list of integers `l`, and that would be the set of
-   definitions in the environment.
+1. A set of unordered definitions in which to evaluate the term, that is a value
+   of type `PrtUnorderedDefs lang`. For instance, if your term is `foldr
+   @Integer @Integer (\(x : Integer) (y : Integer) . x + y) 0 l`, then `foldr`
+   and `l` have to come from somewhere, and it will probably be the example
+   language's standard library augmented with the definition of the list of
+   integers `l`, and that would be the set of definitions in the environment.
 
 2. Two “solvers” that are functions taking a problem and trying to solve it. The
    one of interest to us in the symbolic evaluation is `solvePathProblem ::
