@@ -135,8 +135,139 @@ Transformations
 
 [transformations]: #transformations
 
-_This part is empty and should be documented._ Transformations live in
-[`Pirouette.Transformations`].
+_Warning: This section has been written by a non-expert based on information
+gathered here and there. There might be missing, outdated, irrelevant or even
+wrong information. We believe it should still give a good starting point to
+anyone willing to understand Pirouette's transformations._
+
+A transformation in Pirouette goes from internal representation to internal
+representation. In general, transformations aim at simplifying the input term by
+getting rid of some features, while keeping the semantics unchanged.
+
+In a typical setting, an input term will go through several transformations
+before reaching its final form that can be symbolically evaluated. In
+particular, some transformations assume that they take place after another one;
+additionally, transformations should preserve the invariant of previous
+transformations. The dependencies between transformations are formalised in
+Haskell's type system; we refer the reader to the upcoming Tweag blog post
+“Type-safe data processing pipelines” for more information on this.
+
+Transformations live in [`Pirouette.Transformations`].
+
+### Conversion to prenex normal form
+
+This transformation puts signatures into some kind of a normal form where type
+arguments all go before the term arguments. This is required by monomorphisation.
+
+### Removal of excessive arguments
+
+When this transformation sees a destructor that is applied to more arguments than
+there are branches (and the scrutinee), it moves the extra argument inside the
+branches. Indeed, if this is the case, then the branches really return a
+function, and the extra (aka excessive) arguments are really arguments to this
+returned function. As an example, consider (with type applications omitted):
+
+```haskell
+match_Nat n
+  (\b -> if b then 0 else 1)
+  (\n b -> if b then n else 0)
+  True
+```
+
+`match_Nat` takes the scrutinee and two branches, yet it has three parameters. So,
+what this transformation does is pushing True inside branches, yielding:
+
+```haskell
+match_Nat n
+  (if True then 0 else 1)
+  (\n -> if True then n else 0)
+```
+
+### Monomorphisation
+
+Monomorphisation removes polymorphism, which we need out of the way both for
+some other transformations to be possible and to make the work of SMT solvers
+easier. It is straightforward except for recursive aspects. For instance, it
+transforms
+
+```haskell
+map (+ 1) [1, 2, 3]
+```
+
+into
+
+```haskell
+mapInt (+ 1) [1, 2, 3]
+```
+
+where `mapInt` only works with `Int`s.
+
+It is not obvious whether the current algorithm terminates on arbitrary System F
+programs, but it does in practice. The monomorphisation needs also to happen for
+constructors and destructors and types, that is it needs to happen for anything
+polymorphic.
+
+We originally considered monomorphising only high-order functions, because SMT
+solvers can usually work with first-order polymorphic functions; it is however
+simpler to monomorphise everything.
+
+### Eta expansion
+
+Eta-expansion turns partially applied functions to fully applied ones under a
+λ-abstraction. For instance, `map f` would become `λ xs. map f xs`. This
+transformation is most useful to prepare for defunctionalisation. It is also a
+straightforward transformation, although there has some technical details to
+handle; for instance if there are functions as arguments.
+
+### Defunctionalisation
+
+This transformation removes all higher-order functions and replace them with
+labels. It is required for higher-order functions such as `fold`, for instance.
+The label in question denotes the body of a specific function as well as the
+free variables it refers to. Such a transformation is easy in an untyped
+setting, but it becomes hard when types are included, and in System F in
+particular. In that case, one needs to create some record data type to embed
+free variable types and have separate record types for different function
+signatures, since it is otherwise impossible to write the `apply` function. The
+constructor of this type describes which function is called and is basically the
+aforementioned label. There is a data type as well as an `apply` function for
+each function type among functions that need to be defunctionalised, as opposed
+to a single of such function in the untyped case.
+
+For a general introduction to defunctionalisation, we refer the user to
+[Wikipedia](https://en.wikipedia.org/wiki/Defunctionalization).
+
+### Elimination of mutually recursive functions
+
+This transformation breaks mutually recursive function groups by inlining
+non-recursive functions in the group in other definitions until reaching a
+fixpoint, and putting the resulting definitions in the proper order. For
+instance, given:
+
+```haskell
+f x = op1 (f (x-1)) (g x)
+g x = h x + 2
+h x = f (x - 3)
+```
+
+it produces:
+
+```haskell
+f x = op1 (f (x-1)) (f (x - 3) - 2)
+h x = f (x - 3)
+g x = h x + 2
+```
+
+This transformation does not always succeed. For example, it would fail on the
+following:
+
+```haskell
+f x = f x + g x
+g x = f x + g x
+```
+
+However, it works in practice on the subset of System F that we have encountered
+so far.
 
 Symbolic Engine
 ---------------
