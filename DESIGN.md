@@ -343,9 +343,10 @@ symEvalOneStep ::
   WriterT Any (SymEval lang) (TermMeta lang SymVar)
 ```
 
-Once again, morally speaking, forgetting the `lang` type parameters and
-replacing `TermMeta lang SymVar` by just `Term`, this function has type `Term ->
-SymEval Term`. One can then think of this as a function of type:
+Once again, morally speaking, forgetting the `WriterT Any` layer, the `lang`
+type parameters and replacing `TermMeta lang SymVar` by just `Term`, this
+function has type `Term -> SymEval Term`. One can then think of this as a
+function of type:
 
 ```haskell
 SymEvalEnv -> (Term, SymEvalSt) -> [(Term, SymEvalSt)]
@@ -386,7 +387,9 @@ The whole symbolic execution consists in running this one step over and over
 again until it is not possible to reduce the terms anymore. In the example
 above, our first term/state is now blocked because there isn't much one can do
 with an integer. The second term/state is not blocked because one can replace
-`f` by its definition and continue unfolding from there.
+`f` by its definition and continue unfolding from there. The `WriterT Any` layer
+actually comes into play here: its only goal is to carry a boolean value
+tracking whether a step of evaluation was taken.
 
 #### The symbolic evaluation state — `SymEvalSt`
 
