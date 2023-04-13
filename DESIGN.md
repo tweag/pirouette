@@ -445,7 +445,10 @@ following:
    Integer) . x + y) 0 l`, then `foldr` and `l` have to come from somewhere, and
    it will probably be the example language's standard library augmented with
    the definition of the list of integers `l`, and that would be the set of
-   definitions in the environment.
+   definitions in the environment. Note that such definitions could _probably_
+   be encoded as constraints in [`SymEvalSt`], but there should be performance
+   considerations before implementing such a change. For now, they are kept
+   separated.
 
 2. Two “solvers” that are functions taking a problem and trying to solve it. The
    one of interest to us in the symbolic evaluation is `solvePathProblem ::
