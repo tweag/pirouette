@@ -29,9 +29,10 @@ and define their instance of `LanguageBuiltins`, which is Pirouette's way of
 defining the constants, builtin terms and builtin types of a language. The
 definition of the classes can be found in [`Pirouette.Term.Syntax.Base`].
 
-Unless preprocessed in a way or another, Pirouette languages feature explicit
+Pirouette languages feature explicit
 type anotations, no namespacing and the definitions of terms are considered to
-be all mutually recursive. In fact, almost all of Pirouette works on the type
+be all mutually recursive. More precisely, and apart from some exceptions that
+require ordered definitions, Pirouette works on the type
 `PrtUnorderedDefs lang` which describes a set of “Pirouette unordered
 definitions“ for a given `lang`uage — think of a Haskell module where order does
 not matter and terms can reference one another freely.
@@ -157,7 +158,7 @@ Transformations live in [`Pirouette.Transformations`].
 
 ### Conversion to prenex normal form
 
-This transformation puts signatures into some kind of a normal form where type
+This transformation puts signatures into a normal form where type
 arguments all go before the term arguments. This is required by monomorphisation.
 
 ### Removal of excessive arguments
@@ -204,9 +205,8 @@ mapInt (+ 1) [1, 2, 3]
 where `mapInt` only works with `Int`s.
 
 It is not obvious whether the current algorithm terminates on arbitrary System F
-programs, but it does in practice. The monomorphisation needs also to happen for
-constructors and destructors and types, that is it needs to happen for anything
-polymorphic.
+programs, but it does in practice. Monomorphisation happens for anything polymorphic,
+that is functions, but also constructors and destructors and types.
 
 We originally considered monomorphising only high-order functions, because SMT
 solvers can usually work with first-order polymorphic functions; it is however
@@ -222,7 +222,7 @@ handle; for instance if there are functions as arguments.
 
 ### Defunctionalisation
 
-This transformation removes all higher-order functions and replace them with
+This transformation removes all higher-order functions and replaces them with
 labels. It is required for higher-order functions such as `fold`, for instance.
 The label in question denotes the body of a specific function as well as the
 free variables it refers to. Such a transformation is easy in an untyped
