@@ -15,7 +15,7 @@
 
 -- | Provides the base syntactical elements for the languages supported by Pirouette.
 --  This module /does not/ expose the underlying System F implementation. In case
---  you're interested in manipulating terms at the Systm F level make sure
+--  you're interested in manipulating terms at the System F level make sure
 --  to bring in "Pirouette.Term.Syntax.SystemF", which is meant to be
 --  imported qualified.
 module Pirouette.Term.Syntax.Base where

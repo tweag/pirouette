@@ -17,6 +17,7 @@ Say we have a function `t :: Ins -> Outs`, we can check that for all `i :: Ints`
 size, `P (t i) i` implies `Q (t i) i`, where `P` and `Q` are the user-defined predicates we
 interested in enforcing. We invite the interested reader to our [blog-post][tweag-blogpost] for more
 details on these reasoning techniques.
+The design of Pirouette is discussed in more details in [DESIGN.md](./DESIGN.md).
 
 [incorrectness]: https://dl.acm.org/doi/pdf/10.1145/3371078
 [tweag-blogpost]: https://www.tweag.io/blog/2022-07-01-pirouette-2/
