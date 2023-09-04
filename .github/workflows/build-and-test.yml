@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Check out repository code.
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install nix
         uses: cachix/install-nix-action@v22
@@ -69,7 +69,7 @@ jobs:
 
     steps:
       - name: Check out repository code.
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install nix
         uses: cachix/install-nix-action@v22
