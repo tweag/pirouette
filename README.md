@@ -1,4 +1,4 @@
-_Pirouette is no longer developed nor maintained.
+_Pirouette is no longer developed nor maintained._
 
 # Pirouette
 
