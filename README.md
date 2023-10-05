@@ -1,3 +1,5 @@
+_Pirouette is no longer developed nor maintained.
+
 # Pirouette
 
 _Pirouette is a research prototype under active development_
